@@ -1,25 +1,19 @@
 program gen_boozer_file
-    use fortsym_expr, only: expr_t, sym, num, sqrt, &
+    use fortsym_expr, only: expr_t, sym, sqrt, &
         operator(+), operator(-), &
-        operator(*), operator(/)
+        operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
-    type(expr_t) :: s, node(4), weight(4), dweight(4)
+    type(expr_t) :: s, half_m, axis
     type(expr_t) :: r, rs, rt, rp, zs, zt, zp, ps, pt, pp
     type(expr_t) :: es(3), et(3), ep(3), area(3), jacobian, area2
-    integer :: i, j
-    character(2), parameter :: node_names(4) = ['s1', 's2', 's3', 's4']
 
-    s = sym('s')
-    do i = 1, 4
-        node(i) = sym(node_names(i))
-    end do
-    do i = 1, 4
-        weight(i) = lagrange(i)
-        dweight(i) = diff(weight(i), s)
-    end do
+    ! Fourier coefficients behave like s^(m/2) near the axis; the radial
+    ! spline acts on c_mn/s^(m/2), as in NEO-2.
+    s = sym('s'); half_m = sym('half_m')
+    axis = s**half_m
 
     r = sym('r'); rs = sym('r_s'); rt = sym('r_t'); rp = sym('r_p')
     zs = sym('z_s'); zt = sym('z_t'); zp = sym('z_p')
@@ -40,11 +34,8 @@ program gen_boozer_file
     call writer%line('module kin6d_boozer_file_leaves')
     call writer%line('implicit none')
     call writer%line('contains')
-    ! Four-point Lagrange weights and their s-derivatives for the radial
-    ! interpolation of Boozer-file Fourier coefficients.
-    call writer%emit('boozer_lagrange4', ['s ', 's1', 's2', 's3', 's4'], &
-        ['w1  ', 'w2  ', 'w3  ', 'w4  ', 'w1_s', 'w2_s', 'w3_s', 'w4_s'], &
-        [weight, dweight], ad=.true.)
+    call writer%emit('boozer_axis_factor', ['s     ', 'half_m'], &
+        ['factor  ', 'factor_s'], [axis, diff(axis, s)], ad=.true.)
     ! sqrt(g) = X_s . (X_t x X_p) and |grad s| = |X_t x X_p| / |sqrt(g)|.
     call writer%emit('boozer_metric', &
         ['r    ', 'r_s  ', 'r_t  ', 'r_p  ', 'z_s  ', 'z_t  ', &
@@ -53,14 +44,4 @@ program gen_boozer_file
         [jacobian, sqrt(area2/(jacobian*jacobian))], ad=.true.)
     call writer%line('end module kin6d_boozer_file_leaves')
     call writer%close()
-contains
-    function lagrange(k) result(w)
-        integer, intent(in) :: k
-        type(expr_t) :: w
-        w = num(1)
-        do j = 1, 4
-            if (j == k) cycle
-            w = w*(s - node(j))/(node(k) - node(j))
-        end do
-    end function lagrange
 end program gen_boozer_file

@@ -27,7 +27,8 @@ contains
         integer :: unit, k, status, i
         real(dp), parameter :: ss(9) = [(0.1_dp*k, k=1, 9)]
 
-        ! R = r0 + a s cos(theta), Z = a s sin(theta): s = r/a, |grad s| = 1/a.
+        ! Circular surfaces r = a sqrt(s): R = r0 + r cos(theta), Z = r sin(theta),
+        ! so s = r^2/a^2, |grad s| = 2 sqrt(s)/a and sqrt(g) = -a^2 R/2.
         open (newunit=unit, file=name, status='replace', action='write')
         write (unit, '(a)') 'CC synthetic test file'
         write (unit, '(a)') ' m0b n0b nsurf nper flux/[Tm^2] a/[m] R/[m]'
@@ -39,11 +40,12 @@ contains
                 0.0_dp, 0.0_dp, 0.0_dp
             write (unit, '(a)') ' m n r/[m] z/[m] (phib-phi)*nper/twopi bmn/[T]'
             write (unit, '(2i5,4es24.16)') 0, 0, r0, 0.0_dp, 0.0_dp, b0
-            write (unit, '(2i5,4es24.16)') 1, 0, a*ss(k), a*ss(k), 0.0_dp, &
-                -eps*b0
+            write (unit, '(2i5,4es24.16)') 1, 0, a*sqrt(ss(k)), a*sqrt(ss(k)), &
+                0.0_dp, -eps*b0*sqrt(ss(k))
         end do
         close (unit)
-        call load_boozer_file(name, bf)
+        call load_boozer_file(name, bf, status)
+        call check('load status', status == BOOZER_OK)
 
         do i = 1, 2
             s = merge(0.5_dp, 0.43_dp, i == 1)
@@ -53,13 +55,13 @@ contains
             call close_to('diota_ds', surf%diota_ds, -0.3_dp, 1e-13_dp)
             theta = 0.7_dp
             p = boozer_point(surf, theta, 0.3_dp)
-            call close_to('R', p%r, r0 + a*s*cos(theta), 1e-14_dp)
-            call close_to('|grad s|', p%grad_s, 1/a, 1e-13_dp)
-            call close_to('jacobian', p%jacobian, -a*a*s*p%r, 1e-13_dp)
+            call close_to('R', p%r, r0 + a*sqrt(s)*cos(theta), 1e-14_dp)
+            call close_to('|grad s|', p%grad_s, 2*sqrt(s)/a, 1e-13_dp)
+            call close_to('jacobian', p%jacobian, -a*a*p%r/2, 1e-13_dp)
             call boozer_average(surf, 16, 1, grad_s, b2)
-            delta = a*s/r0
-            call close_to('<|grad s|>', grad_s, 1/a, 1e-13_dp)
-            call close_to('<B^2>', b2, b0**2*(1 - eps*delta + eps**2/2), 1e-13_dp)
+            delta = a*sqrt(s)/r0
+            call close_to('<|grad s|>', grad_s, 2*sqrt(s)/a, 1e-13_dp)
+            call close_to('<B^2>', b2, b0**2*(1 - eps*sqrt(s)*delta + eps**2*s/2), 1e-13_dp)
         end do
 
         call boozer_surface(bf, 0.05_dp, surf, status)
@@ -100,18 +102,19 @@ contains
             call get_command_argument(k + 1, arg)
             read (arg, *) ref(k)
         end do
-        call load_boozer_file(trim(file), bf)
+        call load_boozer_file(trim(file), bf, status)
         call boozer_surface(bf, ref(1), surf, status)
         call check('NEO-2 surface status', status == BOOZER_OK)
         call boozer_average(surf, 128, 1, grad_s, b2)
         print '(a,4es10.2)', 'relative deviation from NEO-2 (iota, diota/ds, <|grad s|>, <B^2>):', &
-            surf%iota/ref(2) - 1, surf%diota_ds/ref(3) - 1, grad_s/(100*ref(4)) - 1, b2/ref(5) - 1
+            surf%iota/ref(2) - 1, surf%diota_ds/ref(3) - 1, &
+            grad_s*boozer_jacobian_ratio(surf, 128)/(100*ref(4)) - 1, b2/ref(5) - 1
         call close_to('NEO-2 iota', surf%iota, ref(2), 1e-6_dp)
         call close_to('NEO-2 diota/ds', surf%diota_ds, ref(3), 1e-4_dp)
-        ! The radial derivatives of the file's coefficients are uncertain by
-        ! about 1e-3 (shifting the four-point stencil by one surface moves
-        ! <|grad s|> by 4e-4 to 9e-4); NEO-2 uses a global spline instead.
-        call close_to('NEO-2 <|grad s|>', grad_s/100, ref(4), 1e-3_dp)
+        ! NEO-2 divides by the flux-function Jacobian; this file's geometric
+        ! Jacobian is smaller by about 1.5e-4, so compare through the ratio.
+        call close_to('NEO-2 <|grad s|>', grad_s*boozer_jacobian_ratio(surf, 128)/100, &
+            ref(4), 1e-6_dp)
         call close_to('NEO-2 <B^2>', b2, ref(5), 1e-4_dp)
     end subroutine neo2_comparison
 
