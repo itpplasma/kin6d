@@ -179,13 +179,17 @@ Agreement with a reference is numerical evidence. It is not a certificate.
 | E3.2 | RMP-perturbed tokamak: per-n linear perturbed equilibrium from E2.2 states | manufactured per-n response; force-free MDE identity (existing) | [MEPHIT](https://github.com/itpplasma/MEPHIT), GPEC, MARS-F on identical G-EQDSK and coils |
 | E3.3 | 3D free boundary on a general enclosing shell (FortFEM 3D parametric BEM), stellarator and curve-chart | Landreman epsilon=0 BEM gate within its 1800 s deadline | VMEC++ free boundary (mgrid) |
 | E3.4 | Non-nested islands and stochastic regions (NN lanes) | vacuum-island Biot–Savart widths (existing) | [SPECTRE](https://gitlab.com/spectre-eq/spectre) and HINT-class at matched model |
+| E3.5 | Device island field hierarchy for LHD and W7-X: vacuum; frozen nested current (curl B = μ₀j, div B = 0 in FEEC with exterior coupling, not a singular Biot–Savart volume integral); linear ideal/resistive-layer response about the same nested state; NN relaxation. Same coils, nested input and island width/phase measurement at every level, with JVP/VJP of width and phase in coil currents | analytic current with closed-form field; exterior agreement with virtual casing; radial/angular refinement of the frozen-current islands, which depend on the resolution of the near-resonant current | VMEX, VMEC++ and KIN6D nested inputs; Geiger's VMEC/EXTENDER and HINT fields for one W7-X case; SPECTRE |
 | S3.1 | 3D ideal stability (fixed, then free boundary) on E3.1 states | analytic cylinder/helical limits | GLISS; CAS3D/TERPSICHORE published cases |
 | S3.2 | Alfvén eigenmodes and EP drive (programme wave 4) | FortSym continua/gap widths | ITPA TAE benchmark; NEO-RT and SIMPLE as drive/orbit checks |
 
 Ordering: E2.1 and E2.2 run in parallel. S2.1 needs E2.1. S2.2 needs S2.1 and
 E2.2, followed by S2.3 and S2.4. E3.1 and E3.2 can run alongside S2.x because
 they reuse existing lanes. E3.3 is no longer blocked by the BEM gate cost.
-S3.1 needs E3.1 and S2.2.
+S3.1 needs E3.1 and S2.2. E3.5 needs the direct-coil discrepancy
+resolved and E3.3; its level four is E3.4. The frozen-current field is the
+first iterate of the NN relaxation, so their difference measures the plasma
+response.
 
 ### Partner codes: absorb, interface or leave
 
@@ -197,6 +201,7 @@ S3.1 needs E3.1 and S2.2.
 | GLISS | one shared FortSym energy package (existing); independent assembled-operator comparator for S2.x/S3.1 |
 | GVEC | comparator and input generator from an exact start; G-frame contracts already absorbed |
 | VMEC++ | nested fixed/free-boundary comparator and mgrid/coil input generator |
+| [VMEX](https://github.com/uwplasma/vmex) (MIT, JAX) | interface as an independent nested fixed/free-boundary comparator with implicit derivatives, exterior virtual casing and, through ESSOS, guiding-centre losses; compare time-to-accuracy on identical cases, never short-time speed alone; absorb no code |
 | SPECTRE | MRxMHD/stepped-pressure comparator for E3.4 |
 | FortNum/FortSparse/FortFEM/FortSym | owning libraries for numerics, factorisations, FEM/BEM and code generation |
 
