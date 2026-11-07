@@ -20,6 +20,7 @@ entry for cross-code comparison with VMEC-class codes; converting a VMEC
 | `ladder_nodes(:)`, `ladder_degree(:)` | coarser levels solved first; each corrects the next seed (`ideal_map_prolong_correction`) | none |
 | `angle_mpol` | poloidal modes of the boundary field-line angle; -1 pins the boundary angle | -1 |
 | `tolerance`, `max_iterations` | free reduced-gradient reduction and Newton limit per level | 1e-8, 200 |
+| `raxis_cc(n)`, `raxis_cs(n)`, `zaxis_cc(n)`, `zaxis_cs(n)` | initial magnetic axis in VMEC's convention (the boundary's m = 0 convention); all zero: the seed's axis is the boundary's m = 0 curve | 0 |
 | `prescribe_current` | match the enclosed toroidal current `current(k)` (A, coefficients of s^k) instead of keeping `iota` | false |
 | `max_current_iterations`, `current_tolerance` | iota updates and the largest current error relative to the largest prescribed current | 30, 1e-5 |
 
@@ -27,6 +28,13 @@ With a prescribed current, `iota` is the starting profile. For a fixed map the
 current enclosed by each surface is affine in iota there, so iota is updated on
 12 surfaces with secant slopes (the first from a step of 0.05), refitted as a
 degree-8 polynomial and re-solved from the previous map.
+
+The seed is the harmonic extension of the boundary (mode m like rho^m), with
+the axis blended into the m = 0 part as (1 - s)(axis - boundary m = 0). When the
+seed folds (the m = 0 curve of a bean-shaped stellarator lies near or outside
+its concave side), the app guesses the axis as VMEC's guess_axis does: in each
+toroidal plane the grid point that maximises the smallest seed Jacobian, fitted
+with the axis Fourier modes, and seeds again.
 
 The boundary must run counterclockwise in (R, Z) for increasing theta. A
 boundary given in an arbitrary poloidal angle (every VMEC input) needs

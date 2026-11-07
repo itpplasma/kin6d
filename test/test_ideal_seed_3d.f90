@@ -17,7 +17,7 @@ program test_ideal_seed_3d
     type(ideal_map_t) :: map, threaded, gauge_one, gauge_four
     type(cylindrical_chart_t) :: chart
     type(gs_state_t) :: mesh
-    real(dp) :: coefficients(4, -1:1, 0:3), modes(3, 3), q(3), exact(2)
+    real(dp) :: coefficients(4, -1:1, 0:3), modes(3, 3), q(3), exact(2), axis(4, -1:1)
     real(dp) :: point(2), grad(2), chi, b3, p, theta, phi, phase, error, e1, e4, normal(3), span, minimum_span
     real(dp) :: iota, integral, inputs(6), direction(6), bar(4), tangent(4), adj(6)
     real(dp) :: plus(4), minus(4), h
@@ -48,6 +48,22 @@ program test_ideal_seed_3d
         error = max(error, maxval(abs(q(:2) - exact)))
     end do
     if (error > 3e-15_dp) error stop 'independent boundary reconstruction'
+    ! A given axis is the image of the disc centre and leaves the wall unchanged.
+    axis = coefficients(:, :, 0)
+    axis(1, 0) = axis(1, 0) + 0.1_dp; axis(4, 1) = 0.03_dp
+    phi = 0.4_dp
+    call ideal_seed_boundary_coefficients([2.0_dp, 0.0_dp], coefficients, modes, axis)
+    q = modes(:, 1) + modes(:, 2)*cos(3*phi) + modes(:, 3)*sin(3*phi)
+    exact = 0
+    do n = -1, 1
+        exact = exact + axis([1, 3], n)*cos(-3*n*phi) + axis([2, 4], n)*sin(-3*n*phi)
+    end do
+    if (maxval(abs(q(:2) - exact)) > 3e-15_dp) error stop 'seed axis at the centre'
+    call ideal_seed_boundary_coefficients(point, coefficients, modes, axis)
+    q = modes(:, 1) + modes(:, 2)*cos(3*phi) + modes(:, 3)*sin(3*phi)
+    call ideal_seed_boundary_coefficients(point, coefficients, modes)
+    if (maxval(abs(q - (modes(:, 1) + modes(:, 2)*cos(3*phi) + modes(:, 3)*sin(3*phi)))) &
+        > 3e-15_dp) error stop 'seed axis moves the wall'
     ! Analytic integral of a sheared iota, including nonzero edge pressure.
     profile%iota = [0.4_dp, 0.2_dp, -0.05_dp]
     profile%pressure = [0.3_dp, -0.2_dp]
