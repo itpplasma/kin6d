@@ -1,10 +1,15 @@
 !> NTV flux kernel of the Legendre reference (#183).
 !!   jvp          tangents in nu and omega_E against centred differences;
+!!   assembly     both drift/drive weights and both streaming models against a
+!!                dense Legendre-Galerkin x Fourier solve assembled by Gauss
+!!                quadrature and the DFT derivative on a small grid;
 !!   kernel FILE  kernels of a surface at the speeds listed in FILE (the
 !!                stage-1 gate driver feeds this mode).
 program test_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
+    use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK, &
+        NTV_WEIGHT_MU, NTV_WEIGHT_FULL
+    use fortnum_quadrature, only: gauss_legendre
     implicit none
     character(256) :: check, path
     logical :: ok
@@ -12,6 +17,7 @@ program test_dk_ntv
     call get_command_argument(1, check)
     select case (trim(check))
     case ('jvp'); ok = jvp()
+    case ('assembly'); ok = assembly()
     case ('kernel')
         call get_command_argument(2, path)
         call kernel_table(trim(path))
@@ -58,19 +64,129 @@ contains
         ok = ok .and. abs(k0%dr_domega/fd - 1) < 1e-6_dp
     end function jvp
 
-    !> FILE: eps k q offset n nm / nm lines m Re(c) Im(c) / n_theta n_leg
-    !> [indicators 0|1] /
+    !> Dense oracle on a small grid for both weights and both streaming
+    !> models: the equation
+    !>   k_s xi (d_theta - i n q) F - (1 - xi^2)/2 k_s d_theta(ln b) d_xi F
+    !>   + i (n/v)(omega + pre (d (1 + w xi^2) + c_J xi^2)) F
+    !>   - (nu/2) d_xi((1 - xi^2) d_xi F)
+    !>   = (1 + w xi^2) S/(b v),
+    !> k_s = k or k b, is projected on P_i by Gauss quadrature (not the
+    !> recurrences of the kernel), d_theta is the DFT spectral derivative,
+    !> and R = (2 pi/n_theta) sum m_s Re(S^* int (1 + w xi^2) F), m_s = 2/b^2
+    !> or 2/b^3.
+    logical function assembly() result(ok)
+        integer, parameter :: nt = 7, nl = 12, nq = 40, nn = nt*nl
+        real(dp), parameter :: v = 1.3_dp, nu = 0.3_dp, omega = 0.2_dp, pre = 0.5_dp
+        real(dp), parameter :: pi = 4*atan(1.0_dp)
+        complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
+        type(ntv_surface_t) :: sf
+        type(ntv_kernel_t) :: kern
+        real(dp) :: xq(nq), wq(nq), p(nq, nl), dp_(nq, nl), w, theta(nt), b(nt), d(nt)
+        real(dp) :: ks(nt), dlnb(nt), meas(nt), wgt(nq), r
+        complex(dp) :: a(nn, nn), rhs(nn), s(nt), dft(nt, nt), moment
+        integer :: it, jt, i, j, status, info, piv(nn), iw, ib, mode, row, col
+        interface
+            subroutine zgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                complex(dp), intent(inout) :: a(lda, *), b(ldb, *)
+                integer, intent(out) :: ipiv(*), info
+            end subroutine zgesv
+        end interface
+        call gauss_legendre(nq, xq, wq)
+        p(:, 1) = 1; p(:, 2) = xq; dp_(:, 1) = 0; dp_(:, 2) = 1
+        do j = 3, nl
+            p(:, j) = ((2*j - 3)*xq*p(:, j - 1) - (j - 2)*p(:, j - 2))/(j - 1)
+            dp_(:, j) = dp_(:, j - 2) + (2*j - 3)*p(:, j - 1)
+        end do
+        theta = [(2*pi*(it - 1)/nt, it=1, nt)]
+        dft = 0
+        do jt = 1, nt
+            do it = 1, nt
+                do mode = -(nt - 1)/2, (nt - 1)/2
+                    dft(it, jt) = dft(it, jt) + iu*mode*exp(iu*mode*(theta(it) - theta(jt)))/nt
+                end do
+            end do
+        end do
+        ok = .true.
+        do ib = 0, 1
+            do iw = 1, 2
+                sf = sample()
+                sf%boozer_stream = ib == 1
+                sf%weight = merge(NTV_WEIGHT_MU, NTV_WEIGHT_FULL, iw == 1)
+                sf%current = merge(0.0_dp, 0.37_dp, iw == 1)
+                w = merge(-1.0_dp, 1.0_dp, iw == 1)
+                wgt = 1 + w*xq**2
+                b = 1 - sf%eps*cos(theta)
+                d = (cos(theta) - sf%offset)/b
+                dlnb = sf%eps*sin(theta)/b
+                ks = sf%k*merge(b, b**0, ib == 1)
+                meas = 2/b**(2 + ib)
+                s = iu*sf%n*sf%c(1)*exp(iu*sf%m(1)*theta)
+                call ntv_kernel(sf, v, nu*v, omega, pre, nt, nl, kern, status, &
+                    indicators=.false.)
+                if (status /= NTV_OK) error stop 'kernel failed'
+                a = 0
+                do it = 1, nt
+                    do i = 1, nl
+                        row = (i - 1)*nt + it
+                        rhs(row) = sum(wq*p(:, i)*wgt)*s(it)/(b(it)*v)
+                        do j = 1, nl
+                            col = (j - 1)*nt + it
+                            a(row, col) = sum(wq*(nu/2*(1 - xq**2)*dp_(:, i)*dp_(:, j) &
+                                + iu*sf%n/v*(omega + pre*(d(it)*wgt + sf%current*xq**2)) &
+                                *p(:, i)*p(:, j) &
+                                - ks(it)*iu*sf%n*sf%q*xq*p(:, i)*p(:, j) &
+                                - ks(it)*dlnb(it)/2*(1 - xq**2)*p(:, i)*dp_(:, j)))
+                            do jt = 1, nt
+                                a(row, (j - 1)*nt + jt) = a(row, (j - 1)*nt + jt) &
+                                    + ks(it)*dft(it, jt)*sum(wq*xq*p(:, i)*p(:, j))
+                            end do
+                        end do
+                    end do
+                end do
+                call zgesv(nn, 1, a, nn, piv, rhs, nn, info)
+                if (info /= 0) error stop 'oracle solve failed'
+                r = 0
+                do it = 1, nt
+                    moment = 0
+                    do j = 1, nl
+                        moment = moment + rhs((j - 1)*nt + it)*sum(wq*wgt*p(:, j))
+                    end do
+                    r = r + meas(it)*real(conjg(s(it))*moment, dp)
+                end do
+                r = 2*pi/nt*r
+                print '(a,i2,a,l2,2es22.14,es9.1)', 'weight', sf%weight, ' boozer', &
+                    sf%boozer_stream, kern%r, r, abs(kern%r/r - 1)
+                ok = ok .and. abs(kern%r/r - 1) < 1e-10_dp
+            end do
+        end do
+    end function assembly
+
+    !> FILE: eps k q offset n nm [weight boozer_stream(0|1) [c_J]] /
+    !> nm lines m Re(c) Im(c) / n_theta n_leg [indicators 0|1] /
     !> nx / nx lines v nu_d omega_E pre. Prints per node R, the theta and
     !> Legendre indicators, dR/dnu_D and dR/domega_E.
     subroutine kernel_table(file)
         character(*), intent(in) :: file
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k
-        integer :: u, nm, j, n_theta, n_leg, nx, status, ios, with_indicators
+        integer :: u, nm, j, n_theta, n_leg, nx, status, ios, with_indicators, weight, stream
         real(dp) :: re, im, v, nu_d, omega, pre
         character(256) :: line
         open (newunit=u, file=file, status='old', action='read')
-        read (u, *) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm
+        read (u, '(a)') line
+        read (line, *, iostat=ios) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm, weight, stream, &
+            sf%current
+        if (ios /= 0) sf%current = 0
+        if (ios /= 0) read (line, *, iostat=ios) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm, &
+            weight, stream
+        if (ios /= 0) then
+            read (line, *) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm
+        else
+            sf%weight = weight
+            sf%boozer_stream = stream /= 0
+        end if
         allocate (sf%m(nm), sf%c(nm))
         do j = 1, nm
             read (u, *) sf%m(j), re, im
