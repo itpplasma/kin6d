@@ -43,13 +43,16 @@
 !! the Fourier truncation of 1/b.
 module kin6d_dk_energy
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use kin6d_dk_energy_leaves, only: dk_energy_rotation, dk_energy_rotation_jvp
     use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_coupling, mono_drives, &
         MONO_OK
     use kin6d_dk_collop, only: collop_t, collop_species_t, collop_grid_t, collop_build, &
-        collop_vth, collop_nuhat, collop_moments, COLLOP_OK
+        collop_vth, collop_nuhat, collop_moments, COLLOP_OK, COLLOP_LORENTZ, &
+        COLLOP_TEST_PARTICLE, COLLOP_FULL
     implicit none
     private
-    public :: energy_axi_t, energy_axi_coefficients
+    public :: energy_axi_t, energy_axi_coefficients, energy_axi_batch
     integer, parameter, public :: ENERGY_OK = 0, ENERGY_BAD_INPUT = 1, ENERGY_SINGULAR = 2
     real(dp), parameter :: pi = 4*atan(1.0_dp)
 
@@ -65,6 +68,7 @@ module kin6d_dk_energy
         ! the scaled system depends on n or T, so dk/dn = dk_ds/n and
         ! dk/dT = -2 dk_ds/T. k does not depend on the gradients.
         real(dp) :: dd31_ds = 0, dd32_ds = 0, dk_ds = 0
+        character(len=11) :: certification = 'unavailable'
     end type
 
     !> Band LU of the bordered system and the operator data.
@@ -99,6 +103,40 @@ module kin6d_dk_energy
 
 contains
 
+    !> Shared energy grid and collision model; one status per surface so a
+    !> rejected input does not discard the remaining profile.
+    subroutine energy_axi_batch(b, kappa, species, lnlambda, grid, n_leg, model, res, status)
+        real(dp), intent(in) :: b(:, :), kappa(:), lnlambda(:)
+        type(collop_species_t), intent(in) :: species(:)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: n_leg, model
+        type(energy_axi_t), intent(out) :: res(:)
+        integer, intent(out) :: status(:)
+        type(collop_t) :: op
+        real(dp) :: lnl(1, 1)
+        integer :: j, st, ns
+
+        res = energy_axi_t()
+        status = ENERGY_BAD_INPUT
+        ns = size(species)
+        if (any([size(b, 2), size(kappa), size(lnlambda), size(res), size(status)] /= ns)) return
+        if (n_leg < 4 .or. .not. same_grid(grid, grid)) return
+        do j = 1, ns
+            if (.not. all(ieee_is_finite([species(j)%m, species(j)%z, species(j)%n, &
+                species(j)%t, lnlambda(j)]))) cycle
+            if (min(species(j)%m, species(j)%n, species(j)%t, lnlambda(j)) <= 0) cycle
+            if (abs(species(j)%z) <= tiny(1.0_dp)) cycle
+            lnl = lnlambda(j)
+            call collop_build(species(j:j), lnl, grid, model, n_leg - 1, op, st)
+            if (st == COLLOP_OK) exit
+        end do
+        if (j > ns) return
+        do j = 1, ns
+            call energy_axi_coefficients(b(:, j), kappa(j), species(j), lnlambda(j), &
+                grid, n_leg, model, res(j), status(j), operator=op)
+        end do
+    end subroutine energy_axi_batch
+
     !> D31, D32 and k of one species with self-collisions of the selected
     !> collision model on the surface b(theta) (n_theta odd, uniform theta),
     !> kappa = iota B0/(G + iota I) [1/m], n_leg Legendre polynomials and the
@@ -118,11 +156,13 @@ contains
         type(system_t) :: sys
         real(dp), allocatable :: g(:, :, :, :), rhs(:, :, :, :), s(:, :, :), r(:, :, :), mu(:, :)
         real(dp), allocatable :: s3(:, :, :), corr(:, :, :, :), dg(:, :, :, :), dmu(:, :)
-        real(dp) :: flow(2), dflow(2), mom(grid%n, grid%n), d(grid%n)
+        real(dp) :: flow(2), dflow(2)
+        real(dp), allocatable :: mom(:, :), d(:)
         integer :: j, k, it
 
         call setup(b, kappa, species, lnlambda, grid, n_leg, model, sys, status, operator)
         if (status /= ENERGY_OK) return
+        allocate (mom(sys%nx, sys%nx), d(sys%nx))
         s = mono_drives(sys%f)
         allocate (rhs(sys%nth, 0:sys%lmax, sys%nx, 2), r(sys%nth, 0:sys%lmax, sys%nx), &
             s3(sys%nth, 0:sys%lmax, sys%nx), corr(sys%nth, 0:sys%lmax, sys%nx, 2))
@@ -162,9 +202,13 @@ contains
                 dflow(j) = dflow(j) + d(k)*sum(sys%weight*b*dg(:, 1, k, j))
             end do
         end do
+        status = ENERGY_SINGULAR
+        if (.not. all(ieee_is_finite(flow)) .or. .not. all(ieee_is_finite(dflow))) return
+        if (abs(flow(1)) <= tiny(1.0_dp)) return
+        status = ENERGY_OK
         res%dd31_ds = dflow(1)
         res%dd32_ds = dflow(2)
-        res%dk_ds = -(dflow(2)*flow(1) - flow(2)*dflow(1))/flow(1)**2
+        call dk_energy_rotation_jvp(flow(1), flow(2), dflow(1), dflow(2), res%dk_ds)
         ! Componentwise backward error |A h - rhs|/(|A| |h| + |rhs|).
         do j = 1, 2
             call apply(sys, g(:, :, :, j), mu(:, j), r)
@@ -174,7 +218,9 @@ contains
         end do
         res%d31 = flow(1)
         res%d32 = flow(2)
-        res%k = 2.5_dp - flow(2)/flow(1)
+        call dk_energy_rotation(flow(1), flow(2), res%k)
+        if (.not. all(ieee_is_finite([res%k, res%dk_ds, res%residual]))) &
+            status = ENERGY_SINGULAR
     end subroutine energy_axi_coefficients
 
     subroutine setup(b, kappa, species, lnlambda, grid, n_leg, model, sys, status, operator)
@@ -185,11 +231,19 @@ contains
         type(system_t), intent(out) :: sys
         integer, intent(out) :: status
         type(collop_t), intent(in), optional :: operator
-        real(dp) :: lnl(1, 1)
+        real(dp) :: lnl(1, 1), rate, reference_rate
         integer :: l, st
 
         status = ENERGY_BAD_INPUT
         if (n_leg < 4 .or. grid%n < 3) return
+        if (.not. all(ieee_is_finite([species%m, species%z, species%n, species%t, &
+            lnlambda, kappa]))) return
+        if (min(species%m, species%n, species%t, lnlambda) <= 0) return
+        if (abs(species%z) <= tiny(1.0_dp) .or. abs(kappa) <= tiny(1.0_dp)) return
+        if (size(b) < 3 .or. mod(size(b), 2) == 0) return
+        if (.not. all(ieee_is_finite(b)) .or. any(b <= 0)) return
+        if (all(model /= [COLLOP_LORENTZ, COLLOP_TEST_PARTICLE, COLLOP_FULL])) return
+        if (.not. same_grid(grid, grid)) return
         sys%nth = size(b)
         sys%lmax = n_leg - 1
         sys%nx = grid%n
@@ -198,11 +252,27 @@ contains
         if (present(operator)) then
             if (operator%ns /= 1 .or. operator%lmax < sys%lmax .or. &
                 operator%model /= model .or. operator%grid%n /= grid%n) return
+            if (.not. same_grid(grid, operator%grid)) return
+            if (.not. allocated(operator%sp) .or. .not. allocated(operator%lnlambda) .or. &
+                .not. allocated(operator%a)) return
+            if (size(operator%sp) /= 1 .or. any(shape(operator%lnlambda) /= [1, 1])) return
+            if (size(operator%a, 1) /= grid%n .or. size(operator%a, 2) /= grid%n) return
+            if (lbound(operator%a, 3) > 0 .or. ubound(operator%a, 3) < sys%lmax) return
+            if (.not. all(ieee_is_finite(operator%a))) return
+            if (.not. all(ieee_is_finite([operator%sp(1)%m, operator%sp(1)%z, &
+                operator%sp(1)%n, operator%sp(1)%t, operator%lnlambda(1, 1)]))) return
+            if (min(operator%sp(1)%m, operator%sp(1)%n, operator%sp(1)%t, &
+                operator%lnlambda(1, 1)) <= 0) return
+            if (abs(operator%sp(1)%z) <= tiny(1.0_dp)) return
+            reference_rate = operator%sp(1)%n*collop_nuhat(operator%sp(1), &
+                operator%sp(1), operator%lnlambda(1, 1))
+            rate = species%n*collop_nuhat(species, species, lnlambda)
+            if (.not. all(ieee_is_finite([rate, reference_rate]))) return
+            if (min(rate, reference_rate) <= 0) return
             sys%op = operator
-            sys%op%a = operator%a(:, :, 0:sys%lmax)*species%n &
-                *collop_nuhat(species, species, lnlambda)/(operator%sp(1)%n &
-                *collop_nuhat(operator%sp(1), operator%sp(1), operator%lnlambda(1, 1)))
+            sys%op%a = operator%a(:, :, 0:sys%lmax)*(rate/reference_rate)
             sys%op%sp = [species]
+            sys%op%lnlambda = lnl
             sys%op%lmax = sys%lmax
         else
             call collop_build([species], lnl, grid, model, sys%lmax, sys%op, st)
@@ -230,6 +300,29 @@ contains
         if (st /= 0) return
         status = ENERGY_OK
     end subroutine setup
+
+    logical function same_grid(a, b) result(ok)
+        type(collop_grid_t), intent(in) :: a, b
+        ok = .false.
+        if (a%n < 3 .or. a%order < 3 .or. a%nelem < 1) return
+        if (a%n /= a%nelem*(a%order - 1) + 1) return
+        if (a%n /= b%n .or. a%order /= b%order .or. a%nelem /= b%nelem) return
+        if (.not. allocated(a%x) .or. .not. allocated(a%edges) .or. &
+            .not. allocated(a%xi) .or. .not. allocated(a%d)) return
+        if (.not. allocated(b%x) .or. .not. allocated(b%edges) .or. &
+            .not. allocated(b%xi) .or. .not. allocated(b%d)) return
+        if (size(a%x) /= a%n .or. size(b%x) /= b%n) return
+        if (size(a%edges) /= a%nelem + 1 .or. size(b%edges) /= b%nelem + 1) return
+        if (lbound(a%edges, 1) /= 0 .or. lbound(b%edges, 1) /= 0) return
+        if (size(a%xi) /= a%order .or. size(b%xi) /= b%order) return
+        if (any(shape(a%d) /= [a%order, a%order]) .or. &
+            any(shape(b%d) /= [b%order, b%order])) return
+        if (.not. all(ieee_is_finite(a%x)) .or. .not. all(ieee_is_finite(a%edges)) .or. &
+            .not. all(ieee_is_finite(a%xi)) .or. .not. all(ieee_is_finite(a%d))) return
+        if (abs(a%edges(0)) > 0 .or. any(a%edges(1:) <= a%edges(:a%nelem - 1))) return
+        ok = all(abs(a%x - b%x) <= 0) .and. all(abs(a%edges - b%edges) <= 0) &
+            .and. all(abs(a%xi - b%xi) <= 0) .and. all(abs(a%d - b%d) <= 0)
+    end function same_grid
 
     !> Bordering of the theta-constant degree-0 component of each node by a
     !> source on that node and the constraint <h_k,0> = 0. That component

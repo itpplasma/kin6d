@@ -261,7 +261,8 @@ target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_dk_mono_leaves.f90 src/continuum/dk_mono.f90
     src/generated/kin6d_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
     src/generated/kin6d_dk_collop_leaves.f90 src/continuum/dk_collop.f90
-    src/continuum/dk_energy.f90
+    src/generated/kin6d_dk_energy_leaves.f90 src/continuum/dk_energy.f90
+    src/continuum/dk_force_balance.f90
     src/generated/kin6d_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
     src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
     src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
@@ -1064,9 +1065,15 @@ add_test(NAME dk_collop_neo2_matrix COMMAND test_dk_collop neo2_matrix
 kin6d_test_labels(dk_collop_neo2_matrix fast CLASSES continuum TARGETS test_dk_collop)
 add_executable(test_dk_energy test/test_dk_energy.f90)
 target_link_libraries(test_dk_energy PRIVATE kin6d)
-foreach(check rigid_shift)
+foreach(check rigid_shift jvp operator_cache batch)
     add_test(NAME dk_energy_${check} COMMAND test_dk_energy ${check})
     kin6d_test_labels(dk_energy_${check} fast CLASSES continuum TARGETS test_dk_energy)
+endforeach()
+add_executable(test_dk_force_balance test/test_dk_force_balance.f90)
+target_link_libraries(test_dk_force_balance PRIVATE kin6d)
+foreach(check physics derivatives refusals)
+    add_test(NAME dk_force_balance_${check} COMMAND test_dk_force_balance ${check})
+    kin6d_test_labels(dk_force_balance_${check} fast CLASSES continuum TARGETS test_dk_force_balance)
 endforeach()
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE kin6d)
@@ -1215,7 +1222,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "b9ea95c5a0475b016b1e149875a9bec9d8562533")
+set(KIN6D_FORTSYM_REVISION "825828fd37884a6ed238b3eabe99bddeb85707f5")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -1376,7 +1383,7 @@ if(KIN6D_FORTSYM_BUILD)
             landreman nested_oracles
             response_strip_jets
             response_fluid
-            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_ntv dk_collop ntv_boozer
+            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_ntv dk_collop dk_energy ntv_boozer
             gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
@@ -1427,6 +1434,14 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_collop_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_collop)
+    add_test(NAME dk_energy_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_dk_energy>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_energy_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/dk-energy-regeneration
+        -DLEAF=kin6d_dk_energy_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    kin6d_test_labels(dk_energy_leaf_regeneration fast CLASSES continuum
+        TARGETS gen_dk_energy)
     add_test(NAME boozer_file_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_boozer_file>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_boozer_file_leaves.f90
