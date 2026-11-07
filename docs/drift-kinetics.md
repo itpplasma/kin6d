@@ -399,8 +399,25 @@ null vectors to 2e-14 of the cancelling terms on one quadratic element and to
 2 and 1. The self-collision operator is symmetric to 1e-16 and its largest
 eigenvalue is below 1e-16 of its norm for l <= 6 (`dk_collop_self_adjoint`);
 tangents in temperature and density agree with centred differences to
-7e-10. Field-particle parts between species and the kinetic solve with
-energy scattering follow.
+7e-10. Between species (`dk_collop_conservation_pair`, electrons and
+deuterons on the same grids, T_i/T_e = 1 and 0.7): the density of each
+species, total momentum and total energy are left null vectors to 1e-14,
+the null spaces of l = 0 and l = 1 have dimensions 3 and 1, and at equal
+temperatures the operator is symmetric to 5e-15 and dissipative. Friction
+and linearised heat exchange between drifting or heated Maxwellians agree
+with the closed rates to 3e-14 and 1e-12 (`dk_collop_exchange_pair`). The
+temperature tangent of the field-particle part includes the boundary term of
+the moving split point y = v/v_tb, where the derivative of the kernel jumps.
+Against NEO-2's matrix elements for electrons and deuterons of the AUG 30835
+benchmark run (`collop.h5`, T_i/T_e = 0.70, quadratic B-splines on knots
+0:0.8:4, which lie exactly in cubic elements on the same knots; test
+`dk_collop_neo2_matrix`, data in `test/data`): Lorentz and energy-scattering
+elements agree to 2e-12, the field part to 2e-6 for self-collisions and to
+8e-4 of the largest element for the electron-on-deuteron block at l = 0,
+whose elements are 1e-4 of the Lorentz ones; that block is where the two
+quadratures differ most, and which of them is closer is not established
+beyond the KIN6D conservation and exchange-rate checks. Intrinsic
+ambipolarity and the kinetic solve with energy scattering follow.
 
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by

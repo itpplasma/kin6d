@@ -268,9 +268,7 @@ contains
                     a(ra + 1:ra + n, ra + 1:ra + n, l) = &
                         a(ra + 1:ra + n, ra + 1:ra + n, l) + block(:, :, l)
                 end do
-                ! Field-particle part of self-collisions; partners of another
-                ! species follow with their pair blocks (#185).
-                if (op%model /= COLLOP_FULL .or. sb /= sa) cycle
+                if (op%model /= COLLOP_FULL) cycle
                 call field_particle_block(op, sa, sb, dt, dn, block)
                 a(ra + 1:ra + n, rb + 1:rb + n, :) = a(ra + 1:ra + n, rb + 1:rb + n, :) + block
             end do
@@ -427,6 +425,18 @@ contains
                     psix(firstj + j - 1, :) = psix(firstj + j - 1, :) + gauss*phj(j)*cx
                 end do
             end do
+            ! The rho-tangent of psi' has a boundary term: d_x k1 jumps where
+            ! the split point y = x/rho moves.
+            if (tangent .and. ystar < top) then
+                call collop_fp_lo(xq(q), 1.0_dp, ls, mu, k1, k1x)
+                call collop_fp_hi(xq(q), 1.0_dp, ls, mu, dk1, dk1x)
+                call collop_basis(op%grid, ystar, firstj, phj, dphj)
+                gauss = -nu*exp(-ystar**2)*ystar**2*ystar/rho*drho
+                do j = 1, p
+                    psix(firstj + j - 1, :) = psix(firstj + j - 1, :) &
+                        + gauss*phj(j)*(k1x - dk1x)
+                end do
+            end if
             call collop_basis(op%grid, xq(q), first, phi, dphi)
             gauss = wq(q)*exp(-xq(q)**2)
             do l = 0, op%lmax

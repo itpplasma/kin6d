@@ -15,7 +15,18 @@
 !!                    the null spaces of l = 0 and l = 1 have dimensions 2
 !!                    and 1, on the coarsest and a fine grid, for electrons
 !!                    and deuterons;
-!!   self_adjoint     self-collisions are symmetric and dissipative.
+!!   self_adjoint     self-collisions are symmetric and dissipative;
+!!   conservation_pair electrons and deuterons together: density of each
+!!                    species, total momentum and total energy are left null
+!!                    vectors and the null spaces of l = 0 and 1 have
+!!                    dimensions 3 and 1, at equal and unequal temperatures,
+!!                    and the operator is symmetric and dissipative at equal
+!!                    temperatures;
+!!   exchange_pair    momentum and temperature exchange between drifting or
+!!                    heated Maxwellians against the closed linearised rates;
+!!   neo2_matrix FILE NEO-2's matrix elements for electrons and deuterons of
+!!                    the AUG 30835 benchmark (B-splines of order 3): the
+!!                    operator projected on the same basis.
 program test_dk_collop
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_collop
@@ -23,6 +34,7 @@ program test_dk_collop
     use kin6d_rosenbluth_reference, only: homma_pair_t, homma_radial_quad, homma_gamma
     implicit none
     character(64) :: check
+    character(512) :: path
     logical :: ok
     real(dp), parameter :: pi = 4*atan(1.0_dp)
     real(dp), parameter :: me = 9.1093837015e-31_dp, mp = 1.67262192369e-27_dp
@@ -35,6 +47,11 @@ program test_dk_collop
     case ('jvp'); ok = jvp()
     case ('conservation'); ok = conservation()
     case ('self_adjoint'); ok = self_adjoint()
+    case ('conservation_pair'); ok = conservation_pair()
+    case ('exchange_pair'); ok = exchange_pair()
+    case ('neo2_matrix')
+        call get_command_argument(2, path)
+        ok = neo2_matrix(trim(path))
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -351,5 +368,232 @@ contains
             ok = ok .and. asym < 1e-13_dp .and. top < 1e-13_dp .and. info == 0
         end do
     end function self_adjoint
+
+    logical function conservation_pair() result(ok)
+        type(collop_grid_t) :: grid
+        type(collop_t) :: op
+        type(collop_species_t) :: sp(2)
+        real(dp) :: lnl(2, 2), dens, mom, en, asym, top, scale
+        real(dp), allocatable :: c(:), ev(:), work(:), m(:, :)
+        integer :: k, j, a, l, n, status, nul0, nul1, info
+        integer, parameter :: nelem(2) = [1, 5], order(2) = [3, 6]
+        real(dp), parameter :: ratios(2) = [1.0_dp, 0.7_dp]
+        lnl = 17
+        ok = .true.
+        do k = 1, 2
+            call collop_make_grid(6.0_dp, nelem(k), order(k), grid, status)
+            n = grid%n
+            do j = 1, 2
+                sp = plasma(ratios(j))
+                call collop_build(sp, lnl, grid, COLLOP_FULL, 3, op, status)
+                if (status /= COLLOP_OK) error stop 'build failed'
+                c = [(0.0_dp, a=1, 2*n)]
+                dens = 0
+                do a = 1, 2
+                    c = 0
+                    c((a - 1)*n + 1:a*n) = 1
+                    dens = max(dens, defect(c, op%a(:, :, 0)))
+                end do
+                c = [sp(1)%t*grid%x**2, sp(2)%t*grid%x**2]
+                en = defect(c, op%a(:, :, 0))
+                c = [sp(1)%m*collop_vth(sp(1))*grid%x, sp(2)%m*collop_vth(sp(2))*grid%x]
+                mom = defect(c, op%a(:, :, 1))
+                nul0 = null_dimension(op%a(:, :, 0))
+                nul1 = null_dimension(op%a(:, :, 1))
+                print '(a,i3,a,f4.2,a,3es10.2,a,2i2)', 'n =', n, ' T_i/T_e =', ratios(j), &
+                    ' density, energy, momentum defects:', dens, en, mom, '  null dims', &
+                    nul0, nul1
+                ok = ok .and. dens < 1e-13_dp .and. en < 1e-13_dp .and. mom < 1e-13_dp &
+                    .and. nul0 == 3 .and. nul1 == 1
+                if (j /= 1) cycle
+                allocate (ev(2*n), work(20*n))
+                do l = 0, 3
+                    m = op%a(:, :, l)
+                    scale = maxval(abs(m))
+                    asym = maxval(abs(m - transpose(m)))/scale
+                    call dsyev('N', 'U', 2*n, (m + transpose(m))/2, 2*n, ev, work, size(work), info)
+                    top = maxval(ev)/scale
+                    print '(a,i2,a,2es10.2)', '  l =', l, ' asymmetry, largest eigenvalue:', &
+                        asym, top
+                    ok = ok .and. asym < 1e-13_dp .and. top < 1e-13_dp .and. info == 0
+                end do
+                deallocate (ev, work)
+            end do
+        end do
+    end function conservation_pair
+
+    !> Linearised rates between Maxwellians drifting with u_a or heated by
+    !> dT_a: R_a = -K (u_a - u_b)/(3 m_ab S^3) and
+    !> dQ_a = d/dT [K (T_b - T_a)/(m_a m_b S^3)], K = n_a n_b e_a^2 e_b^2 lnL/
+    !> ((2 pi)^(3/2) eps0^2), S^2 = T_a/m_a + T_b/m_b.
+    logical function exchange_pair() result(ok)
+        type(collop_species_t) :: sp(2)
+        type(collop_grid_t) :: grid
+        type(collop_t) :: op
+        real(dp) :: lnl(2, 2), u(2), dtemp(2), r, q, k, s2, r_ref, q_ref, mab, worst(2)
+        real(dp), allocatable :: h(:), y(:)
+        integer :: status, n, a, b
+        sp = plasma(0.7_dp)
+        call collop_make_grid(7.0_dp, 6, 5, grid, status)
+        n = grid%n
+        lnl = 17
+        call collop_build(sp, lnl, grid, COLLOP_FULL, 1, op, status)
+        if (status /= COLLOP_OK) error stop 'build failed'
+        u = [2e4_dp, -3e3_dp]
+        dtemp = [0.01_dp*sp(1)%t, -0.02_dp*sp(2)%t]
+        allocate (h(2*n))
+        do a = 1, 2
+            h((a - 1)*n + 1:a*n) = 2*u(a)/collop_vth(sp(a))*grid%x
+        end do
+        y = matmul(op%a(:, :, 1), h)
+        worst = 0
+        do a = 1, 2
+            b = 3 - a
+            r = sum(sp(a)%m*collop_vth(sp(a))*grid%x*y((a - 1)*n + 1:a*n))
+            k = sp(a)%n*sp(b)%n*(sp(a)%z*sp(b)%z)**2*collop_qe**4*17/((2*pi)**1.5_dp &
+                *collop_eps0**2)
+            s2 = sp(a)%t/sp(a)%m + sp(b)%t/sp(b)%m
+            mab = sp(a)%m*sp(b)%m/(sp(a)%m + sp(b)%m)
+            r_ref = -k*(u(a) - u(b))/(3*mab*s2**1.5_dp)
+            worst(1) = max(worst(1), abs(r/r_ref - 1))
+        end do
+        do a = 1, 2
+            h((a - 1)*n + 1:a*n) = (grid%x**2 - 1.5_dp)*dtemp(a)/sp(a)%t
+        end do
+        y = matmul(op%a(:, :, 0), h)
+        do a = 1, 2
+            b = 3 - a
+            q = sum(sp(a)%t*grid%x**2*y((a - 1)*n + 1:a*n))
+            k = sp(a)%n*sp(b)%n*(sp(a)%z*sp(b)%z)**2*collop_qe**4*17/((2*pi)**1.5_dp &
+                *collop_eps0**2)/(sp(a)%m*sp(b)%m)
+            s2 = sp(a)%t/sp(a)%m + sp(b)%t/sp(b)%m
+            q_ref = k*((-1/s2**1.5_dp - 1.5_dp*(sp(b)%t - sp(a)%t)/s2**2.5_dp/sp(a)%m)*dtemp(a) &
+                + (1/s2**1.5_dp - 1.5_dp*(sp(b)%t - sp(a)%t)/s2**2.5_dp/sp(b)%m)*dtemp(b))
+            worst(2) = max(worst(2), abs(q/q_ref - 1))
+        end do
+        print '(a,2es10.2)', 'friction and heat exchange between e and D, T_i/T_e = 0.7: ', worst
+        ok = all(worst < 1e-12_dp)
+    end function exchange_pair
+
+    !> NEO-2 projects on x phi_m with phi_m its B-splines (order 3, knots
+    !> 0:0.8:4, continued polynomially) and normalises the Lorentz, energy
+    !> and integral parts as 3/(4 pi) int, 3/(4 pi) int and
+    !> 3/(4 pi) (2l+1)/2 int per unit n_a nuhat_ab pi^(-3/2) 4 pi/(2l+1).
+    !> The B-splines lie in the cubic elements with the same knots, so the
+    !> projection of the Galerkin matrices is exact.
+    logical function neo2_matrix(file) result(ok)
+        character(*), intent(in) :: file
+        type(collop_grid_t) :: grid
+        type(collop_species_t) :: sp(2)
+        real(dp) :: ref(7, 7, 6), mine(7, 7, 6), err(6)
+        real(dp), allocatable :: g(:, :), ph(:, :)
+        integer :: u, a, b, k, i, status, n, l
+        character(256) :: line
+        sp(1) = collop_species_t(9.10938356e-31_dp, -1.0_dp, 3.3e19_dp, 7.3668553006890250e-16_dp)
+        sp(2) = collop_species_t(3.3436e-27_dp, 1.0_dp, 3.3e19_dp, 5.1902411124365691e-16_dp)
+        call collop_make_grid(4.0_dp, 5, 4, grid, status)
+        n = grid%n
+        allocate (g(7, n), ph(7, n))
+        do k = 1, 7
+            do i = 1, n
+                ph(k, i) = bspline(k, 3, min(grid%x(i), 4 - 1e-12_dp))
+            end do
+            g(k, :) = grid%x*ph(k, :)
+        end do
+        open (newunit=u, file=file, status='old', action='read')
+        do
+            read (u, '(a)') line
+            if (line(1:1) /= '#') exit
+        end do
+        ok = .true.
+        do k = 1, 4
+            read (line, *) a, b
+            do l = 1, 6
+                do i = 1, 7
+                    read (u, *) ref(i, :, l)
+                end do
+            end do
+            if (k < 4) read (u, '(a)') line
+            call neo2_projection(sp, grid, a, b, g, ph, mine)
+            err = [(maxval(abs(mine(:, :, l) - ref(:, :, l)))/maxval(abs(ref(:, :, l))), l=1, 6)]
+            print '(a,2i2,a,2es9.1,a,4es9.1)', 'pair', a, b, ' Lorentz, energy:', err(1:2), &
+                '  field part l = 0..3:', err(3:6)
+            ok = ok .and. all(err(1:2) < 1e-11_dp) .and. all(err(3:6) < 1e-3_dp)
+        end do
+        close (u)
+    end function neo2_matrix
+
+    !> Rows of species a in NEO-2's normalisation: Lorentz and energy parts
+    !> on partner b alone, field part of b.
+    subroutine neo2_projection(sp, grid, a, b, g, ph, mine)
+        type(collop_species_t), intent(in) :: sp(2)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: a, b
+        real(dp), intent(in) :: g(:, :), ph(:, :)
+        real(dp), intent(out) :: mine(:, :, :)
+        type(collop_t) :: full, tp, lor
+        real(dp) :: nuh, pref
+        real(dp), allocatable :: blk(:, :)
+        integer :: l, n
+        n = grid%n
+        nuh = sp(a)%n*collop_nuhat(sp(a), sp(b), 17.0_dp)
+        call pair_build(sp, grid, a, b, COLLOP_LORENTZ, lor)
+        call pair_build(sp, grid, a, b, COLLOP_TEST_PARTICLE, tp)
+        call pair_build(sp, grid, a, b, COLLOP_FULL, full)
+        blk = lor%a(1:n, 1:n, 1)
+        mine(:, :, 1) = -3/(4*pi)*matmul(g, matmul(blk, transpose(ph)))/(4*pi/3*nuh/pi**1.5_dp)
+        blk = tp%a(1:n, 1:n, 0)
+        mine(:, :, 2) = 3/(4*pi)*matmul(g, matmul(blk, transpose(ph)))/(4*pi*nuh/pi**1.5_dp)
+        do l = 0, 3
+            if (a == b) then
+                blk = full%a(1:n, 1:n, l) - tp%a(1:n, 1:n, l)
+            else
+                blk = full%a(1:n, n + 1:2*n, l)
+            end if
+            pref = 4*pi/(2*l + 1)*nuh/pi**1.5_dp
+            mine(:, :, 3 + l) = 3/(4*pi)*(2*l + 1)/2.0_dp*matmul(g, matmul(blk, transpose(ph)))/pref
+        end do
+    end subroutine neo2_projection
+
+    !> Operator of species a with the single partner b: for a /= b the
+    !> self-collisions of a are subtracted.
+    subroutine pair_build(sp, grid, a, b, model, op)
+        type(collop_species_t), intent(in) :: sp(2)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: a, b, model
+        type(collop_t), intent(out) :: op
+        type(collop_t) :: self
+        real(dp) :: lnl(2, 2)
+        integer :: status, n
+        n = grid%n
+        lnl = 17
+        call collop_build([sp(a)], lnl(1:1, 1:1), grid, model, 3, self, status)
+        if (status /= COLLOP_OK) error stop 'build failed'
+        if (a == b) then
+            op = self
+            return
+        end if
+        call collop_build([sp(a), sp(b)], lnl, grid, model, 3, op, status)
+        if (status /= COLLOP_OK) error stop 'build failed'
+        op%a(1:n, 1:n, :) = op%a(1:n, 1:n, :) - self%a
+    end subroutine pair_build
+
+    !> B-spline i of order k on the clamped knots 0, 0.8, ..., 4 (Cox-de Boor).
+    recursive function bspline(i, k, t) result(v)
+        integer, intent(in) :: i, k
+        real(dp), intent(in) :: t
+        real(dp) :: v
+        real(dp), parameter :: kn(10) = [0.0_dp, 0.0_dp, 0.0_dp, 0.8_dp, 1.6_dp, 2.4_dp, &
+            3.2_dp, 4.0_dp, 4.0_dp, 4.0_dp]
+        if (k == 1) then
+            v = 0
+            if (kn(i) <= t .and. t < kn(i + 1)) v = 1
+            return
+        end if
+        v = 0
+        if (kn(i + k - 1) > kn(i)) v = v + (t - kn(i))/(kn(i + k - 1) - kn(i))*bspline(i, k - 1, t)
+        if (kn(i + k) > kn(i + 1)) v = v + (kn(i + k) - t)/(kn(i + k) - kn(i + 1)) &
+            *bspline(i + 1, k - 1, t)
+    end function bspline
 
 end program test_dk_collop
