@@ -88,9 +88,10 @@ is normalized using the declared perturbation field; that scale is zero at
 the exactly harmonic state, so its normalized force remains unavailable.
 
 The pressure row is R_p(B,p)=A_p(B)*p-F_p, where F_p includes the complete
-scalar and frozen weak-flux drive on free rows. If that assembled drive and
-all pressure seed/boundary coefficients are exactly zero, p=0 is an invariant
-for every admitted nonnull B. Its derivative with respect to the other fields
+scalar and frozen weak-flux drive on free rows. These frozen loads depend
+only on the declared data and fixed geometry, not on the current B. If that
+assembled drive and all pressure seed/boundary coefficients are exactly zero,
+p=0 is an invariant for every admitted nonnull B. Its derivative with respect to the other fields
 is zero there for the pressure residual at fixed p=0. The reduced Newton
 system can therefore hold every pressure coefficient at zero, avoiding
 roundoff leakage from mixed LU. This
