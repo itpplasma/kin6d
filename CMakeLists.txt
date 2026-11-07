@@ -1037,6 +1037,8 @@ add_executable(test_dk_ntv test/test_dk_ntv.f90)
 target_link_libraries(test_dk_ntv PRIVATE kin6d)
 add_test(NAME dk_ntv_jvp COMMAND test_dk_ntv jvp)
 kin6d_test_labels(dk_ntv_jvp fast CLASSES continuum TARGETS test_dk_ntv)
+add_test(NAME dk_ntv_assembly COMMAND test_dk_ntv assembly)
+kin6d_test_labels(dk_ntv_assembly fast CLASSES continuum TARGETS test_dk_ntv)
 add_executable(test_dk_collop test/test_dk_collop.f90)
 target_link_libraries(test_dk_collop PRIVATE kin6d)
 foreach(check maxwellian_null rates jvp conservation self_adjoint conservation_pair

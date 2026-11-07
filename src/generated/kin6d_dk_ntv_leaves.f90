@@ -9,11 +9,11 @@ contains
 ! Regenerate with: gen_dk_ntv from pinned FortSym build
 
 pure elemental subroutine dk_ntv_point(cos_t, sin_t, eps, k, offset, b, mirror, drift, source, &
-        measure)
+        measure, stream_b, mirror_b, measure_b)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
     real(dp), intent(in) :: cos_t, sin_t, eps, k, offset
-    real(dp), intent(out) :: b, mirror, drift, source, measure
+    real(dp), intent(out) :: b, mirror, drift, source, measure, stream_b, mirror_b, measure_b
     real(dp) :: t1
 
     t1 = -cos_t*eps + 1
@@ -22,6 +22,9 @@ pure elemental subroutine dk_ntv_point(cos_t, sin_t, eps, k, offset, b, mirror, 
     drift = (cos_t - offset)/t1
     source = 2/(t1*3)
     measure = 2/(t1*t1)
+    stream_b = k*t1
+    mirror_b = eps*k*sin_t/real(2, kind=kind(0.0_dp))
+    measure_b = 2/(t1*t1*t1)
 
 end subroutine dk_ntv_point
 
@@ -31,11 +34,12 @@ end subroutine dk_ntv_point
 ! Regenerate with: gen_dk_ntv from pinned FortSym build
 
 pure elemental subroutine dk_ntv_point_jvp(cos_t, sin_t, eps, k, offset, dcos_t, dsin_t, deps, dk, &
-        doffset, db, dmirror, ddrift, dsource, dmeasure)
+        doffset, db, dmirror, ddrift, dsource, dmeasure, dstream_b, dmirror_b, dmeasure_b)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
     real(dp), intent(in) :: cos_t, sin_t, eps, k, offset, dcos_t, dsin_t, deps, dk, doffset
-    real(dp), intent(out) :: db, dmirror, ddrift, dsource, dmeasure
+    real(dp), intent(out) :: db, dmirror, ddrift, dsource, dmeasure, dstream_b, dmirror_b, &
+        dmeasure_b
     real(dp) :: t1, t2
 
     t1 = -cos_t*deps - dcos_t*eps
@@ -46,6 +50,9 @@ pure elemental subroutine dk_ntv_point_jvp(cos_t, sin_t, eps, k, offset, dcos_t,
     ddrift = -(cos_t - offset)*t1/t2**2 + (dcos_t - doffset)/t2
     dsource = -t1*2.0_dp/3.0_dp/t2**2
     dmeasure = -t1*4/t2**3
+    dstream_b = dk*t2 + k*t1
+    dmirror_b = deps*k*sin_t*1.0_dp/2.0_dp + dk*eps*sin_t*1.0_dp/2.0_dp + dsin_t*eps*k*1.0_dp/2.0_dp
+    dmeasure_b = -t1*6/t2**4
 
 end subroutine dk_ntv_point_jvp
 
@@ -55,22 +62,22 @@ end subroutine dk_ntv_point_jvp
 ! Regenerate with: gen_dk_ntv from pinned FortSym build
 
 pure elemental subroutine dk_ntv_point_vjp(cos_t, sin_t, eps, k, offset, bb, bmirror, bdrift, &
-        bsource, bmeasure, gcos_t, gsin_t, geps, gk, goffset)
+        bsource, bmeasure, bstream_b, bmirror_b, bmeasure_b, gcos_t, gsin_t, geps, gk, goffset)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: cos_t, sin_t, eps, k, offset, bb, bmirror, bdrift, bsource, bmeasure
+    real(dp), intent(in) :: cos_t, sin_t, eps, k, offset, bb, bmirror, bdrift, bsource, bmeasure, &
+        bstream_b, bmirror_b, bmeasure_b
     real(dp), intent(out) :: gcos_t, gsin_t, geps, gk, goffset
-    real(dp) :: t1, t2, t3
+    real(dp) :: t1, t2
 
     t1 = -cos_t*eps + 1
-    t2 = bb - bdrift*(cos_t - offset)/t1**2 - bmeasure*4/t1**3 - bmirror*eps*k*sin_t*1.0_dp/2.0_dp/ &
-        t1**2 - bsource*2.0_dp/3.0_dp/t1**2
-    t3 = cos_t*eps - 1
+    t2 = bb - bdrift*(cos_t - offset)/t1**2 - bmeasure*4/t1**3 - bmeasure_b*6/t1**4 - bmirror*eps*k* &
+        sin_t*1.0_dp/2.0_dp/t1**2 - bsource*2.0_dp/3.0_dp/t1**2 + bstream_b*k
     gcos_t = bdrift/t1 - eps*t2
-    gsin_t = -bmirror*eps*k*1.0_dp/2.0_dp/t3
-    geps = bmirror*k*sin_t*1.0_dp/2.0_dp/t1 - cos_t*t2
-    gk = -bmirror*eps*sin_t*1.0_dp/2.0_dp/t3
-    goffset = bdrift/t3
+    gsin_t = bmirror*eps*k*1.0_dp/2.0_dp/t1 + bmirror_b*eps*k*1.0_dp/2.0_dp
+    geps = bmirror*k*sin_t*1.0_dp/2.0_dp/t1 + bmirror_b*k*sin_t*1.0_dp/2.0_dp - cos_t*t2
+    gk = bmirror*eps*sin_t*1.0_dp/2.0_dp/t1 + bmirror_b*eps*sin_t*1.0_dp/2.0_dp + bstream_b*t1
+    goffset = bdrift/(cos_t*eps - 1)
 
 end subroutine dk_ntv_point_vjp
 

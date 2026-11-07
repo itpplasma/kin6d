@@ -13,7 +13,10 @@ program gen_dk_ntv
     ! (1 - xi^2) is (cos(theta) - offset)/b. The drive lambda S has the
     ! Legendre components 2/(3b) (P0) and -2/(3b) (P2) of S, and the flux
     ! measure int dlambda/|xi| lambda = int dxi (2/b) lambda gives 2/b^2 per
-    ! unit (1 - xi^2).
+    ! unit (1 - xi^2). With the streaming b.grad theta = k b of Boozer angles
+    ! (Jacobian ~ 1/B^2) the streaming and mirror factors are k b and
+    ! k eps sin(theta)/2, and the surface measure dtheta/(b.grad theta B)
+    ! adds 1/b to the flux measure.
     cos_t = sym('cos_t'); sin_t = sym('sin_t'); eps = sym('eps'); k = sym('k')
     offset = sym('offset')
     b = 1 - eps*cos_t
@@ -25,8 +28,10 @@ program gen_dk_ntv
     call writer%line('implicit none')
     call writer%line('contains')
     call writer%emit('dk_ntv_point', ['cos_t ', 'sin_t ', 'eps   ', 'k     ', 'offset'], &
-        ['b      ', 'mirror ', 'drift  ', 'source ', 'measure'], &
-        [b, k*eps*sin_t/(2*b), (cos_t - offset)/b, 2/(3*b), 2/(b*b)], ad=.true.)
+        ['b        ', 'mirror   ', 'drift    ', 'source   ', 'measure  ', 'stream_b ', &
+        'mirror_b ', 'measure_b'], &
+        [b, k*eps*sin_t/(2*b), (cos_t - offset)/b, 2/(3*b), 2/(b*b), k*b, k*eps*sin_t/2, &
+        2/(b*b*b)], ad=.true.)
     call writer%line('end module kin6d_dk_ntv_leaves')
     call writer%close()
 end program gen_dk_ntv

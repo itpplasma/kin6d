@@ -19,6 +19,19 @@
 !! so the rows l = 2j, 2j + 1 form pair blocks of size 2 n_theta, block
 !! tridiagonal in j, factorised once by block elimination from the highest j.
 !! Tangents with respect to nu and omega_E reuse the factorisation.
+!!
+!! Three model switches, each with a measurable defect, select the equation of
+!! NEO-2-QL and NEO-RT instead of the stage-1 bounce reference:
+!!   weight  NTV_WEIGHT_MU (default): drift and drive carry v_perp^2/(2 v^2 b)
+!!           = lambda, the grad-B part of the reference; NTV_WEIGHT_FULL: they
+!!           carry (v_par^2 + v_perp^2/2)/(v^2 b) = (1 + xi^2)/b, grad-B plus
+!!           curvature at low beta, equal to lambda at xi = 0;
+!!   current c_J  adds the parallel-current part of the curvature drift,
+!!           pre c_J xi^2, c_J = 2 B0 (I' + q G')/((G + iota I) q eps') with the
+!!           covariant Boozer components G, I and ' = d/ds (zero by default);
+!!   boozer_stream  b.grad theta = k b (Boozer angles, Jacobian ~ 1/B^2)
+!!           instead of the constant k, with the surface measure
+!!           dtheta/(b.grad theta B) ~ 1/b^2 in the flux.
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_ntv_leaves, only: dk_ntv_point
@@ -26,11 +39,15 @@ module kin6d_dk_ntv
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2
+    integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1
 
     !> Surface of the frozen-field benchmark and the perturbation spectrum.
     type :: ntv_surface_t
         real(dp) :: eps = 0, k = 0, q = 0, offset = 0
         integer :: n = 0
+        integer :: weight = NTV_WEIGHT_MU
+        real(dp) :: current = 0
+        logical :: boozer_stream = .false.
         integer, allocatable :: m(:)
         complex(dp), allocatable :: c(:)
     end type
@@ -45,7 +62,10 @@ module kin6d_dk_ntv
 
     type :: ntv_system_t
         integer :: n = 0, nblock = 0
-        real(dp) :: nu = 0, nq = 0
+        ! Legendre factors of the drift and drive weight in xi^2: (1 - xi^2)
+        ! has sign -1, (1 + xi^2) sign +1.
+        real(dp) :: wsign = -1
+        real(dp) :: nu = 0, nq = 0, current = 0
         complex(dp) :: shift = 0, omega = 0, precess = 0
         real(dp), allocatable :: d(:, :), stream(:), mirror(:), drift(:), source(:), &
             measure(:)
@@ -95,11 +115,7 @@ contains
 
         call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
         if (status /= NTV_OK) return
-        allocate (rhs(2*a%n, 0:a%nblock - 1))
-        rhs = 0
-        rhs(1:a%n, 0) = a%source*a%s/v
-        rhs(a%n + 1:, 0) = 0
-        if (a%nblock > 1) rhs(1:a%n, 1) = -a%source*a%s/v
+        call drive(a, v, rhs)
         call solve(a, rhs, x, status)
         if (status /= NTV_OK) return
         kern%r = flux(a, x)
@@ -135,10 +151,7 @@ contains
         complex(dp), allocatable :: x(:, :), rhs(:, :)
         call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
         if (status /= NTV_OK) return
-        allocate (rhs(2*a%n, 0:a%nblock - 1))
-        rhs = 0
-        rhs(1:a%n, 0) = a%source*a%s/v
-        rhs(1:a%n, 1) = -a%source*a%s/v
+        call drive(a, v, rhs)
         call solve(a, rhs, x, status)
         if (status /= NTV_OK) return
         r = flux(a, x)
@@ -150,14 +163,15 @@ contains
         integer, intent(in) :: n_theta, n_leg
         type(ntv_system_t), intent(out) :: a
         integer, intent(out) :: status
-        real(dp), allocatable :: theta(:), b(:)
+        real(dp), allocatable :: theta(:), b(:), stream_b(:), mirror_b(:), measure_b(:)
         complex(dp), allocatable :: m(:, :)
         integer :: n, j, i, info
 
         status = NTV_BAD_INPUT
         if (mod(n_theta, 2) == 0 .or. n_theta < 3 .or. mod(n_leg, 2) /= 0 .or. &
             n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%n == 0 .or. &
-            .not. allocated(sf%m)) return
+            .not. allocated(sf%m) .or. &
+            (sf%weight /= NTV_WEIGHT_MU .and. sf%weight /= NTV_WEIGHT_FULL)) return
         n = n_theta
         a%n = n
         a%nblock = n_leg/2
@@ -172,8 +186,16 @@ contains
         call fourier_derivative(n, a%d)
         ! Streaming along the field line in the frame exp(-i n zeta): d_theta - i n q.
         a%stream = sf%k
+        allocate (stream_b(n), mirror_b(n), measure_b(n))
         call dk_ntv_point(cos(theta), sin(theta), sf%eps, sf%k, sf%offset, b, &
-            a%mirror, a%drift, a%source, a%measure)
+            a%mirror, a%drift, a%source, a%measure, stream_b, mirror_b, measure_b)
+        if (sf%boozer_stream) then
+            a%stream = stream_b
+            a%mirror = mirror_b
+            a%measure = measure_b
+        end if
+        if (sf%weight == NTV_WEIGHT_FULL) a%wsign = 1
+        a%current = sf%current
         a%s = 0
         do j = 1, size(sf%m)
             a%s = a%s + iu*sf%n*sf%c(j)*exp(iu*sf%m(j)*theta)
@@ -245,10 +267,11 @@ contains
         complex(dp) :: m(a%n, a%n)
         integer :: i
         real(dp) :: f
-        complex(dp) :: p(a%n)
+        complex(dp) :: p(a%n), pj
         m = 0
         if (abs(l - lc) > 2) return
         p = a%shift*a%precess*a%drift
+        pj = a%shift*a%precess*a%current
         select case (lc - l)
         case (-1)
             f = l/real(2*l - 1, dp)
@@ -266,21 +289,22 @@ contains
             end do
         case (0)
             do i = 1, a%n
-                m(i, i) = a%nu*l*(l + 1)/2.0_dp + a%shift*a%omega + p(i)*(1 - c0(l))
+                m(i, i) = a%nu*l*(l + 1)/2.0_dp + a%shift*a%omega &
+                    + p(i)*(1 + a%wsign*c0(l)) + pj*c0(l)
             end do
         case (-2)
             do i = 1, a%n
-                m(i, i) = -p(i)*cp(lc)
+                m(i, i) = (a%wsign*p(i) + pj)*cp(lc)
             end do
         case (2)
             do i = 1, a%n
-                m(i, i) = -p(i)*cm(lc)
+                m(i, i) = (a%wsign*p(i) + pj)*cm(lc)
             end do
         end select
     end function entry
 
-    ! xi^2 P_l = cp P_{l+2} + c0 P_l + cm P_{l-2}, so (1 - xi^2) P_l has
-    ! -cp, 1 - c0 and -cm.
+    ! xi^2 P_l = cp P_{l+2} + c0 P_l + cm P_{l-2}, so (1 + wsign xi^2) P_l
+    ! has wsign cp, 1 + wsign c0 and wsign cm.
     pure real(dp) function cp(l)
         integer, intent(in) :: l
         cp = (l + 1)*(l + 2)/real((2*l + 1)*(2*l + 3), dp)
@@ -310,15 +334,28 @@ contains
         end do
     end function lorentz
 
-    !> R = (2 pi/n) sum (2/b^2) Re(S^* ((4/3) a_0 - (4/15) a_2)).
+    !> R = (2 pi/n) sum (2/b^2) Re(S^* int (1 + wsign xi^2) F dxi), with
+    !> int (1 + wsign xi^2) F dxi = (2 + 2 wsign/3) a_0 + (4 wsign/15) a_2.
     real(dp) function flux(a, x)
         type(ntv_system_t), intent(in) :: a
         complex(dp), intent(in) :: x(:, 0:)
         complex(dp) :: moment(a%n)
-        moment = 4*x(1:a%n, 0)/3
-        if (ubound(x, 2) >= 1) moment = moment - 4*x(1:a%n, 1)/15
+        moment = (2 + 2*a%wsign/3)*x(1:a%n, 0)
+        if (ubound(x, 2) >= 1) moment = moment + 4*a%wsign*x(1:a%n, 1)/15
         flux = 2*pi/a%n*sum(a%measure*real(conjg(a%s)*moment, dp))
     end function flux
+
+    !> Drive (1 + wsign xi^2) S/(b v): source = 2/(3 b) per unit of the
+    !> Legendre components 1 + wsign/3 (P_0) and 2 wsign/3 (P_2).
+    subroutine drive(a, v, rhs)
+        type(ntv_system_t), intent(in) :: a
+        real(dp), intent(in) :: v
+        complex(dp), allocatable, intent(out) :: rhs(:, :)
+        allocate (rhs(2*a%n, 0:a%nblock - 1))
+        rhs = 0
+        rhs(1:a%n, 0) = (1.5_dp + a%wsign/2)*a%source*a%s/v
+        rhs(1:a%n, 1) = a%wsign*a%source*a%s/v
+    end subroutine drive
 
     subroutine fourier_derivative(n, d)
         integer, intent(in) :: n
