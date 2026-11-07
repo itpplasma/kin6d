@@ -1,4 +1,5 @@
 # Generated build, run, and plotting output
+__pycache__/
 /build/
 /build-*/
 /output/
