@@ -1,4 +1,5 @@
-!> Boozer `.bc` geometry: closed forms on a synthetic file, refusal outside
+!> Boozer `.bc` geometry: closed forms on synthetic six- and ten-column
+!! (up-down asymmetric) files, refusal outside
 !! the tabulated surfaces, JVP/VJP pairing of the metric leaf, and agreement
 !! with NEO-2 on a public tokamak file when its path and NEO-2's values are
 !! given (args: file s iota diota_ds av_nabla_stor[1/cm] avb2[T^2]).
@@ -12,6 +13,7 @@ program test_boozer_file
     integer :: failures = 0
 
     call synthetic_file()
+    call asymmetric_file()
     call metric_pairing()
     if (command_argument_count() >= 6) call neo2_comparison()
     if (failures > 0) error stop 'FAIL'
@@ -71,6 +73,55 @@ contains
         open (newunit=unit, file=name)
         close (unit, status='delete')
     end subroutine synthetic_file
+
+    !> The circular surfaces of `synthetic_file` shifted to Z = z0 by an m = 0
+    !> zmnc term, with sine terms in |B| and in the toroidal-angle shift.
+    subroutine asymmetric_file()
+        character(*), parameter :: name = 'synthetic_asym.bc'
+        real(dp), parameter :: z0 = 0.07_dp, beta = 0.03_dp, nu = 0.002_dp
+        type(boozer_file_t) :: bf
+        type(boozer_surface_t) :: surf
+        type(boozer_point_t) :: p
+        real(dp) :: s, theta, r
+        integer :: unit, k, status
+        real(dp), parameter :: ss(9) = [(0.1_dp*k, k=1, 9)]
+        real(dp), parameter :: twopi = 8*atan(1.0_dp)
+
+        open (newunit=unit, file=name, status='replace', action='write')
+        write (unit, '(a)') 'CC synthetic up-down asymmetric test file'
+        write (unit, '(a)') ' m0b n0b nsurf nper flux/[Tm^2] a/[m] R/[m]'
+        write (unit, '(a)') ' 1 0 9 1 -1.0 0.5 1.7'
+        do k = 1, 9
+            write (unit, '(a)') ' s iota curr_pol/nper curr_tor pprime sqrt g(0,0)'
+            write (unit, '(a)') ' [A] [A] dp/ds,[Pa] (dV/ds)/nper'
+            write (unit, '(6es24.16)') ss(k), 0.9_dp - 0.3_dp*ss(k), 0.0_dp, &
+                0.0_dp, 0.0_dp, 0.0_dp
+            write (unit, '(a)') ' m n rmnc rmns zmnc zmns vmnc vmns bmnc bmns'
+            write (unit, '(2i5,8es24.16)') 0, 0, r0, 0.0_dp, z0, 0.0_dp, nu, &
+                0.0_dp, b0, 0.0_dp
+            write (unit, '(2i5,8es24.16)') 1, 0, a*sqrt(ss(k)), 0.0_dp, 0.0_dp, &
+                a*sqrt(ss(k)), 0.0_dp, 0.0_dp, -eps*b0*sqrt(ss(k)), &
+                beta*b0*sqrt(ss(k))
+        end do
+        close (unit)
+        call load_boozer_file(name, bf, status)
+        call check('asymmetric load status', status == BOOZER_OK)
+        s = 0.43_dp
+        call boozer_surface(bf, s, surf, status)
+        call check('asymmetric surface status', status == BOOZER_OK)
+        theta = 0.7_dp
+        r = a*sqrt(s)
+        p = boozer_point(surf, theta, 0.3_dp)
+        call close_to('asymmetric R', p%r, r0 + r*cos(theta), 1e-14_dp)
+        call close_to('asymmetric Z', p%z, z0 + r*sin(theta), 1e-14_dp)
+        call close_to('asymmetric |B|', p%bmod, &
+            b0*(1 - eps*sqrt(s)*cos(theta) + beta*sqrt(s)*sin(theta)), 1e-14_dp)
+        call close_to('asymmetric phi', p%phi, 0.3_dp - twopi*nu, 1e-14_dp)
+        call close_to('asymmetric |grad s|', p%grad_s, 2*sqrt(s)/a, 1e-13_dp)
+        call close_to('asymmetric jacobian', p%jacobian, -a*a*p%r/2, 1e-13_dp)
+        open (newunit=unit, file=name)
+        close (unit, status='delete')
+    end subroutine asymmetric_file
 
     subroutine metric_pairing()
         real(dp) :: x(10), v(10), g(10), w(2), jv(2), lhs, rhs

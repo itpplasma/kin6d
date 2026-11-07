@@ -1,11 +1,13 @@
 !> Kinetic geometry on one surface of a Boozer-coordinate `.bc` file, the
 !! input format of NEO-2, for comparisons on the same field.
 !!
-!! The file is read by libneo's `bc_file` (stellarator-symmetric files). On
-!! the Boozer angles (theta, phi_B), with n the file's mode number without
-!! the field period N_p,
-!!   R = sum rmnc cos(a), Z = sum zmns sin(a), B = sum bmnc cos(a),
-!!   phi = phi_B - (2 pi/N_p) sum vmns sin(a),  a = m theta - n N_p phi_B,
+!! The file is read by libneo's `bc_file`, in the six-column
+!! (stellarator-symmetric) or ten-column layout. On the Boozer angles
+!! (theta, phi_B), with n the file's mode number without the field period N_p,
+!!   R = sum rmnc cos(a) + rmns sin(a), Z = sum zmns sin(a) + zmnc cos(a),
+!!   B = sum bmnc cos(a) + bmns sin(a),
+!!   phi = phi_B - (2 pi/N_p) sum (vmns sin(a) + vmnc cos(a)),
+!!   a = m theta - n N_p phi_B,
 !! as in NEO-2 (`neo_sub.f90`). Coefficients divided by s^(m/2) and iota
 !! are interpolated in s with not-a-knot cubic splines, as NEO-2 splines
 !! c_mn/s^(m/2); a surface outside the tabulated range is refused. Lengths in m, |B| in T, |grad s| in 1/m.
@@ -27,8 +29,8 @@ module kin6d_boozer_file
 
     type :: boozer_file_t
         type(bc_data_t) :: d
-        ! Columns: iota, then rmnc, zmns, vmns, bmnc each divided by
-        ! s^(m/2), then the poloidal and toroidal currents.
+        ! Columns: iota, then rmnc, zmns, vmns, bmnc, rmns, zmnc, vmnc, bmns
+        ! each divided by s^(m/2), then the poloidal and toroidal currents.
         type(cubic_spline_t) :: spline
     end type
 
@@ -38,8 +40,13 @@ module kin6d_boozer_file
         real(dp) :: g_cov = 0, i_cov = 0, psi_prime = 0
         integer :: nper = 1
         integer, allocatable :: m(:), n(:)
+        ! Symmetric parts (rmnc, zmns, vmns, bmnc) and their s derivatives,
+        ! then the asymmetric partners (rmns, zmnc, vmnc, bmns), zero for a
+        ! stellarator-symmetric file.
         real(dp), allocatable :: rmn(:), zmn(:), vmn(:), bmn(:)
         real(dp), allocatable :: rmn_s(:), zmn_s(:), vmn_s(:)
+        real(dp), allocatable :: rma(:), zma(:), vma(:), bma(:)
+        real(dp), allocatable :: rma_s(:), zma_s(:), vma_s(:)
     end type
 
     type :: boozer_point_t
@@ -60,7 +67,7 @@ contains
 
         call read_bc_file(filename, bf%d)
         nm = bf%d%nmode
-        allocate (y(bf%d%nsurf, 3 + 4*nm))
+        allocate (y(bf%d%nsurf, 3 + 8*nm))
         do k = 1, bf%d%nsurf
             y(k, 1) = bf%d%iota(k)
             do i = 1, nm
@@ -69,9 +76,13 @@ contains
                 y(k, 1 + nm + i) = bf%d%zmns(k, i)/f
                 y(k, 1 + 2*nm + i) = bf%d%vmns(k, i)/f
                 y(k, 1 + 3*nm + i) = bf%d%bmnc(k, i)/f
+                y(k, 1 + 4*nm + i) = bf%d%rmns(k, i)/f
+                y(k, 1 + 5*nm + i) = bf%d%zmnc(k, i)/f
+                y(k, 1 + 6*nm + i) = bf%d%vmnc(k, i)/f
+                y(k, 1 + 7*nm + i) = bf%d%bmns(k, i)/f
             end do
-            y(k, 2 + 4*nm) = bf%d%Jpol_over_nper(k)*bf%d%nper
-            y(k, 3 + 4*nm) = bf%d%Itor(k)
+            y(k, 2 + 8*nm) = bf%d%Jpol_over_nper(k)*bf%d%nper
+            y(k, 3 + 8*nm) = bf%d%Itor(k)
         end do
         call cubic_spline_init(bf%d%s, y, bf%spline, status)
         if (status /= 0) status = BOOZER_OUTSIDE
@@ -90,7 +101,7 @@ contains
         if (.not. allocated(bf%spline%x)) return
         if (s < bf%d%s(1) .or. s > bf%d%s(bf%d%nsurf)) return
         nm = bf%d%nmode
-        allocate (g(3 + 4*nm), g_s(3 + 4*nm))
+        allocate (g(3 + 8*nm), g_s(3 + 8*nm))
         call cubic_spline_eval(bf%spline, s, g, g_s)
         surf%s = s
         surf%nper = bf%d%nper
@@ -98,11 +109,13 @@ contains
         surf%n = bf%d%n
         surf%iota = g(1)
         surf%diota_ds = g_s(1)
-        surf%g_cov = mu0*g(2 + 4*nm)/twopi
-        surf%i_cov = mu0*g(3 + 4*nm)/twopi
+        surf%g_cov = mu0*g(2 + 8*nm)/twopi
+        surf%i_cov = mu0*g(3 + 8*nm)/twopi
         surf%psi_prime = bf%d%flux/twopi
         allocate (surf%rmn(nm), surf%zmn(nm), surf%vmn(nm), surf%bmn(nm), &
-            surf%rmn_s(nm), surf%zmn_s(nm), surf%vmn_s(nm))
+            surf%rmn_s(nm), surf%zmn_s(nm), surf%vmn_s(nm), &
+            surf%rma(nm), surf%zma(nm), surf%vma(nm), surf%bma(nm), &
+            surf%rma_s(nm), surf%zma_s(nm), surf%vma_s(nm))
         do i = 1, nm
             call boozer_axis_factor(s, 0.5_dp*bf%d%m(i), f, f_s)
             surf%rmn(i) = f*g(1 + i)
@@ -112,6 +125,13 @@ contains
             surf%rmn_s(i) = f_s*g(1 + i) + f*g_s(1 + i)
             surf%zmn_s(i) = f_s*g(1 + nm + i) + f*g_s(1 + nm + i)
             surf%vmn_s(i) = f_s*g(1 + 2*nm + i) + f*g_s(1 + 2*nm + i)
+            surf%rma(i) = f*g(1 + 4*nm + i)
+            surf%zma(i) = f*g(1 + 5*nm + i)
+            surf%vma(i) = f*g(1 + 6*nm + i)
+            surf%bma(i) = f*g(1 + 7*nm + i)
+            surf%rma_s(i) = f_s*g(1 + 4*nm + i) + f*g_s(1 + 4*nm + i)
+            surf%zma_s(i) = f_s*g(1 + 5*nm + i) + f*g_s(1 + 5*nm + i)
+            surf%vma_s(i) = f_s*g(1 + 6*nm + i) + f*g_s(1 + 6*nm + i)
         end do
         status = BOOZER_OK
     end subroutine boozer_surface
@@ -132,19 +152,19 @@ contains
             nn = surf%n(i)*surf%nper
             a = mm*theta - nn*phi_b
             c = cos(a); sn = sin(a)
-            p%r = p%r + surf%rmn(i)*c
-            p%z = p%z + surf%zmn(i)*sn
-            p%bmod = p%bmod + surf%bmn(i)*c
-            v = v + surf%vmn(i)*sn
-            r_s = r_s + surf%rmn_s(i)*c
-            r_t = r_t - mm*surf%rmn(i)*sn
-            r_p = r_p + nn*surf%rmn(i)*sn
-            z_s = z_s + surf%zmn_s(i)*sn
-            z_t = z_t + mm*surf%zmn(i)*c
-            z_p = z_p - nn*surf%zmn(i)*c
-            v_s = v_s + surf%vmn_s(i)*sn
-            v_t = v_t + mm*surf%vmn(i)*c
-            v_p = v_p - nn*surf%vmn(i)*c
+            p%r = p%r + surf%rmn(i)*c + surf%rma(i)*sn
+            p%z = p%z + surf%zmn(i)*sn + surf%zma(i)*c
+            p%bmod = p%bmod + surf%bmn(i)*c + surf%bma(i)*sn
+            v = v + surf%vmn(i)*sn + surf%vma(i)*c
+            r_s = r_s + surf%rmn_s(i)*c + surf%rma_s(i)*sn
+            r_t = r_t + mm*(surf%rma(i)*c - surf%rmn(i)*sn)
+            r_p = r_p + nn*(surf%rmn(i)*sn - surf%rma(i)*c)
+            z_s = z_s + surf%zmn_s(i)*sn + surf%zma_s(i)*c
+            z_t = z_t + mm*(surf%zmn(i)*c - surf%zma(i)*sn)
+            z_p = z_p + nn*(surf%zma(i)*sn - surf%zmn(i)*c)
+            v_s = v_s + surf%vmn_s(i)*sn + surf%vma_s(i)*c
+            v_t = v_t + mm*(surf%vmn(i)*c - surf%vma(i)*sn)
+            v_p = v_p + nn*(surf%vma(i)*sn - surf%vmn(i)*c)
         end do
         shift = twopi/surf%nper
         p%phi = phi_b - shift*v

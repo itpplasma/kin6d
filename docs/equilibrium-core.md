@@ -192,7 +192,9 @@ the axis; curvature drift at finite beta (needs p') is not included.
 Tests: `equilibrium_core_d7_geometry_{solovev,circle,drift,state}`.
 
 For comparisons with NEO-2 on the same field, `src/equilibrium/boozer_file.f90`
-reads a stellarator-symmetric Boozer `.bc` file through libneo's `bc_file`,
+reads a Boozer `.bc` file through libneo's `bc_file`, in the six-column
+(stellarator-symmetric) or the ten-column layout of up-down asymmetric
+equilibria such as AUG 30835,
 interpolates c_mn/s^(m/2), iota and the currents in s with FortNum's
 not-a-knot cubic splines (as NEO-2 splines c_mn/s^(m/2)), and returns R, Z,
 phi, |B|, the Jacobian and |grad s| at Boozer angles with NEO-2's sign
@@ -200,8 +202,12 @@ conventions, plus Jacobian-weighted averages. A surface outside the tabulated
 range is refused. `boozer_jacobian_ratio` compares the geometric Jacobian with
 the flux-function form psi'(G + iota I)/B^2 that NEO-2 uses; on libneo's tok02
 file they differ by 1.5e-4, and with that ratio <|grad s|> agrees with NEO-2
-to 1e-10. The metric and the axis factor s^(m/2) are FortSym leaves with
-JVP/VJP (`gen/gen_boozer_file.f90`). Test: `equilibrium_boozer_file_geometry`.
+to 1e-10. On the AUG 30835 `axi.bc` of the NEO-2 NTV runs (ten columns,
+s = 0.4886) iota agrees with NEO-2 to 1e-16 and <|grad s|> through that ratio to 4e-8; <B^2>
+with the geometric Jacobian is 8e-4 below NEO-2's flux-Jacobian average,
+which an independent 1/<1/B^2> on the same file reproduces to 3e-5. The
+metric and the axis factor s^(m/2) are FortSym leaves with JVP/VJP
+(`gen/gen_boozer_file.f90`). Test: `equilibrium_boozer_file_geometry`.
 
 In the map lane q per label is an input (frozen fluxes); readback recomputes
 it from B in physical space as the cross-lane check and never copies the
