@@ -8,9 +8,12 @@
 !!   B = sum bmnc cos(a) + bmns sin(a),
 !!   phi = phi_B - (2 pi/N_p) sum (vmns sin(a) + vmnc cos(a)),
 !!   a = m theta - n N_p phi_B,
-!! as in NEO-2 (`neo_sub.f90`). Coefficients divided by s^(m/2) and iota
-!! are interpolated in s with not-a-knot cubic splines, as NEO-2 splines
-!! c_mn/s^(m/2); a surface outside the tabulated range is refused. Lengths in m, |B| in T, |grad s| in 1/m.
+!! as in NEO-2 (`neo_sub.f90`). The radial factor s^p uses
+!! p = min(|m|, 12 + modulo(|m|, 2))/2, matching NEO-2's bounded regularity
+!! normalization. The cap limits roundoff amplification near the axis while
+!! preserving even/odd parity. Normalized coefficients and iota use not-a-knot
+!! cubic splines; surfaces outside the tabulated range are refused.
+!! Lengths in m, |B| in T, |grad s| in 1/m.
 module kin6d_boozer_file
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use bc_file, only: bc_data_t, read_bc_file
@@ -30,7 +33,7 @@ module kin6d_boozer_file
     type :: boozer_file_t
         type(bc_data_t) :: d
         ! Columns: iota, then rmnc, zmns, vmns, bmnc, rmns, zmnc, vmnc, bmns
-        ! each divided by s^(m/2), then the poloidal and toroidal currents.
+        ! divided by s^radial_power(m), then the poloidal and toroidal currents.
         type(cubic_spline_t) :: spline
     end type
 
@@ -58,6 +61,14 @@ module kin6d_boozer_file
 
 contains
 
+    pure real(dp) function radial_power(m) result(power)
+        integer, intent(in) :: m
+        ! Limit amplification of roundoff near the axis, preserving parity,
+        ! as in NEO-2's radial spline normalization.
+        integer, parameter :: max_m = 12
+        power = 0.5_dp*min(abs(m), max_m + modulo(abs(m), 2))
+    end function radial_power
+
     subroutine load_boozer_file(filename, bf, status)
         character(*), intent(in) :: filename
         type(boozer_file_t), intent(out) :: bf
@@ -72,7 +83,7 @@ contains
         do k = 1, bf%d%nsurf
             y(k, 1) = bf%d%iota(k)
             do i = 1, nm
-                call boozer_axis_factor(bf%d%s(k), 0.5_dp*bf%d%m(i), f, f_s)
+                call boozer_axis_factor(bf%d%s(k), radial_power(bf%d%m(i)), f, f_s)
                 y(k, 1 + i) = bf%d%rmnc(k, i)/f
                 y(k, 1 + nm + i) = bf%d%zmns(k, i)/f
                 y(k, 1 + 2*nm + i) = bf%d%vmns(k, i)/f
@@ -120,7 +131,7 @@ contains
             surf%rma(nm), surf%zma(nm), surf%vma(nm), surf%bma(nm), &
             surf%rma_s(nm), surf%zma_s(nm), surf%vma_s(nm), surf%bma_s(nm))
         do i = 1, nm
-            call boozer_axis_factor(s, 0.5_dp*bf%d%m(i), f, f_s)
+            call boozer_axis_factor(s, radial_power(bf%d%m(i)), f, f_s)
             surf%rmn(i) = f*g(1 + i)
             surf%zmn(i) = f*g(1 + nm + i)
             surf%vmn(i) = f*g(1 + 2*nm + i)
