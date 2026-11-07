@@ -606,18 +606,20 @@ contains
     end function
 
     subroutine wave_gate(dts)
-        !! Small Alfven and fast waves along x on the periodic slab. A left
-        !! eigenvector w of the linearized pencil M ydot + K y = 0 gives the
-        !! scalar s = w^H B y (B = -M) with s' = lambda s exactly, so the
-        !! evolution must follow the scalar BDF2 recurrence for that lambda,
-        !! and its frequency must converge to Im(lambda) at order two in dt.
+        !! Small Alfven and fast waves along x on the periodic slab. The
+        !! linearized pencil M ydot + K y = 0 has algebraic unknowns (zero rows
+        !! and columns of M). Eliminating them leaves ydot_d = A y_d, and a left
+        !! eigenvector w of A gives the scalar s = w^H y_d with s' = lambda s
+        !! exactly, so the evolution must follow the scalar BDF2 recurrence for
+        !! that lambda, and its frequency must converge to Im(lambda) at order
+        !! two in dt.
         real(dp), intent(in) :: dts(:)
         type(periodic_slab_t), target :: slab
         type(vrmhd_parameters_t) :: p
         real(dp), allocatable :: lift(:), y0(:), source(:, :, :), history(:, :)
         real(dp), allocatable :: stiffness(:, :), mass(:, :), shifted(:, :)
-        real(dp), allocatable :: alphar(:), alphai(:), beta(:), left(:, :), work(:)
-        real(dp), allocatable :: by0(:), ydot0(:)
+        real(dp), allocatable :: ode(:, :), coupling(:, :), alphar(:), alphai(:)
+        real(dp), allocatable :: left(:, :), work(:), ydot0(:)
         complex(dp), allocatable :: w(:), observable(:), series(:), predicted(:)
         complex(dp) :: lambda
         real(dp), parameter :: final_time = 4.0_dp, amplitude = 1.0e-4_dp
@@ -625,16 +627,23 @@ contains
         integer, parameter :: cells = 4
         real(dp) :: b0(3), exact(3), bloch(3), optical, overlap, best, omega_h
         real(dp) :: measured(size(dts)), error(size(dts)), recurrence, dummy(1, 1)
+        integer, allocatable :: d(:), a(:), pivot(:)
         integer :: status, n, wave, j, chosen, level, steps, k, info, unmatched, ns
+        integer :: nd
         interface
-            subroutine dggev(jobvl, jobvr, n, a, lda, b, ldb, alphar, alphai, beta, &
-                    vl, ldvl, vr, ldvr, work, lwork, info)
+            subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+                integer, intent(out) :: ipiv(*), info
+            end subroutine
+            subroutine dgeev(jobvl, jobvr, n, a, lda, wr, wi, vl, ldvl, vr, ldvr, &
+                    work, lwork, info)
                 import :: dp
                 character, intent(in) :: jobvl, jobvr
-                integer, intent(in) :: n, lda, ldb, ldvl, ldvr, lwork
-                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
-                real(dp), intent(out) :: alphar(*), alphai(*), beta(*)
-                real(dp), intent(out) :: vl(ldvl, *), vr(ldvr, *), work(*)
+                integer, intent(in) :: n, lda, ldvl, ldvr, lwork
+                real(dp), intent(inout) :: a(lda, *)
+                real(dp), intent(out) :: wr(*), wi(*), vl(ldvl, *), vr(ldvr, *), work(*)
                 integer, intent(out) :: info
             end subroutine
         end interface
@@ -652,20 +661,38 @@ contains
         p%mi = 1; p%mu0 = oracle_mu0; p%t0 = 0.3_dp
         n = slab%nred; ns = slab%ns
         allocate (lift(slab%op%ndof), y0(n), stiffness(n, n), mass(n, n), &
-            shifted(n, n), alphar(n), alphai(n), beta(n), left(n, n), work(16*n), &
-            w(n), observable(n), by0(n), ydot0(n), &
+            shifted(n, n), observable(n), ydot0(n), &
             source(6, slab%op%fs%nq, slab%op%fs%mm%topology%n_triangles))
         source = 0
         call background_lift(slab, 1.0_dp, 0.3_dp, 0.3_dp, b0, lift)
         call reduced_dense(slab, p, lift, source, 0.0_dp, stiffness)
         call reduced_dense(slab, p, lift, source, 1.0_dp, shifted)
+        ! B = -M, so ydot_d = B_dd^{-1} (K_dd - K_da K_aa^{-1} K_ad) y_d.
         mass = -(shifted - stiffness)
-        shifted = stiffness
-        call dggev('V', 'N', n, shifted, n, mass, n, alphar, alphai, beta, left, n, &
-            dummy, 1, work, size(work), info)
-        call require(info == 0, 'dense generalized eigensolve')
-        call reduced_dense(slab, p, lift, source, 1.0_dp, shifted)
-        mass = -(shifted - stiffness)
+        ! The QZ eigenvalues of the singular pencil carry roundoff amplified by
+        ! its infinite eigenvalues (|Re lambda| up to 1e-10 |lambda|, varying
+        ! with the thread count for identical matrices); the Schur complement
+        ! on the differential unknowns leaves a well-conditioned problem.
+        d = pack([(j, j=1, n)], any(mass /= 0, dim=2))
+        a = pack([(j, j=1, n)], .not. any(mass /= 0, dim=2))
+        nd = size(d)
+        call require(count(any(mass /= 0, dim=1)) == nd, &
+            'algebraic rows and columns of the time mass agree')
+        call require(all(d == pack([(j, j=1, n)], any(mass /= 0, dim=1))), &
+            'algebraic rows and columns of the time mass agree')
+        allocate (ode(nd, nd), alphar(nd), alphai(nd), left(nd, nd), w(nd), &
+            work(16*nd), pivot(n))
+        shifted(:size(a), :size(a)) = stiffness(a, a)
+        coupling = stiffness(a, d)
+        call dgesv(size(a), nd, shifted, n, pivot, coupling, size(a), info)
+        call require(info == 0, 'algebraic block solve')
+        ode = stiffness(d, d) - matmul(stiffness(d, a), coupling)
+        shifted(:nd, :nd) = mass(d, d)
+        call dgesv(nd, nd, shifted, n, pivot, ode, nd, info)
+        call require(info == 0, 'differential mass solve')
+        call dgeev('V', 'N', nd, ode, nd, alphar, alphai, left, nd, dummy, 1, work, &
+            size(work), info)
+        call require(info == 0, 'dense eigensolve')
         do wave = 1, 2
             y0 = 0
             ! The Alfven wave moves v_y; the fast wave along B0's normal moves v_x.
@@ -673,26 +700,25 @@ contains
             call periodic_scalar(slab, cosine_x, y0(j*ns + 1:(j + 1)*ns))
             y0 = amplitude*y0
             call consistent_start(slab, p, source, lift, y0, ydot0)
-            by0 = matmul(mass, y0)
             best = 0; chosen = 0
-            do j = 1, n
-                if (alphai(j) <= 0 .or. abs(beta(j)) == 0) cycle
-                lambda = cmplx(alphar(j), alphai(j), dp)/beta(j)
+            do j = 1, nd
+                if (alphai(j) <= 0) cycle
+                lambda = cmplx(alphar(j), alphai(j), dp)
                 if (abs(aimag(lambda)/exact(wave) - 1) > 0.2_dp) cycle
                 w = cmplx(left(:, j), left(:, j + 1), dp)
-                overlap = abs(dot_product(w, cmplx(by0, 0.0_dp, dp))) &
-                    /(norm2(abs(w))*norm2(by0))
+                overlap = abs(dot_product(w, cmplx(y0(d), 0.0_dp, dp))) &
+                    /(norm2(abs(w))*norm2(y0(d)))
                 if (overlap > best) then
                     best = overlap; chosen = j
                 end if
             end do
             call require(chosen > 0, 'excited discrete wave eigenvalue')
-            lambda = cmplx(alphar(chosen), alphai(chosen), dp)/beta(chosen)
+            lambda = cmplx(alphar(chosen), alphai(chosen), dp)
             omega_h = aimag(lambda)
             w = cmplx(left(:, chosen), left(:, chosen + 1), dp)
-            ! dot_product conjugates w: s = w^H B y.
-            observable = conjg(w)
-            observable = matmul(observable, cmplx(mass, 0.0_dp, dp))
+            ! s = sum(observable*y) = w^H y_d.
+            observable = 0
+            observable(d) = conjg(w)
             print '(a,i2,a,2es20.12,a,f8.5)', 'wave ', wave, ' lambda ', lambda, &
                 ' overlap ', best
             print '(a,es12.4)', '  relative difference to Bloch spectrum ', &
