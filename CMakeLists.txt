@@ -1055,7 +1055,7 @@ kin6d_test_labels(dk_collop_neo2_matrix fast CLASSES continuum TARGETS test_dk_c
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE kin6d)
 foreach(check collisionless banana pfirsch_schlueter plateau onsager jvp estimate
-        factor_api)
+        factor_api coupling)
     add_test(NAME dk_mono_${check} COMMAND test_dk_mono ${check})
     kin6d_test_labels(dk_mono_${check} fast CLASSES continuum TARGETS test_dk_mono)
 endforeach()

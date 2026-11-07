@@ -37,6 +37,7 @@ module kin6d_dk_mono
     ! Per-speed building blocks for solvers that couple speeds through
     ! collisions: factorisation, bordered solve, operator action, drives.
     public :: mono_point_t, mono_factor_t, mono_factor, mono_solve, mono_apply, mono_drives
+    public :: mono_coupling
     integer, parameter, public :: MONO_OK = 0, MONO_BAD_INPUT = 1, &
         MONO_SINGULAR = 2
 
@@ -302,6 +303,19 @@ contains
         real(dp) :: y(size(x, 1), 0:ubound(x, 2))
         y = apply_operator(f%d, f%p, nu, x)
     end function mono_apply
+
+    !> Coefficients of x_{l-1} (lower) and x_{l+1} (upper) in row l of the
+    !> operator: the theta blocks of streaming and mirror force, for solvers
+    !> that eliminate in l with several speeds per block.
+    pure subroutine mono_coupling(f, l, lower_l, upper_l)
+        type(mono_factor_t), intent(in) :: f
+        integer, intent(in) :: l
+        real(dp), intent(out) :: lower_l(f%n, f%n), upper_l(f%n, f%n)
+        lower_l = 0
+        upper_l = 0
+        if (l > 0) lower_l = lower(f%d, f%p, l)
+        upper_l = upper(f%d, f%p, l)
+    end subroutine mono_coupling
 
     !> Radial (1) and parallel (2) drives of the factorised surface.
     pure function mono_drives(f) result(s)

@@ -13,7 +13,7 @@ program test_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK, &
         mono_coefficients_jvp, mono_estimate_t, mono_estimate, mono_factor_t, mono_factor, &
-        mono_solve, mono_apply, mono_drives
+        mono_solve, mono_apply, mono_drives, mono_coupling
     use fortnum_quadrature, only: gauss_legendre_ab
     use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
         boozer_surface, BOOZER_OK
@@ -33,6 +33,7 @@ program test_dk_mono
     case ('jvp'); ok = jvp()
     case ('estimate'); ok = estimate()
     case ('factor_api'); ok = factor_api()
+    case ('coupling'); ok = coupling()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -320,5 +321,26 @@ contains
         print '(a,es10.2)', 'residual of the bordered solve through mono_apply:', err
         ok = err < 1e-12_dp
     end function factor_api
+
+    !> The coupling blocks reproduce mono_apply row by row.
+    logical function coupling() result(ok)
+        type(mono_factor_t) :: f
+        real(dp) :: x(33, 0:39), y(33, 0:39), lo(33, 33), up(33, 33), z(33), err
+        integer :: status, l
+        call mono_factor(field(33, 0.2_dp), 0.7_dp, 1e-2_dp, 40, f, status)
+        if (status /= MONO_OK) error stop 'mono_factor failed'
+        call random_number(x)
+        y = mono_apply(f, 0.0_dp, x)
+        err = 0
+        do l = 0, 39
+            call mono_coupling(f, l, lo, up)
+            z = 0
+            if (l > 0) z = matmul(lo, x(:, l - 1))
+            if (l < 39) z = z + matmul(up, x(:, l + 1))
+            err = max(err, maxval(abs(z - y(:, l))))
+        end do
+        print '(a,es10.2)', 'coupling blocks vs mono_apply:', err
+        ok = err < 1e-12_dp
+    end function coupling
 
 end program test_dk_mono
