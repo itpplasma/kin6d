@@ -14,6 +14,8 @@ program test_boozer_file
 
     call synthetic_file()
     call asymmetric_file()
+    call signed_poloidal_modes()
+    call high_mode_roundoff()
     call metric_pairing()
     if (command_argument_count() >= 6) call neo2_comparison()
     if (failures > 0) error stop 'FAIL'
@@ -122,6 +124,88 @@ contains
         open (newunit=unit, file=name)
         close (unit, status='delete')
     end subroutine asymmetric_file
+
+    subroutine signed_poloidal_modes()
+        character(*), parameter :: name = 'synthetic_signed_mode.bc'
+        real(dp), parameter :: c = 0.02_dp, sn = -0.03_dp, s = 0.43_dp
+        integer, parameter :: modes(3) = [4, 16, 17]
+        type(boozer_file_t) :: bf
+        type(boozer_surface_t) :: surf
+        type(boozer_point_t) :: p
+        real(dp) :: ss, phase, theta, phi, expected, power
+        integer :: unit, k, status, sign_m, j, m
+
+        theta = 0.7_dp; phi = 0.3_dp
+        do j = 1, size(modes)
+            m = modes(j); power = 0.5_dp*m
+            phase = m*theta - 2*phi
+            do sign_m = -1, 1, 2
+                open (newunit=unit, file=name, status='replace', action='write')
+                write (unit, '(a)') 'CC signed-mode representation of the same regular field'
+                write (unit, '(a)') ' m0b n0b nsurf nper flux a R'
+                write (unit, '(4i5,3es24.16)') m, 1, 9, 2, -1.0_dp, 0.5_dp, 1.7_dp
+                do k = 1, 9
+                    ss = 0.1_dp*k
+                    write (unit, '(a)') ' s iota Jpol/nper Itor pprime sqrtg'
+                    write (unit, '(6es24.16)') ss, 0.9_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp
+                    write (unit, '(a)') ' m n rmnc rmns zmnc zmns vmnc vmns bmnc bmns'
+                    write (unit, '(2i5,8es24.16)') 0, 0, r0, 0.0_dp, 0.0_dp, 0.0_dp, &
+                        0.0_dp, 0.0_dp, b0, 0.0_dp
+                    write (unit, '(2i5,8es24.16)') 1, 0, a*sqrt(ss), 0.0_dp, 0.0_dp, &
+                        a*sqrt(ss), 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp
+                    write (unit, '(2i5,8es24.16)') m*sign_m, sign_m, 0.0_dp, 0.0_dp, &
+                        0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, c*ss**power, sign_m*sn*ss**power
+                end do
+                close (unit)
+                call load_boozer_file(name, bf, status)
+                call check('signed-mode load status', status == BOOZER_OK)
+                call boozer_surface(bf, s, surf, status)
+                call check('signed-mode surface status', status == BOOZER_OK)
+                call close_to('regular cosine coefficient', surf%bmn(3), c*s**power, 1e-14_dp)
+                call close_to('regular sine coefficient', surf%bma(3), sign_m*sn*s**power, 1e-14_dp)
+                call close_to('regular cosine derivative', surf%bmn_s(3), power*c*s**(power - 1), 1e-14_dp)
+                call close_to('regular sine derivative', surf%bma_s(3), sign_m*power*sn*s**(power - 1), 1e-14_dp)
+                p = boozer_point(surf, theta, phi)
+                expected = b0 + s**power*(c*cos(phase) + sn*sin(phase))
+                call close_to('signed-mode field [T]', p%bmod, expected, 1e-14_dp)
+                open (newunit=unit, file=name)
+                close (unit, status='delete')
+            end do
+        end do
+    end subroutine signed_poloidal_modes
+
+    subroutine high_mode_roundoff()
+        character(*), parameter :: name = 'synthetic_high_mode.bc'
+        real(dp), parameter :: ss(3) = [0.0031_dp, 0.056141414141414_dp, 0.6001_dp]
+        type(boozer_file_t) :: bf
+        type(boozer_surface_t) :: surf
+        integer :: unit, k, status
+        real(dp) :: s
+
+        open (newunit=unit, file=name, status='replace', action='write')
+        write (unit, '(a)') 'CC high-mode coefficient at the numerical-noise floor'
+        write (unit, '(a)') ' m0b n0b nsurf nper flux a R'
+        write (unit, '(a)') ' 64 1 1000 2 -1.0 0.5 1.7'
+        do k = 1, 1000
+            s = (k - 0.5_dp)/1000
+            write (unit, '(a)') ' s iota Jpol/nper Itor pprime sqrtg'
+            write (unit, '(6es24.16)') s, 0.9_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp
+            write (unit, '(a)') ' m n rmnc zmns vmns bmnc'
+            write (unit, '(2i5,4es24.16)') 0, 0, r0, 0.0_dp, 0.0_dp, b0
+            write (unit, '(2i5,4es24.16)') 64, 1, 0.0_dp, 0.0_dp, 0.0_dp, 1e-20_dp
+        end do
+        close (unit)
+        call load_boozer_file(name, bf, status)
+        call check('high-mode load status', status == BOOZER_OK)
+        do k = 1, size(ss)
+            call boozer_surface(bf, ss(k), surf, status)
+            call check('high-mode surface status', status == BOOZER_OK)
+            call check('high-mode noise remains small [T]', abs(surf%bmn(2)) < 1e-12_dp)
+            call check('high-mode derivative remains small [T]', abs(surf%bmn_s(2)) < 1e-9_dp)
+        end do
+        open (newunit=unit, file=name)
+        close (unit, status='delete')
+    end subroutine high_mode_roundoff
 
     subroutine metric_pairing()
         real(dp) :: x(10), v(10), g(10), w(2), jv(2), lhs, rhs
