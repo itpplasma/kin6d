@@ -39,6 +39,28 @@ components; the returned `der` and `dvth` are directional derivatives.
 No smoothing or coordinate-sign
 conversion is applied.
 
+`kin6d_dk_energy_profile_io` provides `energy_profile_write_cgs` for an
+in-process caller. It accepts the batch responses, their solver statuses and
+the Gaussian-unit force-balance inputs above; each input's `k` is replaced by
+the corresponding solver response. `p%r` contains finite, nonnegative, strictly
+increasing effective radii in cm.
+The caller creates `output/` and supplies a `run_t` with its captured literal
+and resolved configuration, including geometry, collision model and grid.
+The exporter writes `output/<run name>.nc` through the common result contract,
+retaining the inputs, flow coefficients, density/temperature scaling tangents,
+backward errors, force balance and separate per-surface statuses.
+
+If every surface succeeds, `output/Er.dat` and `output/Vth.dat` contain
+KAMEL's two headerless columns: effective radius in cm, then electric field
+in statV/cm or poloidal velocity in cm/s. These legacy paths are shared across
+run names; concurrent exports use separate working directories. A failed solve
+or force balance
+returns `PROFILE_INCOMPLETE`, removes previous legacy files and retains the
+successful rows in NetCDF; unavailable values are NaN. Invalid array sizes or
+radius ordering return `PROFILE_BAD_INPUT` before changing files. Legacy-file
+I/O errors return `PROFILE_IO_ERROR`; the canonical result records the export
+status. `PROFILE_OK` records export success and is not a numerical certificate.
+
 The local rotation-ratio and force-balance values, tangents and adjoints come from the
 retained definition in `gen/gen_dk_energy.f90`. The force-balance value test
 uses a synthetic input evaluated independently with

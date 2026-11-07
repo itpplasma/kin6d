@@ -1067,13 +1067,11 @@ add_executable(test_dk_energy test/test_dk_energy.f90)
 target_link_libraries(test_dk_energy PRIVATE kin6d)
 foreach(check rigid_shift jvp operator_cache batch pfirsch_schluter)
     add_test(NAME dk_energy_${check} COMMAND test_dk_energy ${check})
-    kin6d_test_labels(dk_energy_${check} fast CLASSES continuum TARGETS test_dk_energy)
 endforeach()
 add_executable(test_dk_force_balance test/test_dk_force_balance.f90)
 target_link_libraries(test_dk_force_balance PRIVATE kin6d)
 foreach(check physics derivatives refusals)
     add_test(NAME dk_force_balance_${check} COMMAND test_dk_force_balance ${check})
-    kin6d_test_labels(dk_force_balance_${check} fast CLASSES continuum TARGETS test_dk_force_balance)
 endforeach()
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE kin6d)
@@ -1657,6 +1655,7 @@ add_custom_target(kin6d_build_info
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
 add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
     src/apps/animation_export.f90)
+target_sources(kin6d_io PRIVATE src/apps/dk_energy_profile_io.f90)
 add_dependencies(kin6d_io kin6d_build_info)
 # NTV field lines from Boozer files: composes the equilibrium reader with the
 # continuum kernel, so it lives in the application layer.
@@ -1683,6 +1682,12 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         screening_moments)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
+add_executable(test_dk_energy_profile_io test/test_dk_energy_profile_io.f90)
+target_link_libraries(test_dk_energy_profile_io PRIVATE kin6d_io)
+add_test(NAME dk_energy_profile_io COMMAND test_dk_energy_profile_io)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/energy_profile_io_check)
+set_tests_properties(dk_energy_profile_io PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/energy_profile_io_check)
 add_executable(test_result_io test/test_result_io.f90)
 target_link_libraries(test_result_io PRIVATE kin6d_io)
 add_test(NAME result_io_contract
