@@ -22,7 +22,16 @@ module kin6d_frozen_current
     ! no data, no J), c = -d.r(x_a)/d.(r(x_b) + load) and x = x_a + c x_b.
     ! Only B = curl A of the frozen current is computed; a coil field is
     ! added by the consumer. The phi rule (nphi points) must resolve the
-    ! harmonics of J up to N without aliasing those above N.
+    ! harmonics of J up to N without aliasing those above N. With
+    ! field%period = P, block n is the toroidal mode n P.
+    !
+    ! Exterior data from field samples (fc_casing): with a field F that
+    ! satisfies curl F = mu0 J and div F = 0 in a volume V containing J
+    ! (an equilibrium field minus the coil field), the field of J outside
+    ! V follows from F on dV, and its potential from F on dV and in V, by
+    ! integration by parts. The kernels are smooth because the domain
+    ! boundary lies outside V, unlike the volume Biot-Savart sum of
+    ! fc_exterior over a current that jumps at dV.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_qpoint, &
@@ -41,6 +50,7 @@ module kin6d_frozen_current
     implicit none
     private
     public :: fc_current_i, fc_exterior_t, fc_report_t, fc_exterior, fc_solve
+    public :: fc_source_t, fc_casing
 
     abstract interface
         subroutine fc_current_i(x, phi, j)
@@ -56,6 +66,16 @@ module kin6d_frozen_current
     ! (B_R, B_Z) for modes 1..N, B = B_0 + sum_n (bc cos n phi + bs sin n phi).
     type :: fc_exterior_t
         real(dp), allocatable :: xy(:, :), psi(:), bc(:, :, :), bs(:, :, :)
+    end type
+
+    ! Samples of F (see the module header). Points are (R, Z, phi), vectors
+    ! physical (R, phi, Z). Weights (dV, and n dS with n the outward
+    ! normal) count the whole torus: samples of one period of a P-periodic
+    ! source carry the factor P, and fc_casing rotates them P times.
+    type :: fc_source_t
+        integer :: period = 1
+        real(dp), allocatable :: xv(:, :), wv(:), fv(:, :)
+        real(dp), allocatable :: xs(:, :), ns(:, :), fs(:, :)
     end type
 
     type :: fc_report_t
@@ -80,10 +100,10 @@ contains
         complex(dp), allocatable :: jn(:, :, :), bn(:, :), kn(:, :, :)
         real(dp) :: v1(3, field%fs%sp(1)%nloc), xq(2), wq, phi, j(3), d(3)
         real(dp) :: kern(3, 3), c, s, coef
-        integer :: modes, nt, ns, t, q, k, i, n, m, st, failure, np
+        integer :: modes, nt, ns, t, q, k, i, n, m, st, failure, np, per
         status = 1
-        modes = ubound(field%b, 2)
-        if (nphi < 2*modes + 1) return
+        modes = ubound(field%b, 2); per = field%period
+        if (nphi < 2*modes*per + 1) return
         coef = field%mu0/(4*pi)
         nt = field%fs%mm%topology%n_triangles
         ns = nt*field%fs%nq
@@ -115,7 +135,7 @@ contains
                 do k = 1, nphi
                     phi = 2*pi*(k - 1)/nphi
                     jn(:, n, i) = jn(:, n, i) + jm(:, k, i) &
-                        *cmplx(cos(n*phi), -sin(n*phi), dp)/nphi
+                        *cmplx(cos(n*per*phi), -sin(n*per*phi), dp)/nphi
                 end do
             end do
         end do
@@ -151,7 +171,7 @@ contains
                     ! K_{-m} = mean K(phi) e^{+i m phi}
                     do m = 1, modes
                         kn(:, :, m) = kn(:, :, m) &
-                            + kern*cmplx(cos(m*phi), sin(m*phi), dp)/nphi
+                            + kern*cmplx(cos(m*per*phi), sin(m*per*phi), dp)/nphi
                     end do
                 end do
                 do m = 1, modes
@@ -197,11 +217,12 @@ contains
         if (.not. allocated(ext%xy)) return
         lay = nc_layout(field)
         modes = lay%modes; na = lay%na; nv = lay%nv; n = na + nv
-        np = 4*modes + 1
+        np = 4*modes*field%period + 1
         if (present(nphi)) np = nphi
-        if (np < 2*modes + 1) return
+        if (np < 2*modes*field%period + 1) return
         if (size(ext%bc, 3) /= modes) return
-        call meridian_fourier_identity_forms(field%fs, modes, c, s, mg, istat)
+        call meridian_fourier_identity_forms(field%fs, modes, c, s, mg, istat, &
+            field%period)
         if (istat /= 0) return
         call current_load(field, current, lay, np, load, istat)
         if (istat /= 0) return
@@ -241,7 +262,7 @@ contains
         ! Removed non-solenoidal fraction.
         call meridian_fourier_diagonal_mass(field%fs, 1, modes, mass, istat)
         if (istat /= 0) return
-        call meridian_fourier_gradient(field%fs, modes, grad, istat)
+        call meridian_fourier_gradient(field%fs, modes, grad, istat, field%period)
         if (istat /= 0) return
         allocate (jh(na))
         call nn_factor(mass, [(.false., ip=1, na)], mfactor, istat)
@@ -288,7 +309,7 @@ contains
                     phi = 2*acos(-1.0_dp)*(k - 1)/nphi
                     call current(xq, phi, j)
                     do bk = 1, lay%nb
-                        mode = bk/2
+                        mode = bk/2*field%period
                         if (bk == 1) then
                             tr = 1
                         else if (mod(bk, 2) == 0) then
@@ -362,11 +383,11 @@ contains
             ! A = i gauge(B) for B = Re[(c - i s) e^{i n phi}]).
             do i = 1, np
                 call vacuum_gauge(ext%xy(1, i), ext%bs(1, i, m), ext%bs(2, i, m), &
-                    real(m, dp), ar, az)
+                    real(m*field%period, dp), ar, az)
                 v(:, i) = [cmplx(ar, 0.0_dp, dp), (0.0_dp, 0.0_dp), &
                     cmplx(az, 0.0_dp, dp)]
                 call vacuum_gauge(ext%xy(1, i), ext%bc(1, i, m), ext%bc(2, i, m), &
-                    real(m, dp), ar, az)
+                    real(m*field%period, dp), ar, az)
                 v(:, i) = v(:, i) + cmplx(0.0_dp, -1.0_dp, dp)*[ar, 0.0_dp, az]
             end do
             call meridian_boundary_trace_values(field%fs, v, values, status)
@@ -393,6 +414,115 @@ contains
         if (status /= 0) return
         xb(:field%fs%nn) = real(values(:field%fs%nn), dp)
     end subroutine
+
+    subroutine fc_casing(field, src, nphi, ext, status)
+        ! Exterior data of the frozen current from its samples at the
+        ! boundary trace points, which lie outside V. With d = x - x' and
+        ! a = d/|d|^3, by parts from mu0 J = curl F and div F = 0:
+        !   B_J(x) = (1/4 pi) <(n x F) x a + (n . F) a>_dV,
+        !   A_J(x) = (1/4 pi) [<(n x F)/|d|>_dV + (F x a)_V].
+        ! B is sampled at nphi angles of one period and transformed to the
+        ! modes k P, k = 1..N; psi is R times the phi mean of A_phi.
+        type(free_b_field_t), intent(in) :: field
+        type(fc_source_t), intent(in) :: src
+        integer, intent(in) :: nphi
+        type(fc_exterior_t), intent(out) :: ext
+        integer, intent(out) :: status
+        real(dp), parameter :: pi = acos(-1.0_dp)
+        real(dp), allocatable :: ps(:, :), qs(:, :), fs(:), pv(:, :), qv(:, :)
+        complex(dp), allocatable :: bn(:, :)
+        real(dp) :: x(3), d(3), b(3), a(3), r2, ri, ang, c, s, aphi
+        integer :: modes, per, np, ns, nv, i, l, k, m
+        status = 1
+        modes = ubound(field%b, 2); per = field%period
+        if (src%period /= per) return
+        if (nphi < 2*modes + 1) return
+        call rotated(src%xs, src%ns, src%fs, ps, qs, fs)
+        call rotated(src%xv, spread(src%wv, 1, 3), src%fv, pv, qv)
+        call meridian_boundary_trace_points(field%fs, ext%xy)
+        np = size(ext%xy, 2); ns = size(ps, 2); nv = size(pv, 2)
+        allocate (ext%psi(np), ext%bc(2, np, modes), ext%bs(2, np, modes))
+        !$omp parallel do default(shared) private(i, l, k, m, x, d, b, a, r2, ri, &
+        !$omp& ang, c, s, aphi, bn) schedule(dynamic)
+        do i = 1, np
+            allocate (bn(2, modes))
+            bn = 0
+            ext%psi(i) = 0
+            do l = 0, nphi - 1
+                ang = 2*pi*l/(nphi*per)
+                c = cos(ang); s = sin(ang)
+                x = [ext%xy(1, i)*c, ext%xy(1, i)*s, ext%xy(2, i)]
+                b = 0; a = 0
+                do k = 1, ns
+                    ! ps: position, qs(1:3) n dS, qs(4:6) n x F dS, fs n.F dS
+                    d = x - ps(:, k)
+                    r2 = dot_product(d, d); ri = 1/sqrt(r2)
+                    b = b + (cross(qs(4:6, k), d) + fs(k)*d)*ri**3
+                    a = a + qs(4:6, k)*ri
+                end do
+                do k = 1, nv
+                    d = x - pv(:, k)
+                    ri = 1/sqrt(dot_product(d, d))
+                    a = a + cross(qv(4:6, k), d)*ri**3
+                end do
+                b = b/(4*pi); a = a/(4*pi)
+                aphi = -a(1)*s + a(2)*c
+                ext%psi(i) = ext%psi(i) + ext%xy(1, i)*aphi/nphi
+                do m = 1, modes
+                    bn(:, m) = bn(:, m) + [b(1)*c + b(2)*s, b(3)] &
+                        *cmplx(cos(m*l*2*pi/nphi), -sin(m*l*2*pi/nphi), dp)/nphi
+                end do
+            end do
+            do m = 1, modes
+                ext%bc(:, i, m) = 2*real(bn(:, m), dp)
+                ext%bs(:, i, m) = -2*aimag(bn(:, m))
+            end do
+            deallocate (bn)
+        end do
+        !$omp end parallel do
+        if (.not. all(ieee_is_finite(ext%psi))) return
+        if (.not. all(ieee_is_finite(ext%bc))) return
+        if (.not. all(ieee_is_finite(ext%bs))) return
+        status = 0
+    contains
+        subroutine rotated(xc, wvec, f, p, q, nf)
+            ! The per rotated copies in Cartesian form, weights / per:
+            ! p position, q(1:3) the weight vector, q(4:6) its cross product
+            ! with F (surface) or W F (volume), nf = weight . F.
+            real(dp), intent(in) :: xc(:, :), wvec(:, :), f(:, :)
+            real(dp), allocatable, intent(out) :: p(:, :), q(:, :)
+            real(dp), allocatable, intent(out), optional :: nf(:)
+            real(dp) :: cs, sn, wc(3), fc(3)
+            integer :: n, j, cp, o
+            n = size(xc, 2)
+            allocate (p(3, n*per), q(6, n*per))
+            if (present(nf)) allocate (nf(n*per))
+            do cp = 0, per - 1
+                do j = 1, n
+                    o = cp*n + j
+                    cs = cos(xc(3, j) + 2*pi*cp/per); sn = sin(xc(3, j) + 2*pi*cp/per)
+                    p(:, o) = [xc(1, j)*cs, xc(1, j)*sn, xc(2, j)]
+                    fc = [f(1, j)*cs - f(2, j)*sn, f(1, j)*sn + f(2, j)*cs, f(3, j)]
+                    if (present(nf)) then
+                        wc = [wvec(1, j)*cs - wvec(2, j)*sn, &
+                            wvec(1, j)*sn + wvec(2, j)*cs, wvec(3, j)]/per
+                        q(1:3, o) = wc
+                        q(4:6, o) = cross(wc, fc)
+                        nf(o) = dot_product(wc, fc)
+                    else
+                        q(1:3, o) = 0
+                        q(4:6, o) = wvec(1, j)/per*fc ! volume: the scalar dV
+                    end if
+                end do
+            end do
+        end subroutine
+    end subroutine
+
+    pure function cross(a, b) result(c)
+        real(dp), intent(in) :: a(3), b(3)
+        real(dp) :: c(3)
+        c = [a(2)*b(3) - a(3)*b(2), a(3)*b(1) - a(1)*b(3), a(1)*b(2) - a(2)*b(1)]
+    end function
 
     subroutine saddle_matrix(s, mg, mu0, na, nv, k, status)
         ! K = [[S/mu0, MG], [MG^T, 0]].

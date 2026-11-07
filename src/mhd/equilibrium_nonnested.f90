@@ -41,6 +41,9 @@ module kin6d_equilibrium_nonnested
         type(meridian_feec_t) :: fs
         type(meridian_point_basis_t) :: pb
         complex(dp), allocatable :: b(:, :) ! V2, modes 0:N
+        ! Block n holds toroidal mode n*period (honoured by nn_point,
+        ! nn_divergence, nc_store and the frozen-current solve only).
+        integer :: period = 1
         real(dp), allocatable :: psi(:)     ! N=0 pressure primitive, internal
         real(dp), allocatable :: p(:)       ! NN2 transported p, V0 Fourier blocks
         real(dp) :: f_vac = 0, pprime = 0, psi_bound = 0, mu0 = 1
@@ -338,7 +341,7 @@ contains
         error = 0; status = 1
         if (.not. allocated(field%b)) return
         do n = 0, ubound(field%b, 2)
-            call meridian_op_complex(field%fs%div, n, div, status)
+            call meridian_op_complex(field%fs%div, n*field%period, div, status)
             if (status /= 0) return
             error = max(error, maxval(abs(csc_matvec(div, field%b(:, n)))) &
                 /max(1.0_dp, maxval(abs(field%b(:, n)))))
@@ -402,7 +405,7 @@ contains
                 bn = bn + v2(:, j)*(field%b(field%fs%sp(2)%dof(j, t), n) &
                     *field%fs%sp(2)%sgn(j, t))
             end do
-            phase = exp(cmplx(0.0_dp, n*point(3), dp))
+            phase = exp(cmplx(0.0_dp, n*field%period*point(3), dp))
             b = b + merge(1, 2, n == 0)*real(bn*phase, dp)
         end do
         value(EQ_BR) = b(1); value(EQ_BZ) = b(3)

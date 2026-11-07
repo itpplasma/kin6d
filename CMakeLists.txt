@@ -312,8 +312,8 @@ option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experim
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
 # Steklov form #144, exact FEEC tables, split stretched BEM fans #145,
 # second-kind Nedelec edges #148, exact moment gradients #149 and the
-# boundary trace projection #152).
-set(KIN6D_FORTFEM_REVISION "0478584458fad621c0d186049218b653cf9ad922")
+# boundary trace projection #152 and the toroidal period #154).
+set(KIN6D_FORTFEM_REVISION "cb7dfd809221a85cd33fcfffc87c5069a66d885f")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -2504,9 +2504,10 @@ add_test(NAME frozen_current_exterior_p3
     COMMAND test_frozen_current exterior 3 4 4 1.5e-3)
 add_test(NAME frozen_current_exterior_refined_p3
     COMMAND test_frozen_current exterior 3 8 6 2e-4)
+add_test(NAME frozen_current_source_p3 COMMAND test_frozen_current source 3 4 1e-6)
 set_tests_properties(frozen_current_ring_p3 frozen_current_helical_p2
     frozen_current_helical_p3 frozen_current_exterior_p3
-    frozen_current_exterior_refined_p3 PROPERTIES
+    frozen_current_exterior_refined_p3 frozen_current_source_p3 PROPERTIES
     TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_island_closure test/test_island_closure.f90)
 target_link_libraries(test_island_closure PRIVATE kin6d_nn_solovev_test)

@@ -14,6 +14,12 @@ program test_frozen_current
     !                  exterior field from the FE boundary traces (Kirchhoff
     !                  surface integral) against direct Biot-Savart of J at
     !                  points outside the domain, for N = 2, 4, .., nmax.
+    !   source k nr tol
+    !                  two-periodic current J = curl F/mu0: exterior data
+    !                  from samples of F (fc_casing) against direct
+    !                  Biot-Savart of J, the fields solved with either, and
+    !                  the period-2 solve against the period-1 solve with
+    !                  all modes up to 4.
     ! The removed non-solenoidal fraction is printed at every resolution.
     ! ncore = 16 keeps the polar core cells close to isotropic.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -21,14 +27,14 @@ program test_frozen_current
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_point
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_frozen_current, only: fc_exterior_t, fc_report_t, fc_exterior, &
-        fc_solve
+        fc_solve, fc_source_t, fc_casing
     use fortfem_meridian_feec_n, only: meridian_boundary_trace_points
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
     real(dp), parameter :: r0 = 3, a = 0.4_dp, bdom = 0.6_dp
     real(dp), parameter :: j0 = 1.0e6_dp, f0 = 1.0e5_dp, h0 = 2.0e5_dp
     character(32) :: arg
-    integer :: k, nr, ncore = 16
+    integer :: k, nr, ncore = 16, source_period = 1
     real(dp) :: mu = mu0
 
     call get_command_argument(1, arg)
@@ -40,8 +46,10 @@ program test_frozen_current
         call helical_case(k)
     case ('exterior')
         call exterior_case(k, nr, int_arg(4, 4), real_arg(5, 1.5e-3_dp))
+    case ('source')
+        call source_case(k, nr, real_arg(4, 1.0e-3_dp))
     case default
-        error stop 'usage: test_frozen_current ring|helical|exterior k [nr]'
+        error stop 'usage: test_frozen_current ring|helical|exterior|source k [nr]'
     end select
 contains
     integer function int_arg(i, default) result(v)
@@ -244,6 +252,200 @@ contains
             end do
             x(i) = z; w(i) = 2/((1 - z*z)*dp1**2)
         end do
+    end subroutine
+
+    ! -------------------------------------------------------------- source
+    ! F = (-psi_Z/R, H/R, psi_R/R) + grad chi on the torus rho < a, with
+    ! psi = c1 q (1 + e sin P phi), H = c2 q and the harmonic
+    ! chi = c3 Z R^P cos P phi: div F = 0, J = curl F/mu0 (fourth-order
+    ! differences of F) jumps at rho = a, and modes 0 and P have a field
+    ! outside.
+    subroutine source_field(x, phi, f)
+        real(dp), intent(in) :: x(2), phi
+        real(dp), intent(out) :: f(3)
+        real(dp), parameter :: c1 = 2.0e-3_dp, c2 = 4.0e-2_dp, c3 = 5.0e-3_dp
+        real(dp), parameter :: e = 0.4_dp
+        real(dp) :: q, qr, qz, r, z, s
+        integer :: p
+        p = source_period
+        r = x(1); z = x(2)
+        q = 1 - ((r - r0)**2 + z**2)/a**2
+        f = c3*[p*z*r**(p - 1)*cos(p*phi), -p*z*r**(p - 1)*sin(p*phi), &
+            r**p*cos(p*phi)]
+        if (q <= 0) return
+        qr = -2*(r - r0)/a**2; qz = -2*z/a**2
+        s = c1*(1 + e*sin(p*phi))
+        f = f + [-s*qz/r, c2*q/r, s*qr/r]
+    end subroutine
+
+    subroutine source_current(x, phi, j)
+        real(dp), intent(in) :: x(2), phi
+        real(dp), intent(out) :: j(3)
+        real(dp) :: dr(3), dz(3), dq(3), f(3)
+        j = 0
+        if ((x(1) - r0)**2 + x(2)**2 >= a**2) return
+        dr = source_diff(x, phi, [1.0_dp, 0.0_dp], 0.0_dp)
+        dz = source_diff(x, phi, [0.0_dp, 1.0_dp], 0.0_dp)
+        dq = source_diff(x, phi, [0.0_dp, 0.0_dp], 1.0_dp)
+        call source_field(x, phi, f)
+        j = [dq(3)/x(1) - dz(2), dz(1) - dr(3), &
+            f(2)/x(1) + dr(2) - dq(1)/x(1)]/mu
+    end subroutine
+
+    function source_diff(x, phi, dx, dphi) result(d)
+        ! Fourth-order central difference of F along (dx, dphi).
+        real(dp), intent(in) :: x(2), phi, dx(2), dphi
+        real(dp), parameter :: h = 1.0e-4_dp
+        real(dp) :: d(3), f1(3), f2(3), f3(3), f4(3)
+        call source_field(x + 2*h*dx, phi + 2*h*dphi, f1)
+        call source_field(x + h*dx, phi + h*dphi, f2)
+        call source_field(x - h*dx, phi - h*dphi, f3)
+        call source_field(x - 2*h*dx, phi - 2*h*dphi, f4)
+        d = (-f1 + 8*f2 - 8*f3 + f4)/(12*h)
+    end function
+
+    subroutine source_samples(nrho, ntheta, nphi, src)
+        ! Gauss in rho, uniform theta and phi over one period (weights x P).
+        integer, intent(in) :: nrho, ntheta, nphi
+        type(fc_source_t), intent(out) :: src
+        real(dp) :: xg(nrho), wg(nrho), rho, th, phi, x(2)
+        integer :: i, l, m, k, p
+        p = source_period
+        src%period = p
+        call gauss(nrho, xg, wg)
+        allocate (src%xv(3, nrho*ntheta*nphi), src%wv(nrho*ntheta*nphi), &
+            src%fv(3, nrho*ntheta*nphi), src%xs(3, ntheta*nphi), &
+            src%ns(3, ntheta*nphi), src%fs(3, ntheta*nphi))
+        k = 0
+        do m = 1, nphi
+            phi = 2*pi*(m - 1)/(nphi*p)
+            do l = 1, ntheta
+                th = 2*pi*(l - 1)/ntheta
+                do i = 1, nrho
+                    k = k + 1
+                    rho = a*(xg(i) + 1)/2
+                    x = [r0 + rho*cos(th), rho*sin(th)]
+                    src%xv(:, k) = [x, phi]
+                    src%wv(k) = x(1)*rho*(a/2)*wg(i)*(2*pi/ntheta)*(2*pi/nphi)
+                    call source_field(x, phi, src%fv(:, k))
+                end do
+                x = [r0 + a*cos(th), a*sin(th)]
+                i = (m - 1)*ntheta + l
+                src%xs(:, i) = [x, phi]
+                src%ns(:, i) = [cos(th), 0.0_dp, sin(th)]*x(1)*a &
+                    *(2*pi/ntheta)*(2*pi/nphi)
+                ! Outer trace of F inside V (q -> 0+ keeps only grad chi).
+                call source_field([r0 + a*(1 - 1.0e-12_dp)*cos(th), &
+                    a*(1 - 1.0e-12_dp)*sin(th)], phi, src%fs(:, i))
+            end do
+        end do
+    end subroutine
+
+    subroutine source_case(k, nr, tol)
+        ! (1) fc_casing from samples of F against direct Biot-Savart of
+        !     J = curl F/mu0 by the same polar quadrature of V, at every
+        !     fourth boundary trace point (psi up to a constant);
+        ! (2) the period-P solve against the period-1 solve with modes
+        !     0..2P on the shared modes 0, P, 2P.
+        integer, intent(in) :: k, nr
+        real(dp), intent(in) :: tol
+        integer, parameter :: nb = 9
+        type(free_b_field_t) :: field, full
+        type(fc_source_t) :: src
+        type(fc_exterior_t) :: ext, cas
+        type(fc_report_t) :: report, rfull
+        real(dp), allocatable :: x(:), psi(:), bc(:, :), bs(:, :)
+        real(dp) :: b0(3), b2(3), p(2), ep, scale, eext, dpsi
+        integer :: st, i, l, n
+        source_period = 2
+        call disk_field(k, nr, 2, field)
+        field%period = source_period
+        call source_samples(16, 128, 96, src)
+        call fc_casing(field, src, nb, cas, st)
+        if (st /= 0) error stop 'casing'
+        n = (size(cas%xy, 2) + 3)/4
+        allocate (psi(n), bc(2, n), bs(2, n))
+        !$omp parallel do schedule(dynamic)
+        do i = 1, n
+            call direct_exterior(cas%xy(:, 4*i - 3), nb, psi(i), bc(:, i), bs(:, i))
+        end do
+        !$omp end parallel do
+        dpsi = sum(cas%psi(1::4) - psi)/n
+        eext = max(maxval(abs(cas%bc(:, 1::4, 1) - bc)), &
+            maxval(abs(cas%bs(:, 1::4, 1) - bs))) &
+            /max(maxval(abs(bc)), maxval(abs(bs)))
+        eext = max(eext, maxval(abs(cas%psi(1::4) - psi - dpsi))/maxval(abs(psi)))
+        call fc_exterior(field, source_current, 64, ext, st)
+        if (st /= 0) error stop 'exterior data'
+        call fc_solve(field, source_current, ext, x, report, st, 64)
+        if (st /= 0) error stop 'solve, period 2'
+        call disk_field(k, nr, 2*source_period, full)
+        call fc_exterior(full, source_current, 64, ext, st)
+        if (st /= 0) error stop 'exterior data, period 1'
+        call fc_solve(full, source_current, ext, x, rfull, st, 64)
+        if (st /= 0) error stop 'solve, period 1'
+        ep = 0; scale = 0
+        do i = 1, 5
+            do l = 0, 7
+                p = [r0 + 0.11_dp*i*cos(2*pi*l/8 + 0.2_dp), &
+                    0.11_dp*i*sin(2*pi*l/8 + 0.2_dp)]
+                b0 = fe_b(field, p, 0.3_dp*l)
+                b2 = fe_b(full, p, 0.3_dp*l)
+                ep = max(ep, norm2(b2 - b0)); scale = max(scale, norm2(b0))
+            end do
+        end do
+        print '(a,i0,a,i0)', 'source P', k, ' nr ', nr
+        print '(a,es12.4)', '  casing vs direct Biot-Savart of J  ', eext
+        print '(a,es12.4)', '  period 2 vs period 1               ', ep/scale
+        print '(a,es12.4)', '  removed non-solenoidal fraction    ', report%projection
+        if (eext > tol) error stop 'casing exterior data'
+        if (ep/scale > 1.0e-10_dp) error stop 'period solve'
+    end subroutine
+
+    subroutine direct_exterior(xy, nb, psi, bc, bs)
+        ! R A_phi (phi mean) and the cos/sin amplitudes of (B_R, B_Z) of
+        ! mode P at (R, Z) = xy from mu0/(4 pi) sum W J/|d| and
+        ! W J x d/|d|^3 over the polar samples of V on the whole torus.
+        real(dp), intent(in) :: xy(2)
+        integer, intent(in) :: nb
+        real(dp), intent(out) :: psi, bc(2), bs(2)
+        integer, parameter :: nrho = 16, ntheta = 128, nphi = 192
+        real(dp) :: xg(nrho), wg(nrho), rho, th, ph, w, xs(2), j(3), jc(3)
+        real(dp) :: d(3), x(3), b(3), aa(3), c, s, ri, ang
+        complex(dp) :: bn(2)
+        integer :: i, l, m, t, pp
+        pp = source_period
+        call gauss(nrho, xg, wg)
+        psi = 0; bn = 0
+        do t = 0, nb - 1
+            ang = 2*pi*t/(nb*pp)
+            x = [xy(1)*cos(ang), xy(1)*sin(ang), xy(2)]
+            b = 0; aa = 0
+            do m = 1, nphi
+                ph = 2*pi*(m - 1)/nphi
+                c = cos(ph); s = sin(ph)
+                do l = 1, ntheta
+                    th = 2*pi*(l - 1)/ntheta
+                    do i = 1, nrho
+                        rho = a*(xg(i) + 1)/2
+                        xs = [r0 + rho*cos(th), rho*sin(th)]
+                        w = xs(1)*rho*(a/2)*wg(i)*(2*pi/ntheta)*(2*pi/nphi)
+                        call source_current(xs, ph, j)
+                        jc = [j(1)*c - j(2)*s, j(1)*s + j(2)*c, j(3)]*w
+                        d = x - [xs(1)*c, xs(1)*s, xs(2)]
+                        ri = 1/norm2(d)
+                        aa = aa + jc*ri
+                        b = b + [jc(2)*d(3) - jc(3)*d(2), jc(3)*d(1) - jc(1)*d(3), &
+                            jc(1)*d(2) - jc(2)*d(1)]*ri**3
+                    end do
+                end do
+            end do
+            b = mu*b/(4*pi); aa = mu*aa/(4*pi)
+            psi = psi + xy(1)*(-aa(1)*sin(ang) + aa(2)*cos(ang))/nb
+            bn = bn + [b(1)*cos(ang) + b(2)*sin(ang), b(3)] &
+                *cmplx(cos(2*pi*t/nb), -sin(2*pi*t/nb), dp)/nb
+        end do
+        bc = 2*real(bn, dp); bs = -2*aimag(bn)
     end subroutine
 
     ! ------------------------------------------------------------- helical
