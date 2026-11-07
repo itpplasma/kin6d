@@ -565,6 +565,12 @@ kin6d_test_labels(nonnested_hudson_breslau_integrable_exact_p3 fast CLASSES mhd
     TARGETS test_nonnested_hudson_breslau)
 kin6d_test_labels(nonnested_hudson_breslau_chaos_responds_p3 fast CLASSES mhd
     TARGETS test_nonnested_hudson_breslau)
+foreach(_fc ring_p3 helical_p2 helical_p3 exterior_p3)
+    kin6d_test_labels(frozen_current_${_fc} fast CLASSES mhd
+        TARGETS test_frozen_current)
+endforeach()
+kin6d_test_labels(frozen_current_exterior_refined_p3 slow CLASSES mhd
+    TARGETS test_frozen_current)
 kin6d_test_labels(nonnested_coupled_solovev_p2 slow CLASSES mhd
     TARGETS test_nonnested_coupled)
 kin6d_test_labels(nonnested_coupled_offset_return_p2 fast CLASSES mhd

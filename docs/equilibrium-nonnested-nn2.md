@@ -773,3 +773,34 @@ uses an NN1 magnetic state, constant heating and chi_parallel/chi_perp = 1000
 through `nt_solve(..., estimate_error=.true.)`. It verifies equality with the
 separately timed estimator. The production efficiency index is unavailable
 without a true-error oracle; these timings retain the practical claim.
+
+## Frozen-current field (E3.5 level 2)
+
+`kin6d_frozen_current` computes the field of a prescribed current density
+J on the Fourier FEEC spaces of the coupled solver: the same Coulomb-gauge
+saddle point (curl-curl block, gradient coupling, multiplier lambda) with J
+held fixed and no transport or Ohm rows. Testing Ampere with grad chi shows
+that lambda vanishes iff the discrete J is divergence free, so
+||grad lambda||/||J_h||, with J_h the L2 projection of J into V1, is the
+removed non-solenoidal fraction and is reported with every solve.
+
+Boundary data are the exterior field of J itself, which is exact because J
+is frozen and the boundary lies outside its support. `fc_exterior` evaluates
+it from the volume quadrature of J on the same mesh: mode-0 R A_phi by the
+ring Green function and the n > 0 modes of B_R, B_Z by a convolution in the
+toroidal angle (the kernel modes from an nphi-point DFT, whose aliasing
+decays like exp(-nphi d/R) for a boundary at distance d from the support).
+The A_pol trace in the gauge A_phi = 0 follows from vacuum_gauge and
+FortFEM's boundary trace projection. The mode-0 A_pol trace carries the
+toroidal flux of the poloidal (diamagnetic) current; its circulation is one
+extra unknown fixed by the natural condition that the toroidal field of J
+vanishes on the boundary. Coil fields are added by the consumer.
+
+`test_frozen_current` holds the oracles: a smooth toroidal and poloidal
+ring current against the cross-section integral of the exact ring field
+(B_pol 1.3e-4 relative at P3, nr = 8) and the exact toroidal flux (3e-6);
+a manufactured helical field with modes 0..2 (observed orders 2.1 at P2
+and 3.5 at P3); and the exterior field from the FE boundary traces against
+direct Biot-Savart of a localized current with all toroidal harmonics,
+0.4 and 0.7 m outside a boundary 0.2 m from the support (1.4e-2, 1.4e-4
+and 9.9e-5 for N = 2, 4, 6 at P3, nr = 8).
