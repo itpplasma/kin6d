@@ -12,7 +12,8 @@
 program test_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK, &
-        mono_coefficients_jvp, mono_estimate_t, mono_estimate
+        mono_coefficients_jvp, mono_estimate_t, mono_estimate, mono_factor_t, mono_factor, &
+        mono_solve, mono_apply, mono_drives
     use fortnum_quadrature, only: gauss_legendre_ab
     use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
         boozer_surface, BOOZER_OK
@@ -31,6 +32,7 @@ program test_dk_mono
     case ('neo2_tok02'); ok = neo2_tok02()
     case ('jvp'); ok = jvp()
     case ('estimate'); ok = estimate()
+    case ('factor_api'); ok = factor_api()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -295,5 +297,28 @@ contains
         ok = ok .and. abs(e%algebraic%d11) <= 1e-12_dp*abs(c%d11) &
             .and. abs(e%algebraic%d33) <= 1e-12_dp*abs(c%d33)
     end function estimate
+
+    !> The public factorisation, bordered solve and operator action agree:
+    !> A x + mu e_0 = s and <w x_0> = 0 for both drives.
+    logical function factor_api() result(ok)
+        type(mono_factor_t) :: f
+        real(dp), allocatable :: s(:, :, :), x(:, :, :), r(:, :)
+        real(dp) :: mu(2), err
+        integer :: status, k
+        call mono_factor(field(33, 0.2_dp), 0.7_dp, 1e-2_dp, 40, f, status)
+        if (status /= MONO_OK) error stop 'mono_factor failed'
+        s = mono_drives(f)
+        call mono_solve(f, s, [0.0_dp, 0.0_dp], x, mu, status)
+        if (status /= MONO_OK) error stop 'mono_solve failed'
+        err = 0
+        do k = 1, 2
+            r = mono_apply(f, 1e-2_dp, x(:, :, k)) - s(:, :, k)
+            r(:, 0) = r(:, 0) + mu(k)
+            err = max(err, maxval(abs(r))/maxval(abs(s(:, :, k))), &
+                abs(sum(f%p%weight*x(:, 0, k)))/maxval(abs(x(:, 0, k))))
+        end do
+        print '(a,es10.2)', 'residual of the bordered solve through mono_apply:', err
+        ok = err < 1e-12_dp
+    end function factor_api
 
 end program test_dk_mono
