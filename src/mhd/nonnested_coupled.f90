@@ -93,7 +93,7 @@ module kin6d_nonnested_coupled
         procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
         type(nn_fitted_source_t), allocatable :: fitted ! frozen copied seed/profile
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
-        ! Existing PR47 coil-driven fixed Gamma_c. Response periods are zero;
+        ! Coil-driven fixed Gamma_c. Response periods are zero;
         ! nonzero net plasma current requires a separate harmonic response.
         type(csc_t) :: exterior
         real(dp), allocatable :: coil_drive(:)
@@ -215,7 +215,7 @@ contains
         if (allocated(problem%coil_drive)) then
             mask(lay%ia + 1:lay%ia + lay%na) = .false.
             mask(lay%il + 1:lay%il + lay%nv) = .false.
-            ! Existing PR47 gauge and covariant toroidal A-period pins.
+            ! Fix the gauge and covariant toroidal A period.
             mask(lay%il + 1) = .true.
             mask(lay%ia + field%fs%nn + 1) = .true.
         end if
@@ -504,20 +504,18 @@ contains
         if (any(abs(x - x(rep)) > 0)) return
         call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
-        ! R_p(B,0) is exactly the negative assembled pressure drive, including
-        ! frozen weak flux. Preserve this homogeneous subspace under mixed LU
-        ! only for exactly zero drive and all-zero pressure boundary/seed data.
-        ! No electric-potential, voltage or current equation is eliminated.
+        ! Preserve the exact homogeneous pressure solution, including every
+        ! frozen weak-load row, so LU roundoff cannot spoil the line search.
         if (maxval(abs(load(lay%ip + 1:lay%iphi))) == 0 .and. &
-            maxval(abs(x(lay%ip + 1:lay%iphi))) == 0) &
+            maxval(abs(x(lay%ip + 1:lay%iphi))) == 0) then
             mask(lay%ip + 1:lay%iphi) = .true.
-        if (allocated(problem%coil_drive)) then
-            ! A fit may carry signed current with zero scalar/pressure load.
-            ! Only unfitted exact vacuum data admit this invariant subspace.
+            ! A fitted source can carry current even at zero pressure/drive.
             if (.not. allocated(problem%fitted)) then
-                if (maxval(abs(load(lay%ip + 1:lay%ip + lay%nv))) <= 0 .and. &
-                    maxval(abs(x(lay%ip + 1:lay%iv))) <= 0 .and. &
-                    abs(problem%current) <= 0) mask(lay%ip + 1:lay%iv) = .true.
+                if (maxval(abs(x(lay%iphi + 1:lay%iv))) == 0) then
+                    if ((problem%closure%drive == 'I_phi' .and. problem%current == 0) &
+                        .or. (problem%closure%drive == 'V' .and. problem%voltage == 0)) &
+                        mask(lay%iphi + 1:lay%iv) = .true.
+                end if
             end if
         end if
         w = huge(1.0_dp)

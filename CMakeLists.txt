@@ -2551,13 +2551,6 @@ foreach(case declaration drive report)
     set_tests_properties(island_closure_${case} PROPERTIES TIMEOUT 180
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 endforeach()
-# Existing PR47 exterior consumer, recovered without changing provider pins.
-# The focused frozen-operator checks below do not admit full BEM assembly.
-target_sources(kin6d_feec_n PRIVATE
-    ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
-    ${fortfem_SOURCE_DIR}/src/generated/fortfem_bem_high_order_products.f90
-    ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
-    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90)
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_exterior.f90)
 add_executable(test_nonnested_exterior_operators
     test/test_nonnested_exterior_operators.f90)

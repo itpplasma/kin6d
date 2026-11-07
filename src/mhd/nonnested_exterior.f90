@@ -209,7 +209,6 @@ contains
 
     subroutine nn_attach_exterior_operators(field, problem, steklov, normal, &
             coil_normal, volume_drive, exterior, status)
-        ! Existing PR47 Schur composition, factored from nn_attach_exterior.
         ! S is the positive exterior energy map, normal=T in the same dual
         ! scalar trace basis and physical full-surface measure. volume_drive
         ! is C^T<V2,B_coil-B_h> in NN2's toroidal-mean volume measure.
