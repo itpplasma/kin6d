@@ -34,6 +34,9 @@ module kin6d_dk_mono
     private
     public :: mono_coefficients_t, mono_coefficients, mono_coefficients_jvp
     public :: mono_estimate_t, mono_estimate, trig_resample
+    ! Per-speed building blocks for solvers that couple speeds through
+    ! collisions: factorisation, bordered solve, operator action, drives.
+    public :: mono_point_t, mono_factor_t, mono_factor, mono_solve, mono_apply, mono_drives
     integer, parameter, public :: MONO_OK = 0, MONO_BAD_INPUT = 1, &
         MONO_SINGULAR = 2
 
@@ -291,6 +294,21 @@ contains
         end do
         status = MONO_OK
     end subroutine mono_solve
+
+    !> A x without the border, with deflection frequency nu per unit length.
+    pure function mono_apply(f, nu, x) result(y)
+        type(mono_factor_t), intent(in) :: f
+        real(dp), intent(in) :: nu, x(:, 0:)
+        real(dp) :: y(size(x, 1), 0:ubound(x, 2))
+        y = apply_operator(f%d, f%p, nu, x)
+    end function mono_apply
+
+    !> Radial (1) and parallel (2) drives of the factorised surface.
+    pure function mono_drives(f) result(s)
+        type(mono_factor_t), intent(in) :: f
+        real(dp) :: s(f%n, 0:f%lmax, 2)
+        s = drives(f%p, f%lmax)
+    end function mono_drives
 
     subroutine drive_solutions(f, g, mu, status)
         type(mono_factor_t), intent(in) :: f
