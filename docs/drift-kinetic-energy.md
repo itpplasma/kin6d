@@ -46,6 +46,20 @@ uses a synthetic input evaluated independently with
 Other checks cover the momentum-conserving rigid shift, finite-difference
 tangents, adjoint pairing, cache reuse and invalid inputs.
 
+The high-collisionality regression compares the flow with the full ion-ion
+collision limit in [Landreman's refined calculation](https://terpconnect.umd.edu/~mattland/assets/notes/20131019-03-PfirschSchluterRegimeIonNeoclassicalFlow.pdf),
+equations (2) and (5), which neglects ion-electron collisions as this
+single-ion path does. The limit is `k = k0 + k1 R`, with `k0 = -1.97213`,
+`k1 = -0.09361` and the geometry factor below. Here `B` is magnetic-field
+strength and `grad_parallel` means differentiation along the magnetic field:
+`R = <B^2> <(grad_parallel ln B)^2> / <(grad_parallel B)^2>`.
+Angle brackets denote the flux-surface average. The regression uses the
+Boozer parallel derivative and surface measure of the solver when evaluating
+this geometry factor, and extrapolates two finite-collisionality solutions in
+inverse collisionality squared. The often quoted `-2.1` is an approximate
+limit; the refined coefficients give about `-2.06574` when `R` is one.
+This checks asymptotic consistency without supplying a continuous error bound.
+
 This path does not yet provide a continuous error certificate, a qualified
 resolution indicator, or the surface-profile time and memory comparison with
 NEO-2 required by [#216](https://github.com/itpplasma/kin6d/issues/216).

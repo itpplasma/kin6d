@@ -17,6 +17,7 @@ program test_dk_energy
     case ('jvp'); ok = jvp()
     case ('operator_cache'); ok = operator_cache()
     case ('batch'); ok = batch()
+    case ('pfirsch_schluter'); ok = pfirsch_schluter()
     case ('profile'); ok = profile()
     case default
         print '(a)', 'unknown check '//trim(check)
@@ -42,6 +43,37 @@ contains
         print '(a,2es18.10)', 'backward errors: ', value%residual
         ok = .true.
     end function profile
+
+    !> Landreman (2013), equations (2) and (5), for full ion self-collisions:
+    !> https://terpconnect.umd.edu/~mattland/assets/notes/20131019-03-PfirschSchluterRegimeIonNeoclassicalFlow.pdf
+    logical function pfirsch_schluter() result(ok)
+        type(collop_grid_t) :: grid
+        type(energy_axi_t) :: low, high
+        real(dp), parameter :: eps = 0.01_dp, k0 = -1.97213_dp, k1 = -0.09361_dp
+        real(dp) :: ratio, reference, limit
+        integer :: status
+        call collop_make_grid(6.0_dp, 4, 7, grid, status)
+        if (status /= COLLOP_OK) error stop 'PS grid failed'
+        call energy_axi_coefficients(field(9, eps), 1.0_dp, deuterons(1e24_dp), &
+            17.0_dp, grid, 8, COLLOP_FULL, low, status)
+        if (status /= ENERGY_OK) error stop 'PS lower-collisionality solve failed'
+        call energy_axi_coefficients(field(9, eps), 1.0_dp, deuterons(1e25_dp), &
+            17.0_dp, grid, 8, COLLOP_FULL, high, status)
+        if (status /= ENERGY_OK) error stop 'PS higher-collisionality solve failed'
+        ! Analytic surface integrals for b=1/(1+eps*cos(theta)), parallel
+        ! derivative kappa*b*d_theta and surface measure 1/b**2.
+        ratio = 2*(1 - eps**2)**2/((1 + eps**2/2)*(1 + sqrt(1 - eps**2)))
+        reference = k0 + k1*ratio
+        ! The leading finite-collisionality correction is proportional to
+        ! 1/nu**2; extrapolate between rates differing by a factor of ten.
+        limit = (100*high%k - low%k)/99
+        print '(a,3es18.10)', 'PS low, high, extrapolated k: ', low%k, high%k, limit
+        print '(a,es18.10)', 'PS geometry-dependent reference: ', reference
+        ok = abs(low%k - reference) < 6e-3_dp &
+            .and. abs(high%k - reference) < 1e-4_dp &
+            .and. abs(limit - reference) < 2e-5_dp &
+            .and. max(abs(low%d31 - 0.5_dp), abs(high%d31 - 0.5_dp)) < 1e-4_dp
+    end function pfirsch_schluter
 
     logical function batch() result(ok)
         type(collop_grid_t) :: grid
