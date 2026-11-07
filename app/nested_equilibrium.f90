@@ -30,7 +30,7 @@ program nested_equilibrium
     logical :: guessed = .false.
     logical :: prescribe_current
     integer :: max_current_iterations
-    real(dp) :: current_tolerance, current_error
+    real(dp) :: current_tolerance, current_error, solve_tolerance
     integer :: current_iterations
     real(dp), allocatable :: boundary(:, :, :), seed_x(:, :, :), coarse_seed(:, :, :)
     real(dp) :: residual, reference, volume, area, magnetic, kinetic, raxis
@@ -120,7 +120,7 @@ program nested_equilibrium
             reference_gradient=reference)
         coarse = map; coarse_seed = seed_x
     end do
-    current_error = 0; current_iterations = 0
+    current_error = 0; current_iterations = 0; solve_tolerance = tolerance
     if (prescribe_current) call match_current(current_error)
     call profile%evaluate(0.0_dp, iota_axis, unused, unused)
     call profile%evaluate(1.0_dp, iota_edge, unused, unused)
@@ -157,45 +157,63 @@ program nested_equilibrium
     call result%write('force_residual', residual, '1', 'relative free reduced-gradient l2')
     call result%write('tolerance', tolerance, '1', 'requested force_residual')
     call result%write('iterations', real(report%iterations, dp), '1', 'Newton iterations')
+    call result%write('energy_seconds', report%energy_s, 's', 'final solve: energy and gradient')
+    call result%write('hessian_seconds', report%hessian_s, 's', 'final solve: Hessian assembly')
+    call result%write('factor_seconds', report%factor_s, 's', 'final solve: factorisation and solves')
+    call result%write('factorizations', real(report%factorizations, dp), '1', &
+        'final solve: factorisations')
+    call result%write('lu_fallbacks', real(report%lu_fallbacks, dp), '1', &
+        'final solve: Cholesky failures refactored by pivoted LU')
+    call result%write('analyses', real(report%analyses, dp), '1', 'final solve: symbolic analyses')
     call result%close()
 
 contains
 
     subroutine match_current(error)
-        ! Prescribed enclosed toroidal current I(s): for a fixed map, I on each
-        ! surface is affine in iota there, so iota is updated surface by surface
-        ! with secant slopes (the first from a finite difference) and refitted.
+        ! Prescribed enclosed toroidal current I(s). For a fixed map I on each
+        ! surface is affine in iota there; its slope is read on the solved map
+        ! with the frozen form's iota shifted by delta, so every update is a
+        ! Newton step on the current map, refitted and re-solved.
         real(dp), intent(out) :: error
         integer, parameter :: ns = 12
-        real(dp) :: s(ns), target(ns), measured(ns), previous(ns), slope(ns)
-        real(dp) :: iota_s(ns), iota_previous(ns), scale, unused1, unused2
+        real(dp), parameter :: delta = 1e-3_dp
+        real(dp) :: s(ns), target(ns), measured(ns), shifted(ns), slope(ns)
+        real(dp) :: iota_s(ns), scale, unused1, unused2
         integer :: j, k
         do j = 1, ns
             s(j) = real(j, dp)/ns
             target(j) = sum(current*s(j)**[(k, k=0, kmax)])
         end do
         scale = max(maxval(abs(target)), tiny(1.0_dp))
-        do j = 1, ns
-            call profile%evaluate(s(j), iota_s(j), unused1, unused2)
-        end do
-        call measure(s, measured)
-        error = maxval(abs(measured - target))/scale
-        slope = 0
-        do k = 1, max_current_iterations
-            if (error <= current_tolerance) exit
-            current_iterations = k
-            previous = measured; iota_previous = iota_s
-            if (k == 1) then
-                iota_s = iota_s + 0.05_dp
-            else
-                iota_s = iota_s + (target - measured)/slope
-            end if
-            call refit(s, iota_s)
-            call resolve()
+        do k = 0, max_current_iterations
             call measure(s, measured)
-            where (abs(iota_s - iota_previous) > 0) &
-                slope = (measured - previous)/(iota_s - iota_previous)
             error = maxval(abs(measured - target))/scale
+            print '(a,i3,a,es10.3)', 'current iteration ', k, ': relative error ', error
+            if (error <= current_tolerance .or. k == max_current_iterations) then
+                ! the current of a loosely solved map is measured again on the
+                ! fully solved one
+                if (solve_tolerance <= tolerance .or. k == max_current_iterations) exit
+                solve_tolerance = tolerance
+                call ideal_map_solve(map, solve_tolerance, max_iterations, report, &
+                    solve_status, reference_gradient=reference)
+                call measure(s, measured)
+                error = maxval(abs(measured - target))/scale
+                print '(a,i3,a,es10.3)', 'current iteration ', k, ': relative error ', error
+                if (error <= current_tolerance) exit
+            end if
+            current_iterations = k + 1
+            seed%profile%iota(1) = seed%profile%iota(1) + delta
+            call measure(s, shifted)
+            seed%profile%iota(1) = seed%profile%iota(1) - delta
+            slope = (shifted - measured)/delta
+            do j = 1, ns
+                call profile%evaluate(s(j), iota_s(j), unused1, unused2)
+            end do
+            iota_s = iota_s + (target - measured)/slope
+            call refit(s, iota_s)
+            ! intermediate maps need only the accuracy of the current mismatch
+            solve_tolerance = max(tolerance, min(1e-4_dp, 1e-3_dp*error))
+            call resolve()
         end do
     end subroutine
 
@@ -334,8 +352,9 @@ contains
         if (local /= 0) error stop 'nested_equilibrium: current re-seed'
         map%x = x_saved
         if (allocated(angle_saved)) map%angle = angle_saved
-        reference = free_gradient()
-        call ideal_map_solve(map, tolerance, max_iterations, report, solve_status)
+        ! the same absolute target as the first solve, relative to its seed
+        call ideal_map_solve(map, solve_tolerance, max_iterations, report, solve_status, &
+            reference_gradient=reference)
     end subroutine
 
     real(dp) function free_gradient()
