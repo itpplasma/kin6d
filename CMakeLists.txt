@@ -1044,6 +1044,9 @@ foreach(check maxwellian_null rates jvp conservation self_adjoint conservation_p
     add_test(NAME dk_collop_${check} COMMAND test_dk_collop ${check})
     kin6d_test_labels(dk_collop_${check} fast CLASSES continuum TARGETS test_dk_collop)
 endforeach()
+add_test(NAME dk_collop_neo2_matrix COMMAND test_dk_collop neo2_matrix
+    ${CMAKE_SOURCE_DIR}/test/data/neo2_collop_aug30835.txt)
+kin6d_test_labels(dk_collop_neo2_matrix fast CLASSES continuum TARGETS test_dk_collop)
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE kin6d)
 foreach(check collisionless banana pfirsch_schlueter plateau onsager jvp estimate)

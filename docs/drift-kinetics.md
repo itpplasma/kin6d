@@ -408,8 +408,16 @@ and linearised heat exchange between drifting or heated Maxwellians agree
 with the closed rates to 3e-14 and 1e-12 (`dk_collop_exchange_pair`). The
 temperature tangent of the field-particle part includes the boundary term of
 the moving split point y = v/v_tb, where the derivative of the kernel jumps.
-Intrinsic ambipolarity, the comparison with NEO-2's matrix elements and the
-kinetic solve with energy scattering follow.
+Against NEO-2's matrix elements for electrons and deuterons of the AUG 30835
+benchmark run (`collop.h5`, T_i/T_e = 0.70, quadratic B-splines on knots
+0:0.8:4, which lie exactly in cubic elements on the same knots; test
+`dk_collop_neo2_matrix`, data in `test/data`): Lorentz and energy-scattering
+elements agree to 2e-12, the field part to 2e-6 for self-collisions and to
+8e-4 of the largest element for the electron-on-deuteron block at l = 0,
+whose elements are 1e-4 of the Lorentz ones; that block is where the two
+quadratures differ most, and which of them is closer is not established
+beyond the KIN6D conservation and exchange-rate checks. Intrinsic
+ambipolarity and the kinetic solve with energy scattering follow.
 
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
