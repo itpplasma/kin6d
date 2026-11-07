@@ -153,13 +153,10 @@ contains
             status, lag=lag)
         call require(status == 0, 'evolution problem')
         ! One factor serves both the BDF1 start and the BDF2 shift 1.5/dt,
-        ! unless exact Newton solves are requested.
+        ! unless each shift needs its own factor.
         problem%shift_tolerance = 0.5_dp
         if (present(exact_shift)) then
-            if (exact_shift) then
-                problem%shift_tolerance = 0
-                problem%lag = 1
-            end if
+            if (exact_shift) problem%shift_tolerance = 0
         end if
         y = y0
         allocate (ydot(size(y)), u(slab%op%ndof))
