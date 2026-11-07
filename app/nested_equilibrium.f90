@@ -178,15 +178,24 @@ contains
         integer, parameter :: ns = 12
         real(dp), parameter :: delta = 1e-3_dp
         real(dp) :: s(ns), target(ns), measured(ns), shifted(ns), slope(ns)
-        real(dp) :: iota_s(ns), scale, unused1, unused2
-        integer :: j, k
+        real(dp) :: iota_s(ns), scale, unused1, unused2, update(ns)
+        real(dp), allocatable :: previous_iota(:)
+        integer :: j, k, local
         do j = 1, ns
             s(j) = real(j, dp)/ns
             target(j) = sum(current*s(j)**[(k, k=0, kmax)])
         end do
-        scale = max(maxval(abs(target)), tiny(1.0_dp))
+        scale = maxval(abs(target))
         do k = 0, max_current_iterations
             call measure(s, measured)
+            if (k == 0) then
+                ! the current per unit iota of the starting map scales a
+                ! current-free target, so that the error is an iota error there
+                seed%profile%iota(1) = seed%profile%iota(1) + delta
+                call measure(s, shifted)
+                seed%profile%iota(1) = seed%profile%iota(1) - delta
+                scale = max(scale, maxval(abs(shifted - measured))/delta, tiny(1.0_dp))
+            end if
             error = maxval(abs(measured - target))/scale
             print '(a,i3,a,es10.3)', 'current iteration ', k, ': relative error ', error
             if (error <= current_tolerance .or. k == max_current_iterations) then
@@ -209,11 +218,25 @@ contains
             do j = 1, ns
                 call profile%evaluate(s(j), iota_s(j), unused1, unused2)
             end do
-            iota_s = iota_s + (target - measured)/slope
+            ! KIN6D's frozen field needs iota without zeros: halve an update
+            ! that would change its sign
+            update = (target - measured)/slope
+            do j = 1, 30
+                if (all(iota_s*(iota_s + update) > 0)) exit
+                update = update/2
+            end do
+            iota_s = iota_s + update
+            previous_iota = profile%iota
             call refit(s, iota_s)
+            if (.not. single_signed()) then
+                profile%iota = previous_iota
+                print '(a)', 'current iteration: the refitted iota changes sign'
+                exit
+            end if
             ! intermediate maps need only the accuracy of the current mismatch
             solve_tolerance = max(tolerance, min(1e-4_dp, 1e-3_dp*error))
-            call resolve()
+            call resolve(local)
+            if (local /= 0) error stop 'nested_equilibrium: current re-seed'
         end do
     end subroutine
 
@@ -311,6 +334,18 @@ contains
         end do
     end subroutine
 
+    logical function single_signed()
+        ! the seed's admission rule: iota without zeros on [0, 1]
+        real(dp) :: value, first, unused1, unused2
+        integer :: a
+        call profile%evaluate(0.0_dp, first, unused1, unused2)
+        single_signed = abs(first) > tiny(1.0_dp)
+        do a = 1, 128
+            call profile%evaluate(a/128.0_dp, value, unused1, unused2)
+            single_signed = single_signed .and. value*first > 0
+        end do
+    end function
+
     subroutine measure(s, values)
         ! enclosed toroidal current on the surfaces s
         real(dp), intent(in) :: s(:)
@@ -341,15 +376,15 @@ contains
         profile%iota = rhs(1:order + 1)
     end subroutine
 
-    subroutine resolve()
+    subroutine resolve(local)
         ! re-seed the frozen form with the new iota and keep the solved map
+        integer, intent(out) :: local
         real(dp), allocatable :: x_saved(:, :, :), angle_saved(:)
-        integer :: local
         x_saved = map%x
         if (allocated(map%angle)) angle_saved = map%angle
         call ideal_seed_disk_mesh(mesh, boundary_nodes, degree, local)
         call init_seed(local)
-        if (local /= 0) error stop 'nested_equilibrium: current re-seed'
+        if (local /= 0) return
         map%x = x_saved
         if (allocated(angle_saved)) map%angle = angle_saved
         ! the same absolute target as the first solve, relative to its seed
