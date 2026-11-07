@@ -327,6 +327,39 @@ independent block systems of the same shape, solved as one batch. A port
 waits for a profile of the full operator and must beat the CPU at matched
 accuracy.
 
+DK1 step 2 with the same reference discretisation (`src/continuum/dk_ntv.f90`,
+#183): one toroidal harmonic n of the local Lorentz equation with the
+streaming shift -i n q, the grad-B precession Omega = omega_E +
+pre lambda (cos theta - offset) and the drive lambda S, whose bounce average
+is the stage-1 bounce reference. (1 - xi^2) couples l to l +- 2, so pairs
+(2j, 2j + 1) form blocks of size 2 n_theta, eliminated as for n = 0;
+derivatives in nu and omega_E reuse the factors and agree with centred
+differences to 4e-8 (test `dk_ntv_jvp`). On the stage-1 frozen circular
+field (n = 3, full |B| spectrum), scored against the full-phase reference
+(all trapped bounce harmonics plus passing), at nu_eff/omega_gradB = 0.006:
+
+| eps | ratio | resolution spread | tolerance |
+|---|---|---|---|
+| 0.010 | 0.957 | 5e-4 | 0.10 |
+| 0.020 | 0.961 | 1.2e-3 | 0.10 |
+| 0.030 | 0.954 | 4e-4 | 0.10 |
+| 0.040 | 0.962 | 8e-4 | 0.12 |
+| 0.045 | 0.968 | 4e-4 | 0.13 |
+| 0.060 | 0.982 | 3e-4 | 0.18 |
+
+Every row passes, but the linear fit has intercept 0.948 +- 0.006, so
+|a - 1| = 0.052 exceeds 0.05 and the SBP gate fails as scored. The spread is
+the change over 193 to 321 theta points and 1600 to 6400 Legendre
+polynomials. At eps = 0.03 the deficit falls with collisionality, 0.047,
+0.042 and 0.037 at nu, nu/2 and nu/4, so finite collisionality explains part
+of it; that it vanishes as nu -> 0 is not shown. Cost of a converged row:
+308800 unknowns per energy node, 3.7 GiB and 5 min for 16 nodes on four
+cores; resolution does not grow as eps falls from 0.06 to 0.01. In the 1/nu
+regime with the drift off (eps = 0.03) the torque agrees with the reference
+to 0.6 % and stays finite from omega_E = 0.012 rad/s down to omega_E = 0,
+rising by 0.68 % like the reference (0.69 %), solved directly. DG in (theta, lambda) has not been needed for
+resolution on this ladder.
+
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
 Richardson iteration):
