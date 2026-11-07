@@ -1135,6 +1135,18 @@ set_tests_properties(pp_fusion_export_contract PROPERTIES PROCESSORS 4)
 
 add_executable(nested_oracle_export app/nested_oracle_export.f90)
 target_link_libraries(nested_oracle_export PRIVATE kin6d kin6d_io)
+add_executable(nested_equilibrium app/nested_equilibrium.f90)
+target_link_libraries(nested_equilibrium PRIVATE kin6d kin6d_io)
+add_executable(test_nested_equilibrium_app test/test_nested_equilibrium_app.f90)
+target_link_libraries(test_nested_equilibrium_app PRIVATE kin6d_io)
+add_test(NAME equilibrium_nested_circular_tokamak COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:nested_equilibrium>
+    -DCHECK=$<TARGET_FILE:test_nested_equilibrium_app>
+    -DCONFIG=${CMAKE_SOURCE_DIR}/examples/nested-equilibrium/circular-tokamak.nml
+    -DWORK=${CMAKE_BINARY_DIR}/nested-equilibrium-circular
+    -P ${CMAKE_SOURCE_DIR}/test/check_nested_equilibrium.cmake)
+set_tests_properties(equilibrium_nested_circular_tokamak PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 add_executable(pp_fusion_eft_export app/pp_fusion_eft_export.f90)
 add_dependencies(pp_fusion_eft_export kin6d_build_info)
 target_include_directories(pp_fusion_eft_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
