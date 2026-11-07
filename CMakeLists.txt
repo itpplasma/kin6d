@@ -1053,7 +1053,7 @@ add_test(NAME dk_ntv_line COMMAND test_dk_ntv line)
 kin6d_test_labels(dk_ntv_line fast CLASSES continuum TARGETS test_dk_ntv)
 add_executable(test_dk_collop test/test_dk_collop.f90)
 target_link_libraries(test_dk_collop PRIVATE kin6d)
-foreach(check maxwellian_null rates jvp conservation self_adjoint conservation_pair
+foreach(check maxwellian_null rates jvp zero_jvp fp_moments conservation self_adjoint conservation_pair
         exchange_pair)
     add_test(NAME dk_collop_${check} COMMAND test_dk_collop ${check})
     kin6d_test_labels(dk_collop_${check} fast CLASSES continuum TARGETS test_dk_collop)

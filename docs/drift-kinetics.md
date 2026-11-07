@@ -508,6 +508,34 @@ quadratures differ most, and which of them is closer is not established
 beyond the KIN6D conservation and exchange-rate checks. Intrinsic
 ambipolarity and the kinetic solve with energy scattering follow.
 
+The primal field-particle assembly evaluates two scaled moment sweeps, below
+and above each target speed, instead of repeating the entire source integral
+at every target. The moments use the two separable powers of the same retained
+Rosenbluth kernel; FortSym derives their coefficients and leaves for values,
+Jacobian-vector products and vector-Jacobian products.
+Quadrature and basis tables are shared between independent Legendre degrees,
+which run in parallel with OpenMP. This removes repeated source integration;
+the stored Galerkin matrices still have quadratic size in the energy nodes.
+Derivative directions that leave the thermal-speed ratio unchanged reuse the
+moment sweeps. Directions that change that ratio retain the direct kernel
+integration and its moving-boundary term. A zero direction returns a zero tangent.
+
+Test-particle quadrature sums accumulate in `real128` before conversion to the
+`real64` operator. This reduces rounding error when the large self-collision
+contributions cancel in the much smaller electron-ion heat exchange.
+The conservation, exchange-rate and NEO-2 matrix checks remain diagnostic
+oracles; this assembly does not yet supply a rigorous continuous error bound.
+
+For a reproducible single-deuteron assembly measurement with 17 energy nodes
+and degrees 0 through 128, run:
+
+```sh
+OMP_NUM_THREADS=1 build/test_dk_collop assembly_profile 128
+```
+
+Change the thread count to measure the parallel sweep. This reports assembly
+time, not kinetic-solve time.
+
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
 Richardson iteration):

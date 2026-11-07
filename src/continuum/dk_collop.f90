@@ -15,21 +15,22 @@
 !!
 !! Models: Lorentz (pitch-angle scattering only), test particle (pitch-angle
 !! and energy scattering off Maxwellian partners, the thermal term retained
-!! for unequal temperatures), full (test particle plus the field-particle
-!! part of self-collisions, so that each species conserves its own density,
-!! momentum and energy; field-particle parts between species follow) and
-!! Krook (-nu_K f, a parity switch, never a default). The test-particle operator is symmetric for equal temperatures
+!! for unequal temperatures), full (test and field parts of every species
+!! pair, conserving each species' density and total momentum and energy) and
+!! Krook (-nu_K f, a parity switch, never a default). The test-particle operator
+!! is symmetric for equal temperatures
 !! and has the Maxwellian (h = 1) as null vector; it exchanges momentum and
 !! energy with its partners, which are reservoirs here.
 !!
 !! Tangents with respect to the species temperatures and densities
 !! (collop_build_jvp) come from the leaf JVPs at fixed normalised grid.
 module kin6d_dk_collop
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, real128
     use fortnum_quadrature, only: gauss_legendre, gauss_lobatto_legendre
     use fortnum_polynomial, only: lagrange_weights, lagrange_differentiation_matrix
     use kin6d_dk_collop_leaves, only: collop_tp, collop_tp_series, collop_tp_jvp, &
-        collop_tp_series_jvp, collop_fp_lo, collop_fp_hi, collop_fp_lo_jvp, collop_fp_hi_jvp
+        collop_tp_series_jvp, collop_fp_lo, collop_fp_hi, collop_fp_lo_jvp, collop_fp_hi_jvp, &
+        collop_fp_lo_moments, collop_fp_hi_moments
     implicit none
     private
     public :: collop_species_t, collop_grid_t, collop_t
@@ -71,6 +72,11 @@ module kin6d_dk_collop
         real(dp), allocatable :: lnlambda(:, :)
         ! Galerkin matrices (ns*n, ns*n, 0:lmax), species-major blocks.
         real(dp), allocatable :: a(:, :, :)
+    end type
+
+    type :: potential_panel_t
+        real(dp), allocatable :: y(:), weight(:), phi(:, :)
+        integer, allocatable :: first(:)
     end type
 
 contains
@@ -216,6 +222,13 @@ contains
         if (status /= COLLOP_OK) return
         status = COLLOP_BAD_INPUT
         if (size(dt) /= op%ns .or. size(dn) /= op%ns) return
+        if (all(abs(dt) <= 0) .and. all(abs(dn) <= 0)) then
+            ! assemble uses zero directions to select the primal matrix.
+            allocate (da(op%ns*grid%n, op%ns*grid%n, 0:lmax))
+            da = 0
+            status = COLLOP_OK
+            return
+        end if
         call assemble(op, dt, dn, da)
         status = COLLOP_OK
     end subroutine collop_build_jvp
@@ -287,7 +300,9 @@ contains
         real(dp), allocatable :: xq(:), wq(:)
         real(dp) :: rinv, tau, nu, drinv, dtau, dnu, lor, en, th, dlor, den, dth
         real(dp) :: phi(op%grid%order), dphi(op%grid%order), pref, scale
-        real(dp), allocatable :: lorentz(:, :), energy(:, :), edges(:)
+        real(dp), allocatable :: edges(:)
+        ! Resolve self-collision cancellation before interspecies heat exchange.
+        real(real128), allocatable :: lorentz(:, :), energy(:, :)
         integer :: q, i, j, first, l, p, n
         logical :: tangent
 
@@ -311,11 +326,12 @@ contains
         do q = 1, size(xq)
             if (xq(q)*rinv < 1) then
                 call collop_tp_series(xq(q), rinv, tau, lor, en, th)
-                call collop_tp_series_jvp(xq(q), rinv, tau, 0.0_dp, drinv, dtau, dlor, &
-                    den, dth)
+                if (tangent) call collop_tp_series_jvp(xq(q), rinv, tau, 0.0_dp, &
+                    drinv, dtau, dlor, den, dth)
             else
                 call collop_tp(xq(q), rinv, tau, lor, en, th)
-                call collop_tp_jvp(xq(q), rinv, tau, 0.0_dp, drinv, dtau, dlor, den, dth)
+                if (tangent) call collop_tp_jvp(xq(q), rinv, tau, 0.0_dp, &
+                    drinv, dtau, dlor, den, dth)
             end if
             ! Product rule on nu times the weights.
             scale = nu
@@ -340,7 +356,7 @@ contains
         allocate (block(n, n, 0:op%lmax))
         do l = 0, op%lmax
             pref = 4*pi/(2*l + 1)/pi**1.5_dp
-            block(:, :, l) = -pref*(l*(l + 1)/2.0_dp*lorentz + energy)
+            block(:, :, l) = real(-pref*(l*(l + 1)/2.0_dp*lorentz + energy), dp)
         end do
     end subroutine test_particle_block
 
@@ -380,6 +396,10 @@ contains
         nu = op%sp(sa)%n*collop_nuhat(op%sp(sa), op%sp(sb), op%lnlambda(sa, sb))
         drho = rho*(dt(sb)/op%sp(sb)%t - dt(sa)/op%sp(sa)%t)/2
         dnu = nu*(dn(sa)/op%sp(sa)%n + dn(sb)/op%sp(sb)%n - 1.5_dp*dt(sa)/op%sp(sa)%t)
+        if (abs(drho) <= 0) then
+            call field_particle_sweep(op, rho, mu, merge(dnu, nu, tangent), block)
+            return
+        end if
         ls = [(real(l, dp), l=0, op%lmax)]
         ! For l >= 1 a basis function with h(0) /= 0 has potentials with
         ! x^l log(x) terms at the origin; geometric panels towards 0 keep
@@ -448,6 +468,108 @@ contains
             end do
         end do
     end subroutine field_particle_block
+
+    !> Two scaled moment sweeps replace the repeated source integrals.
+    !> Degrees are independent; the quadrature and basis tables are shared.
+    subroutine field_particle_sweep(op, rho, mu, nu, block)
+        type(collop_t), intent(in) :: op
+        real(dp), intent(in) :: rho, mu, nu
+        real(dp), allocatable, intent(out) :: block(:, :, :)
+        type(potential_panel_t), allocatable :: panels(:)
+        real(dp), allocatable :: edges(:), origin(:), xq(:), wq(:), phi(:, :), dphi(:, :)
+        integer, allocatable :: first(:)
+        real(dp) :: m0(op%grid%n), m2(op%grid%n), psi(op%grid%n), psix(op%grid%n)
+        real(dp) :: oldx, oldy, y, ratio, power, scale, top, gauss
+        integer :: n, p, nq, q, r, i, j, l, side, p0, p2, begin, finish, step, k, base
+        logical :: lower
+
+        n = op%grid%n
+        p = op%grid%order
+        edges = tail_edges(op%grid)
+        top = edges(size(edges))
+        origin = [(edges(2)*0.5_dp**k, k=1, 24)]
+        call panel_rule(merge_breaks([edges, origin], [rho*edges, rho*origin], top), xq, wq)
+        nq = size(xq)
+        allocate (phi(p, nq), dphi(p, nq), first(nq), panels(nq), block(n, n, 0:op%lmax))
+        do q = 1, nq
+            call collop_basis(op%grid, xq(q), first(q), phi(:, q), dphi(:, q))
+        end do
+        block = 0
+        do side = 1, 2
+            lower = side == 1
+            begin = merge(1, nq, lower)
+            finish = merge(nq, 1, lower)
+            step = merge(1, -1, lower)
+            oldy = merge(0.0_dp, top, lower)
+            do q = begin, finish, step
+                y = min(xq(q)/rho, top)
+                call potential_panel(op%grid, edges, min(oldy, y), max(oldy, y), &
+                    y, lower, op%lmax, panels(q))
+                oldy = y
+            end do
+            !$omp parallel do default(shared) schedule(static) &
+            !$omp private(l,p0,p2,m0,m2,psi,psix,oldx,q,r,ratio,power,base,j,scale,gauss,i)
+            do l = 0, op%lmax
+                p0 = merge(l, l - 1, lower)
+                p2 = p0 + 2
+                m0 = 0
+                m2 = 0
+                oldx = xq(begin)
+                scale = nu*(4*pi/(2*l + 1))**2/pi**3
+                do q = begin, finish, step
+                    ratio = merge(oldx/xq(q), xq(q)/oldx, lower)
+                    m0 = m0*ratio**p0
+                    m2 = m2*ratio**p2
+                    do r = 1, size(panels(q)%y)
+                        ratio = merge(rho*panels(q)%y(r)/xq(q), &
+                            xq(q)/(rho*panels(q)%y(r)), lower)
+                        power = ratio**p0
+                        base = panels(q)%first(r) - 1
+                        do j = 1, p
+                            gauss = panels(q)%weight(r)*panels(q)%phi(j, r)*power
+                            m0(base + j) = m0(base + j) + gauss
+                            m2(base + j) = m2(base + j) + gauss*ratio**2
+                        end do
+                    end do
+                    if (lower) then
+                        call collop_fp_lo_moments(xq(q), real(l, dp), mu, m0, m2, psi, psix)
+                    else
+                        call collop_fp_hi_moments(xq(q), real(l, dp), mu, m0, m2, psi, psix)
+                    end if
+                    gauss = scale*wq(q)*exp(-xq(q)**2)
+                    do i = 1, p
+                        block(first(q) + i - 1, :, l) = block(first(q) + i - 1, :, l) &
+                            + gauss*(xq(q)**2*dphi(i, q)*psix + l*(l + 1)*phi(i, q)*psi)
+                    end do
+                    oldx = xq(q)
+                end do
+            end do
+            !$omp end parallel do
+        end do
+    end subroutine field_particle_sweep
+
+    subroutine potential_panel(grid, edges, lo, hi, split, lower, lmax, panel)
+        type(collop_grid_t), intent(in) :: grid
+        real(dp), intent(in) :: edges(:), lo, hi, split
+        logical, intent(in) :: lower
+        integer, intent(in) :: lmax
+        type(potential_panel_t), intent(out) :: panel
+        real(dp), allocatable :: breaks(:), graded(:), w(:)
+        real(dp) :: dphi(grid%order)
+        integer :: k, ngrade
+        ngrade = 2 + ceiling(log(real(lmax + 1, dp))/log(2.0_dp))
+        graded = [(split*(1 + merge(-1.0_dp, 1.0_dp, lower)*0.5_dp**k), k=1, ngrade)]
+        if (.not. lower) graded = [graded, (split*2.0_dp**k, &
+            k=1, max(0, ceiling(log(hi/split)/log(2.0_dp))))]
+        breaks = [pack(edges, edges > lo .and. edges < hi), &
+            pack(graded, graded > lo .and. graded < hi)]
+        call panel_rule(merge_breaks([lo, hi], breaks, hi), panel%y, w)
+        allocate (panel%phi(grid%order, size(w)), panel%first(size(w)))
+        panel%weight = w*exp(-panel%y**2)*panel%y**2
+        do k = 1, size(w)
+            call collop_basis(grid, panel%y(k), panel%first(k), panel%phi(:, k), dphi)
+        end do
+    end subroutine potential_panel
 
     subroutine krook_block(op, sa, dn, tangent, block)
         type(collop_t), intent(in) :: op
