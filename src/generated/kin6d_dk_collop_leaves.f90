@@ -221,7 +221,7 @@ pure elemental subroutine collop_fp_lo(x, t, l, mu, k1, k1x)
     implicit none
     real(dp), intent(in) :: x, t, l, mu
     real(dp), intent(out) :: k1, k1x
-    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17
 
     t1 = t**l
     t2 = -1
@@ -230,14 +230,20 @@ pure elemental subroutine collop_fp_lo(x, t, l, mu, k1, k1x)
     t5 = l*2
     t6 = t5 - 1
     t7 = l - 1 + 2
-    t8 = t5 + 3
-    t9 = l + 2
-    t10 = -l*t4*1/t6 + t**t7*t9*1/t8
-    t11 = -t1/t6 + t**t9/t8
-    t12 = -t*x*t10/x + t11*1
-    k1 = mu*t1/x + x*t12 - x*t11
-    k1x = -mu*t1*1/x**2 - t*(l*mu*t4*1/x - x*t10 + x*(-t*x*(-l*t**(l - 1 - 1)*t3*1*1/t6 + t**(l - &
-        1 - 1 + 2)*t7*t9*1*1/t8)/x - x*t10*1/x + t10*1))/x + x*(t*x*t10*1/x**2 - t*t10*1/x) + t12*1 - t11*1
+    t8 = t**t7
+    t9 = t5 + 3
+    t10 = l + 2
+    t11 = -l*x*t4*1/t6 + x*t8*t10*1/t9
+    t12 = -t1*1/t6
+    t13 = t**t10
+    t14 = t13*1/t9
+    t15 = -t*t11/x - t1*1/t6 + t14
+    t16 = -l*t4*1*1/t6
+    t17 = t8*t10*1*1/t9
+    k1 = mu*t1/x + x*t15 - (-x*t1/t6 + x*t13/t9)
+    k1x = -mu*t1*1/x**2 - t*(l*mu*t4*1/x + x*(t16 - t*(-l*x*t**(l - 1 - 1)*t3*1*1/t6 + x*t**(l - 1 - &
+        1 + 2)*t7*t10*1*1/t9)/x + t17 - t11*1/x) - t11)/x + x*(t*t11*1/x**2 - t*(t16 + t17)/x) + t15*1 - &
+        (t12 + t14)
 
 end subroutine collop_fp_lo
 
@@ -252,7 +258,7 @@ pure elemental subroutine collop_fp_lo_jvp(x, t, l, mu, dx, dt, dl, dmu, dk1, dk
     real(dp), intent(in) :: x, t, l, mu, dx, dt, dl, dmu
     real(dp), intent(out) :: dk1, dk1x
     real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, &
-        t19, t20, t21, t22, t23, t24, t25, t26, t27, t28
+        t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35, t36, t37, t38
 
     t1 = t**l
     t2 = l - 1
@@ -263,33 +269,47 @@ pure elemental subroutine collop_fp_lo_jvp(x, t, l, mu, dx, dt, dl, dmu, dk1, dk
     t7 = t**t6
     t8 = t4 + 3
     t9 = l + 2
-    t10 = -l*t3/t5 + t7*t9/t8
-    t11 = -t1/t5
-    t12 = t**t9
-    t13 = t12/t8
-    t14 = dl*log(t)
-    t15 = t14 + dt*l/t
-    t16 = dl*t1*2/t5**2
-    t17 = -dl*t12*2/t8**2
-    t18 = -dt*t10
-    t19 = t14 + dt*t2/t
-    t20 = dl*l*t3*2/t5**2 - dl*t3/t5 - dl*t7*t9*2/t8**2 + dl*t7/t8 - l*t3*t19/t5 + t7*t9*(t14 + dt* &
-        t6/t)/t8
-    t21 = -t*t20
-    t22 = -t1*t15/t5
-    t23 = t12*(t14 + dt*t9/t)/t8
-    t24 = t16 - dl*t12*2/t8**2 - t1*t15/t5 + t23
-    t25 = l - 2
-    t26 = t**t25
-    t27 = -l*t26*t2/t5 + t1*t6*t9/t8
-    t28 = l*mu*t3/x - t*x*t27 - x*t10
-    dk1 = dmu*t1/x - dx*mu*t1/x**2 + dx*(-t*t10 - t1/t5 + t13) - dx*(t11 + t13) + mu*t1*t15/x + x* &
-        (t16 - dl*t12*2/t8**2 - dt*t10 - t*t20 - t1*t15/t5 + t23) - x*t24
-    dk1x = t16 - dl*t12*2/t8**2 - dmu*t1/x**2 - dt*t28/x - dt*t10 + dx*mu*t1*2/x**3 + dx*t*t28/ &
-        x**2 - mu*t1*t15/x**2 - t*(dl*mu*t3/x + dmu*l*t3/x - dx*l*mu*t3/x**2 - dx*t*t27 - dx*t10 + l*mu*t3* &
-        t19/x - x*t20 + x*(-dt*t27 - t*(dl*l*t26*t2*2/t5**2 - dl*l*t26/t5 - dl*t1*t6*t9*2/t8**2 + dl*t1*t6/ &
-        t8 + dl*t1*t9/t8 - dl*t26*t2/t5 - l*t26*t2*(t14 + dt*t25/t)/t5 + t1*t6*t9*t15/t8)))/x - t*t20 - t1* &
-        t15/t5 + t23 - t24
+    t10 = -l*x*t3/t5 + x*t7*t9/t8
+    t11 = t**t9
+    t12 = dl*log(t)
+    t13 = t12 + dt*l/t
+    t14 = dl*t1*2/t5**2
+    t15 = -dl*t11*2/t8**2
+    t16 = -dt*t10/x
+    t17 = dx*t*t10/x**2
+    t18 = t12 + dt*t2/t
+    t19 = t12 + dt*t6/t
+    t20 = dl*l*x*t3*2/t5**2 - dl*x*t3/t5 - dl*x*t7*t9*2/t8**2 + dl*x*t7/t8 - dx*l*t3/t5 + dx*t7*t9/ &
+        t8 - l*x*t3*t18/t5 + x*t7*t9*t19/t8
+    t21 = -t*t20/x
+    t22 = -t1*t13/t5
+    t23 = t12 + dt*t9/t
+    t24 = t11*t23/t8
+    t25 = -l*t3/t5
+    t26 = l - 2
+    t27 = t**t26
+    t28 = -l*x*t27*t2/t5 + x*t1*t6*t9/t8
+    t29 = t7*t9/t8
+    t30 = t25 - t*t28/x + t29 - t10/x
+    t31 = l*mu*t3/x + x*t30 - t10
+    t32 = t25 + t29
+    t33 = dl*l*t3*2/t5**2
+    t34 = -dl*t3/t5
+    t35 = -dl*t7*t9*2/t8**2
+    t36 = dl*t7/t8
+    t37 = -l*t3*t18/t5
+    t38 = t7*t9*t19/t8
+    dk1 = dmu*t1/x - dx*mu*t1/x**2 + dx*(-t*t10/x - t1/t5 + t11/t8) + mu*t1*t13/x + x*(t14 - dl*t11* &
+        2/t8**2 - dt*t10/x + t17 - t*t20/x - t1*t13/t5 + t24) - (dl*x*t1*2/t5**2 - dl*x*t11*2/t8**2 - dx*t1/ &
+        t5 + dx*t11/t8 - x*t1*t13/t5 + x*t11*t23/t8)
+    dk1x = t14 - dl*t11*2/t8**2 - dmu*t1/x**2 - dt*t31/x - dt*t10/x + dx*mu*t1*2/x**3 + dx*t*t31/ &
+        x**2 + t17 + dx*(t*t10/x**2 - t*t32/x) - mu*t1*t13/x**2 - t*t20/x - t*(dl*mu*t3/x + dmu*l*t3/x - dx* &
+        l*mu*t3/x**2 + dx*t30 + l*mu*t3*t18/x + x*(t33 - dl*t3/t5 - dl*t7*t9*2/t8**2 + t36 - dt*t28/x + dx* &
+        t*t28/x**2 + dx*t10/x**2 - l*t3*t18/t5 - t*(dl*l*x*t27*t2*2/t5**2 - dl*l*x*t27/t5 - dl*x*t1*t6*t9*2/ &
+        t8**2 + dl*x*t1*t6/t8 + dl*x*t1*t9/t8 - dl*x*t27*t2/t5 - dx*l*t27*t2/t5 + dx*t1*t6*t9/t8 - l*x*t27* &
+        t2*(t12 + dt*t26/t)/t5 + x*t1*t6*t9*t13/t8)/x + t38 - t20/x) - t20)/x + x*(dt*t10/x**2 - dt*t32/x - &
+        dx*t*t10*2/x**3 + dx*t*t32/x**2 + t*t20/x**2 - t*(t33 - dl*t3/t5 - dl*t7*t9*2/t8**2 + t36 - l*t3* &
+        t18/t5 + t38)/x) - t1*t13/t5 + t24 - (t14 - dl*t11*2/t8**2 - t1*t13/t5 + t24)
 
 end subroutine collop_fp_lo_jvp
 
@@ -304,40 +324,45 @@ pure elemental subroutine collop_fp_lo_vjp(x, t, l, mu, bk1, bk1x, gx, gt, gl, g
     real(dp), intent(in) :: x, t, l, mu, bk1, bk1x
     real(dp), intent(out) :: gx, gt, gl, gmu
     real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, &
-        t19, t20, t21, t22
+        t19, t20, t21, t22, t23, t24, t25, t26
 
-    t1 = l - 1
-    t2 = t**t1
-    t3 = l*2
-    t4 = t3 - 1
-    t5 = l + 1
-    t6 = t**t5
-    t7 = t3 + 3
-    t8 = l + 2
-    t9 = -l*t2/t4 + t6*t8/t7
-    t10 = t**l
-    t11 = -t10/t4
-    t12 = t**t8/t7
-    t13 = t**2
-    t14 = l - 2
-    t15 = t**t14
-    t16 = -l*t15*t1/t4 + t10*t5*t8/t7
-    t17 = bk1x + bk1*x
-    t18 = l*mu*t2/x - t*x*t16 - x*t9
-    t19 = bk1*mu/x - bk1x*mu/x**2
-    t20 = bk1x*t - t*t17
-    t21 = -bk1x*l*mu*t/x**2 - l*t20/t4
-    t22 = log(t)
-    gx = bk1*(-t*t9 - t10/t4 + t12) - bk1*(t11 + t12) + bk1x*t*t9*3/x + bk1x*t13*t16*2/x - t*t17*t9/ &
-        x - (-bk1x*mu*t10 + bk1x*t*x**2*t9)*2/x**3 - (bk1*mu*t10 - bk1x*l*mu*t*t2/x - bk1x*t*t18 + bk1x*x* &
-        t13*t16 - t*x*t17*t9)/x**2
-    gt = -bk1x*l*t**(l - 3)*t13*t14*t1/t4 + bk1x*l*t2*t13*t5*t8/t7 + bk1x*t*t16 - bk1x*t18/x + l*t2* &
-        t19 + t10*t5*t8*t20/t7 + t15*t1*t21 - t17*t9
-    gl = -bk1x*l*t22*t15*t13*t1/t4 - bk1x*l*t15*t13/t4 - bk1x*mu*t*t2/x**2 + bk1x*t22*t10*t13*t5*t8/ &
-        t7 + bk1x*t10*t13*t5/t7 + bk1x*t10*t13*t8/t7 - bk1x*t15*t13*t1/t4 + t22*t10*t19 + t22*t2*t21 + t22* &
-        t6*t8*t20/t7 - t2*t20/t4 + t6*t20/t7 + (-(-bk1x*l*t15*t13*t1 - l*t2*t20)/t4**2 - (bk1x*t10*t13*t5* &
-        t8 + t6*t8*t20)/t7**2)*2
-    gmu = bk1*t10/x - bk1x*l*t*t2/x**2 - bk1x*t10/x**2
+    t1 = t**l
+    t2 = l*2
+    t3 = t2 - 1
+    t4 = l + 2
+    t5 = t**t4
+    t6 = t2 + 3
+    t7 = l - 1
+    t8 = t**t7
+    t9 = l + 1
+    t10 = t**t9
+    t11 = -l*x*t8/t3 + x*t10*t4/t6
+    t12 = l - 2
+    t13 = t**t12
+    t14 = t**2
+    t15 = -l*t8/t3
+    t16 = -l*x*t13*t7/t3 + x*t1*t9*t4/t6
+    t17 = t10*t4/t6
+    t18 = t15 - t*t16/x + t17 - t11/x
+    t19 = t15 + t17
+    t20 = bk1x + bk1*x
+    t21 = bk1x*t*3/x - t*t20/x
+    t22 = l*mu*t8/x + x*t18 - t11
+    t23 = bk1*mu/x - bk1x*mu/x**2
+    t24 = -bk1x*t*t4*2/t6 + x*t4*t21/t6
+    t25 = -bk1x*l*mu*t/x**2 + bk1x*l*t*2/t3 - l*x*t21/t3
+    t26 = log(t)
+    gx = bk1*t1/t3 - bk1*t5/t6 + bk1*(-t*t11/x - t1/t3 + t5/t6) - bk1x*l*t13*t14*t7/x/t3 - bk1x*t* &
+        t18/x + bk1x*t1*t14*t9*t4/x/t6 + bk1x*(t*t11/x**2 - t*t19/x) - l*t8*t21/t3 + t10*t4*t21/t6 - (-bk1x* &
+        mu*t1 + bk1x*t*x*t11)*2/x**3 - (bk1*mu*t1 - bk1x*l*mu*t*t8/x - bk1x*t*x*t19 - bk1x*t*t22 + bk1x*t* &
+        t11 + bk1x*t14*t16 - t*t20*t11)/x**2
+    gt = -bk1x*l*t**(l - 3)*t14*t12*t7/t3 + bk1x*l*t8*t14*t9*t4/t6 + bk1x*t*t16/x - bk1x*t22/x + &
+        bk1x*t11/x - bk1x*t19 + l*t8*t23 + t1*t9*t24 + t13*t7*t25 - t20*t11/x
+    gl = -bk1x*l*t26*t13*t14*t7/t3 - bk1x*l*t13*t14/t3 - bk1x*mu*t*t8/x**2 + bk1x*t*t8*2/t3 - bk1x* &
+        t*t10*2/t6 + bk1x*t26*t1*t14*t9*t4/t6 + bk1x*t1*t14*t9/t6 + bk1x*t1*t14*t4/t6 - bk1x*t13*t14*t7/t3 - &
+        x*t8*t21/t3 + x*t10*t21/t6 + t26*t1*t23 + t26*t8*t25 + t26*t10*t24 + (-(bk1x*l*t*t8*2 - bk1x*l*t13* &
+        t14*t7 - l*x*t8*t21)/t3**2 - (-bk1x*t*t10*t4*2 + bk1x*t1*t14*t9*t4 + x*t10*t4*t21)/t6**2)*2
+    gmu = bk1*t1/x - bk1x*l*t*t8/x**2 - bk1x*t1/x**2
 
 end subroutine collop_fp_lo_vjp
 
@@ -362,10 +387,10 @@ pure elemental subroutine collop_fp_hi(s, t, l, mu, k1, k1x)
     t7 = l - 1 + 2
     t8 = t5 + 3
     t9 = l + 2
-    t10 = -l*t4*1/t6 + t**t7*t9*1/t8
-    k1 = mu*t1/s + s*t*t10 - s*(-t1/t6 + t**t9/t8)
-    k1x = (l*mu*t4*1/s + s*t*(-l*t**(l - 1 - 1)*t3*1*1/t6 + t**(l - 1 - 1 + 2)*t7*t9*1*1/t8) - s* &
-        t10 + s*t10*1)/s
+    t10 = -l*s*t4*1/t6 + s*t**t7*t9*1/t8
+    k1 = mu*t1/s + t*t10 - (-s*t1/t6 + s*t**t9/t8)
+    k1x = (l*mu*t4*1/s + t*(-l*s*t**(l - 1 - 1)*t3*1*1/t6 + s*t**(l - 1 - 1 + 2)*t7*t9*1*1/t8) - &
+        t10 + t10*1)/s
 
 end subroutine collop_fp_hi
 
@@ -379,7 +404,7 @@ pure elemental subroutine collop_fp_hi_jvp(s, t, l, mu, ds, dt, dl, dmu, dk1, dk
     implicit none
     real(dp), intent(in) :: s, t, l, mu, ds, dt, dl, dmu
     real(dp), intent(out) :: dk1, dk1x
-    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16
 
     t1 = t**l
     t2 = l - 1
@@ -390,20 +415,21 @@ pure elemental subroutine collop_fp_hi_jvp(s, t, l, mu, ds, dt, dl, dmu, dk1, dk
     t7 = t**t6
     t8 = t4 + 3
     t9 = l + 2
-    t10 = -l*t3/t5 + t7*t9/t8
-    t11 = t**t9
-    t12 = dl*log(t)
-    t13 = t12 + dt*l/t
-    t14 = t12 + dt*t2/t
-    t15 = l - 2
-    t16 = t**t15
-    t17 = -l*t16*t2/t5 + t1*t6*t9/t8
-    dk1 = dmu*t1/s - ds*mu*t1/s**2 + ds*t*t10 - ds*(-t1/t5 + t11/t8) + dt*s*t10 + mu*t1*t13/s + s*t* &
-        (dl*l*t3*2/t5**2 - dl*t3/t5 - dl*t7*t9*2/t8**2 + dl*t7/t8 - l*t3*t14/t5 + t7*t9*(t12 + dt*t6/t)/t8) &
-        - s*(dl*t1*2/t5**2 - dl*t11*2/t8**2 - t1*t13/t5 + t11*(t12 + dt*t9/t)/t8)
-    dk1x = -ds*(l*mu*t3/s + s*t*t17)/s**2 + (dl*mu*t3/s + dmu*l*t3/s - ds*l*mu*t3/s**2 + ds*t*t17 + &
-        dt*s*t17 + l*mu*t3*t14/s + s*t*(dl*l*t16*t2*2/t5**2 - dl*l*t16/t5 - dl*t1*t6*t9*2/t8**2 + dl*t1*t6/ &
-        t8 + dl*t1*t9/t8 - dl*t16*t2/t5 - l*t16*t2*(t12 + dt*t15/t)/t5 + t1*t6*t9*t13/t8))/s
+    t10 = dl*log(t)
+    t11 = t10 + dt*l/t
+    t12 = t10 + dt*t2/t
+    t13 = t**t9
+    t14 = l - 2
+    t15 = t**t14
+    t16 = -l*s*t15*t2/t5 + s*t1*t6*t9/t8
+    dk1 = dmu*t1/s - ds*mu*t1/s**2 + dt*(-l*s*t3/t5 + s*t7*t9/t8) + mu*t1*t11/s + t*(dl*l*s*t3*2/ &
+        t5**2 - dl*s*t3/t5 - dl*s*t7*t9*2/t8**2 + dl*s*t7/t8 - ds*l*t3/t5 + ds*t7*t9/t8 - l*s*t3*t12/t5 + s* &
+        t7*t9*(t10 + dt*t6/t)/t8) - (dl*s*t1*2/t5**2 - dl*s*t13*2/t8**2 - ds*t1/t5 + ds*t13/t8 - s*t1*t11/ &
+        t5 + s*t13*(t10 + dt*t9/t)/t8)
+    dk1x = -ds*(l*mu*t3/s + t*t16)/s**2 + (dl*mu*t3/s + dmu*l*t3/s - ds*l*mu*t3/s**2 + dt*t16 + l* &
+        mu*t3*t12/s + t*(dl*l*s*t15*t2*2/t5**2 - dl*l*s*t15/t5 - dl*s*t1*t6*t9*2/t8**2 + dl*s*t1*t6/t8 + dl* &
+        s*t1*t9/t8 - dl*s*t15*t2/t5 - ds*l*t15*t2/t5 + ds*t1*t6*t9/t8 - l*s*t15*t2*(t10 + dt*t14/t)/t5 + s* &
+        t1*t6*t9*t11/t8))/s
 
 end subroutine collop_fp_hi_jvp
 
@@ -417,7 +443,7 @@ pure elemental subroutine collop_fp_hi_vjp(s, t, l, mu, bk1, bk1x, gs, gt, gl, g
     implicit none
     real(dp), intent(in) :: s, t, l, mu, bk1, bk1x
     real(dp), intent(out) :: gs, gt, gl, gmu
-    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16
 
     t1 = l - 1
     t2 = t**t1
@@ -427,25 +453,173 @@ pure elemental subroutine collop_fp_hi_vjp(s, t, l, mu, bk1, bk1x, gs, gt, gl, g
     t6 = t**t5
     t7 = t3 + 3
     t8 = l + 2
-    t9 = -l*t2/t4 + t6*t8/t7
-    t10 = t**l
-    t11 = t**t8
-    t12 = l - 2
-    t13 = t**t12
-    t14 = -l*t13*t1/t4 + t10*t5*t8/t7
-    t15 = bk1*mu/s + bk1*s/t4
-    t16 = -bk1*l*s*t/t4 + bk1x*l*mu/s**2
-    t17 = log(t)
-    gs = bk1*t*t9 - bk1*(-t10/t4 + t11/t7) + bk1x*t*t14/s - (bk1*mu*t10 + bk1x*l*mu*t2/s + bk1x*(l* &
-        mu*t2/s + s*t*t14))/s**2
-    gt = bk1*s*t*t10*t5*t8/t7 - bk1*s*t6*t8/t7 + bk1*s*t9 - bk1x*l*t*t**(l - 3)*t12*t1/t4 + bk1x*l* &
-        t*t2*t5*t8/t7 + bk1x*t14 + l*t2*t15 + t13*t1*t16
-    gl = bk1*s*t*t17*t6*t8/t7 - bk1*s*t*t2/t4 + bk1*s*t*t6/t7 - bk1*s*t17*t11/t7 - bk1x*l*t*t17*t13* &
-        t1/t4 - bk1x*l*t*t13/t4 + bk1x*mu*t2/s**2 + bk1x*t*t17*t10*t5*t8/t7 + bk1x*t*t10*t5/t7 + bk1x*t*t10* &
-        t8/t7 - bk1x*t*t13*t1/t4 + t17*t10*t15 + t17*t2*t16 + (-(-bk1*l*s*t*t2 + bk1*s*t10 - bk1x*l*t*t13* &
-        t1)/t4**2 - (bk1*s*t*t6*t8 - bk1*s*t11 + bk1x*t*t10*t5*t8)/t7**2)*2
-    gmu = bk1*t10/s + bk1x*l*t2/s**2
+    t9 = t**l
+    t10 = t**t8
+    t11 = l - 2
+    t12 = t**t11
+    t13 = -l*s*t12*t1/t4 + s*t9*t5*t8/t7
+    t14 = bk1*mu/s + bk1*s/t4
+    t15 = -bk1*l*s*t/t4 + bk1x*l*mu/s**2
+    t16 = log(t)
+    gs = -bk1*l*t*t2/t4 + bk1*t*t6*t8/t7 + bk1*t9/t4 - bk1*t10/t7 - bk1x*l*t*t12*t1/s/t4 + bk1x*t* &
+        t9*t5*t8/s/t7 - (bk1*mu*t9 + bk1x*l*mu*t2/s + bk1x*(l*mu*t2/s + t*t13))/s**2
+    gt = bk1*s*t*t9*t5*t8/t7 - bk1*s*t6*t8/t7 + bk1*(-l*s*t2/t4 + s*t6*t8/t7) - bk1x*l*t*t**(l - 3)* &
+        t11*t1/t4 + bk1x*l*t*t2*t5*t8/t7 + bk1x*t13/s + l*t2*t14 + t12*t1*t15
+    gl = bk1*s*t*t16*t6*t8/t7 - bk1*s*t*t2/t4 + bk1*s*t*t6/t7 - bk1*s*t16*t10/t7 - bk1x*l*t*t16*t12* &
+        t1/t4 - bk1x*l*t*t12/t4 + bk1x*mu*t2/s**2 + bk1x*t*t16*t9*t5*t8/t7 + bk1x*t*t9*t5/t7 + bk1x*t*t9*t8/ &
+        t7 - bk1x*t*t12*t1/t4 + t16*t9*t14 + t16*t2*t15 + (-(-bk1*l*s*t*t2 + bk1*s*t9 - bk1x*l*t*t12*t1)/ &
+        t4**2 - (bk1*s*t*t6*t8 - bk1*s*t10 + bk1x*t*t9*t5*t8)/t7**2)*2
+    gmu = bk1*t9/s + bk1x*l*t2/s**2
 
 end subroutine collop_fp_hi_vjp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_dk_collop
+! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
+! Regenerate with: gen_dk_collop from pinned FortSym build
+
+pure elemental subroutine collop_fp_lo_moments(x, l, mu, m0, m2, psi, psix)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: x, l, mu, m0, m2
+    real(dp), intent(out) :: psi, psix
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = l*2
+    t2 = t1 - 1
+    t3 = t1 + 3
+    t4 = l**2
+    psi = m0*(l*x/t2 + mu/x) + m2*(-l*x/t3 - x*2/t3)
+    psix = m0*(-l*mu/x**2 + l/t2 - mu/x**2 - t4/t2) + m2*(l*3/t3 + t4/t3 + 2/t3)
+
+end subroutine collop_fp_lo_moments
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_dk_collop
+! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
+! Regenerate with: gen_dk_collop from pinned FortSym build
+
+pure elemental subroutine collop_fp_lo_moments_jvp(x, l, mu, m0, m2, dx, dl, dmu, dm0, dm2, dpsi, &
+        dpsix)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: x, l, mu, m0, m2, dx, dl, dmu, dm0, dm2
+    real(dp), intent(out) :: dpsi, dpsix
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = l*2
+    t2 = t1 - 1
+    t3 = t1 + 3
+    t4 = l**2
+    dpsi = dm0*(l*x/t2 + mu/x) + dm2*(-l*x/t3 - x*2/t3) + m0*(-dl*l*x*2/t2**2 + dl*x/t2 + dmu/x + &
+        dx*l/t2 - dx*mu/x**2) + m2*(dl*l*x*2/t3**2 + dl*x*4/t3**2 - dl*x/t3 - dx*l/t3 - dx*2/t3)
+    dpsix = dm0*(-l*mu/x**2 + l/t2 - mu/x**2 - t4/t2) + dm2*(l*3/t3 + t4/t3 + 2/t3) + m0*(-dl*l*2/ &
+        t2**2 - dl*l*2/t2 - dl*mu/x**2 + dl*t4*2/t2**2 + dl/t2 - dmu*l/x**2 - dmu/x**2 + dx*l*mu*2/x**3 + &
+        dx*mu*2/x**3) + m2*(-dl*l*6/t3**2 + dl*l*2/t3 - dl*t4*2/t3**2 - dl*4/t3**2 + dl*3/t3)
+
+end subroutine collop_fp_lo_moments_jvp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_dk_collop
+! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
+! Regenerate with: gen_dk_collop from pinned FortSym build
+
+pure elemental subroutine collop_fp_lo_moments_vjp(x, l, mu, m0, m2, bpsi, bpsix, gx, gl, gmu, gm0, &
+        gm2)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: x, l, mu, m0, m2, bpsi, bpsix
+    real(dp), intent(out) :: gx, gl, gmu, gm0, gm2
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = l*2
+    t2 = t1 - 1
+    t3 = t1 + 3
+    t4 = l**2
+    gx = bpsi*l*m0/t2 - bpsi*l*m2/t3 - bpsi*m0*mu/x**2 - bpsi*m2*2/t3 - (-bpsix*l*m0*mu - bpsix*m0* &
+        mu)*2/x**3
+    gl = bpsi*m0*x/t2 - bpsi*m2*x/t3 - bpsix*m0*mu/x**2 + bpsix*m0/t2 + bpsix*m2*3/t3 + l*(-bpsix* &
+        m0/t2 + bpsix*m2/t3)*2 + (-(bpsi*l*m0*x + bpsix*l*m0 - bpsix*m0*t4)/t2**2 - (-bpsi*l*m2*x - bpsi*m2* &
+        x*2 + bpsix*l*m2*3 + bpsix*m2*t4 + bpsix*m2*2)/t3**2)*2
+    gmu = bpsi*m0/x - bpsix*l*m0/x**2 - bpsix*m0/x**2
+    gm0 = bpsi*(l*x/t2 + mu/x) + bpsix*(-l*mu/x**2 + l/t2 - mu/x**2 - t4/t2)
+    gm2 = bpsi*(-l*x/t3 - x*2/t3) + bpsix*(l*3/t3 + t4/t3 + 2/t3)
+
+end subroutine collop_fp_lo_moments_vjp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_dk_collop
+! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
+! Regenerate with: gen_dk_collop from pinned FortSym build
+
+pure elemental subroutine collop_fp_hi_moments(x, l, mu, m0, m2, psi, psix)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: x, l, mu, m0, m2
+    real(dp), intent(out) :: psi, psix
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = l*2
+    t2 = t1 - 1
+    t3 = t1 + 3
+    t4 = l**2
+    psi = m0*(-l*x/t2 + x/t2) + m2*(l*x/t3 + mu/x + x/t3)
+    psix = m0*(l/t2 - t4/t2) + m2*(l*mu/x**2 + l*3/t3 + t4/t3 + 2/t3)
+
+end subroutine collop_fp_hi_moments
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_dk_collop
+! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
+! Regenerate with: gen_dk_collop from pinned FortSym build
+
+pure elemental subroutine collop_fp_hi_moments_jvp(x, l, mu, m0, m2, dx, dl, dmu, dm0, dm2, dpsi, &
+        dpsix)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: x, l, mu, m0, m2, dx, dl, dmu, dm0, dm2
+    real(dp), intent(out) :: dpsi, dpsix
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = l*2
+    t2 = t1 - 1
+    t3 = t1 + 3
+    t4 = l**2
+    dpsi = dm0*(-l*x/t2 + x/t2) + dm2*(l*x/t3 + mu/x + x/t3) + m0*(dl*l*x*2/t2**2 - dl*x*2/t2**2 - &
+        dl*x/t2 - dx*l/t2 + dx/t2) + m2*(-dl*l*x*2/t3**2 - dl*x*2/t3**2 + dl*x/t3 + dmu/x + dx*l/t3 - dx*mu/ &
+        x**2 + dx/t3)
+    dpsix = dm0*(l/t2 - t4/t2) + dm2*(l*mu/x**2 + l*3/t3 + t4/t3 + 2/t3) + m0*(-dl*l*2/t2**2 - dl*l* &
+        2/t2 + dl*t4*2/t2**2 + dl/t2) + m2*(-dl*l*6/t3**2 + dl*l*2/t3 + dl*mu/x**2 - dl*t4*2/t3**2 - dl*4/ &
+        t3**2 + dl*3/t3 + dmu*l/x**2 - dx*l*mu*2/x**3)
+
+end subroutine collop_fp_hi_moments_jvp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_dk_collop
+! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
+! Regenerate with: gen_dk_collop from pinned FortSym build
+
+pure elemental subroutine collop_fp_hi_moments_vjp(x, l, mu, m0, m2, bpsi, bpsix, gx, gl, gmu, gm0, &
+        gm2)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: x, l, mu, m0, m2, bpsi, bpsix
+    real(dp), intent(out) :: gx, gl, gmu, gm0, gm2
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = l*2
+    t2 = t1 - 1
+    t3 = t1 + 3
+    t4 = l**2
+    gx = -bpsi*l*m0/t2 + bpsi*l*m2/t3 + bpsi*m0/t2 - bpsi*m2*mu/x**2 + bpsi*m2/t3 - bpsix*l*m2*mu*2/ &
+        x**3
+    gl = -bpsi*m0*x/t2 + bpsi*m2*x/t3 + bpsix*m0/t2 + bpsix*m2*mu/x**2 + bpsix*m2*3/t3 + l*(-bpsix* &
+        m0/t2 + bpsix*m2/t3)*2 + (-(-bpsi*l*m0*x + bpsi*m0*x + bpsix*l*m0 - bpsix*m0*t4)/t2**2 - (bpsi*l*m2* &
+        x + bpsi*m2*x + bpsix*l*m2*3 + bpsix*m2*t4 + bpsix*m2*2)/t3**2)*2
+    gmu = bpsi*m2/x + bpsix*l*m2/x**2
+    gm0 = bpsi*(-l*x/t2 + x/t2) + bpsix*(l/t2 - t4/t2)
+    gm2 = bpsi*(l*x/t3 + mu/x + x/t3) + bpsix*(l*mu/x**2 + l*3/t3 + t4/t3 + 2/t3)
+
+end subroutine collop_fp_hi_moments_vjp
 
 end module kin6d_dk_collop_leaves

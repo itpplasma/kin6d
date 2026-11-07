@@ -28,9 +28,10 @@
 !!                    the AUG 30835 benchmark (B-splines of order 3): the
 !!                    operator projected on the same basis.
 program test_dk_collop
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, real128, int64
     use kin6d_dk_collop
-    use kin6d_dk_collop_leaves, only: collop_tp, collop_tp_series
+    use kin6d_dk_collop_leaves, only: collop_tp, collop_tp_series, &
+        collop_fp_lo_moments, collop_fp_hi_moments
     use kin6d_rosenbluth_reference, only: homma_pair_t, homma_radial_quad, homma_gamma
     implicit none
     character(64) :: check
@@ -45,6 +46,12 @@ program test_dk_collop
     case ('maxwellian_null'); ok = maxwellian_null()
     case ('rates'); ok = rates()
     case ('jvp'); ok = jvp()
+    case ('zero_jvp'); ok = zero_jvp()
+    case ('fp_moments'); ok = fp_moments()
+    case ('assembly_profile')
+        call get_command_argument(2, path)
+        call assembly_profile(trim(path))
+        stop
     case ('conservation'); ok = conservation()
     case ('self_adjoint'); ok = self_adjoint()
     case ('conservation_pair'); ok = conservation_pair()
@@ -59,6 +66,29 @@ program test_dk_collop
     if (.not. ok) error stop 1
 
 contains
+
+    subroutine assembly_profile(argument)
+        character(*), intent(in) :: argument
+        type(collop_grid_t) :: grid
+        type(collop_t) :: op
+        type(collop_species_t) :: sp(2)
+        real(dp) :: lnl(1, 1)
+        integer(int64) :: start, finish, rate
+        integer :: lmax, status, k
+        lmax = 128
+        if (len_trim(argument) > 0) read (argument, *) lmax
+        call collop_make_grid(6.0_dp, 4, 5, grid, status)
+        sp = plasma(1.0_dp)
+        lnl = 17
+        do k = 1, 3
+            call system_clock(start, rate)
+            call collop_build(sp(2:2), lnl, grid, COLLOP_FULL, lmax, op, status)
+            call system_clock(finish)
+            if (status /= COLLOP_OK) error stop 'assembly profile failed'
+            print '(a,es16.8)', 'assembly wall time [s]:', real(finish - start, dp)/rate
+        end do
+        print '(a,es24.16)', 'largest matrix entry [m^-3 s^-1]:', maxval(abs(op%a))
+    end subroutine assembly_profile
 
     !> Electrons and deuterons; equal temperatures unless tau_i is given.
     function plasma(t_ratio) result(sp)
@@ -241,6 +271,81 @@ contains
         if (status /= COLLOP_OK) error stop 'build failed'
         op%a(1:n, 1:n, :) = op%a(1:n, 1:n, :) - self%a
     end subroutine partner_only
+
+    logical function fp_moments() result(ok)
+        integer, parameter :: degrees(6) = [0, 1, 2, 8, 64, 128]
+        real(dp), parameter :: speeds(4) = [1e-7_dp, 0.1_dp, 2.0_dp, 20.0_dp]
+        real(dp), parameter :: ratios(4) = [1e-3_dp, 0.2_dp, 0.9_dp, 1.0_dp]
+        real(dp), parameter :: masses(3) = [1e-3_dp, 1.0_dp, 2000.0_dp]
+        real(dp) :: x, t, mu, l, ref(2), value(2), worst
+        integer :: i, j, k, m
+        worst = 0
+        do i = 1, size(degrees)
+            l = degrees(i)
+            do j = 1, size(speeds)
+                x = speeds(j)
+                do k = 1, size(ratios)
+                    t = ratios(k)
+                    do m = 1, size(masses)
+                        mu = masses(m)
+                        call fp_reference(x, t, degrees(i), mu, .true., ref)
+                        call collop_fp_lo_moments(x, l, mu, t**degrees(i), &
+                            t**(degrees(i) + 2), value(1), value(2))
+                        worst = max(worst, maxval(abs(value - ref)/max(1e-20_dp, abs(ref))))
+                        call fp_reference(x, t, degrees(i), mu, .false., ref)
+                        call collop_fp_hi_moments(x, l, mu, t**(degrees(i) - 1), &
+                            t**(degrees(i) + 1), value(1), value(2))
+                        worst = max(worst, maxval(abs(value - ref)/max(1e-20_dp, abs(ref))))
+                    end do
+                end do
+            end do
+        end do
+        print '(a,es12.4)', 'moment kernels versus real128 formulas:', worst
+        ok = worst < 1e-11_dp
+    end function fp_moments
+
+    ! Independent closed forms evaluated above the production precision.
+    subroutine fp_reference(x, t, degree, mu, lower, value)
+        real(dp), intent(in) :: x, t, mu
+        integer, intent(in) :: degree
+        logical, intent(in) :: lower
+        real(dp), intent(out) :: value(2)
+        real(real128) :: r, z, a, l, f, fx
+        r = x; z = t; a = mu; l = degree
+        if (lower) then
+            f = (a/r + l*r/(2*l - 1))*z**degree &
+                - (l + 2)*r/(2*l + 3)*z**(degree + 2)
+            fx = (-(l + 1)*a/r**2 + l*(1 - l)/(2*l - 1))*z**degree &
+                + (l + 2)*(l + 1)/(2*l + 3)*z**(degree + 2)
+        else
+            f = -(l - 1)*r/(2*l - 1)*z**(degree - 1) &
+                + ((l + 1)*r/(2*l + 3) + a/r)*z**(degree + 1)
+            fx = -l*(l - 1)/(2*l - 1)*z**(degree - 1) &
+                + ((l + 1)*(l + 2)/(2*l + 3) + l*a/r**2)*z**(degree + 1)
+        end if
+        value = real([f, fx], dp)
+    end subroutine fp_reference
+
+    logical function zero_jvp() result(ok)
+        type(collop_grid_t) :: grid
+        type(collop_t) :: op
+        type(collop_species_t) :: sp(2)
+        real(dp), allocatable :: da(:, :, :)
+        real(dp) :: lnl(2, 2), zero(2)
+        integer :: status, model
+        call collop_make_grid(6.0_dp, 1, 3, grid, status)
+        sp = plasma(1.0_dp)
+        lnl = 17
+        zero = 0
+        ok = .true.
+        do model = COLLOP_LORENTZ, COLLOP_KROOK
+            call collop_build_jvp(sp, lnl, grid, model, 2, zero, zero, op, da, &
+                status, nu_krook=1e4_dp)
+            if (status /= COLLOP_OK) error stop 'zero tangent failed'
+            print '(a,i2,a,es12.4)', 'model', model, ' zero tangent:', maxval(abs(da))
+            ok = ok .and. all(abs(da) <= 0)
+        end do
+    end function zero_jvp
 
     logical function jvp() result(ok)
         type(collop_grid_t) :: grid

@@ -2,11 +2,12 @@ program gen_dk_collop
     use fortsym_expr, only: expr_t, sym, rat, pi_expr, erf, exp, sqrt, &
         operator(+), operator(-), operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
+    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: x, rinv, tau, y, pi, chandra, series, l, mu, t, s
-    type(expr_t) :: kh, kg, k1_lo, k1_hi
+    type(expr_t) :: kh, kg, k1_lo, k1_hi, a0, a2, b0, b2, m0, m2, p0, p2
     integer, parameter :: nseries = 17
     integer(8) :: fact
     integer :: k
@@ -50,10 +51,10 @@ program gen_dk_collop
     ! never exceed one for any l.
     l = sym('l'); mu = sym('mu'); t = sym('t'); s = sym('s')
     kh = t**l/x
-    kg = x*(t**(l + 2)/(2*l + 3) - t**l/(2*l - 1))
+    kg = g0(x)*t**l + g2(x)*t**(l + 2)
     k1_lo = x*dx(kg) - kg + mu*kh
     kh = t**l/s
-    kg = s*(t**(l + 2)/(2*l + 3) - t**l/(2*l - 1))
+    kg = g0(s)*t**l + g2(s)*t**(l + 2)
     ! x = t s, d_x = d_t/s at fixed s.
     k1_hi = t*diff(kg, t) - kg + mu*kh
 
@@ -75,10 +76,53 @@ program gen_dk_collop
         [k1_lo, dx(k1_lo)], ad=.true.)
     call writer%emit('collop_fp_hi', ['s ', 't ', 'l ', 'mu'], ['k1 ', 'k1x'], &
         [k1_hi, diff(k1_hi, t)/s], ad=.true.)
+    ! Integrate the two powers before evaluating the potential. Lower moments
+    ! use (s/x)^l and (s/x)^(l+2); upper moments use (x/s)^(l-1) and
+    ! (x/s)^(l+1). Their coefficients follow from the same G kernel.
+    m0 = sym('m0'); m2 = sym('m2')
+    p0 = l; p2 = l + 2
+    a0 = clean(x*diff(g0(x), x) - (p0 + 1)*g0(x) + mu/x)
+    a2 = clean(x*diff(g2(x), x) - (p2 + 1)*g2(x))
+    b0 = clean(diff(a0, x) - p0*a0/x)
+    b2 = clean(diff(a2, x) - p2*a2/x)
+    call writer%emit('collop_fp_lo_moments', ['x ', 'l ', 'mu', 'm0', 'm2'], &
+        ['psi ', 'psix'], [a0*m0 + a2*m2, b0*m0 + b2*m2], ad=.true.)
+    p0 = l - 1; p2 = l + 1
+    a0 = clean(x*diff(g0(x), x) + (p0 - 1)*g0(x))
+    a2 = clean(x*diff(g2(x), x) + (p2 - 1)*g2(x) + mu/x)
+    b0 = clean(diff(a0, x) + p0*a0/x)
+    b2 = clean(diff(a2, x) + p2*a2/x)
+    call writer%emit('collop_fp_hi_moments', ['x ', 'l ', 'mu', 'm0', 'm2'], &
+        ['psi ', 'psix'], [a0*m0 + a2*m2, b0*m0 + b2*m2], ad=.true.)
     call writer%line('end module kin6d_dk_collop_leaves')
     call writer%close()
 
 contains
+
+    function clean(f) result(g)
+        type(expr_t), intent(in) :: f
+        type(expr_t) :: g
+        type(engine_result_t) :: r
+        r = writer%engine%expand(f)
+        if (.not. r%ok) error stop 'moment coefficient expansion failed'
+        r = writer%engine%simplify(r%value)
+        if (.not. r%ok) error stop 'moment coefficient simplification failed'
+        g = r%value
+        r = writer%engine%zero_test(f - g)
+        if (r%verdict /= VERDICT_TRUE) error stop 'unproved moment coefficient'
+    end function clean
+
+    function g0(r) result(g)
+        type(expr_t), intent(in) :: r
+        type(expr_t) :: g
+        g = -r/(2*l - 1)
+    end function g0
+
+    function g2(r) result(g)
+        type(expr_t), intent(in) :: r
+        type(expr_t) :: g
+        g = r/(2*l + 3)
+    end function g2
 
     !> d/dx at fixed s = t x, for an expression in x and t = s/x.
     function dx(f) result(g)
