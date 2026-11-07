@@ -46,13 +46,14 @@ module kin6d_dk_energy
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_dk_energy_leaves, only: dk_energy_rotation, dk_energy_rotation_jvp
     use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_coupling, mono_drives, &
-        MONO_OK
+        MONO_OK, trig_resample
     use kin6d_dk_collop, only: collop_t, collop_species_t, collop_grid_t, collop_build, &
-        collop_vth, collop_nuhat, collop_moments, COLLOP_OK, COLLOP_LORENTZ, &
+        collop_vth, collop_nuhat, collop_moments, collop_make_grid, COLLOP_OK, COLLOP_LORENTZ, &
         COLLOP_TEST_PARTICLE, COLLOP_FULL
     implicit none
     private
     public :: energy_axi_t, energy_axi_coefficients, energy_axi_batch
+    public :: energy_estimate_t, energy_axi_estimate
     integer, parameter, public :: ENERGY_OK = 0, ENERGY_BAD_INPUT = 1, ENERGY_SINGULAR = 2
     real(dp), parameter :: pi = 4*atan(1.0_dp)
 
@@ -69,6 +70,11 @@ module kin6d_dk_energy
         ! dk/dT = -2 dk_ds/T. k does not depend on the gradients.
         real(dp) :: dd31_ds = 0, dd32_ds = 0, dk_ds = 0
         character(len=11) :: certification = 'unavailable'
+    end type
+
+    !> Signed refined-minus-coarse differences, not continuous error bounds.
+    type :: energy_estimate_t
+        real(dp) :: d31 = 0, d32 = 0, k = 0
     end type
 
     !> Band LU of the bordered system and the operator data.
@@ -102,6 +108,44 @@ module kin6d_dk_energy
     end interface
 
 contains
+
+    !> Double pitch resolution and bisect each speed element; resample the
+    !> same trigonometric field at 2*n_theta+1 points. Missing field harmonics
+    !> and the polynomial speed tail are not qualified by this indicator.
+    subroutine energy_axi_estimate(b, kappa, species, lnlambda, grid, n_leg, model, &
+            res, estimate, status)
+        real(dp), intent(in) :: b(:), kappa, lnlambda
+        type(collop_species_t), intent(in) :: species
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: n_leg, model
+        type(energy_axi_t), intent(out) :: res
+        type(energy_estimate_t), intent(out) :: estimate
+        integer, intent(out) :: status
+        type(collop_grid_t) :: refined_grid
+        type(energy_axi_t) :: refined
+        real(dp), allocatable :: edges(:)
+        integer :: e, st
+
+        call energy_axi_coefficients(b, kappa, species, lnlambda, grid, n_leg, model, res, status)
+        if (status /= ENERGY_OK) return
+        allocate (edges(0:2*grid%nelem))
+        do e = 0, grid%nelem
+            edges(2*e) = grid%edges(e)
+        end do
+        do e = 1, grid%nelem
+            edges(2*e - 1) = (grid%edges(e - 1) + grid%edges(e))/2
+        end do
+        call collop_make_grid(edges(2*grid%nelem), 2*grid%nelem, grid%order, &
+            refined_grid, st, edges)
+        status = ENERGY_BAD_INPUT
+        if (st /= COLLOP_OK) return
+        call energy_axi_coefficients(trig_resample(b, 2*size(b) + 1), kappa, species, &
+            lnlambda, refined_grid, 2*n_leg, model, refined, status)
+        if (status /= ENERGY_OK) return
+        estimate%d31 = refined%d31 - res%d31
+        estimate%d32 = refined%d32 - res%d32
+        estimate%k = refined%k - res%k
+    end subroutine energy_axi_estimate
 
     !> Shared energy grid and collision model; one status per surface so a
     !> rejected input does not discard the remaining profile.

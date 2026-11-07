@@ -24,6 +24,16 @@ state. Each surface returns its own status, so an invalid surface does not stop
 the remaining profile. A supplied cached operator must have the identical grid,
 including nodes, element edges, basis nodes and differentiation matrix.
 
+`energy_axi_estimate` returns the coarse response and signed refined-minus-coarse
+differences in `D31`, `D32` and `k`. It doubles the number of Legendre polynomials,
+bisects each supplied speed element and evaluates the same trigonometric field on
+`2*n_theta+1` points. These are discretization indicators, not bounds: a very
+coarse speed grid can underestimate the error. They do not check unresolved
+field harmonics or assess the error from polynomial continuation beyond the
+last speed element. The coarse response retains its backward errors and
+`unavailable` certification status; both solves
+must succeed (`status = ENERGY_OK`) before the differences are usable.
+
 `kin6d_dk_force_balance` exposes `energy_force_balance_cgs` for the single-ion
 force balance used by [KAMEL](https://github.com/itpplasma/KAMEL). Its inputs use
 Gaussian centimetre-gram-second units: temperature in erg, density in cm^-3,

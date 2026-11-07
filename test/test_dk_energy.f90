@@ -18,6 +18,7 @@ program test_dk_energy
     case ('operator_cache'); ok = operator_cache()
     case ('batch'); ok = batch()
     case ('pfirsch_schluter'); ok = pfirsch_schluter()
+    case ('estimate'); ok = estimate()
     case ('profile'); ok = profile()
     case default
         print '(a)', 'unknown check '//trim(check)
@@ -25,6 +26,50 @@ program test_dk_energy
     end select
     if (.not. ok) error stop 1
 contains
+    logical function estimate() result(ok)
+        type(collop_grid_t) :: grid, reference_grid
+        type(energy_axi_t) :: coarse, reference
+        type(energy_estimate_t) :: delta
+        real(dp) :: density, effectivity, error
+        integer :: st, j
+
+        ok = .true.
+        call collop_make_grid(6.0_dp, 2, 5, grid, st)
+        call collop_make_grid(6.0_dp, 8, 5, reference_grid, st)
+        do j = 1, 3
+            density = 10.0_dp**(18 + 2*j)
+            call energy_axi_estimate(1/field(5, 0.2_dp), 1.0_dp, deuterons(density), &
+                17.0_dp, grid, 8, COLLOP_FULL, coarse, delta, st)
+            if (st /= ENERGY_OK) error stop 'energy indicator failed'
+            call energy_axi_coefficients(1/field(23, 0.2_dp), 1.0_dp, deuterons(density), &
+                17.0_dp, reference_grid, 32, COLLOP_FULL, reference, st)
+            if (st /= ENERGY_OK) error stop 'indicator reference failed'
+            error = reference%k - coarse%k
+            effectivity = abs(delta%k/error)
+            print '(a,4es18.10)', 'density, k difference, reference difference, effectivity: ', &
+                density, delta%k, error, effectivity
+            ok = ok .and. effectivity >= 0.5_dp .and. effectivity <= 2
+            error = reference%d32 - coarse%d32
+            effectivity = abs(delta%d32/error)
+            ok = ok .and. effectivity >= 0.5_dp .and. effectivity <= 2
+            ok = ok .and. coarse%certification == 'unavailable'
+        end do
+        ! Bisect the supplied nonuniform grid rather than replacing its edges.
+        call collop_make_grid(6.0_dp, 2, 5, grid, st, [0.0_dp, 1.0_dp, 6.0_dp])
+        call collop_make_grid(6.0_dp, 4, 5, reference_grid, st, &
+            [0.0_dp, 0.5_dp, 1.0_dp, 3.5_dp, 6.0_dp])
+        call energy_axi_estimate(1/field(5, 0.2_dp), 1.0_dp, deuterons(1e22_dp), &
+            17.0_dp, grid, 8, COLLOP_FULL, coarse, delta, st)
+        if (st /= ENERGY_OK) error stop 'nonuniform indicator failed'
+        call energy_axi_coefficients(1/field(11, 0.2_dp), 1.0_dp, deuterons(1e22_dp), &
+            17.0_dp, reference_grid, 16, COLLOP_FULL, reference, st)
+        if (st /= ENERGY_OK) error stop 'nonuniform reference failed'
+        ok = ok .and. abs(delta%k - (reference%k - coarse%k)) < 1e-9_dp
+        call energy_axi_estimate([0.01_dp, 0.01_dp, 1.0_dp], 1.0_dp, deuterons(1e22_dp), &
+            17.0_dp, grid, 8, COLLOP_FULL, coarse, delta, st)
+        ok = ok .and. st == ENERGY_BAD_INPUT
+    end function estimate
+
     logical function profile() result(ok)
         type(collop_grid_t) :: grid
         type(energy_axi_t) :: value
