@@ -25,6 +25,8 @@ program test_ideal_map_field_angle
         NESTED_SEED_OK
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
+    use kin6d_map_3d_equilibrium, only: map_3d_sample
+    use kin6d_equilibrium_state, only: EQ_VALUES
     use fortfem_element_to_csr, only: csr_matrix_t
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
     implicit none
@@ -281,7 +283,7 @@ contains
         type(ideal_map_solve_report_t) :: report
         real(dp) :: xi(2, 3), shape(TRIANGLE_MAX_NODES), grad(2, TRIANGLE_MAX_NODES)
         real(dp) :: q(3), y(2), dg(2, 2), a(2, 2), chi, cg(2), b3, p, dcg(2), db3
-        real(dp) :: bfield(3), jac, psi(2), exact(20), sums(2)
+        real(dp) :: bfield(3), jac, psi(2), exact(20), sums(2), point(3), values(EQ_VALUES)
         real(dp), allocatable :: g(:)
         integer :: st, e, k, n
         call setup(map, seed, angle_mpol, 0)
@@ -306,6 +308,11 @@ contains
                 ! The leaf divides by R det(dq/ds), while J = sigma det(DX) and
                 ! the cylindrical (R, Z, phi) chart has det = -R.
                 bfield = -map%sigma*bfield
+                ! the 3D readback carries the same field-angle form
+                call map_3d_sample(map, seed, e, xi(:, k), 0.0_dp, point, values, st)
+                if (st /= 0) error stop '3D readback sample'
+                if (maxval(abs(values(1:3) - bfield)) > 1e-10_dp*norm2(bfield)) &
+                    error stop '3D readback omits the field angle'
                 call oracle%point([q(1), 0.0_dp, q(2)], exact, st)
                 if (st /= 0) error stop 'oracle point'
                 sums = sums + [sum((bfield - exact([3, 5, 4]))**2), sum(exact(3:5)**2)]
