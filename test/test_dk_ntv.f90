@@ -1,5 +1,8 @@
 !> NTV flux kernel of the Legendre reference (#183).
 !!   jvp          tangents in nu and omega_E against centred differences;
+!!   tangents     tangents in the amplitudes c_m and along (eps, k, offset,
+!!                c_J) against centred differences, for both weights and
+!!                both streaming models;
 !!   assembly     both drift/drive weights and both streaming models against a
 !!                dense Legendre-Galerkin x Fourier solve assembled by Gauss
 !!                quadrature and the DFT derivative on a small grid;
@@ -17,6 +20,7 @@ program test_dk_ntv
     call get_command_argument(1, check)
     select case (trim(check))
     case ('jvp'); ok = jvp()
+    case ('tangents'); ok = tangents()
     case ('assembly'); ok = assembly()
     case ('kernel')
         call get_command_argument(2, path)
@@ -63,6 +67,67 @@ contains
         print '(a,2es14.6,es9.1)', 'dR/domega_E ', k0%dr_domega, fd, abs(k0%dr_domega/fd - 1)
         ok = ok .and. abs(k0%dr_domega/fd - 1) < 1e-6_dp
     end function jvp
+
+    logical function tangents() result(ok)
+        real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
+        type(ntv_surface_t) :: sf, dir, up, down
+        type(ntv_kernel_t) :: k0, kp, km
+        real(dp) :: h, fd
+        complex(dp) :: dc
+        integer :: status, j, ib, iw, part
+        ok = .true.
+        dir%eps = 1; dir%k = 0.3_dp*sample_k(); dir%offset = 0.5_dp; dir%current = 0.7_dp
+        do ib = 0, 1
+            do iw = 1, 2
+                sf = sample()
+                sf%m = [5, 6, 7]
+                sf%c = [(2e-4_dp, -1e-4_dp), (1e-3_dp, 2e-4_dp), (-3e-4_dp, 5e-5_dp)]
+                sf%boozer_stream = ib == 1
+                sf%weight = merge(NTV_WEIGHT_MU, NTV_WEIGHT_FULL, iw == 1)
+                sf%current = merge(0.0_dp, 0.37_dp, iw == 1)
+                call ntv_kernel(sf, v, nu, omega, pre, 33, 80, k0, status, &
+                    indicators=.false., direction=dir)
+                if (status /= NTV_OK) error stop 'kernel failed'
+                do j = 1, size(sf%m)
+                    do part = 1, 2
+                        dc = merge((1.0_dp, 0.0_dp), (0.0_dp, 1.0_dp), part == 1)
+                        h = 1e-4_dp*abs(sf%c(j))
+                        up = sf; up%c(j) = sf%c(j) + h*dc
+                        down = sf; down%c(j) = sf%c(j) - h*dc
+                        call ntv_kernel(up, v, nu, omega, pre, 33, 80, kp, status, &
+                            indicators=.false.)
+                        call ntv_kernel(down, v, nu, omega, pre, 33, 80, km, status, &
+                            indicators=.false.)
+                        fd = (kp%r - km%r)/(2*h)
+                        ok = ok .and. near(merge(real(k0%dr_dc(j)), aimag(k0%dr_dc(j)), &
+                            part == 1), fd, 'dR/dc')
+                    end do
+                end do
+                h = 1e-5_dp
+                up = sf; up%eps = sf%eps + h*dir%eps; up%k = sf%k + h*dir%k
+                up%offset = sf%offset + h*dir%offset; up%current = sf%current + h*dir%current
+                down = sf; down%eps = sf%eps - h*dir%eps; down%k = sf%k - h*dir%k
+                down%offset = sf%offset - h*dir%offset; down%current = sf%current - h*dir%current
+                call ntv_kernel(up, v, nu, omega, pre, 33, 80, kp, status, indicators=.false.)
+                call ntv_kernel(down, v, nu, omega, pre, 33, 80, km, status, indicators=.false.)
+                fd = (kp%r - km%r)/(2*h)
+                ok = ok .and. near(k0%dr_dsurface, fd, 'dR/dsurface')
+            end do
+        end do
+    end function tangents
+
+    logical function near(got, want, label)
+        real(dp), intent(in) :: got, want
+        character(*), intent(in) :: label
+        print '(a,2es14.6,es9.1)', label//' ', got, want, abs(got/want - 1)
+        near = abs(got/want - 1) < 1e-6_dp
+    end function near
+
+    real(dp) function sample_k()
+        type(ntv_surface_t) :: sf
+        sf = sample()
+        sample_k = sf%k
+    end function sample_k
 
     !> Dense oracle on a small grid for both weights and both streaming
     !> models: the equation
