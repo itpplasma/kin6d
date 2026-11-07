@@ -19,12 +19,15 @@ program nested_equilibrium
     integer, parameter :: mmax = 64, nmax = 32, kmax = 32
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4e-7_dp*pi
     integer :: nfp, mpol, ntor, boundary_nodes, degree, max_iterations, angle_mpol
-    integer :: unit, ios, status, solve_status, step, steps, nodes, order
+    integer :: unit, ios, status, solve_status, step, steps, nodes, order, n
     integer :: ladder_nodes(8), ladder_degree(8)
     real(dp) :: phiedge, tolerance
     real(dp) :: rbc(-nmax:nmax, 0:mmax), rbs(-nmax:nmax, 0:mmax)
     real(dp) :: zbc(-nmax:nmax, 0:mmax), zbs(-nmax:nmax, 0:mmax)
     real(dp) :: iota(0:kmax), pressure(0:kmax), current(0:kmax)
+    real(dp) :: raxis_cc(0:nmax), raxis_cs(0:nmax), zaxis_cc(0:nmax), zaxis_cs(0:nmax)
+    real(dp), allocatable :: axis(:, :)
+    logical :: guessed = .false.
     logical :: prescribe_current
     integer :: max_current_iterations
     real(dp) :: current_tolerance, current_error
@@ -43,13 +46,14 @@ program nested_equilibrium
     namelist /nested_input/ nfp, mpol, ntor, rbc, rbs, zbc, zbs, phiedge, &
         iota, pressure, boundary_nodes, degree, tolerance, max_iterations, angle_mpol, &
         ladder_nodes, ladder_degree, prescribe_current, current, max_current_iterations, &
-        current_tolerance
+        current_tolerance, raxis_cc, raxis_cs, zaxis_cc, zaxis_cs
 
     nfp = 1; mpol = 1; ntor = 0; phiedge = 1
     rbc = 0; rbs = 0; zbc = 0; zbs = 0; iota = 0; pressure = 0
     boundary_nodes = 16; degree = 3; tolerance = 1e-8_dp; max_iterations = 200
     angle_mpol = -1; ladder_nodes = 0; ladder_degree = 0
     prescribe_current = .false.; current = 0; max_current_iterations = 30
+    raxis_cc = 0; raxis_cs = 0; zaxis_cc = 0; zaxis_cs = 0
     current_tolerance = 1e-5_dp
     call run%start('nested_equilibrium')
     call run%open_config(unit)
@@ -69,6 +73,15 @@ program nested_equilibrium
     allocate (boundary(4, -ntor:ntor, 0:mpol))
     boundary(1, :, :) = rbc(-ntor:ntor, 0:mpol); boundary(2, :, :) = rbs(-ntor:ntor, 0:mpol)
     boundary(3, :, :) = zbc(-ntor:ntor, 0:mpol); boundary(4, :, :) = zbs(-ntor:ntor, 0:mpol)
+    if (any([raxis_cc, raxis_cs, zaxis_cc, zaxis_cs] /= 0)) then
+        ! VMEC's axis arrays follow its boundary's m = 0 convention, the
+        ! layout cos/sin(-n nfp phi); negative n keep the boundary's values
+        allocate (axis(4, -ntor:ntor), source=boundary(:, :, 0))
+        do n = 0, ntor
+            axis(:, n) = [raxis_cc(n), raxis_cs(n), zaxis_cc(n), zaxis_cs(n)]
+        end do
+        axis(2:4:2, 0) = 0
+    end if
     profile%iota = iota(0:last(iota))
     ! the solver uses mu0 = 1 pressure units
     profile%pressure = mu0*pressure(0:last(pressure))
@@ -86,13 +99,17 @@ program nested_equilibrium
         end if
         call ideal_seed_disk_mesh(mesh, nodes, order, status)
         if (status /= 0) error stop 'nested_equilibrium: disk mesh'
-        if (angle_mpol >= 0) then
-            call ideal_seed_3d_init(map, seed, mesh, boundary, nfp, phiedge, profile, &
-                status, angle_mpol=angle_mpol)
-        else
-            call ideal_seed_3d_init(map, seed, mesh, boundary, nfp, phiedge, profile, status)
+        call init_seed(status)
+        if (status /= 0 .and. .not. guessed) then
+            ! as VMEC does after a bad initial Jacobian: guess the axis
+            call guess_axis()
+            guessed = .true.
+            call init_seed(status)
         end if
-        if (status /= 0) error stop 'nested_equilibrium: seed'
+        if (status /= 0) then
+            print '(a,i0)', 'nested_equilibrium: seed status ', status
+            error stop 'nested_equilibrium: seed'
+        end if
         reference = free_gradient()
         seed_x = map%x
         if (step > 1) then
@@ -182,6 +199,100 @@ contains
         end do
     end subroutine
 
+    subroutine init_seed(status)
+        integer, intent(out) :: status
+        ! an unallocated axis is an absent optional argument
+        if (angle_mpol >= 0) then
+            call ideal_seed_3d_init(map, seed, mesh, boundary, nfp, phiedge, profile, &
+                status, angle_mpol=angle_mpol, axis=axis)
+        else
+            call ideal_seed_3d_init(map, seed, mesh, boundary, nfp, phiedge, profile, &
+                status, axis=axis)
+        end if
+    end subroutine
+
+    subroutine guess_axis()
+        ! In each toroidal plane the axis point that maximises the smallest
+        ! Jacobian of the seed's harmonic extension (grid search, as VMEC's
+        ! guess_axis), then fitted with the axis Fourier modes.
+        integer, parameter :: nr = 16, nt = 96, ng = 41
+        integer :: nplane, k, i, j, m, nn, a, b, info
+        real(dp) :: phi, theta, rho, phase, xm(2, 0:mmax), dxm(2, 0:mmax), b0(2)
+        real(dp) :: best, worst, cand(2), jac, rr, rt, zr, zt, lo(2), hi(2)
+        real(dp), allocatable :: points(:, :), lsq(:, :), rhs(:, :), work(:)
+        nplane = max(8, 2*ntor + 2)
+        allocate (points(2, nplane), lsq(nplane, 2*ntor + 1), rhs(nplane, 2), work(64*nplane))
+        do k = 1, nplane
+            phi = 2*pi*(k - 1)/(nfp*nplane)
+            lo = huge(1.0_dp); hi = -huge(1.0_dp)
+            do j = 0, nt - 1
+                theta = 2*pi*j/nt
+                call plane_modes(theta, phi, xm, dxm)
+                lo = min(lo, sum(xm, dim=2)); hi = max(hi, sum(xm, dim=2))
+            end do
+            call plane_modes(0.0_dp, phi, xm, dxm); b0 = xm(:, 0)
+            best = -huge(1.0_dp)
+            do a = 1, ng
+                do b = 1, ng
+                    cand = lo + (hi - lo)*[real(a, dp), real(b, dp)]/(ng + 1)
+                    worst = huge(1.0_dp)
+                    do j = 0, nt - 1
+                        theta = 2*pi*j/nt
+                        call plane_modes(theta, phi, xm, dxm)
+                        do i = 1, nr
+                            rho = real(i, dp)/nr
+                            rr = -2*rho*(cand(1) - b0(1)); zr = -2*rho*(cand(2) - b0(2))
+                            rt = 0; zt = 0
+                            do m = 1, mpol
+                                rr = rr + m*rho**(m - 1)*xm(1, m); zr = zr + m*rho**(m - 1)*xm(2, m)
+                                rt = rt + rho**m*dxm(1, m); zt = zt + rho**m*dxm(2, m)
+                            end do
+                            jac = (rr*zt - rt*zr)/rho
+                            worst = min(worst, jac)
+                        end do
+                    end do
+                    if (worst > best) then
+                        best = worst; points(:, k) = cand
+                    end if
+                end do
+            end do
+            ! cos and sin of (-n nfp phi), the m = 0 layout
+            lsq(k, 1) = 1
+            do nn = 1, ntor
+                lsq(k, 2*nn) = cos(-nn*nfp*phi); lsq(k, 2*nn + 1) = sin(-nn*nfp*phi)
+            end do
+        end do
+        rhs = transpose(points)
+        call dgels('N', nplane, 2*ntor + 1, 2, lsq, nplane, rhs, nplane, work, size(work), info)
+        if (info /= 0) error stop 'nested_equilibrium: axis fit'
+        if (allocated(axis)) deallocate (axis)
+        allocate (axis(4, -ntor:ntor), source=boundary(:, :, 0))
+        axis(:, 0) = [rhs(1, 1), 0.0_dp, rhs(1, 2), 0.0_dp]
+        do nn = 1, ntor
+            axis(:, nn) = [rhs(2*nn, 1), rhs(2*nn + 1, 1), rhs(2*nn, 2), rhs(2*nn + 1, 2)]
+            axis(:, -nn) = 0
+        end do
+    end subroutine
+
+    subroutine plane_modes(theta, phi, xm, dxm)
+        ! (R, Z) of each poloidal mode m of the boundary at (theta, phi) and its
+        ! theta derivative
+        real(dp), intent(in) :: theta, phi
+        real(dp), intent(out) :: xm(2, 0:mmax), dxm(2, 0:mmax)
+        real(dp) :: phase
+        integer :: m, nn
+        xm = 0; dxm = 0
+        do m = 0, mpol
+            do nn = -ntor, ntor
+                phase = m*theta - nn*nfp*phi
+                xm(:, m) = xm(:, m) + boundary([1, 3], nn, m)*cos(phase) &
+                    + boundary([2, 4], nn, m)*sin(phase)
+                dxm(:, m) = dxm(:, m) + m*(boundary([2, 4], nn, m)*cos(phase) &
+                    - boundary([1, 3], nn, m)*sin(phase))
+            end do
+        end do
+    end subroutine
+
     subroutine measure(s, values)
         ! enclosed toroidal current on the surfaces s
         real(dp), intent(in) :: s(:)
@@ -219,12 +330,7 @@ contains
         x_saved = map%x
         if (allocated(map%angle)) angle_saved = map%angle
         call ideal_seed_disk_mesh(mesh, boundary_nodes, degree, local)
-        if (angle_mpol >= 0) then
-            call ideal_seed_3d_init(map, seed, mesh, boundary, nfp, phiedge, profile, &
-                local, angle_mpol=angle_mpol)
-        else
-            call ideal_seed_3d_init(map, seed, mesh, boundary, nfp, phiedge, profile, local)
-        end if
+        call init_seed(local)
         if (local /= 0) error stop 'nested_equilibrium: current re-seed'
         map%x = x_saved
         if (allocated(angle_saved)) map%angle = angle_saved
@@ -364,10 +470,10 @@ contains
 
     subroutine axis_radius(raxis, status)
         ! image of the centre of the reference disc (the label's O-point),
-        ! averaged over phi
+        ! averaged over the cylindrical angle
         real(dp), intent(out) :: raxis
         integer, intent(out) :: status
-        real(dp) :: centre(2), xi(2), q(3), d(3, 3), ref(2), g(2, 2)
+        real(dp) :: centre(2), xi(2), q(3), d(3, 3), ref(2), g(2, 2), weight
         integer :: e, k, nphi, local
         centre = (maxval(map%reference, dim=2) + minval(map%reference, dim=2))/2
         status = 1
@@ -376,11 +482,13 @@ contains
             if (local /= 0) cycle
             if (minval([xi, 1 - sum(xi)]) < -1e-10_dp) cycle
             nphi = max(16, 4*map%ntor + 4)
-            raxis = 0
+            ! mean over the cylindrical angle, which the map displaces: dphi_cyl = d(3, 3) dphi
+            raxis = 0; weight = 0
             do k = 0, nphi - 1
                 call map_3d_coordinates(map, e, xi, 2*pi*k/(nfp*nphi), q, d, ref, g)
-                raxis = raxis + q(1)/nphi
+                raxis = raxis + q(1)*d(3, 3); weight = weight + d(3, 3)
             end do
+            raxis = raxis/weight
             status = 0
             return
         end do

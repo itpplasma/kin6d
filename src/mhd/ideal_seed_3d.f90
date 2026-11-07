@@ -96,24 +96,25 @@ contains
         call seed_disk_boundary(t, pi, point(1), point(2))
     end subroutine
 
-    subroutine ideal_seed_boundary_coefficients(point, coefficients, values)
+    subroutine ideal_seed_boundary_coefficients(point, coefficients, values, axis)
         ! Harmonic extension: rho^m exp(i m theta)=(u+i v)^m is regular
         ! at the axis. Mode sums and their storage are orchestration; the
         ! complex recurrence and real Fourier conversion are generated.
+        ! An axis (the m = 0 layout of the coefficients) replaces the
+        ! boundary's m = 0 curve at the centre: m = 0 + (1 - s)(axis - m = 0).
         real(dp), intent(in) :: point(2), coefficients(:, :, 0:)
         real(dp), intent(out) :: values(:, :)
-        real(dp) :: u, v, s, re, im, nr, ni, term(4)
+        real(dp), intent(in), optional :: axis(:, :)
+        real(dp) :: u, v, s, re, im, nr, ni, term(4), c(4)
         integer :: m, n, ntor, mode
         ntor = (size(coefficients, 2) - 1)/2
         values = 0; re = 1; im = 0
         call seed_disk_coordinates(point(1), point(2), u, v, s)
         do m = 0, ubound(coefficients, 3)
             do n = -ntor, ntor
-                call seed_boundary_mode(re, im, &
-                    coefficients(1, n + ntor + 1, m), &
-                    coefficients(2, n + ntor + 1, m), &
-                    coefficients(3, n + ntor + 1, m), &
-                    coefficients(4, n + ntor + 1, m), &
+                c = coefficients(:, n + ntor + 1, m)
+                if (m == 0 .and. present(axis)) c = c + (1 - s)*(axis(:, n + ntor + 1) - c)
+                call seed_boundary_mode(re, im, c(1), c(2), c(3), c(4), &
                     term(1), term(2), term(3), term(4))
                 mode = 2*abs(n)
                 if (n == 0) then
@@ -130,7 +131,7 @@ contains
     end subroutine
 
     subroutine ideal_seed_3d_init(map, seed, mesh, coefficients, nfp, flux, &
-            profile, status, nphi, angle_mpol, angle_ntor)
+            profile, status, nphi, angle_mpol, angle_ntor, axis)
         type(ideal_map_t), intent(out) :: map
         type(toroidal_seed_t), intent(out) :: seed
         type(gs_state_t), intent(in) :: mesh
@@ -144,6 +145,9 @@ contains
         ! enables it with poloidal modes <= angle_mpol and toroidal modes
         ! <= angle_ntor (default: the boundary ntor). Default: off.
         integer, intent(in), optional :: angle_mpol, angle_ntor
+        ! Initial magnetic axis in the m = 0 layout of the coefficients
+        ! (default: the boundary's m = 0 curve).
+        real(dp), intent(in), optional :: axis(:, :)
         type(cylindrical_chart_t) :: chart
         real(dp) :: iota, pressure, integral, previous, energy, minimum_radius
         integer :: a, m, j, ntor, angles
@@ -151,6 +155,10 @@ contains
         if (nfp < 1 .or. .not. flux > 0) return
         if (.not. ieee_is_finite(flux)) return
         if (size(coefficients, 1) /= 4) return
+        if (present(axis)) then
+            if (any(shape(axis) /= [4, size(coefficients, 2)])) return
+            if (.not. all(ieee_is_finite(axis))) return
+        end if
         if (mod(size(coefficients, 2), 2) /= 1) return
         if (.not. all(ieee_is_finite(coefficients))) return
         if (.not. allocated(profile%iota)) return
@@ -185,7 +193,7 @@ contains
         !$omp parallel do schedule(static) private(a,m,j) reduction(min:minimum_radius)
         do a = 1, map%nodes
             call ideal_seed_boundary_coefficients(map%reference(:, a), &
-                coefficients, map%x(:, :, a))
+                coefficients, map%x(:, :, a), axis)
             do j=1,map%nphi
                 minimum_radius=min(minimum_radius, &
                     dot_product(map%x(1,:,a),map%trig(:,j)))
