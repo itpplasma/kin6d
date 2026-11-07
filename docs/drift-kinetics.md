@@ -363,6 +363,92 @@ to 0.6 % and stays finite from omega_E = 0.012 rad/s down to omega_E = 0,
 rising by 0.68 % like the reference (0.69 %), solved directly. DG in (theta, lambda) has not been needed for
 resolution on this ladder.
 
+Rescoring against NEO-2-QL (#183). NEO-2-QL (main 98ae645) was run on Boozer
+files written from the same frozen field (n q = 6.5), for the same plasma and
+collisionality, with pitch-angle scattering only: the test-particle operator
+without energy scattering and field part (`isw_energy = isw_integral = 0`),
+i.e. the Lorentz operator with the same nu_D(x). Its equation differs from
+the stage-1 reference in three places, each a switch of `dk_ntv` (#238):
+drift and drive weight (1 + xi^2)/b instead of lambda, the curvature drift
+c_J xi^2 of the file's toroidal current (c_J = 2 B0 I'/(G q eps') = 0.045 to
+0.27), and b.grad theta = k b with the flux measure of Boozer angles. With
+all three on (KIN6D at 193 theta points and 1600 to 3200 Legendre
+polynomials, NEO-2 at eta_part_trapped = 140, lag = 5):
+
+| eps | KIN6D / Pa | NEO-2 / Pa | NEO-2/KIN6D | NEO-2 lag 5 -> 9 | NEO-2 eta 70 -> 140 |
+|---|---|---|---|---|---|
+| 0.010 | 2.834e-10 | 2.884e-10 | 1.018 | -0.2 % | -2.8 % |
+| 0.020 | 2.446e-7 | 2.399e-7 | 0.981 | +0.5 % | -0.0 % |
+| 0.030 | 1.178e-5 | 1.173e-5 | 0.996 | -0.1 % | +0.2 % |
+| 0.040 | 1.691e-4 | 1.677e-4 | 0.992 | +0.4 % | +0.1 % |
+| 0.045 | 4.354e-4 | 4.302e-4 | 0.988 | +0.7 % | +0.0 % |
+| 0.060 | 2.828e-3 | 2.774e-3 | 0.981 | +0.5 % | +0.3 % |
+
+The torque is the ion NTV torque density. NEO-2's lag 9 -> 13 change is
+0.09 % (eps = 0.02); at eps = 0.01 its pitch grid is not converged and
+eta_part_trapped = 200 diverges in its iteration. KIN6D changes by at most
+1.3e-3 between 193 and 321 theta points and 1600 to 6400 polynomials, and by
++0.13 % (eps = 0.02) and +0.42 % (eps = 0.03) from 16 to 24 energy nodes
+(24 -> 32: 0.04 %). With these drift and collision choices matched, the two
+codes agree to 0.4 % to 1.9 %, NEO-2 below KIN6D at every eps >= 0.02;
+at eps = 0.02 and
+0.06 the gap exceeds both codes' numerical spread. NEO-2-QL keeps two source
+terms KIN6D does not have, the parallel-derivative part of the perturbed
+radial drift and the perturbed-operator source acting on the axisymmetric
+solution f_10; their contribution to the remaining discrepancy has not been
+evaluated. The
+switch defects on these rows are -0.3 % to +10 % (all three together, growing
+with eps), so on some rows the stage-1 model and NEO-2's differ by more than
+the codes do.
+At eps = 0.03 both codes rise as nu falls: KIN6D by 0.10 % and 0.95 % at nu/2
+and nu/4, NEO-2 by 0.22 % and 0.42 % (not pitch-converged at nu/4).
+
+Interpretation of #183: an independent discretisation (NEO-2's finite elements
+on eta levels along the field line) reproduces KIN6D's torque to 2 % with the
+matched terms above. This does not establish the cause of the 4 to 5 % deficit
+against the collisionless full-phase reference. The collisionality trend
+supports finite-collisionality effects as a candidate explanation; that the
+deficit vanishes as nu -> 0 is still not shown, and the source differences
+above remain unresolved. With 24 energy nodes the stage-1
+ratios rise by 0.1 to 0.4 % (0.962 and 0.957 at eps = 0.02 and 0.03). The
+SBP gate stays failed as scored against the reference. Development proceeds
+without treating this gate as passed.
+
+Timing at the reported resolution errors, both codes on one AMD EPYC 7452
+node with eight
+threads each (KIN6D: the stage-1 model, 16 energy nodes solved one after the
+other; NEO-2: test-particle pitch-angle operator). Error is the change to each
+code's own finest run (KIN6D 193 x 3200 or 6400; NEO-2 eta 140, lag 9
+where available); unknowns of KIN6D are summed over the 16 energy nodes:
+
+| eps | code, resolution | error | unknowns | wall | peak memory |
+|---|---|---|---|---|---|
+| 0.045 | NEO-2, eta 70, lag 5 | 7e-3 (lag) | 0.57 M | 175 s | 18.2 GiB |
+| 0.045 | NEO-2, eta 70, lag 9 | ~1e-3 | 0.95 M | 624 s | 60.7 GiB |
+| 0.045 | KIN6D, 129 x 1600 | 1.0e-3 | 3.3 M | 170 s | 1.6 GiB |
+| 0.045 | KIN6D, 193 x 1600 | 1e-5 | 4.9 M | 551 s | 3.6 GiB |
+| 0.030 | NEO-2, eta 70, lag 5 | 2.3e-3 | 0.52 M | 166 s | 16.5 GiB |
+| 0.030 | NEO-2, eta 140, lag 5 | 8e-4 (lag) | 1.32 M | 421 s | 44.4 GiB |
+| 0.030 | KIN6D, 161 x 1200 | 2.0e-3 | 3.1 M | 240 s | 1.9 GiB |
+| 0.030 | KIN6D, 193 x 1600 | 2e-5 | 4.9 M | 546 s | 3.6 GiB |
+
+The errors in the table are those of the theta/Legendre and pitch/energy
+resolution only. KIN6D's 16-node energy rule adds 0.13 % (eps = 0.02) and
+0.42 % (eps = 0.03); 24 nodes reduce it and cost 1.5 times more. Comparing
+KIN6D's 129 x 1600 row with NEO-2's eta 70, lag 9 row at eps = 0.045,
+KIN6D is 3.7 times faster, uses 38 times less memory and has 3.5 times more
+unknowns. Comparing KIN6D's 193 x 1600 row with NEO-2's eta 140, lag 5 row
+at eps = 0.03, NEO-2 is 1.3 times faster; KIN6D uses 12 times less memory
+and has 3.7 times more unknowns. Scaling the KIN6D timings by the stated
+1.5 energy-node cost gives estimated speed factors of 2.4 in KIN6D's favour
+and 2 in NEO-2's favour, respectively; these are not matched-total-accuracy
+measurements. For the two coarser eps = 0.03 rows, NEO-2 is 1.4 times faster;
+KIN6D uses 8.7 times less memory and has 6 times more unknowns. NEO-2 cannot
+refine its pitch grid past
+eta 140 at eps = 0.01, where it diverges at 200, so that row has no matched
+accuracy. Not measured: the 16 energy nodes solved in parallel, which
+KIN6D's layout allows, and other node types.
+
 Energy grid and test-particle operator (`src/continuum/dk_collop.f90`, #184):
 each species has the speed x = v/v_ta on continuous GLL elements of degree
 at least 2 on [0, x_max], and the perturbation is f_a = F_a h_a P_l(xi) with
