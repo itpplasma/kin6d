@@ -1,0 +1,432 @@
+!> Axisymmetric (n = 0) drift-kinetic solve on the energy grid with the
+!! linearised collision operator of dk_collop (#216, #184): the parallel
+!! flows driven by the radial gradients for one species, the coefficients
+!! D31 and D32 and the poloidal-rotation coefficient k = 5/2 - D32/D31.
+!!
+!! The perturbation is h(x, theta, xi) = sum_k phi_k(x) h_k(theta, xi) with
+!! the GLL basis phi_k of dk_collop and h_k expanded as in dk_mono (Legendre
+!! P_l in xi, Fourier collocation in theta). The energy direction is
+!! Galerkin throughout, with every integral over [0, oo) including the
+!! polynomial tail of the last element: per degree l and test function
+!! phi_k,
+!!   sum_j m_kj S h_j - c_kj h_j = d_k s_1,
+!! m_kj = int phi_k phi_j x^3 exp(-x^2) dx (streaming carries the speed),
+!! c the collision matrix of dk_collop per unit 4 pi/(2l+1) n pi^(-3/2) v_t,
+!! S the streaming and mirror operator per unit length (dk_mono), s_1 the
+!! radial drift per unit speed with I/Omega = 1, in units u v_t = 1, and
+!! d_k = int phi_k x^4 W exp(-x^2) dx for the energy weight W = 1 (A_1) or
+!! x^2 (A_2). Each node's rows are divided by m_kk. A lumped (row-sum) mass
+!! is not usable: for degree >= 2 elements with the Maxwellian weight some
+!! row sums are negative, which flips the sign of the collision rows there.
+!!
+!! S couples l to l -+ 1 and the mass and collision matrices couple the
+!! nodes within a degree, so the system is block tridiagonal in l with
+!! dense blocks of n_theta n_x unknowns. It is factorised once by band LU
+!! with partial pivoting and reused for every right-hand side (drives and
+!! tangents), followed by one step of iterative refinement. Two cheaper
+!! routes were measured and rejected: a Krylov iteration preconditioned by
+!! one monoenergetic factorisation per node did not converge in 400 steps
+!! outside a band of about two decades in collisionality (energy scattering
+!! dominates where that preconditioner omits it), and block elimination in
+!! l without pivoting across degrees left backward errors up to 1e-2 at low
+!! collisionality.
+!!
+!! The theta-constant degree-0 component of each node is bordered by a
+!! source and the constraint that its flux-surface average vanishes, as in
+!! dk_mono; it enters only the theta averages of the degree-0 rows and not
+!! the flows.
+!!
+!! Flows: D3j = (4/sqrt(pi)) sum_k int phi_k x^3 exp(-x^2) dx <b g_k,1>/3
+!! with <.> the flux-surface average of dk_mono. With a momentum-conserving
+!! operator the D31 drive has the exact solution h = x xi/b, a rigid
+!! parallel shift, so D31 = (4/sqrt(pi)) int x^4 exp(-x^2) dx/3 = 1/2 up to
+!! the Fourier truncation of 1/b.
+module kin6d_dk_energy
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_coupling, mono_drives, &
+        MONO_OK
+    use kin6d_dk_collop, only: collop_t, collop_species_t, collop_grid_t, collop_build, &
+        collop_vth, collop_nuhat, collop_moments, COLLOP_OK
+    implicit none
+    private
+    public :: energy_axi_t, energy_axi_coefficients
+    integer, parameter, public :: ENERGY_OK = 0, ENERGY_BAD_INPUT = 1, ENERGY_SINGULAR = 2
+    real(dp), parameter :: pi = 4*atan(1.0_dp)
+
+    type :: energy_axi_t
+        real(dp) :: d31 = 0, d32 = 0, k = 0
+        ! D31 of the rigid shift h = x xi/b in this discretisation, the
+        ! exact value for a momentum-conserving operator.
+        real(dp) :: d31_rigid = 0
+        ! Componentwise backward error of the bordered solve, both drives.
+        real(dp) :: residual(2) = 0
+        ! Exact tangents with respect to s = ln(n/T^2): with lnLambda fixed the
+        ! collision rows scale like nuhat/v_t ~ n T^(-2), and nothing else in
+        ! the scaled system depends on n or T, so dk/dn = dk_ds/n and
+        ! dk/dT = -2 dk_ds/T. k does not depend on the gradients.
+        real(dp) :: dd31_ds = 0, dd32_ds = 0, dk_ds = 0
+    end type
+
+    !> Band LU of the bordered system and the operator data.
+    type :: system_t
+        integer :: nth = 0, lmax = 0, nx = 0, nb = 0, nnull = 0
+        type(collop_t) :: op
+        type(mono_factor_t) :: f
+        ! Streaming mass m_kj, row scaling 1/m_kk, collision c_kj per degree.
+        real(dp), allocatable :: m(:, :), row(:), c3(:, :, :), weight(:)
+        real(dp), allocatable :: lo(:, :, :), up(:, :, :)
+        integer :: kband = 0, nall = 0
+        real(dp), allocatable :: band(:, :)
+        integer, allocatable :: piv(:)
+    end type
+
+    interface
+        subroutine dgbtrf(m, n, kl, ku, ab, ldab, ipiv, info)
+            import :: dp
+            integer, intent(in) :: m, n, kl, ku, ldab
+            real(dp), intent(inout) :: ab(ldab, *)
+            integer, intent(out) :: ipiv(*), info
+        end subroutine dgbtrf
+        subroutine dgbtrs(trans, n, kl, ku, nrhs, ab, ldab, ipiv, b, ldb, info)
+            import :: dp
+            character, intent(in) :: trans
+            integer, intent(in) :: n, kl, ku, nrhs, ldab, ldb, ipiv(*)
+            real(dp), intent(in) :: ab(ldab, *)
+            real(dp), intent(inout) :: b(ldb, *)
+            integer, intent(out) :: info
+        end subroutine dgbtrs
+    end interface
+
+contains
+
+    !> D31, D32 and k of one species with self-collisions of the selected
+    !> collision model on the surface b(theta) (n_theta odd, uniform theta),
+    !> kappa = iota B0/(G + iota I) [1/m], n_leg Legendre polynomials and the
+    !> energy grid. For one species the self-collision operator is n nuhat
+    !> times a matrix that depends on nothing else: a surface scan passes the
+    !> operator built once (any reference species, same grid and model, at
+    !> least n_leg - 1 degrees) as `operator`, and it is rescaled.
+    subroutine energy_axi_coefficients(b, kappa, species, lnlambda, grid, n_leg, model, &
+            res, status, operator)
+        real(dp), intent(in) :: b(:), kappa, lnlambda
+        type(collop_species_t), intent(in) :: species
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: n_leg, model
+        type(energy_axi_t), intent(out) :: res
+        integer, intent(out) :: status
+        type(collop_t), intent(in), optional :: operator
+        type(system_t) :: sys
+        real(dp), allocatable :: g(:, :, :, :), rhs(:, :, :, :), s(:, :, :), r(:, :, :), mu(:, :)
+        real(dp), allocatable :: s3(:, :, :), corr(:, :, :, :), dg(:, :, :, :), dmu(:, :)
+        real(dp) :: flow(2), dflow(2), mom(grid%n, grid%n), d(grid%n)
+        integer :: j, k, it
+
+        call setup(b, kappa, species, lnlambda, grid, n_leg, model, sys, status, operator)
+        if (status /= ENERGY_OK) return
+        s = mono_drives(sys%f)
+        allocate (rhs(sys%nth, 0:sys%lmax, sys%nx, 2), r(sys%nth, 0:sys%lmax, sys%nx), &
+            s3(sys%nth, 0:sys%lmax, sys%nx), corr(sys%nth, 0:sys%lmax, sys%nx, 2))
+        do j = 1, 2
+            call collop_moments(grid, 0, 2 + 2*j, mom, d)
+            do k = 1, sys%nx
+                rhs(:, :, k, j) = sys%row(k)*d(k)*s(:, :, 1)
+            end do
+        end do
+        call solve(sys, rhs, g, mu, status)
+        if (status /= ENERGY_OK) return
+        ! One step of iterative refinement with the operator.
+        do it = 1, 1
+            do j = 1, 2
+                call apply(sys, g(:, :, :, j), mu(:, j), r)
+                corr(:, :, :, j) = rhs(:, :, :, j) - r
+            end do
+            call solve(sys, corr, dg, dmu, status)
+            if (status /= ENERGY_OK) return
+            g = g + dg
+            mu = mu + dmu
+        end do
+        ! Tangents: A dg = C g ds with C the scaled collision rows (A = S - C).
+        do j = 1, 2
+            call apply_collision(sys, g(:, :, :, j), corr(:, :, :, j))
+        end do
+        call solve(sys, corr, dg, dmu, status)
+        if (status /= ENERGY_OK) return
+        call collop_moments(grid, 0, 3, mom, d)
+        d = 4/sqrt(pi)*d/3
+        flow = 0
+        dflow = 0
+        do k = 1, sys%nx
+            res%d31_rigid = res%d31_rigid + d(k)*grid%x(k)
+            do j = 1, 2
+                flow(j) = flow(j) + d(k)*sum(sys%weight*b*g(:, 1, k, j))
+                dflow(j) = dflow(j) + d(k)*sum(sys%weight*b*dg(:, 1, k, j))
+            end do
+        end do
+        res%dd31_ds = dflow(1)
+        res%dd32_ds = dflow(2)
+        res%dk_ds = -(dflow(2)*flow(1) - flow(2)*dflow(1))/flow(1)**2
+        ! Componentwise backward error |A h - rhs|/(|A| |h| + |rhs|).
+        do j = 1, 2
+            call apply(sys, g(:, :, :, j), mu(:, j), r)
+            r = abs(r - rhs(:, :, :, j))
+            call apply(sys, g(:, :, :, j), mu(:, j), s3, absolute=.true.)
+            res%residual(j) = maxval(r/(s3 + abs(rhs(:, :, :, j)) + tiny(1.0_dp)))
+        end do
+        res%d31 = flow(1)
+        res%d32 = flow(2)
+        res%k = 2.5_dp - flow(2)/flow(1)
+    end subroutine energy_axi_coefficients
+
+    subroutine setup(b, kappa, species, lnlambda, grid, n_leg, model, sys, status, operator)
+        real(dp), intent(in) :: b(:), kappa, lnlambda
+        type(collop_species_t), intent(in) :: species
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: n_leg, model
+        type(system_t), intent(out) :: sys
+        integer, intent(out) :: status
+        type(collop_t), intent(in), optional :: operator
+        real(dp) :: lnl(1, 1)
+        integer :: l, st
+
+        status = ENERGY_BAD_INPUT
+        if (n_leg < 4 .or. grid%n < 3) return
+        sys%nth = size(b)
+        sys%lmax = n_leg - 1
+        sys%nx = grid%n
+        sys%nb = sys%nth*sys%nx
+        lnl = lnlambda
+        if (present(operator)) then
+            if (operator%ns /= 1 .or. operator%lmax < sys%lmax .or. &
+                operator%model /= model .or. operator%grid%n /= grid%n) return
+            sys%op = operator
+            sys%op%a = operator%a(:, :, 0:sys%lmax)*species%n &
+                *collop_nuhat(species, species, lnlambda)/(operator%sp(1)%n &
+                *collop_nuhat(operator%sp(1), operator%sp(1), operator%lnlambda(1, 1)))
+            sys%op%sp = [species]
+            sys%op%lmax = sys%lmax
+        else
+            call collop_build([species], lnl, grid, model, sys%lmax, sys%op, st)
+            if (st /= COLLOP_OK) return
+        end if
+        allocate (sys%m(sys%nx, sys%nx), sys%row(sys%nx), sys%c3(sys%nx, sys%nx, 0:sys%lmax))
+        call collop_moments(grid, 3, 0, sys%m, sys%row)
+        sys%row = [(1/sys%m(l, l), l=1, sys%nx)]
+        do l = 0, sys%lmax
+            sys%c3(:, :, l) = sys%op%a(:, :, l)*(2*l + 1)/(4*pi*species%n/pi**1.5_dp &
+                *collop_vth(species))
+        end do
+        ! The streaming blocks come from dk_mono; its deflection frequency
+        ! is not used.
+        status = ENERGY_SINGULAR
+        call mono_factor(b, kappa, 1.0_dp, n_leg, sys%f, st)
+        if (st /= MONO_OK) return
+        sys%weight = sys%f%p%weight
+        allocate (sys%lo(sys%nth, sys%nth, 0:sys%lmax), sys%up(sys%nth, sys%nth, 0:sys%lmax))
+        do l = 0, sys%lmax
+            call mono_coupling(sys%f, l, sys%lo(:, :, l), sys%up(:, :, l))
+        end do
+        call null_space(sys)
+        call factor(sys, st)
+        if (st /= 0) return
+        status = ENERGY_OK
+    end subroutine setup
+
+    !> Bordering of the theta-constant degree-0 component of each node by a
+    !> source on that node and the constraint <h_k,0> = 0. That component
+    !> appears only in the theta averages of the degree-0 rows (streaming
+    !> annihilates it), so the bordering leaves every other component exact.
+    !> Determining it from the weak degree-0 collision coupling instead
+    !> amplifies the discrete flux defect of the Fourier streaming by
+    !> 1/nu and loses the solution at low collisionality.
+    subroutine null_space(sys)
+        type(system_t), intent(inout) :: sys
+        sys%nnull = sys%nx
+    end subroutine null_space
+
+    !> Diagonal block of degree l: scaled collision rows, theta-diagonal.
+    function diagonal(sys, l) result(m)
+        type(system_t), intent(in) :: sys
+        integer, intent(in) :: l
+        real(dp) :: m(sys%nb, sys%nb)
+        integer :: k, j, i
+        m = 0
+        do j = 1, sys%nx
+            do k = 1, sys%nx
+                do i = 1, sys%nth
+                    m((k - 1)*sys%nth + i, (j - 1)*sys%nth + i) = -sys%row(k)*sys%c3(k, j, l)
+                end do
+            end do
+        end do
+    end function diagonal
+
+    !> (row m) kron blk times a dense matrix x: the theta block on every node,
+    !> then the scaled streaming mass across nodes.
+    function couple(sys, blk, x) result(y)
+        type(system_t), intent(in) :: sys
+        real(dp), intent(in) :: blk(:, :), x(:, :)
+        real(dp) :: y(sys%nb, size(x, 2))
+        real(dp) :: t(sys%nth, sys%nx, size(x, 2))
+        integer :: c
+        do c = 1, size(x, 2)
+            t(:, :, c) = matmul(blk, reshape(x(:, c), [sys%nth, sys%nx]))
+            y(:, c) = reshape(matmul(t(:, :, c), transpose(sys%m*spread(sys%row, 2, sys%nx))), &
+                [sys%nb])
+        end do
+    end function couple
+
+    !> Band LU with partial pivoting (LAPACK dgbtrf) of the bordered system.
+    !> Unknowns: block 0 = (h_0 on all nodes, the sources mu), then h_l,
+    !> l >= 1; the half bandwidth is n0 + nb - 1 with n0 = nb + n_x. Block
+    !> elimination in l without pivoting across degrees was tried first and
+    !> left backward errors up to 1e-2 at low collisionality, which
+    !> refinement did not remove.
+    subroutine factor(sys, info)
+        type(system_t), intent(inout) :: sys
+        integer, intent(out) :: info
+        integer :: l, nb, n0, k
+        real(dp), allocatable :: blk(:, :)
+        nb = sys%nb
+        n0 = nb + sys%nx
+        sys%kband = n0 + nb - 1
+        sys%nall = n0 + sys%lmax*nb
+        allocate (sys%band(3*sys%kband + 1, sys%nall), sys%piv(sys%nall))
+        sys%band = 0
+        do l = 0, sys%lmax
+            call put(start(l), start(l), diagonal(sys, l))
+            if (l > 0) call put(start(l), start(l - 1), couple(sys, sys%lo(:, :, l), identity(nb)))
+            if (l < sys%lmax) call put(start(l), start(l + 1), &
+                couple(sys, sys%up(:, :, l), identity(nb)))
+        end do
+        ! Sources on every theta point of node k and the constraint that the
+        ! weighted theta average of h_k,0 vanishes.
+        allocate (blk(nb, sys%nx))
+        blk = 0
+        do k = 1, sys%nx
+            blk((k - 1)*sys%nth + 1:k*sys%nth, k) = 1
+        end do
+        call put(1, nb + 1, blk)
+        blk = 0
+        do k = 1, sys%nx
+            blk((k - 1)*sys%nth + 1:k*sys%nth, k) = sys%weight
+        end do
+        call put(nb + 1, 1, transpose(blk))
+        call dgbtrf(sys%nall, sys%nall, sys%kband, sys%kband, sys%band, 3*sys%kband + 1, &
+            sys%piv, info)
+    contains
+        integer function start(l)
+            integer, intent(in) :: l
+            start = 1
+            if (l > 0) start = n0 + (l - 1)*nb + 1
+        end function start
+        subroutine put(i0, j0, m)
+            integer, intent(in) :: i0, j0
+            real(dp), intent(in) :: m(:, :)
+            integer :: i, j
+            do j = 1, size(m, 2)
+                do i = 1, size(m, 1)
+                    sys%band(2*sys%kband + 1 + (i0 + i - 1) - (j0 + j - 1), j0 + j - 1) = m(i, j)
+                end do
+            end do
+        end subroutine put
+    end subroutine factor
+
+    pure function identity(n) result(m)
+        integer, intent(in) :: n
+        real(dp) :: m(n, n)
+        integer :: i
+        m = 0
+        do i = 1, n
+            m(i, i) = 1
+        end do
+    end function identity
+
+    !> Solve for the right-hand sides rhs(theta, l, node, :); mu are the
+    !> source amplitudes of the border.
+    subroutine solve(sys, rhs, x, mu, status)
+        type(system_t), intent(in) :: sys
+        real(dp), intent(in) :: rhs(:, 0:, :, :)
+        real(dp), allocatable, intent(out) :: x(:, :, :, :), mu(:, :)
+        integer, intent(out) :: status
+        real(dp), allocatable :: z(:, :)
+        integer :: l, nb, nr, info, n0, i0
+        nb = sys%nb
+        n0 = nb + sys%nx
+        nr = size(rhs, 4)
+        allocate (z(sys%nall, nr), x(sys%nth, 0:sys%lmax, sys%nx, nr))
+        z = 0
+        z(1:nb, :) = reshape(rhs(:, 0, :, :), [nb, nr])
+        do l = 1, sys%lmax
+            i0 = n0 + (l - 1)*nb
+            z(i0 + 1:i0 + nb, :) = reshape(rhs(:, l, :, :), [nb, nr])
+        end do
+        status = ENERGY_SINGULAR
+        call dgbtrs('N', sys%nall, sys%kband, sys%kband, nr, sys%band, 3*sys%kband + 1, &
+            sys%piv, z, sys%nall, info)
+        if (info /= 0) return
+        x(:, 0, :, :) = reshape(z(1:nb, :), [sys%nth, sys%nx, nr])
+        mu = z(nb + 1:n0, :)
+        do l = 1, sys%lmax
+            i0 = n0 + (l - 1)*nb
+            x(:, l, :, :) = reshape(z(i0 + 1:i0 + nb, :), [sys%nth, sys%nx, nr])
+        end do
+        status = ENERGY_OK
+    end subroutine solve
+
+    !> Bordered operator: the scaled rows plus the sources mu per node. With
+    !> absolute, every matrix and h enter by modulus: |A| |h| for the
+    !> backward error of a solution.
+    subroutine apply(sys, h, mu, y, absolute)
+        type(system_t), intent(in) :: sys
+        real(dp), intent(in) :: h(:, 0:, :), mu(:)
+        real(dp), intent(out) :: y(:, 0:, :)
+        logical, intent(in), optional :: absolute
+        real(dp) :: t(sys%nth, sys%nx), scaled(sys%nx, sys%nx), coll(sys%nx, sys%nx)
+        real(dp) :: lo(sys%nth, sys%nth), up(sys%nth, sys%nth), hh(sys%nth, 0:sys%lmax, sys%nx)
+        real(dp) :: sgn
+        logical :: ab
+        integer :: k, l
+        ab = .false.
+        if (present(absolute)) ab = absolute
+        sgn = -1
+        if (ab) sgn = 1
+        scaled = sys%m*spread(sys%row, 2, sys%nx)
+        hh = h
+        if (ab) then
+            scaled = abs(scaled)
+            hh = abs(h)
+        end if
+        do l = 0, sys%lmax
+            lo = sys%lo(:, :, l)
+            up = sys%up(:, :, l)
+            coll = sys%c3(:, :, l)*spread(sys%row, 2, sys%nx)
+            if (ab) then
+                lo = abs(lo)
+                up = abs(up)
+                coll = abs(coll)
+            end if
+            t = 0
+            if (l > 0) t = matmul(lo, hh(:, l - 1, :))
+            if (l < sys%lmax) t = t + matmul(up, hh(:, l + 1, :))
+            y(:, l, :) = matmul(t, transpose(scaled)) + sgn*matmul(hh(:, l, :), transpose(coll))
+        end do
+        do k = 1, sys%nx
+            if (ab) then
+                y(:, 0, k) = y(:, 0, k) + abs(mu(k))
+            else
+                y(:, 0, k) = y(:, 0, k) + mu(k)
+            end if
+        end do
+    end subroutine apply
+
+    !> Scaled collision rows C h (the operator is A = S - C + border).
+    subroutine apply_collision(sys, h, y)
+        type(system_t), intent(in) :: sys
+        real(dp), intent(in) :: h(:, 0:, :)
+        real(dp), intent(out) :: y(:, 0:, :)
+        integer :: l
+        do l = 0, sys%lmax
+            y(:, l, :) = matmul(h(:, l, :), transpose(sys%c3(:, :, l)*spread(sys%row, 2, sys%nx)))
+        end do
+    end subroutine apply_collision
+
+end module kin6d_dk_energy
