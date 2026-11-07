@@ -3,6 +3,8 @@
 !!   tangents     tangents in the amplitudes c_m and along (eps, k, offset,
 !!                c_J) against centred differences, for both weights and
 !!                both streaming models;
+!!   line         the circular field through the general field-line provider
+!!                reproduces the surface fields bit for bit;
 !!   assembly     both drift/drive weights and both streaming models against a
 !!                dense Legendre-Galerkin x Fourier solve assembled by Gauss
 !!                quadrature and the DFT derivative on a small grid;
@@ -11,7 +13,7 @@
 program test_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK, &
-        NTV_WEIGHT_MU, NTV_WEIGHT_FULL
+        NTV_WEIGHT_MU, NTV_WEIGHT_FULL, ntv_circular_line_t
     use fortnum_quadrature, only: gauss_legendre
     implicit none
     character(256) :: check, path
@@ -21,6 +23,7 @@ program test_dk_ntv
     select case (trim(check))
     case ('jvp'); ok = jvp()
     case ('tangents'); ok = tangents()
+    case ('line'); ok = line()
     case ('assembly'); ok = assembly()
     case ('kernel')
         call get_command_argument(2, path)
@@ -122,6 +125,38 @@ contains
         print '(a,2es14.6,es9.1)', label//' ', got, want, abs(got/want - 1)
         near = abs(got/want - 1) < 1e-6_dp
     end function near
+
+    logical function line() result(ok)
+        real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
+        type(ntv_surface_t) :: sf, sl
+        type(ntv_kernel_t) :: kf, kl
+        integer :: status, ib, iw
+        ok = .true.
+        do ib = 0, 1
+            do iw = 1, 2
+                sf = sample()
+                sf%m = [5, 6, 7]
+                sf%c = [(2e-4_dp, -1e-4_dp), (1e-3_dp, 2e-4_dp), (-3e-4_dp, 5e-5_dp)]
+                sf%boozer_stream = ib == 1
+                sf%weight = merge(NTV_WEIGHT_MU, NTV_WEIGHT_FULL, iw == 1)
+                sf%current = merge(0.0_dp, 0.37_dp, iw == 1)
+                sl = sf
+                sl%line = ntv_circular_line_t(eps=sf%eps, k=sf%k, offset=sf%offset, &
+                    current=sf%current, boozer_stream=sf%boozer_stream)
+                sl%eps = 0; sl%k = 0; sl%offset = 0; sl%current = 0
+                sl%boozer_stream = .not. sf%boozer_stream
+                call ntv_kernel(sf, v, nu, omega, pre, 33, 80, kf, status)
+                if (status /= NTV_OK) error stop 'kernel failed'
+                call ntv_kernel(sl, v, nu, omega, pre, 33, 80, kl, status)
+                if (status /= NTV_OK) error stop 'line kernel failed'
+                print '(a,2es24.16)', 'surface/line R ', kf%r, kl%r
+                ok = ok .and. kf%r == kl%r .and. kf%dr_dnu == kl%dr_dnu &
+                    .and. kf%dr_domega == kl%dr_domega .and. all(kf%dr_dc == kl%dr_dc) &
+                    .and. kf%indicator_theta == kl%indicator_theta &
+                    .and. kf%indicator_leg == kl%indicator_leg
+            end do
+        end do
+    end function line
 
     real(dp) function sample_k()
         type(ntv_surface_t) :: sf

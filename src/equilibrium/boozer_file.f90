@@ -36,17 +36,18 @@ module kin6d_boozer_file
 
     type :: boozer_surface_t
         real(dp) :: s = 0, iota = 0, diota_ds = 0
-        ! Covariant Boozer components G, I [T m] and dpsi_tor/ds [T m^2].
-        real(dp) :: g_cov = 0, i_cov = 0, psi_prime = 0
+        ! Covariant Boozer components G, I [T m], their s derivatives and
+        ! dpsi_tor/ds [T m^2].
+        real(dp) :: g_cov = 0, i_cov = 0, g_cov_s = 0, i_cov_s = 0, psi_prime = 0
         integer :: nper = 1
         integer, allocatable :: m(:), n(:)
         ! Symmetric parts (rmnc, zmns, vmns, bmnc) and their s derivatives,
         ! then the asymmetric partners (rmns, zmnc, vmnc, bmns), zero for a
         ! stellarator-symmetric file.
         real(dp), allocatable :: rmn(:), zmn(:), vmn(:), bmn(:)
-        real(dp), allocatable :: rmn_s(:), zmn_s(:), vmn_s(:)
+        real(dp), allocatable :: rmn_s(:), zmn_s(:), vmn_s(:), bmn_s(:)
         real(dp), allocatable :: rma(:), zma(:), vma(:), bma(:)
-        real(dp), allocatable :: rma_s(:), zma_s(:), vma_s(:)
+        real(dp), allocatable :: rma_s(:), zma_s(:), vma_s(:), bma_s(:)
     end type
 
     type :: boozer_point_t
@@ -111,11 +112,13 @@ contains
         surf%diota_ds = g_s(1)
         surf%g_cov = mu0*g(2 + 8*nm)/twopi
         surf%i_cov = mu0*g(3 + 8*nm)/twopi
+        surf%g_cov_s = mu0*g_s(2 + 8*nm)/twopi
+        surf%i_cov_s = mu0*g_s(3 + 8*nm)/twopi
         surf%psi_prime = bf%d%flux/twopi
         allocate (surf%rmn(nm), surf%zmn(nm), surf%vmn(nm), surf%bmn(nm), &
-            surf%rmn_s(nm), surf%zmn_s(nm), surf%vmn_s(nm), &
+            surf%rmn_s(nm), surf%zmn_s(nm), surf%vmn_s(nm), surf%bmn_s(nm), &
             surf%rma(nm), surf%zma(nm), surf%vma(nm), surf%bma(nm), &
-            surf%rma_s(nm), surf%zma_s(nm), surf%vma_s(nm))
+            surf%rma_s(nm), surf%zma_s(nm), surf%vma_s(nm), surf%bma_s(nm))
         do i = 1, nm
             call boozer_axis_factor(s, 0.5_dp*bf%d%m(i), f, f_s)
             surf%rmn(i) = f*g(1 + i)
@@ -125,6 +128,7 @@ contains
             surf%rmn_s(i) = f_s*g(1 + i) + f*g_s(1 + i)
             surf%zmn_s(i) = f_s*g(1 + nm + i) + f*g_s(1 + nm + i)
             surf%vmn_s(i) = f_s*g(1 + 2*nm + i) + f*g_s(1 + 2*nm + i)
+            surf%bmn_s(i) = f_s*g(1 + 3*nm + i) + f*g_s(1 + 3*nm + i)
             surf%rma(i) = f*g(1 + 4*nm + i)
             surf%zma(i) = f*g(1 + 5*nm + i)
             surf%vma(i) = f*g(1 + 6*nm + i)
@@ -132,6 +136,7 @@ contains
             surf%rma_s(i) = f_s*g(1 + 4*nm + i) + f*g_s(1 + 4*nm + i)
             surf%zma_s(i) = f_s*g(1 + 5*nm + i) + f*g_s(1 + 5*nm + i)
             surf%vma_s(i) = f_s*g(1 + 6*nm + i) + f*g_s(1 + 6*nm + i)
+            surf%bma_s(i) = f_s*g(1 + 7*nm + i) + f*g_s(1 + 7*nm + i)
         end do
         status = BOOZER_OK
     end subroutine boozer_surface
