@@ -2,7 +2,8 @@ module kin6d_vrmhd_section
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_point, only: vrmhd_point
+    use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix, &
+        VRMHD_POINT_MATRIX_CALLS
     use kin6d_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
         vrmhd_curl_rotation, vrmhd_curl_screw, vrmhd_curl_screw_coordinates
@@ -407,11 +408,13 @@ contains
         logical, intent(in), optional :: mass_only
         real(dp) :: basis(36, op%nlocal), x(2), weight, v(36), vd(12), test(19), &
             value, dvalue, state_weight
-        real(dp) :: block(op%nlocal, op%nlocal)
+        real(dp) :: block(op%nlocal, op%nlocal), kmat(19, 45, 6), &
+            trial(45, op%nlocal), tangent(19, op%nlocal, 6)
         integer, allocatable :: rows(:), cols(:)
         real(dp), allocatable :: vals(:)
         type(fortsparse_status_t) :: sparse_status
-        integer :: t, q, i, j, pos, st, fail
+        integer :: t, q, i, j, r, pos, st, fail
+        logical :: by_matrix
         allocate (rows(op%nlocal**2*op%fs%mm%topology%n_triangles), &
             cols(op%nlocal**2*op%fs%mm%topology%n_triangles), &
             vals(op%nlocal**2*op%fs%mm%topology%n_triangles))
@@ -420,9 +423,12 @@ contains
         if (present(mass_only)) then
             if (mass_only) state_weight = 0
         end if
+        ! The tangent is bilinear in test and trial data, so one pointwise
+        ! matrix serves every basis pair once it needs fewer point calls.
+        by_matrix = op%nlocal**2 > VRMHD_POINT_MATRIX_CALLS
         !$omp parallel do default(shared) schedule(static) &
-        !$omp private(t,q,i,j,pos,st,basis,x,weight,v,vd,test,value,dvalue,block) &
-        !$omp reduction(max:fail)
+        !$omp private(t,q,i,j,r,pos,st,basis,x,weight,v,vd,test,value,dvalue,block, &
+        !$omp kmat,trial,tangent) reduction(max:fail)
         do t = 1, op%fs%mm%topology%n_triangles
             block = 0
                 do q = 1, op%fs%nq
@@ -432,6 +438,21 @@ contains
                     end if
                     v = matmul(basis, u(op%map(:, t)))
                     vd = matmul(basis(:12, :), ud(op%map(:, t)))
+                    if (by_matrix) then
+                        call vrmhd_point_matrix(p, v(:33), vd, source(:, q, t), shift, &
+                            kmat)
+                        trial(:33, :) = state_weight*basis(:33, :)
+                        trial(34:, :) = basis(:12, :)
+                        do r = 1, 6
+                            tangent(:, :, r) = matmul(kmat(:, :, r), trial)
+                        end do
+                        do i = 1, op%nlocal
+                            call test_data(op%row(i), basis(:, i), test)
+                            block(i, :) = block(i, :) &
+                                + weight*matmul(test, tangent(:, :, op%row(i)))
+                        end do
+                        cycle
+                    end if
                     do i = 1, op%nlocal
                         call test_data(op%row(i), basis(:, i), test)
                         do j = 1, op%nlocal
