@@ -555,6 +555,26 @@ Newton enters only for the ambipolar E_r root and torque-balance coupling,
 with exact tangents through the same factorisations; adjoints for torque,
 D_ij and bootstrap reuse them (A^dagger = -T + D).
 
+## Local theta stencil comparison
+
+The local Lorentz kernel accepts an optional even `theta_order` to compare a
+periodic centered derivative with Fourier collocation. Zero keeps the Fourier
+reference. Positive orders use FortNum interpolation derivative weights with
+exact odd stencil symmetry, then FortSparse complex sparse LU with row
+scaling. Both paths share the physical coefficients, Legendre couplings,
+flux pairing and equation-level tangents. The local derivative is stored as
+one circulant row; no dense theta matrix or doubled real system is retained
+for the sparse factorization. The Legendre spectrum is available for resolution
+diagnostics.
+
+An independent Gauss-Legendre assembly and dense solve check the second-order
+stencil. Sixth-order refinement is checked against Fourier collocation on a
+smooth circular case, and independent differences check the collision,
+precession, perturbation and circular-geometry tangents. These tests qualify
+a discretization comparison, not a performance advantage on AUG or ITER.
+The existing resolution indicators remain uncertified differences; the local
+stencil changes the discrete approximation and requires its own refinement.
+
 ## Axisymmetric Boozer oracle adapter
 
 `kin6d_ntv_geometry` adapts an axisymmetric Boozer surface to the existing

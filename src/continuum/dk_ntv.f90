@@ -46,7 +46,13 @@
 !! surface.
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_polynomial, only: lagrange_deriv_weights
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
+    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, csc_z_t, &
+        csc_from_triplet, &
+        FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
+        FORTSPARSE_ORDER_ND
+    use fortsparse_status, only: fortsparse_status_t, status_ok
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
@@ -99,6 +105,8 @@ module kin6d_dk_ntv
     type :: ntv_kernel_t
         real(dp) :: r = 0, dr_dnu = 0, dr_domega = 0, dr_dsurface = 0
         complex(dp), allocatable :: dr_dc(:)
+        ! Legendre spectrum of the solution: max over theta of |F_l|, l = 0..L-1.
+        real(dp), allocatable :: spectrum(:)
         ! Directional two-resolution indicators: theta points 2 n + 1, and
         ! Legendre polynomials 2 L; their sum indicates the error of r.
         real(dp) :: indicator_theta = 0, indicator_leg = 0
@@ -115,6 +123,13 @@ module kin6d_dk_ntv
             source(:), measure(:)
         complex(dp), allocatable :: s(:), s_lu(:, :, :), y(:, :, :)
         integer, allocatable :: piv(:, :)
+        ! Local theta derivative of this order (0: Fourier collocation with
+        ! dense pair-block elimination): one sparse LU of the whole
+        ! (theta, l) system with nested-dissection ordering.
+        integer :: order = 0
+        type(sparse_solver_t), allocatable :: lu
+        ! Row equilibration of the sparse system: rows scaled by 1/max|a_ij|.
+        real(dp), allocatable :: rscale(:)
     end type
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -144,7 +159,7 @@ contains
     !> and n_leg (even) Legendre polynomials, with the directional
     !> indicators at 2 n_theta + 1 points and at 2 n_leg polynomials.
     subroutine ntv_kernel(sf, v, nu_d, omega_e, pre, n_theta, n_leg, kern, status, &
-            indicators, direction)
+            indicators, direction, theta_order)
         type(ntv_surface_t), intent(in) :: sf
         ! Tangent direction: its eps, k, offset and current components.
         type(ntv_surface_t), intent(in), optional :: direction
@@ -155,7 +170,11 @@ contains
         ! A resolution ladder supplies its own two-resolution estimate and
         ! can skip the refined solves, which dominate memory.
         logical, intent(in), optional :: indicators
+        ! Even order of a local central theta derivative and the sparse
+        ! solver; absent or 0 keeps Fourier collocation.
+        integer, intent(in), optional :: theta_order
         type(ntv_system_t) :: a, da
+        integer :: order
         complex(dp), allocatable :: x(:, :), dx(:, :), rhs(:, :), ds(:)
         real(dp) :: fine
         integer :: j, i
@@ -164,12 +183,19 @@ contains
             status = NTV_BAD_INPUT
             if (allocated(sf%line)) return
         end if
-        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
+        order = 0
+        if (present(theta_order)) order = theta_order
+        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order)
         if (status /= NTV_OK) return
         call drive(a, v, rhs)
         call solve(a, rhs, x, status)
         if (status /= NTV_OK) return
         kern%r = flux(a, x)
+        allocate (kern%spectrum(0:2*a%nblock - 1))
+        do j = 0, a%nblock - 1
+            kern%spectrum(2*j) = maxval(abs(x(1:a%n, j)))
+            kern%spectrum(2*j + 1) = maxval(abs(x(a%n + 1:, j)))
+        end do
 
         ! A dx = -dA x with dA = diag(l(l + 1)/2) for nu and i n/v for omega_E.
         rhs = -lorentz(a, x)
@@ -207,23 +233,23 @@ contains
             if (.not. indicators) return
         end if
 
-        call refined(sf, v, nu_d, omega_e, pre, 2*n_theta + 1, n_leg, fine, status)
+        call refined(sf, v, nu_d, omega_e, pre, 2*n_theta + 1, n_leg, fine, status, order)
         if (status /= NTV_OK) return
         kern%indicator_theta = fine - kern%r
-        call refined(sf, v, nu_d, omega_e, pre, n_theta, 2*n_leg, fine, status)
+        call refined(sf, v, nu_d, omega_e, pre, n_theta, 2*n_leg, fine, status, order)
         if (status /= NTV_OK) return
         kern%indicator_leg = fine - kern%r
     end subroutine ntv_kernel
 
-    subroutine refined(sf, v, nu_d, omega_e, pre, n_theta, n_leg, r, status)
+    subroutine refined(sf, v, nu_d, omega_e, pre, n_theta, n_leg, r, status, order)
         type(ntv_surface_t), intent(in) :: sf
         real(dp), intent(in) :: v, nu_d, omega_e, pre
-        integer, intent(in) :: n_theta, n_leg
+        integer, intent(in) :: n_theta, n_leg, order
         real(dp), intent(out) :: r
         integer, intent(out) :: status
         type(ntv_system_t) :: a
         complex(dp), allocatable :: x(:, :), rhs(:, :)
-        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
+        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order)
         if (status /= NTV_OK) return
         call drive(a, v, rhs)
         call solve(a, rhs, x, status)
@@ -231,10 +257,10 @@ contains
         r = flux(a, x)
     end subroutine refined
 
-    subroutine factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
+    subroutine factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order)
         type(ntv_surface_t), intent(in) :: sf
         real(dp), intent(in) :: v, nu_d, omega_e, pre
-        integer, intent(in) :: n_theta, n_leg
+        integer, intent(in) :: n_theta, n_leg, order
         type(ntv_system_t), intent(out) :: a
         integer, intent(out) :: status
         real(dp), allocatable :: theta(:), b(:), stream_b(:), mirror_b(:), measure_b(:)
@@ -245,7 +271,8 @@ contains
         if (mod(n_theta, 2) == 0 .or. n_theta < 3 .or. mod(n_leg, 2) /= 0 .or. &
             n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%n == 0 .or. &
             .not. allocated(sf%m) .or. &
-            (sf%weight /= NTV_WEIGHT_MU .and. sf%weight /= NTV_WEIGHT_FULL)) return
+            (sf%weight /= NTV_WEIGHT_MU .and. sf%weight /= NTV_WEIGHT_FULL) .or. &
+            order < 0 .or. mod(order, 2) /= 0 .or. order >= n_theta) return
         n = n_theta
         a%n = n
         a%nblock = n_leg/2
@@ -254,10 +281,17 @@ contains
         a%nq = sf%n*sf%q
         a%omega = omega_e
         a%precess = pre
-        allocate (theta(n), b(n), a%d(n, n), a%stream(n), a%mirror(n), a%drift(n), &
+        allocate (theta(n), b(n), a%stream(n), a%mirror(n), a%drift(n), &
             a%drift2(n), a%source(n), a%measure(n), a%s(n))
         theta = [(2*pi*(i - 1)/n, i=1, n)]
-        call fourier_derivative(n, a%d)
+        a%order = order
+        if (order == 0) then
+            allocate (a%d(n,n))
+            call fourier_derivative(n, a%d)
+        else
+            allocate (a%d(1,n))
+            call central_derivative(n, order, a%d(1,:))
+        end if
         if (allocated(sf%line)) then
             call sf%line%sample(theta, a%stream, a%mirror, a%drift, a%drift2, &
                 a%source, a%measure)
@@ -281,6 +315,11 @@ contains
             a%s = a%s + iu*sf%n*sf%c(j)*exp(iu*sf%m(j)*theta)
         end do
 
+        if (order > 0) then
+            call sparse_lu(a, status)
+            return
+        end if
+
         ! S_J = Di_J; S_j = Di_j - Up_j Y_{j+1}, Y_j = S_j^-1 Lo_j.
         allocate (a%s_lu(2*n, 2*n, 0:a%nblock - 1), a%y(2*n, 2*n, a%nblock - 1), &
             a%piv(2*n, 0:a%nblock - 1), m(2*n, 2*n))
@@ -301,14 +340,26 @@ contains
 
     !> Solve A x = rhs, pair block j holding l = 2j (rows 1:n) and 2j + 1.
     subroutine solve(a, rhs, x, status)
-        type(ntv_system_t), intent(in) :: a
+        type(ntv_system_t), intent(inout) :: a
         complex(dp), intent(in) :: rhs(:, 0:)
         complex(dp), allocatable, intent(out) :: x(:, :)
         integer, intent(out) :: status
-        complex(dp), allocatable :: z(:, :)
+        complex(dp), allocatable :: z(:, :), xs(:), zscaled(:)
+        type(fortsparse_status_t) :: sst
         integer :: j, info, nn
         nn = 2*a%n
-        allocate (z(nn, 0:a%nblock - 1), x(nn, 0:a%nblock - 1))
+        allocate (x(nn, 0:a%nblock - 1))
+        if (a%order > 0) then
+            allocate (xs(nn*a%nblock), zscaled(nn*a%nblock))
+            status = NTV_SINGULAR
+            zscaled = a%rscale*reshape(rhs, [nn*a%nblock])
+            call sparse_solve(a%lu, zscaled, xs, sst)
+            if (.not. status_ok(sst)) return
+            x = reshape(xs, [nn, a%nblock])
+            status = NTV_OK
+            return
+        end if
+        allocate (z(nn, 0:a%nblock - 1))
         status = NTV_SINGULAR
         do j = a%nblock - 1, 0, -1
             z(:, j) = rhs(:, j)
@@ -346,42 +397,53 @@ contains
         integer, intent(in) :: l, lc
         complex(dp) :: m(a%n, a%n)
         integer :: i
-        real(dp) :: f
-        complex(dp) :: p(a%n), pj(a%n)
+        complex(dp) :: fd, diag
         m = 0
         if (abs(l - lc) > 2) return
-        p = a%shift*a%precess*a%drift
-        pj = a%shift*a%precess*a%drift2
+        do i = 1, a%n
+            call coupling(a, l, lc, i, fd, diag)
+            if (fd /= 0) then
+                if (size(a%d,1) == 1) then
+                    m(i,:) = fd*cshift(a%d(1,:),1-i)
+                else
+                    m(i,:) = fd*a%d(i,:)
+                end if
+            end if
+            m(i, i) = m(i, i) + diag
+        end do
+    end function entry
+
+    !> Row (l, i), column block lc: the factor of the theta derivative row
+    !> d(i, :) and the diagonal coefficient, the one definition of the
+    !> operator used by the dense and the sparse assembly.
+    pure subroutine coupling(a, l, lc, i, fd, diag)
+        type(ntv_system_t), intent(in) :: a
+        integer, intent(in) :: l, lc, i
+        complex(dp), intent(out) :: fd, diag
+        real(dp) :: f
+        complex(dp) :: p, pj
+        fd = 0
+        diag = 0
+        p = a%shift*a%precess*a%drift(i)
+        pj = a%shift*a%precess*a%drift2(i)
         select case (lc - l)
         case (-1)
             f = l/real(2*l - 1, dp)
-            do i = 1, a%n
-                m(i, :) = a%stream(i)*f*a%d(i, :)
-                m(i, i) = m(i, i) - a%stream(i)*f*iu*a%nq &
-                    + a%mirror(i)*(l - 1)*l/real(2*l - 1, dp)
-            end do
+            fd = a%stream(i)*f
+            diag = -a%stream(i)*f*iu*a%nq + a%mirror(i)*(l - 1)*l/real(2*l - 1, dp)
         case (1)
             f = (l + 1)/real(2*l + 3, dp)
-            do i = 1, a%n
-                m(i, :) = a%stream(i)*f*a%d(i, :)
-                m(i, i) = m(i, i) - a%stream(i)*f*iu*a%nq &
-                    - a%mirror(i)*(l + 1)*(l + 2)/real(2*l + 3, dp)
-            end do
+            fd = a%stream(i)*f
+            diag = -a%stream(i)*f*iu*a%nq - a%mirror(i)*(l + 1)*(l + 2)/real(2*l + 3, dp)
         case (0)
-            do i = 1, a%n
-                m(i, i) = a%nu*l*(l + 1)/2.0_dp + a%shift*a%omega &
-                    + p(i)*(1 + a%wsign*c0(l)) + pj(i)*c0(l)
-            end do
+            diag = a%nu*l*(l + 1)/2.0_dp + a%shift*a%omega &
+                + p*(1 + a%wsign*c0(l)) + pj*c0(l)
         case (-2)
-            do i = 1, a%n
-                m(i, i) = (a%wsign*p(i) + pj(i))*cp(lc)
-            end do
+            diag = (a%wsign*p + pj)*cp(lc)
         case (2)
-            do i = 1, a%n
-                m(i, i) = (a%wsign*p(i) + pj(i))*cm(lc)
-            end do
+            diag = (a%wsign*p + pj)*cm(lc)
         end select
-    end function entry
+    end subroutine coupling
 
     ! xi^2 P_l = cp P_{l+2} + c0 P_l + cm P_{l-2}, so (1 + wsign xi^2) P_l
     ! has wsign cp, 1 + wsign c0 and wsign cm.
@@ -521,6 +583,87 @@ contains
         rhs(1:a%n, 0) = (1.5_dp + a%wsign/2)*a%source*a%s/v
         rhs(1:a%n, 1) = a%wsign*a%source*a%s/v
     end subroutine drive
+
+    !> Assemble the (theta, l) system in CSC, unknown (l, i) at l n + i, from
+    !> the theta stencil of a%d and the coupling coefficients, and factor it.
+    subroutine sparse_lu(a, status)
+        type(ntv_system_t), intent(inout) :: a
+        integer, intent(out) :: status
+        integer, allocatable :: rows(:), cols(:)
+        integer, allocatable :: sten(:)
+        complex(dp), allocatable :: vals(:)
+        type(csc_z_t) :: matrix
+        complex(dp) :: fd, diag
+        type(fortsparse_status_t) :: sst
+        integer :: n, nl, l, lc, i, k, nz, ntot, row
+        n = a%n
+        nl = 2*a%nblock
+        ntot = n*nl
+        sten = pack([(k, k=1, n)], a%d(1, :) /= 0)
+        k = ntot*(2*size(sten) + 5)
+        allocate (rows(k), cols(k), vals(k))
+        nz = 0
+        do l = 0, nl - 1
+            do i = 1, n
+                row = l*n + i
+                do lc = max(0, l - 2), min(nl - 1, l + 2)
+                    call coupling(a, l, lc, i, fd, diag)
+                    if (fd /= 0) then
+                        do k = 1, size(sten)
+                            nz = nz + 1
+                            rows(nz) = row
+                            cols(nz) = lc*n + modulo(i + sten(k) - 2, n) + 1
+                            vals(nz) = fd*a%d(1, sten(k))
+                        end do
+                    end if
+                    if (diag /= 0) then
+                        nz = nz + 1
+                        rows(nz) = row; cols(nz) = lc*n + i; vals(nz) = diag
+                    end if
+                end do
+            end do
+        end do
+        allocate (a%rscale(ntot))
+        a%rscale = 0
+        do k = 1, nz
+            a%rscale(rows(k)) = max(a%rscale(rows(k)), abs(vals(k)))
+        end do
+        status = NTV_SINGULAR
+        if (any(a%rscale == 0)) return
+        a%rscale = 1/a%rscale
+        do k = 1, nz
+            vals(k) = vals(k)*a%rscale(rows(k))
+        end do
+        call csc_from_triplet(ntot, ntot, rows(:nz), cols(:nz), vals(:nz), matrix, sst)
+        if (.not. status_ok(sst)) return
+        deallocate (rows, cols, vals)
+        allocate (a%lu)
+        a%lu%backend_id = FORTSPARSE_BACKEND_NATIVE
+        a%lu%options%symmetry = FORTSPARSE_SYM_GENERAL
+        a%lu%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+        a%lu%options%ordering = FORTSPARSE_ORDER_ND
+        a%lu%options%structural_matching = .true.
+        status = NTV_SINGULAR
+        call sparse_factor(a%lu, matrix, sst)
+        if (status_ok(sst)) status = NTV_OK
+    end subroutine sparse_lu
+
+    subroutine central_derivative(n, p, d)
+        integer, intent(in) :: n, p
+        real(dp), intent(out) :: d(n)
+        real(dp) :: nodes(p+1), weights(p+1)
+        real(dp) :: c
+        integer :: k
+        nodes = [(real(k,dp),k=-p/2,p/2)]
+        call lagrange_deriv_weights(p+1, 0.0_dp, nodes, weights)
+        d = 0
+        ! Enforce the exact odd symmetry of a centered derivative.
+        do k = 1,p/2
+            c = (weights(p/2+1+k)-weights(p/2+1-k))*n/(4*pi)
+            d(k+1) = c
+            d(n-k+1) = -c
+        end do
+    end subroutine central_derivative
 
     subroutine fourier_derivative(n, d)
         integer, intent(in) :: n
