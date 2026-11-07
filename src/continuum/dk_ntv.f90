@@ -35,22 +35,60 @@
 !!   boozer_stream  b.grad theta = k b (Boozer angles, Jacobian ~ 1/B^2)
 !!           instead of the constant k, with the surface measure
 !!           dtheta/(b.grad theta B) ~ 1/b^2 in the flux.
+!!
+!! A general field line enters through an ntv_line_t provider: its sample
+!! returns, at the theta points of the solver, the coefficients the circular
+!! leaf returns otherwise (b.grad theta, the mirror factor
+!! b.grad theta d_theta(ln b)/2, the drift multiplying (1 + wsign xi^2), the
+!! pure xi^2 drift, the source factor 2/(3 b) and the flux measure), with b
+!! = |B|/B_ref. The perturbation spectrum (any m, n) and q stay in the
+!! surface. Tangents along (eps, k, offset, c_J) exist only for the circular
+!! surface.
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
     implicit none
     private
-    public :: ntv_surface_t, ntv_kernel_t, ntv_kernel
+    public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2
     integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1
 
-    !> Surface of the frozen-field benchmark and the perturbation spectrum.
+    !> Field-line coefficients of a general surface (see the module header).
+    type, abstract :: ntv_line_t
+    contains
+        procedure(line_sample), deferred :: sample
+    end type
+
+    abstract interface
+        subroutine line_sample(self, theta, stream, mirror, drift, drift2, source, &
+                measure)
+            import :: ntv_line_t, dp
+            class(ntv_line_t), intent(in) :: self
+            real(dp), intent(in) :: theta(:)
+            real(dp), intent(out) :: stream(:), mirror(:), drift(:), drift2(:), &
+                source(:), measure(:)
+        end subroutine line_sample
+    end interface
+
+    !> The circular stage-1 field line as a provider: the same leaf and
+    !> arguments as a surface without line.
+    type, extends(ntv_line_t) :: ntv_circular_line_t
+        real(dp) :: eps = 0, k = 0, offset = 0, current = 0
+        logical :: boozer_stream = .false.
+    contains
+        procedure :: sample => circular_sample
+    end type
+
+    !> Surface of the frozen-field benchmark and the perturbation spectrum;
+    !> with line allocated, eps, k, offset, current and boozer_stream are
+    !> replaced by the provider.
     type :: ntv_surface_t
         real(dp) :: eps = 0, k = 0, q = 0, offset = 0
         integer :: n = 0
         integer :: weight = NTV_WEIGHT_MU
         real(dp) :: current = 0
         logical :: boozer_stream = .false.
+        class(ntv_line_t), allocatable :: line
         integer, allocatable :: m(:)
         complex(dp), allocatable :: c(:)
     end type
@@ -71,10 +109,10 @@ module kin6d_dk_ntv
         ! Legendre factors of the drift and drive weight in xi^2: (1 - xi^2)
         ! has sign -1, (1 + xi^2) sign +1.
         real(dp) :: wsign = -1
-        real(dp) :: nu = 0, nq = 0, current = 0
+        real(dp) :: nu = 0, nq = 0
         complex(dp) :: shift = 0, omega = 0, precess = 0
-        real(dp), allocatable :: d(:, :), stream(:), mirror(:), drift(:), source(:), &
-            measure(:)
+        real(dp), allocatable :: d(:, :), stream(:), mirror(:), drift(:), drift2(:), &
+            source(:), measure(:)
         complex(dp), allocatable :: s(:), s_lu(:, :, :), y(:, :, :)
         integer, allocatable :: piv(:, :)
     end type
@@ -122,6 +160,10 @@ contains
         real(dp) :: fine
         integer :: j, i
 
+        if (present(direction)) then
+            status = NTV_BAD_INPUT
+            if (allocated(sf%line)) return
+        end if
         call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
         if (status /= NTV_OK) return
         call drive(a, v, rhs)
@@ -213,21 +255,27 @@ contains
         a%omega = omega_e
         a%precess = pre
         allocate (theta(n), b(n), a%d(n, n), a%stream(n), a%mirror(n), a%drift(n), &
-            a%source(n), a%measure(n), a%s(n))
+            a%drift2(n), a%source(n), a%measure(n), a%s(n))
         theta = [(2*pi*(i - 1)/n, i=1, n)]
         call fourier_derivative(n, a%d)
-        ! Streaming along the field line in the frame exp(-i n zeta): d_theta - i n q.
-        a%stream = sf%k
-        allocate (stream_b(n), mirror_b(n), measure_b(n))
-        call dk_ntv_point(cos(theta), sin(theta), sf%eps, sf%k, sf%offset, b, &
-            a%mirror, a%drift, a%source, a%measure, stream_b, mirror_b, measure_b)
-        if (sf%boozer_stream) then
-            a%stream = stream_b
-            a%mirror = mirror_b
-            a%measure = measure_b
+        if (allocated(sf%line)) then
+            call sf%line%sample(theta, a%stream, a%mirror, a%drift, a%drift2, &
+                a%source, a%measure)
+        else
+            ! Streaming along the field line in the frame exp(-i n zeta):
+            ! d_theta - i n q.
+            a%stream = sf%k
+            allocate (stream_b(n), mirror_b(n), measure_b(n))
+            call dk_ntv_point(cos(theta), sin(theta), sf%eps, sf%k, sf%offset, b, &
+                a%mirror, a%drift, a%source, a%measure, stream_b, mirror_b, measure_b)
+            if (sf%boozer_stream) then
+                a%stream = stream_b
+                a%mirror = mirror_b
+                a%measure = measure_b
+            end if
+            a%drift2 = sf%current
         end if
         if (sf%weight == NTV_WEIGHT_FULL) a%wsign = 1
-        a%current = sf%current
         a%s = 0
         do j = 1, size(sf%m)
             a%s = a%s + iu*sf%n*sf%c(j)*exp(iu*sf%m(j)*theta)
@@ -299,11 +347,11 @@ contains
         complex(dp) :: m(a%n, a%n)
         integer :: i
         real(dp) :: f
-        complex(dp) :: p(a%n), pj
+        complex(dp) :: p(a%n), pj(a%n)
         m = 0
         if (abs(l - lc) > 2) return
         p = a%shift*a%precess*a%drift
-        pj = a%shift*a%precess*a%current
+        pj = a%shift*a%precess*a%drift2
         select case (lc - l)
         case (-1)
             f = l/real(2*l - 1, dp)
@@ -322,15 +370,15 @@ contains
         case (0)
             do i = 1, a%n
                 m(i, i) = a%nu*l*(l + 1)/2.0_dp + a%shift*a%omega &
-                    + p(i)*(1 + a%wsign*c0(l)) + pj*c0(l)
+                    + p(i)*(1 + a%wsign*c0(l)) + pj(i)*c0(l)
             end do
         case (-2)
             do i = 1, a%n
-                m(i, i) = (a%wsign*p(i) + pj)*cp(lc)
+                m(i, i) = (a%wsign*p(i) + pj(i))*cp(lc)
             end do
         case (2)
             do i = 1, a%n
-                m(i, i) = (a%wsign*p(i) + pj)*cm(lc)
+                m(i, i) = (a%wsign*p(i) + pj(i))*cm(lc)
             end do
         end select
     end function entry
@@ -366,6 +414,25 @@ contains
         end do
     end function lorentz
 
+    subroutine circular_sample(self, theta, stream, mirror, drift, drift2, source, &
+            measure)
+        class(ntv_circular_line_t), intent(in) :: self
+        real(dp), intent(in) :: theta(:)
+        real(dp), intent(out) :: stream(:), mirror(:), drift(:), drift2(:), &
+            source(:), measure(:)
+        real(dp) :: b(size(theta)), stream_b(size(theta)), mirror_b(size(theta)), &
+            measure_b(size(theta))
+        stream = self%k
+        call dk_ntv_point(cos(theta), sin(theta), self%eps, self%k, self%offset, b, &
+            mirror, drift, source, measure, stream_b, mirror_b, measure_b)
+        if (self%boozer_stream) then
+            stream = stream_b
+            mirror = mirror_b
+            measure = measure_b
+        end if
+        drift2 = self%current
+    end subroutine circular_sample
+
     !> <ds, x>_W: the flux functional with the conjugated drive replaced.
     real(dp) function pair(a, ds, x)
         type(ntv_system_t), intent(in) :: a
@@ -396,7 +463,7 @@ contains
         da = coefficients(a)
         da%nu = 0
         da%omega = 0
-        da%current = dir%current
+        da%drift2 = dir%current
         allocate (theta(n), db(n), dstream_b(n), dmirror_b(n), dmeasure_b(n))
         theta = [(2*pi*(i - 1)/n, i=1, n)]
         call dk_ntv_point_jvp(cos(theta), sin(theta), sf%eps, sf%k, sf%offset, &
@@ -416,7 +483,7 @@ contains
         type(ntv_system_t), intent(in) :: a
         type(ntv_system_t) :: c
         c%n = a%n; c%nblock = a%nblock; c%wsign = a%wsign; c%nu = a%nu; c%nq = a%nq
-        c%current = a%current; c%shift = a%shift; c%omega = a%omega
+        c%drift2 = a%drift2; c%shift = a%shift; c%omega = a%omega
         c%precess = a%precess
         c%d = a%d; c%stream = a%stream; c%mirror = a%mirror; c%drift = a%drift
         c%source = a%source; c%measure = a%measure; c%s = a%s
