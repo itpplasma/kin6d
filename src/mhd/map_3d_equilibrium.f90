@@ -7,7 +7,7 @@ module kin6d_map_3d_equilibrium
                       EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use kin6d_curve_chart_leaves, only: curve_fourier_mode
     use kin6d_ideal_map_leaves, only: ideal_reference_form
     use kin6d_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &
@@ -77,7 +77,8 @@ contains
         integer, intent(in) :: cell
         real(dp), intent(in) :: xi(2), phi
         real(dp), intent(out) :: q(3), derivative(3, 3), reference(2), dg(2, 2)
-        real(dp) :: shape(10), gradient(2, 10), mode, slope, coefficients(3, 10)
+        real(dp) :: shape(TRIANGLE_MAX_NODES), gradient(2, TRIANGLE_MAX_NODES)
+        real(dp) :: mode, slope, coefficients(3, TRIANGLE_MAX_NODES)
         real(dp) :: phase, c, s, unused(3)
         integer :: k, n
         n = map%nloc

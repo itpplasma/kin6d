@@ -91,6 +91,13 @@ if (any(statuses /= 0) .or. any(parallel_statuses /= 0)) error stop '3D point in
     call field_at(adinput-h*direction_ad,yminus)
     if(maxval(abs((yplus-yminus)/(2*h)-tangent))>1e-8_dp) &
         error stop '3D field JVP finite difference'
+    ! Degree 4 elements have 15 nodes; the identity seed maps reference to (R, Z).
+    call ideal_seed_disk_mesh(mesh, 8, 4, status)
+    if (status /= 0) error stop 'P4 disk mesh'
+    call ideal_seed_3d_init(map, seed, mesh, c, 3, 0.7_dp, profile, status)
+    if (status /= 0) error stop 'P4 3D seed'
+    call map_3d_coordinates(map, 1, [0.21_dp, 0.37_dp], 0.17_dp, q, d, ref, g)
+    if (maxval(abs(q(:2) - ref)) > 1e-12_dp) error stop 'P4 identity map coordinates'
     print '(a,es14.5)', '[V] 3D physical round-trip error: ', error
    print '(a)', '[V] candidate state and derivatives have unavailable continuous bounds'
 contains
