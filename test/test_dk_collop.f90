@@ -9,7 +9,13 @@
 !!                    momentum and energy exchange of a drifting or hotter
 !!                    Maxwellian with its reservoir against the closed forms;
 !!   jvp              tangents with respect to temperatures and densities
-!!                    against centred differences, test particle and Krook.
+!!                    against centred differences, all models;
+!!   conservation     self-collisions with the field-particle part (#185):
+!!                    density, momentum and energy are left null vectors and
+!!                    the null spaces of l = 0 and l = 1 have dimensions 2
+!!                    and 1, on the coarsest and a fine grid, for electrons
+!!                    and deuterons;
+!!   self_adjoint     self-collisions are symmetric and dissipative.
 program test_dk_collop
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_collop
@@ -27,6 +33,8 @@ program test_dk_collop
     case ('maxwellian_null'); ok = maxwellian_null()
     case ('rates'); ok = rates()
     case ('jvp'); ok = jvp()
+    case ('conservation'); ok = conservation()
+    case ('self_adjoint'); ok = self_adjoint()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -224,7 +232,7 @@ contains
         real(dp) :: lnl(2, 2), dt(2), dn(2), h, err
         real(dp), allocatable :: da(:, :, :), fd(:, :, :)
         integer :: status, model, k
-        integer, parameter :: models(2) = [COLLOP_TEST_PARTICLE, COLLOP_KROOK]
+        integer, parameter :: models(3) = [COLLOP_TEST_PARTICLE, COLLOP_KROOK, COLLOP_FULL]
         call collop_make_grid(6.0_dp, 3, 4, grid, status)
         lnl = 17
         sp = plasma(0.7_dp)
@@ -232,7 +240,7 @@ contains
         dn = [0.1_dp*sp(1)%n, 0.25_dp*sp(2)%n]
         h = 1e-5_dp
         ok = .true.
-        do k = 1, 2
+        do k = 1, 3
             model = models(k)
             call collop_build_jvp(sp, lnl, grid, model, 3, dt, dn, op, da, status, &
                 nu_krook=1e4_dp)
@@ -251,5 +259,97 @@ contains
             ok = ok .and. err < 1e-8_dp
         end do
     end function jvp
+
+    logical function conservation() result(ok)
+        type(collop_grid_t) :: grid
+        integer :: k, status
+        integer, parameter :: nelem(2) = [1, 5], order(2) = [3, 6]
+        ok = .true.
+        do k = 1, 2
+            call collop_make_grid(6.0_dp, nelem(k), order(k), grid, status)
+            ok = invariants(grid, plasma(1.0_dp)) .and. ok
+        end do
+    end function conservation
+
+    !> Defect of a left null vector c: max_j |sum_i c_i a_ij| over
+    !> max_j sum_i |c_i a_ij|, the size of the terms that cancel.
+    real(dp) function defect(c, a)
+        real(dp), intent(in) :: c(:), a(:, :)
+        integer :: j
+        defect = 0
+        do j = 1, size(a, 2)
+            defect = max(defect, abs(sum(c*a(:, j)))/sum(abs(c*a(:, j))))
+        end do
+    end function defect
+
+    !> Self-collisions of each species alone: density, momentum and energy.
+    logical function invariants(grid, sp) result(ok)
+        type(collop_grid_t), intent(in) :: grid
+        type(collop_species_t), intent(in) :: sp(2)
+        type(collop_t) :: op
+        real(dp) :: lnl(1, 1), dens, mom, en
+        integer :: status, a, nul0, nul1
+        lnl = 17
+        ok = .true.
+        do a = 1, 2
+            call collop_build(sp(a:a), lnl, grid, COLLOP_FULL, 1, op, status)
+            if (status /= COLLOP_OK) error stop 'build failed'
+            dens = defect(grid%x**0, op%a(:, :, 0))
+            en = defect(grid%x**2, op%a(:, :, 0))
+            mom = defect(grid%x, op%a(:, :, 1))
+            nul0 = null_dimension(op%a(:, :, 0))
+            nul1 = null_dimension(op%a(:, :, 1))
+            print '(a,i3,a,i2,a,3es10.2,a,2i2)', 'n =', grid%n, ' species', a, &
+                ' density, energy, momentum defects:', dens, en, mom, '  null dims', nul0, nul1
+            ok = ok .and. dens < 1e-13_dp .and. en < 1e-13_dp .and. mom < 1e-13_dp &
+                .and. nul0 == 2 .and. nul1 == 1
+        end do
+    end function invariants
+
+    !> Number of singular values below 1e-12 of the largest, after the
+    !> symmetric scaling D^(-1/2) a D^(-1/2), D the row sums of |a|: the
+    !> entries span many orders of magnitude between low and tail speeds.
+    integer function null_dimension(a)
+        real(dp), intent(in) :: a(:, :)
+        real(dp), allocatable :: m(:, :), sv(:), work(:), d(:)
+        real(dp) :: u(1, 1), vt(1, 1)
+        integer :: info, n, j
+        n = size(a, 1)
+        d = sum(abs(a), 2)
+        m = a
+        do j = 1, n
+            m(:, j) = m(:, j)/sqrt(d*d(j))
+        end do
+        allocate (sv(n), work(10*n))
+        call dgesvd('N', 'N', n, n, m, n, sv, u, 1, vt, 1, work, size(work), info)
+        if (info /= 0) error stop 'svd failed'
+        null_dimension = count(sv < 1e-12_dp*sv(1))
+    end function null_dimension
+
+    logical function self_adjoint() result(ok)
+        type(collop_grid_t) :: grid
+        type(collop_t) :: op
+        type(collop_species_t) :: sp(2)
+        real(dp) :: lnl(2, 2), scale, asym, top
+        real(dp), allocatable :: m(:, :), ev(:), work(:)
+        integer :: status, l, n, info
+        call collop_make_grid(6.0_dp, 4, 5, grid, status)
+        lnl = 17
+        sp = plasma(1.0_dp)
+        call collop_build(sp(2:2), lnl(1:1, 1:1), grid, COLLOP_FULL, 6, op, status)
+        if (status /= COLLOP_OK) error stop 'build failed'
+        n = grid%n
+        ok = .true.
+        allocate (ev(n), work(10*n))
+        do l = 0, 6
+            m = op%a(:, :, l)
+            scale = maxval(abs(m))
+            asym = maxval(abs(m - transpose(m)))/scale
+            call dsyev('N', 'U', n, (m + transpose(m))/2, n, ev, work, size(work), info)
+            top = maxval(ev)/scale
+            print '(a,i2,a,2es10.2)', 'l =', l, ' asymmetry, largest eigenvalue:', asym, top
+            ok = ok .and. asym < 1e-13_dp .and. top < 1e-13_dp .and. info == 0
+        end do
+    end function self_adjoint
 
 end program test_dk_collop

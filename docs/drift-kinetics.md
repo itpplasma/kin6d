@@ -381,8 +381,26 @@ reservoir agree with the closed Maxwellian friction and temperature-exchange
 rates to 2e-14 and 4e-13 for electrons and deuterons with T_i/T_e = 0.7.
 Tangents with respect to temperatures and densities come from the leaf JVPs
 and agree with centred differences to 4e-10. Krook (-nu_K f) is a parity
-switch. The field-particle part (#185) and the kinetic solve with energy
-scattering follow.
+switch.
+
+Field-particle part of self-collisions (same module, model `COLLOP_FULL`,
+#185): since (grad grad G).v = grad(v G' - G), the flux of C(F_a, f_b) is F_a
+times the gradient of a potential Psi P_l built from the Rosenbluth
+potentials of f_b, and the operator is assembled in that weak form,
+(g', Psi') + l(l+1) g Psi/v^2, with the potentials from the Legendre
+expansions of 1/|v - v'| and |v - v'| (kernels from `gen_dk_collop`) by
+quadrature split at the kink and graded towards it and towards the origin.
+Every basis function is integrated over [0, oo) with the last element
+continued polynomially, so that the invariants hold independently of
+x_max; density is conserved identically. For electrons and for deuterons
+alone (test `dk_collop_conservation`), density, momentum and energy are left
+null vectors to 2e-14 of the cancelling terms on one quadratic element and to
+1.3e-15 on 26 nodes, and the null spaces of l = 0 and l = 1 have dimensions
+2 and 1. The self-collision operator is symmetric to 1e-16 and its largest
+eigenvalue is below 1e-16 of its norm for l <= 6 (`dk_collop_self_adjoint`);
+tangents in temperature and density agree with centred differences to
+7e-10. Field-particle parts between species and the kinetic solve with
+energy scattering follow.
 
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by

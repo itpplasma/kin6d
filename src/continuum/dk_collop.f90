@@ -15,8 +15,10 @@
 !!
 !! Models: Lorentz (pitch-angle scattering only), test particle (pitch-angle
 !! and energy scattering off Maxwellian partners, the thermal term retained
-!! for unequal temperatures) and Krook (-nu_K f, a parity switch, never a
-!! default). The test-particle operator is symmetric for equal temperatures
+!! for unequal temperatures), full (test particle plus the field-particle
+!! part of self-collisions, so that each species conserves its own density,
+!! momentum and energy; field-particle parts between species follow) and
+!! Krook (-nu_K f, a parity switch, never a default). The test-particle operator is symmetric for equal temperatures
 !! and has the Maxwellian (h = 1) as null vector; it exchanges momentum and
 !! energy with its partners, which are reservoirs here.
 !!
@@ -27,14 +29,14 @@ module kin6d_dk_collop
     use fortnum_quadrature, only: gauss_legendre, gauss_lobatto_legendre
     use fortnum_polynomial, only: lagrange_weights, lagrange_differentiation_matrix
     use kin6d_dk_collop_leaves, only: collop_tp, collop_tp_series, collop_tp_jvp, &
-        collop_tp_series_jvp
+        collop_tp_series_jvp, collop_fp_lo, collop_fp_hi, collop_fp_lo_jvp, collop_fp_hi_jvp
     implicit none
     private
     public :: collop_species_t, collop_grid_t, collop_t
     public :: collop_make_grid, collop_build, collop_build_jvp, collop_mass
     public :: collop_basis, collop_nuhat, collop_vth
     integer, parameter, public :: COLLOP_LORENTZ = 1, COLLOP_TEST_PARTICLE = 2, &
-        COLLOP_KROOK = 4
+        COLLOP_FULL = 3, COLLOP_KROOK = 4
     integer, parameter, public :: COLLOP_OK = 0, COLLOP_BAD_INPUT = 1
 
     real(dp), parameter, public :: collop_qe = 1.602176634e-19_dp
@@ -43,6 +45,10 @@ module kin6d_dk_collop
     ! Gauss-Legendre points per panel; integrands are polynomials times
     ! Gaussians and erf on panels no wider than one thermal speed.
     integer, parameter :: nquad = 32
+    ! Unit panels integrating the polynomial tail beyond x_max: the
+    ! integrals run over [0, oo), so that the collision invariants hold for
+    ! any x_max, as in the continuous operator.
+    integer, parameter :: tail = 6
 
     type :: collop_species_t
         real(dp) :: m = 0 ! mass (kg)
@@ -116,7 +122,8 @@ contains
     end function element_point
 
     !> Values and x-derivatives of the order basis functions of the element
-    !> holding x, and the global index of the first; phi = 0 beyond the grid.
+    !> holding x, and the global index of the first. Beyond x_max the last
+    !> element continues polynomially, so h is a polynomial on [x_max, oo).
     subroutine collop_basis(grid, x, first, phi, dphi)
         type(collop_grid_t), intent(in) :: grid
         real(dp), intent(in) :: x
@@ -127,7 +134,7 @@ contains
         phi = 0
         dphi = 0
         first = 1
-        if (x < 0 .or. x > grid%edges(grid%nelem)) return
+        if (x < 0) return
         e = 1
         do while (e < grid%nelem)
             if (x <= grid%edges(e)) exit
@@ -223,7 +230,8 @@ contains
         ok = .false.
         if (size(species) < 1 .or. lmax < 0 .or. grid%n < 3) return
         if (size(lnlambda, 1) /= size(species) .or. size(lnlambda, 2) /= size(species)) return
-        if (all(model /= [COLLOP_LORENTZ, COLLOP_TEST_PARTICLE, COLLOP_KROOK])) return
+        if (all(model /= [COLLOP_LORENTZ, COLLOP_TEST_PARTICLE, COLLOP_FULL, &
+            COLLOP_KROOK])) return
         do a = 1, size(species)
             if (species(a)%m <= 0 .or. species(a)%t <= 0 .or. species(a)%n <= 0) return
         end do
@@ -260,6 +268,11 @@ contains
                     a(ra + 1:ra + n, ra + 1:ra + n, l) = &
                         a(ra + 1:ra + n, ra + 1:ra + n, l) + block(:, :, l)
                 end do
+                ! Field-particle part of self-collisions; partners of another
+                ! species follow with their pair blocks (#185).
+                if (op%model /= COLLOP_FULL .or. sb /= sa) cycle
+                call field_particle_block(op, sa, sb, dt, dn, block)
+                a(ra + 1:ra + n, rb + 1:rb + n, :) = a(ra + 1:ra + n, rb + 1:rb + n, :) + block
             end do
         end do
     end subroutine assemble
@@ -276,7 +289,7 @@ contains
         real(dp), allocatable :: xq(:), wq(:)
         real(dp) :: rinv, tau, nu, drinv, dtau, dnu, lor, en, th, dlor, den, dth
         real(dp) :: phi(op%grid%order), dphi(op%grid%order), pref, scale
-        real(dp), allocatable :: lorentz(:, :), energy(:, :)
+        real(dp), allocatable :: lorentz(:, :), energy(:, :), edges(:)
         integer :: q, i, j, first, l, p, n
         logical :: tangent
 
@@ -292,8 +305,8 @@ contains
         drinv = rinv*(dt(sa)/op%sp(sa)%t - dt(sb)/op%sp(sb)%t)/2
         dnu = nu*(dn(sa)/op%sp(sa)%n + dn(sb)/op%sp(sb)%n - 1.5_dp*dt(sa)/op%sp(sa)%t)
 
-        call panel_rule(merge_breaks(op%grid%edges, op%grid%edges/rinv, &
-            op%grid%edges(op%grid%nelem)), xq, wq)
+        edges = tail_edges(op%grid)
+        call panel_rule(merge_breaks(edges, edges/rinv, edges(size(edges))), xq, wq)
         allocate (lorentz(n, n), energy(n, n))
         lorentz = 0
         energy = 0
@@ -333,6 +346,99 @@ contains
         end do
     end subroutine test_particle_block
 
+    !> Field-particle block C_ab(F_a, f_b), f_b = phi_j F_b P_l, all l, in
+    !> weak form. Its flux is F_a grad(Psi P_l), Psi from the Rosenbluth
+    !> potentials of f_b, because (grad grad G).v = grad(v G' - G). In the
+    !> speed x of a, with rho = v_tb/v_ta, mu = m_a/m_b and the test-particle
+    !> prefactor pref,
+    !>   pref (4 pi/(2l+1)) pi^(-3/2) int dx e^(-x^2) (x^2 phi_i' psi_j'
+    !>        + l(l+1) phi_i psi_j),
+    !>   psi_j(x) = int dy k1_l(x, rho y) phi_j(y) e^(-y^2) y^2.
+    !> Density is conserved for every species identically (phi' = 0 for
+    !> l = 0). The inner rule is split at y = x/rho, where the derivative of
+    !> the kernel jumps, graded towards it, where the kernel (s/x)^l of high
+    !> degree is concentrated, and geometrically beyond it, where the kernel
+    !> decays like a power of y; below it the kernel is a polynomial in y.
+    subroutine field_particle_block(op, sa, sb, dt, dn, block)
+        type(collop_t), intent(in) :: op
+        integer, intent(in) :: sa, sb
+        real(dp), intent(in) :: dt(:), dn(:)
+        real(dp), allocatable, intent(out) :: block(:, :, :)
+        real(dp), allocatable :: xq(:), wq(:), yq(:), wy(:), ls(:), edges(:), origin(:)
+        real(dp), allocatable :: k1(:), k1x(:), dk1(:), dk1x(:), psi(:, :), psix(:, :)
+        real(dp) :: rho, mu, nu, drho, dnu, top, ystar, gauss, sig, scale, dsig
+        real(dp) :: phi(op%grid%order), dphi(op%grid%order)
+        real(dp) :: phj(op%grid%order), dphj(op%grid%order), c(0:op%lmax), cx(0:op%lmax)
+        integer :: q, r, i, j, first, firstj, l, p, n, ngrade, k
+        logical :: tangent
+
+        n = op%grid%n
+        p = op%grid%order
+        edges = tail_edges(op%grid)
+        top = edges(size(edges))
+        tangent = any(dt /= 0) .or. any(dn /= 0)
+        rho = collop_vth(op%sp(sb))/collop_vth(op%sp(sa))
+        mu = op%sp(sa)%m/op%sp(sb)%m
+        nu = op%sp(sa)%n*collop_nuhat(op%sp(sa), op%sp(sb), op%lnlambda(sa, sb))
+        drho = rho*(dt(sb)/op%sp(sb)%t - dt(sa)/op%sp(sa)%t)/2
+        dnu = nu*(dn(sa)/op%sp(sa)%n + dn(sb)/op%sp(sb)%n - 1.5_dp*dt(sa)/op%sp(sa)%t)
+        ls = [(real(l, dp), l=0, op%lmax)]
+        ! For l >= 1 a basis function with h(0) /= 0 has potentials with
+        ! x^l log(x) terms at the origin; geometric panels towards 0 keep
+        ! the rule converging exponentially.
+        origin = [(edges(2)*0.5_dp**k, k=1, 24)]
+        ngrade = 2 + ceiling(log(real(op%lmax + 1, dp))/log(2.0_dp))
+        allocate (block(n, n, 0:op%lmax), psi(n, 0:op%lmax), psix(n, 0:op%lmax), &
+            k1(0:op%lmax), k1x(0:op%lmax), dk1(0:op%lmax), dk1x(0:op%lmax))
+        block = 0
+
+        call panel_rule(merge_breaks([edges, origin], [rho*edges, rho*origin], top), xq, wq)
+        do q = 1, size(xq)
+            ystar = xq(q)/rho
+            call panel_rule(merge_breaks([edges, origin], [ystar, &
+                (ystar*(1 - 0.5_dp**k), k=1, ngrade), (ystar*(1 + 0.5_dp**k), k=1, ngrade), &
+                (ystar*2.0_dp**k, k=1, ceiling(log(top/ystar)/log(2.0_dp)))], top), yq, wy)
+            psi = 0
+            psix = 0
+            do r = 1, size(yq)
+                sig = rho*yq(r)
+                dsig = yq(r)*drho
+                if (sig < xq(q)) then
+                    call collop_fp_lo(xq(q), sig/xq(q), ls, mu, k1, k1x)
+                    call collop_fp_lo_jvp(xq(q), sig/xq(q), ls, mu, 0.0_dp, dsig/xq(q), &
+                        0.0_dp, 0.0_dp, dk1, dk1x)
+                else
+                    call collop_fp_hi(sig, xq(q)/sig, ls, mu, k1, k1x)
+                    call collop_fp_hi_jvp(sig, xq(q)/sig, ls, mu, dsig, -xq(q)*dsig/sig**2, &
+                        0.0_dp, 0.0_dp, dk1, dk1x)
+                end if
+                ! Product rule on nu times the kernels for a tangent build.
+                if (tangent) then
+                    c = dnu*k1 + nu*dk1
+                    cx = dnu*k1x + nu*dk1x
+                else
+                    c = nu*k1
+                    cx = nu*k1x
+                end if
+                gauss = wy(r)*exp(-yq(r)**2)*yq(r)**2
+                call collop_basis(op%grid, yq(r), firstj, phj, dphj)
+                do j = 1, p
+                    psi(firstj + j - 1, :) = psi(firstj + j - 1, :) + gauss*phj(j)*c
+                    psix(firstj + j - 1, :) = psix(firstj + j - 1, :) + gauss*phj(j)*cx
+                end do
+            end do
+            call collop_basis(op%grid, xq(q), first, phi, dphi)
+            gauss = wq(q)*exp(-xq(q)**2)
+            do l = 0, op%lmax
+                scale = (4*pi/(2*l + 1))**2/pi**3
+                do i = 1, p
+                    block(first + i - 1, :, l) = block(first + i - 1, :, l) + scale*gauss &
+                        *(xq(q)**2*dphi(i)*psix(:, l) + l*(l + 1)*phi(i)*psi(:, l))
+                end do
+            end do
+        end do
+    end subroutine field_particle_block
+
     subroutine krook_block(op, sa, dn, tangent, block)
         type(collop_t), intent(in) :: op
         integer, intent(in) :: sa
@@ -346,7 +452,7 @@ contains
         p = op%grid%order
         dens = op%sp(sa)%n
         if (tangent) dens = dn
-        call panel_rule(op%grid%edges, xq, wq)
+        call panel_rule(tail_edges(op%grid), xq, wq)
         allocate (m(n, n), block(n, n, 0:op%lmax))
         m = 0
         do q = 1, size(xq)
@@ -362,6 +468,15 @@ contains
             block(:, :, l) = -op%nu_krook*4*pi/(2*l + 1)*dens/pi**1.5_dp*m
         end do
     end subroutine krook_block
+
+    !> Element edges continued by unit panels over the polynomial tail of
+    !> the last element, to where exp(-x^2) has decayed below rounding.
+    function tail_edges(grid) result(e)
+        type(collop_grid_t), intent(in) :: grid
+        real(dp), allocatable :: e(:)
+        integer :: k
+        e = [grid%edges, (grid%edges(grid%nelem) + k, k=1, tail)]
+    end function tail_edges
 
     !> Sorted union of a and those points of b inside (0, top).
     function merge_breaks(a, b, top) result(c)
@@ -392,17 +507,26 @@ contains
     end function merge_breaks
 
     !> Composite Gauss-Legendre rule on the panels between sorted breaks.
+    !> Panels wider than half a thermal speed are subdivided.
     subroutine panel_rule(breaks, xq, wq)
         real(dp), intent(in) :: breaks(:)
         real(dp), allocatable, intent(out) :: xq(:), wq(:)
         real(dp) :: x0(nquad), w0(nquad), h
-        integer :: k
+        integer :: k, j, m, np, sub(size(breaks) - 1)
         call gauss_legendre(nquad, x0, w0)
-        allocate (xq(nquad*(size(breaks) - 1)), wq(nquad*(size(breaks) - 1)))
         do k = 1, size(breaks) - 1
-            h = breaks(k + 1) - breaks(k)
-            xq((k - 1)*nquad + 1:k*nquad) = breaks(k) + (x0 + 1)*h/2
-            wq((k - 1)*nquad + 1:k*nquad) = w0*h/2
+            sub(k) = max(1, ceiling(2*(breaks(k + 1) - breaks(k))))
+        end do
+        allocate (xq(nquad*sum(sub)), wq(nquad*sum(sub)))
+        np = 0
+        do k = 1, size(breaks) - 1
+            h = (breaks(k + 1) - breaks(k))/sub(k)
+            do j = 1, sub(k)
+                m = np*nquad
+                xq(m + 1:m + nquad) = breaks(k) + (j - 1)*h + (x0 + 1)*h/2
+                wq(m + 1:m + nquad) = w0*h/2
+                np = np + 1
+            end do
         end do
     end subroutine panel_rule
 
