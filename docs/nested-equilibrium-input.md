@@ -25,9 +25,12 @@ entry for cross-code comparison with VMEC-class codes; converting a VMEC
 | `max_current_iterations`, `current_tolerance` | iota updates and the largest current error relative to the largest prescribed current | 30, 1e-5 |
 
 With a prescribed current, `iota` is the starting profile. For a fixed map the
-current enclosed by each surface is affine in iota there, so iota is updated on
-12 surfaces with secant slopes (the first from a step of 0.05), refitted as a
-degree-8 polynomial and re-solved from the previous map.
+current enclosed by each surface is affine in iota there; its slope is read on
+the solved map with the frozen form's iota shifted by 1e-3, so each update is a
+Newton step on 12 surfaces, refitted as a degree-8 polynomial and re-solved from
+the previous map. Intermediate maps are solved to max(tolerance, min(1e-4,
+1e-3 * current error)) against the first seed's gradient, and the current is
+measured again on the fully solved final map.
 
 The seed is the harmonic extension of the boundary (mode m like rho^m), with
 the axis blended into the m = 0 part as (1 - s)(axis - boundary m = 0). When the
@@ -52,7 +55,10 @@ O-point's major radius), `iotaf_axis`, `iotaf_edge`, `pressure_axis` (Pa),
 uncorrected seed), `tolerance`, `iterations`, `ctor` (enclosed toroidal
 current at the edge, (1/mu0) of B.dl along the discrete wall at phi = 0; inner
 surfaces use the image of the reference circle), with a prescribed current also
-`current_error` and `current_iterations`, and the global attribute `converged`. Volume integrals use collapsed Gauss-Legendre on each triangle and
+`current_error` and `current_iterations`, the final solve's wall seconds
+(`energy_seconds`, `hessian_seconds`, `factor_seconds`) and counts
+(`factorizations`, `lu_fallbacks`, `analyses`), and the global attribute
+`converged`. Volume integrals use collapsed Gauss-Legendre on each triangle and
 the trapezoidal rule in phi; the mean area is int dV/R / (2 pi).
 
 These are candidate values: no error bound is reported.
