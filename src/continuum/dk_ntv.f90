@@ -79,12 +79,16 @@ contains
     !> [rad/s] and precession prefactor pre [rad/s], on n_theta (odd) points
     !> and n_leg (even) Legendre polynomials, with the directional
     !> indicators at 2 n_theta + 1 points and at 2 n_leg polynomials.
-    subroutine ntv_kernel(sf, v, nu_d, omega_e, pre, n_theta, n_leg, kern, status)
+    subroutine ntv_kernel(sf, v, nu_d, omega_e, pre, n_theta, n_leg, kern, status, &
+            indicators)
         type(ntv_surface_t), intent(in) :: sf
         real(dp), intent(in) :: v, nu_d, omega_e, pre
         integer, intent(in) :: n_theta, n_leg
         type(ntv_kernel_t), intent(out) :: kern
         integer, intent(out) :: status
+        ! A resolution ladder supplies its own two-resolution estimate and
+        ! can skip the refined solves, which dominate memory.
+        logical, intent(in), optional :: indicators
         type(ntv_system_t) :: a
         complex(dp), allocatable :: x(:, :), dx(:, :), rhs(:, :)
         real(dp) :: fine
@@ -109,6 +113,9 @@ contains
         call solve(a, rhs, dx, status)
         if (status /= NTV_OK) return
         kern%dr_domega = flux(a, dx)
+        if (present(indicators)) then
+            if (.not. indicators) return
+        end if
 
         call refined(sf, v, nu_d, omega_e, pre, 2*n_theta + 1, n_leg, fine, status)
         if (status /= NTV_OK) return

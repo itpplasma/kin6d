@@ -58,15 +58,17 @@ contains
         ok = ok .and. abs(k0%dr_domega/fd - 1) < 1e-6_dp
     end function jvp
 
-    !> FILE: eps k q offset n nm / nm lines m Re(c) Im(c) / n_theta n_leg /
+    !> FILE: eps k q offset n nm / nm lines m Re(c) Im(c) / n_theta n_leg
+    !> [indicators 0|1] /
     !> nx / nx lines v nu_d omega_E pre. Prints per node R, the theta and
     !> Legendre indicators, dR/dnu_D and dR/domega_E.
     subroutine kernel_table(file)
         character(*), intent(in) :: file
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k
-        integer :: u, nm, j, n_theta, n_leg, nx, status
+        integer :: u, nm, j, n_theta, n_leg, nx, status, ios, with_indicators
         real(dp) :: re, im, v, nu_d, omega, pre
+        character(256) :: line
         open (newunit=u, file=file, status='old', action='read')
         read (u, *) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm
         allocate (sf%m(nm), sf%c(nm))
@@ -74,11 +76,17 @@ contains
             read (u, *) sf%m(j), re, im
             sf%c(j) = cmplx(re, im, dp)
         end do
-        read (u, *) n_theta, n_leg
+        read (u, '(a)') line
+        read (line, *, iostat=ios) n_theta, n_leg, with_indicators
+        if (ios /= 0) then
+            read (line, *) n_theta, n_leg
+            with_indicators = 1
+        end if
         read (u, *) nx
         do j = 1, nx
             read (u, *) v, nu_d, omega, pre
-            call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status)
+            call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status, &
+                indicators=with_indicators /= 0)
             if (status /= NTV_OK) error stop 'kernel failed'
             print '(5es24.15)', k%r, k%indicator_theta, k%indicator_leg, k%dr_dnu, k%dr_domega
         end do
