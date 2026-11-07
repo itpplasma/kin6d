@@ -18,7 +18,10 @@
 !! here over trapped and passing particles. (1 - xi^2) couples l to l +- 2,
 !! so the rows l = 2j, 2j + 1 form pair blocks of size 2 n_theta, block
 !! tridiagonal in j, factorised once by block elimination from the highest j.
-!! Tangents with respect to nu and omega_E reuse the factorisation.
+!! Tangents with respect to nu and omega_E, the perturbation amplitudes c_m
+!! and a direction in (eps, k, offset, c_J) reuse the factorisation: with
+!! A F = H, R = <H, F>_W and the FortSym JVP of the pointwise leaves,
+!! dR = <dH, F>_W + <H, F>_dW + <H, A^-1 (dH - dA F)>_W.
 !!
 !! Three model switches, each with a measurable defect, select the equation of
 !! NEO-2-QL and NEO-RT instead of the stage-1 bounce reference:
@@ -34,7 +37,7 @@
 !!           dtheta/(b.grad theta B) ~ 1/b^2 in the flux.
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_ntv_leaves, only: dk_ntv_point
+    use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel
@@ -52,9 +55,12 @@ module kin6d_dk_ntv
         complex(dp), allocatable :: c(:)
     end type
 
-    !> Flux kernel, its tangents and its two-resolution indicator.
+    !> Flux kernel, its tangents and its two-resolution indicator. dr_dc(j)
+    !> = dR/dRe(c_j) + i dR/dIm(c_j); dr_dsurface is the derivative along
+    !> the (eps, k, offset, current) components of the optional direction.
     type :: ntv_kernel_t
-        real(dp) :: r = 0, dr_dnu = 0, dr_domega = 0
+        real(dp) :: r = 0, dr_dnu = 0, dr_domega = 0, dr_dsurface = 0
+        complex(dp), allocatable :: dr_dc(:)
         ! Directional two-resolution indicators: theta points 2 n + 1, and
         ! Legendre polynomials 2 L; their sum indicates the error of r.
         real(dp) :: indicator_theta = 0, indicator_leg = 0
@@ -100,8 +106,10 @@ contains
     !> and n_leg (even) Legendre polynomials, with the directional
     !> indicators at 2 n_theta + 1 points and at 2 n_leg polynomials.
     subroutine ntv_kernel(sf, v, nu_d, omega_e, pre, n_theta, n_leg, kern, status, &
-            indicators)
+            indicators, direction)
         type(ntv_surface_t), intent(in) :: sf
+        ! Tangent direction: its eps, k, offset and current components.
+        type(ntv_surface_t), intent(in), optional :: direction
         real(dp), intent(in) :: v, nu_d, omega_e, pre
         integer, intent(in) :: n_theta, n_leg
         type(ntv_kernel_t), intent(out) :: kern
@@ -109,9 +117,10 @@ contains
         ! A resolution ladder supplies its own two-resolution estimate and
         ! can skip the refined solves, which dominate memory.
         logical, intent(in), optional :: indicators
-        type(ntv_system_t) :: a
-        complex(dp), allocatable :: x(:, :), dx(:, :), rhs(:, :)
+        type(ntv_system_t) :: a, da
+        complex(dp), allocatable :: x(:, :), dx(:, :), rhs(:, :), ds(:)
         real(dp) :: fine
+        integer :: j, i
 
         call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status)
         if (status /= NTV_OK) return
@@ -129,6 +138,29 @@ contains
         call solve(a, rhs, dx, status)
         if (status /= NTV_OK) return
         kern%dr_domega = flux(a, dx)
+
+        ! Amplitudes: s is linear in c_j, ds = i n exp(i m_j theta).
+        allocate (kern%dr_dc(size(sf%m)), ds(a%n))
+        da = coefficients(a)
+        do j = 1, size(sf%m)
+            ds = [(iu*sf%n*exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
+            da%s = ds
+            call drive(da, v, rhs)
+            call solve(a, rhs, dx, status)
+            if (status /= NTV_OK) return
+            kern%dr_dc(j) = cmplx(pair(a, ds, x) + flux(a, dx), &
+                pair(a, iu*ds, x) + flux(a, iu*dx), dp)
+        end do
+
+        if (present(direction)) then
+            call tangent_system(sf, direction, a, da)
+            call drive(da, v, rhs)
+            rhs = rhs - apply(da, x)
+            call solve(a, rhs, dx, status)
+            if (status /= NTV_OK) return
+            kern%dr_dsurface = flux(a, dx) &
+                + 2*pi/a%n*sum(da%measure*real(conjg(a%s)*moment(a, x), dp))
+        end if
         if (present(indicators)) then
             if (.not. indicators) return
         end if
@@ -334,15 +366,81 @@ contains
         end do
     end function lorentz
 
+    !> <ds, x>_W: the flux functional with the conjugated drive replaced.
+    real(dp) function pair(a, ds, x)
+        type(ntv_system_t), intent(in) :: a
+        complex(dp), intent(in) :: ds(:), x(:, 0:)
+        pair = 2*pi/a%n*sum(a%measure*real(conjg(ds)*moment(a, x), dp))
+    end function pair
+
+    !> int (1 + wsign xi^2) F dxi per theta point.
+    function moment(a, x) result(mom)
+        type(ntv_system_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:, 0:)
+        complex(dp) :: mom(a%n)
+        mom = (2 + 2*a%wsign/3)*x(1:a%n, 0)
+        if (ubound(x, 2) >= 1) mom = mom + 4*a%wsign*x(1:a%n, 1)/15
+    end function moment
+
+    !> Tangent of the operator and the pointwise leaves along a direction in
+    !> (eps, k, offset, current): da holds dA (no collision or E x B part,
+    !> which do not depend on these), dsource and dmeasure.
+    subroutine tangent_system(sf, dir, a, da)
+        type(ntv_surface_t), intent(in) :: sf, dir
+        type(ntv_system_t), intent(in) :: a
+        type(ntv_system_t), intent(out) :: da
+        real(dp), allocatable :: theta(:), db(:), dstream_b(:), dmirror_b(:), &
+            dmeasure_b(:)
+        integer :: i, n
+        n = a%n
+        da = coefficients(a)
+        da%nu = 0
+        da%omega = 0
+        da%current = dir%current
+        allocate (theta(n), db(n), dstream_b(n), dmirror_b(n), dmeasure_b(n))
+        theta = [(2*pi*(i - 1)/n, i=1, n)]
+        call dk_ntv_point_jvp(cos(theta), sin(theta), sf%eps, sf%k, sf%offset, &
+            0*theta, 0*theta, dir%eps + 0*theta, dir%k + 0*theta, dir%offset + 0*theta, &
+            db, da%mirror, da%drift, da%source, da%measure, dstream_b, dmirror_b, &
+            dmeasure_b)
+        da%stream = dir%k
+        if (sf%boozer_stream) then
+            da%stream = dstream_b
+            da%mirror = dmirror_b
+            da%measure = dmeasure_b
+        end if
+    end subroutine tangent_system
+
+    !> The operator coefficients of a without its factors.
+    function coefficients(a) result(c)
+        type(ntv_system_t), intent(in) :: a
+        type(ntv_system_t) :: c
+        c%n = a%n; c%nblock = a%nblock; c%wsign = a%wsign; c%nu = a%nu; c%nq = a%nq
+        c%current = a%current; c%shift = a%shift; c%omega = a%omega
+        c%precess = a%precess
+        c%d = a%d; c%stream = a%stream; c%mirror = a%mirror; c%drift = a%drift
+        c%source = a%source; c%measure = a%measure; c%s = a%s
+    end function coefficients
+
+    !> y = A x for the pair-block tridiagonal operator.
+    function apply(a, x) result(y)
+        type(ntv_system_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:, 0:)
+        complex(dp) :: y(size(x, 1), 0:ubound(x, 2))
+        integer :: j
+        do j = 0, a%nblock - 1
+            y(:, j) = matmul(block(a, j, j), x(:, j))
+            if (j > 0) y(:, j) = y(:, j) + matmul(block(a, j, j - 1), x(:, j - 1))
+            if (j < a%nblock - 1) y(:, j) = y(:, j) + matmul(block(a, j, j + 1), x(:, j + 1))
+        end do
+    end function apply
+
     !> R = (2 pi/n) sum (2/b^2) Re(S^* int (1 + wsign xi^2) F dxi), with
     !> int (1 + wsign xi^2) F dxi = (2 + 2 wsign/3) a_0 + (4 wsign/15) a_2.
     real(dp) function flux(a, x)
         type(ntv_system_t), intent(in) :: a
         complex(dp), intent(in) :: x(:, 0:)
-        complex(dp) :: moment(a%n)
-        moment = (2 + 2*a%wsign/3)*x(1:a%n, 0)
-        if (ubound(x, 2) >= 1) moment = moment + 4*a%wsign*x(1:a%n, 1)/15
-        flux = 2*pi/a%n*sum(a%measure*real(conjg(a%s)*moment, dp))
+        flux = pair(a, a%s, x)
     end function flux
 
     !> Drive (1 + wsign xi^2) S/(b v): source = 2/(3 b) per unit of the

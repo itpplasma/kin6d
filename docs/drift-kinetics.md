@@ -334,7 +334,10 @@ pre lambda (cos theta - offset) and the drive lambda S, whose bounce average
 is the stage-1 bounce reference. (1 - xi^2) couples l to l +- 2, so pairs
 (2j, 2j + 1) form blocks of size 2 n_theta, eliminated as for n = 0;
 derivatives in nu and omega_E reuse the factors and agree with centred
-differences to 4e-8 (test `dk_ntv_jvp`). On the stage-1 frozen circular
+differences to 4e-8 (test `dk_ntv_jvp`). So do the derivatives with respect
+to every perturbation amplitude c_m and along (eps, k, offset, c_J), with the
+operator and drive tangents from the FortSym JVP of the pointwise leaves
+(test `dk_ntv_tangents`, 4e-8). On the stage-1 frozen circular
 field (n = 3, full |B| spectrum), scored against the full-phase reference
 (all trapped bounce harmonics plus passing), at nu_eff/omega_gradB = 0.006:
 
