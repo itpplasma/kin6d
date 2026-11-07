@@ -261,6 +261,7 @@ target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_dk_mono_leaves.f90 src/continuum/dk_mono.f90
     src/generated/kin6d_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
     src/generated/kin6d_dk_collop_leaves.f90 src/continuum/dk_collop.f90
+    src/continuum/dk_energy.f90
     src/generated/kin6d_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
     src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
     src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
@@ -1052,6 +1053,12 @@ endforeach()
 add_test(NAME dk_collop_neo2_matrix COMMAND test_dk_collop neo2_matrix
     ${CMAKE_SOURCE_DIR}/test/data/neo2_collop_aug30835.txt)
 kin6d_test_labels(dk_collop_neo2_matrix fast CLASSES continuum TARGETS test_dk_collop)
+add_executable(test_dk_energy test/test_dk_energy.f90)
+target_link_libraries(test_dk_energy PRIVATE kin6d)
+foreach(check rigid_shift)
+    add_test(NAME dk_energy_${check} COMMAND test_dk_energy ${check})
+    kin6d_test_labels(dk_energy_${check} fast CLASSES continuum TARGETS test_dk_energy)
+endforeach()
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE kin6d)
 foreach(check collisionless banana pfirsch_schlueter plateau onsager jvp estimate
