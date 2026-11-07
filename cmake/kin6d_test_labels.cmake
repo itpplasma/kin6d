@@ -787,8 +787,10 @@ foreach(family 1 2)
     kin6d_test_labels(equilibrium_nested_boundary_input_${family} fast CLASSES apps
         TARGETS nested_oracle_export test_nested_boundary_input)
 endforeach()
-kin6d_test_labels(equilibrium_nested_circular_tokamak fast CLASSES apps
-    TARGETS nested_equilibrium test_nested_equilibrium_app)
+foreach(name circular-tokamak circular-tokamak-current)
+    kin6d_test_labels(equilibrium_nested_${name} fast CLASSES apps
+        TARGETS nested_equilibrium test_nested_equilibrium_app)
+endforeach()
 foreach(k 2 3)
     kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
         TARGETS test_map_equilibrium)

@@ -1140,14 +1140,24 @@ add_executable(nested_equilibrium app/nested_equilibrium.f90)
 target_link_libraries(nested_equilibrium PRIVATE kin6d kin6d_io)
 add_executable(test_nested_equilibrium_app test/test_nested_equilibrium_app.f90)
 target_link_libraries(test_nested_equilibrium_app PRIVATE kin6d_io)
-add_test(NAME equilibrium_nested_circular_tokamak COMMAND ${CMAKE_COMMAND}
-    -DAPP=$<TARGET_FILE:nested_equilibrium>
-    -DCHECK=$<TARGET_FILE:test_nested_equilibrium_app>
-    -DCONFIG=${CMAKE_SOURCE_DIR}/examples/nested-equilibrium/circular-tokamak.nml
-    -DWORK=${CMAKE_BINARY_DIR}/nested-equilibrium-circular
-    -P ${CMAKE_SOURCE_DIR}/test/check_nested_equilibrium.cmake)
-set_tests_properties(equilibrium_nested_circular_tokamak PROPERTIES
-    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
+# PARVMEC (ns 101, mpol 8) on the same inputs: raxis, wb and, for iota, the
+# exact volume 2 pi^2 R a^2; GVEC gives raxis 3.03683 m for the iota case.
+foreach(case IN ITEMS "circular-tokamak|3.0366;0.0750949;59.2176264"
+        "circular-tokamak-current|3.04266;0.0755050")
+    string(REPLACE "|" ";" parts "${case}")
+    list(GET parts 0 name)
+    list(SUBLIST parts 1 -1 expected)
+    string(REPLACE ";" " " expected "${expected}")
+    add_test(NAME equilibrium_nested_${name} COMMAND ${CMAKE_COMMAND}
+        -DAPP=$<TARGET_FILE:nested_equilibrium>
+        -DCHECK=$<TARGET_FILE:test_nested_equilibrium_app>
+        -DCONFIG=${CMAKE_SOURCE_DIR}/examples/nested-equilibrium/${name}.nml
+        -DWORK=${CMAKE_BINARY_DIR}/nested-equilibrium-${name}
+        "-DEXPECTED=${expected}"
+        -P ${CMAKE_SOURCE_DIR}/test/check_nested_equilibrium.cmake)
+    set_tests_properties(equilibrium_nested_${name} PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
+endforeach()
 add_executable(pp_fusion_eft_export app/pp_fusion_eft_export.f90)
 add_dependencies(pp_fusion_eft_export kin6d_build_info)
 target_include_directories(pp_fusion_eft_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
