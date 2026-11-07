@@ -555,6 +555,28 @@ Newton enters only for the ambipolar E_r root and torque-balance coupling,
 with exact tangents through the same factorisations; adjoints for torque,
 D_ij and bootstrap reuse them (A^dagger = -T + D).
 
+## Axisymmetric Boozer oracle adapter
+
+`kin6d_ntv_geometry` adapts an axisymmetric Boozer surface to the existing
+local Lorentz kernel through `ntv_line_t`. The circular provider reproduces
+the original kernel, including collision-frequency, electric-precession and
+perturbation-amplitude tangents and resolution indicators. An imported line
+supplies parallel streaming, mirror force, the two magnetic-drift weights,
+drive and flux measure from the retained FortSym definition in
+`gen/gen_ntv_boozer.f90`. The adapter retains the low-beta curvature and
+omitted radial covariant-component assumptions of the quasilinear model.
+
+This adapter supports comparisons with external codes; it does not replace
+the D7 geometry interface or implement three-dimensional transport. Nonzero
+toroidal geometry harmonics, absent coefficients and singular reference flux,
+rotational transform or Jacobian are refused. Geometry-direction tangents of
+an imported line are unavailable and return `NTV_BAD_INPUT`; the generated
+pointwise JVP and VJP remain available. Synthetic analytic coefficients,
+pointwise derivative checks, circular-provider equivalence and pinned leaf
+regeneration verify this slice. Its resolution differences remain indicators,
+not certified error bounds; no new device comparison or physical validation
+is claimed.
+
 ## Interfaces
 
 - Geometry: one batched D7 kinetic geometry view (below, DK-pre-1). The DK

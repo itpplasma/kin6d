@@ -1043,6 +1043,8 @@ add_test(NAME dk_ntv_assembly COMMAND test_dk_ntv assembly)
 kin6d_test_labels(dk_ntv_assembly fast CLASSES continuum TARGETS test_dk_ntv)
 add_test(NAME dk_ntv_tangents COMMAND test_dk_ntv tangents)
 kin6d_test_labels(dk_ntv_tangents fast CLASSES continuum TARGETS test_dk_ntv)
+add_test(NAME dk_ntv_line COMMAND test_dk_ntv line)
+kin6d_test_labels(dk_ntv_line fast CLASSES continuum TARGETS test_dk_ntv)
 add_executable(test_dk_collop test/test_dk_collop.f90)
 target_link_libraries(test_dk_collop PRIVATE kin6d)
 foreach(check maxwellian_null rates jvp conservation self_adjoint conservation_pair
@@ -1361,7 +1363,7 @@ if(KIN6D_FORTSYM_BUILD)
             landreman nested_oracles
             response_strip_jets
             response_fluid
-            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_ntv dk_collop
+            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_ntv dk_collop ntv_boozer
             gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
@@ -1388,6 +1390,14 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_mono_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_mono)
+    add_test(NAME ntv_boozer_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ntv_boozer>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ntv_boozer_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ntv-boozer-regeneration
+        -DLEAF=kin6d_ntv_boozer_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    kin6d_test_labels(ntv_boozer_leaf_regeneration fast CLASSES apps
+        TARGETS gen_ntv_boozer)
     add_test(NAME dk_ntv_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_ntv>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_ntv_leaves.f90
@@ -1620,6 +1630,15 @@ add_custom_target(kin6d_build_info
 add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
     src/apps/animation_export.f90)
 add_dependencies(kin6d_io kin6d_build_info)
+# NTV field lines from Boozer files: composes the equilibrium reader with the
+# continuum kernel, so it lives in the application layer.
+add_library(kin6d_ntv_geometry src/apps/ntv_boozer_line.f90
+    src/generated/kin6d_ntv_boozer_leaves.f90)
+target_link_libraries(kin6d_ntv_geometry PUBLIC kin6d)
+add_executable(test_ntv_boozer_line test/test_ntv_boozer_line.f90)
+target_link_libraries(test_ntv_boozer_line PRIVATE kin6d_ntv_geometry)
+add_test(NAME ntv_boozer_line COMMAND test_ntv_boozer_line)
+kin6d_test_labels(ntv_boozer_line fast CLASSES apps TARGETS test_ntv_boozer_line)
 target_include_directories(kin6d_io PRIVATE ${CMAKE_BINARY_DIR}/result_include)
 target_link_libraries(kin6d_io PUBLIC kin6d fortio::fortio)
 target_compile_options(kin6d_io PRIVATE -Wall -Wextra)
