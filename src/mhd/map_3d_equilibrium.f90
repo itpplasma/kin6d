@@ -7,6 +7,7 @@ module kin6d_map_3d_equilibrium
                       EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
+    use kin6d_ideal_seed_3d, only: toroidal_seed_t, ideal_seed_3d_angle_density
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use kin6d_curve_chart_leaves, only: curve_fourier_mode
     use kin6d_ideal_map_leaves, only: ideal_reference_form
@@ -117,7 +118,7 @@ contains
         real(dp), intent(out) :: point(3), value(EQ_VALUES)
         integer, intent(out) :: status
         real(dp) :: q(3), d(3, 3), reference(2), g(2, 2), chi, cg(2), b3, p
-        real(dp) :: jac, psi_phi, det
+        real(dp) :: jac, psi_phi, det, dcg(2), db3
         call map_3d_coordinates(map, cell, xi, phi, q, d, reference, g)
         point = q
         value = 0; status = 1
@@ -125,6 +126,12 @@ contains
                                 d(3, 2), d(1, 3), d(2, 3), d(3, 3), det)
         if (.not. -map%sigma*q(1)*det > 0) return
         call frozen%evaluate(reference, chi, cg, b3, p)
+        ! the field-line angle of the boundary adds to the frozen form
+        select type (frozen)
+            type is (toroidal_seed_t)
+            call ideal_seed_3d_angle_density(map, frozen, reference, phi, dcg, db3)
+            cg = cg + dcg; b3 = b3 + db3
+        end select
         call map_3d_field(d(1, 1), d(2, 1), d(3, 1), d(1, 2), d(2, 2), &
                           d(3, 2), d(1, 3), d(2, 3), d(3, 3), g(1, 1), g(2, 1), &
                           g(1, 2), g(2, 2), cg(1), cg(2), b3, q(1), map%sigma, &
