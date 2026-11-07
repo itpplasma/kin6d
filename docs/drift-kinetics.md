@@ -360,6 +360,30 @@ to 0.6 % and stays finite from omega_E = 0.012 rad/s down to omega_E = 0,
 rising by 0.68 % like the reference (0.69 %), solved directly. DG in (theta, lambda) has not been needed for
 resolution on this ladder.
 
+Energy grid and test-particle operator (`src/continuum/dk_collop.f90`, #184):
+each species has the speed x = v/v_ta on continuous GLL elements of degree
+at least 2 on [0, x_max], and the perturbation is f_a = F_a h_a P_l(xi) with
+h_a in that space, so 1, x and x^2 are represented exactly. The operator is
+stored per Legendre degree as the Galerkin matrix of int phi_i P_l C[f] d^3v
+(rows: species and node; columns: partner species and node); pitch-angle
+scattering, energy scattering and, for unequal temperatures, the thermal
+exchange term come from FortSym leaves (`gen/gen_dk_collop.f90`, with a
+series for the Chandrasekhar function below argument 1), integrated by
+composite Gauss-Legendre rules converged to rounding. Streaming stays
+diagonal in the nodes through the lumped GLL mass. Checks (tests
+`dk_collop_*`): at equal temperatures the Maxwellian is a null vector, density
+is conserved, the matrix is symmetric and its largest eigenvalue is at most
+1e-14 of its norm, on one quadratic element as on 31 nodes; the deflection,
+parallel-diffusion and flux rates agree with Rosenbluth potentials of the
+Maxwellian computed by quadrature (`rosenbluth_reference`) to 6e-15, 3e-11 and
+3e-11 (the oracle's own quadrature error); the momentum and heat taken from a
+reservoir agree with the closed Maxwellian friction and temperature-exchange
+rates to 2e-14 and 4e-13 for electrons and deuterons with T_i/T_e = 0.7.
+Tangents with respect to temperatures and densities come from the leaf JVPs
+and agree with centred differences to 4e-10. Krook (-nu_K f) is a parity
+switch. The field-particle part (#185) and the kinetic solve with energy
+scattering follow.
+
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
 Richardson iteration):
