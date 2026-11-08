@@ -397,11 +397,24 @@ eta_part_trapped = 200 diverges in its iteration. KIN6D changes by at most
 (24 -> 32: 0.04 %). With these drift and collision choices matched, the two
 codes agree to 0.4 % to 1.9 %, NEO-2 below KIN6D at every eps >= 0.02;
 at eps = 0.02 and
-0.06 the gap exceeds both codes' numerical spread. NEO-2-QL keeps two source
-terms KIN6D does not have, the parallel-derivative part of the perturbed
-radial drift and the perturbed-operator source acting on the axisymmetric
-solution f_10; their contribution to the remaining discrepancy has not been
-evaluated. The
+0.06 the gap exceeds both codes' numerical spread. NEO-2-QL also solves two source
+terms of Kasilov et al. (2014), Eq. (61): the rest of the perturbed radial
+drift beyond the toroidal-derivative drive, and the perturbed mirror and
+collision operators acting on the axisymmetric solution f_10. With both
+switched on in `dk_ntv` (`source_dpar`, `source_dlf10`, f_10 from `ntv_f10`,
+same rows and resolution) the drift source changes the torque by -6.4 % to
+-7.8 % and the f_10 source by +4.1 % to +6.7 %; together they cancel to
+
+| eps | 0.010 | 0.020 | 0.030 | 0.040 | 0.045 | 0.060 |
+|---|---|---|---|---|---|---|
+| both sources | -3.67 % | -2.58 % | -0.96 % | -0.22 % | -0.09 % | -0.01 % |
+| NEO-2/KIN6D | 1.056 | 1.007 | 1.005 | 0.994 | 0.989 | 0.981 |
+
+They close the gap at eps = 0.02 and 0.03 and leave it unchanged for
+eps >= 0.04; the 1.1 % and 1.9 % at eps = 0.045 and 0.06 are not explained
+by them, and at eps = 0.01 NEO-2's pitch grid is not converged. The torques
+are energy sums with the node weights wx (F1 + (x - 5/2) F2), which
+reproduce the reported KIN6D column to 2e-3. The
 switch defects on these rows are -0.3 % to +10 % (all three together, growing
 with eps), so on some rows the stage-1 model and NEO-2's differ by more than
 the codes do.

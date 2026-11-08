@@ -37,14 +37,19 @@
 !!           instead of the constant k, with the surface measure
 !!           dtheta/(b.grad theta B) ~ 1/b^2 in the flux.
 !!
-!! Two further source terms complete the equation of NEO-2-QL (#192,
-!! Kasilov et al., Phys. Plasmas 21, 092506 (2014), Eqs. (52)-(54); the
-!! circular covariant factors reduce to 1/q at leading order in eps): the
-!! parallel-derivative part of the perturbed radial drift,
-!! (1 + wsign xi^2)/b (i/q) sum_m (m - n q) c_m e^{i m theta}/v, and the
-!! perturbed operator acting on the axisymmetric solution f_10,
-!! stream/b sum_m i m c_m e^{i m theta} (1 - xi^2)/2 d_xi f_10
-!! - sum_m c_m e^{i m theta}/b C[f_10] with C the Lorentz operator of the
+!! Two further source terms complete the right-hand side of Kasilov et al.,
+!! Phys. Plasmas 21, 092506 (2014), Eq. (61), which NEO-2-QL solves (#192;
+!! the circular covariant factors reduce to 1/q at leading order in eps).
+!! The rest of the perturbed radial drift beyond S,
+!! (1 + wsign xi^2)/(b v q) sum_m (i (m - n q) - 2 d_theta ln b) c_m e^{i m theta}:
+!! its parallel-derivative part and the change -2 (dB/B) d_theta ln B of the
+!! drift factor. And the perturbed operator acting on the axisymmetric
+!! solution f_10,
+!! stream/b sum_m (i (m - n q) - d_theta ln b) c_m e^{i m theta}
+!! (1 - xi^2)/2 d_xi f_10 - sum_m c_m e^{i m theta}/b C[f_10]: the mirror
+!! force of the parallel gradient b (d_theta - i n q)(dB/B), along the line
+!! in this frame as in Eq. (61) at fixed field-line label, and the collision
+!! term, with C the Lorentz operator of the
 !! equation above. They are switched individually by source_dpar and
 !! source_dlf10; the second needs f_10 on this kernel's grid through the
 !! optional argument of the same name, one theta point per row (rows 1:n
@@ -329,11 +334,11 @@ contains
             ds = [(exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
             kern%dr_dc(j) = sum(conjg(iu*sf%n*ds)*gradient)
             if (a%dpar) kern%dr_dc(j) = kern%dr_dc(j) &
-                + sum(conjg(iu*(sf%m(j) - sf%n*sf%q)/sf%q*ds)*xw)
+                + sum(conjg((iu*(sf%m(j) - sf%n*sf%q) - 2*log_b_slope(a))/sf%q*ds)*xw)
         end do
         if (a%dlf10) then
-            ! dH/dc_j carries e^{i m_j theta} (i m_j stream f10f + f10c)/b;
-            ! contract the adjoint against the two real profiles.
+            ! dH/dc_j carries e^{i m_j theta} ((i (m_j - n q) - d_theta ln b) stream
+            ! f10f + f10c)/b; contract the adjoint against the two profiles.
             allocate (prof(2*a%n, 0:a%nblock - 1))
             do j = 0, a%nblock - 1
                 do i = 1, a%n
@@ -352,7 +357,8 @@ contains
             do j = 1, size(sf%m)
                 ds = [(exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
                 kern%dr_dc(j) = kern%dr_dc(j) &
-                    + sum(conjg(iu*sf%m(j)*ds*xf)) + sum(conjg(ds*xw))
+                    + sum(conjg((iu*(sf%m(j) - sf%n*sf%q) - log_b_slope(a))*ds*xf)) &
+                    + sum(conjg(ds*xw))
             end do
         end if
 
@@ -461,8 +467,8 @@ contains
             allocate (a%sd(n))
             a%sd = 0
             do j = 1, size(sf%m)
-                a%sd = a%sd + iu*(sf%m(j) - sf%n*sf%q)/sf%q*sf%c(j) &
-                    *exp(iu*sf%m(j)*theta)
+                a%sd = a%sd + (iu*(sf%m(j) - sf%n*sf%q) - 2*log_b_slope(a))/sf%q &
+                    *sf%c(j)*exp(iu*sf%m(j)*theta)
             end do
         end if
         if (sf%source_dlf10) then
@@ -472,7 +478,8 @@ contains
             a%sdb = 0
             a%db = 0
             do j = 1, size(sf%m)
-                a%sdb = a%sdb + iu*sf%m(j)*sf%c(j)*exp(iu*sf%m(j)*theta)
+                a%sdb = a%sdb + (iu*(sf%m(j) - sf%n*sf%q) - log_b_slope(a))*sf%c(j) &
+                    *exp(iu*sf%m(j)*theta)
                 a%db = a%db + sf%c(j)*exp(iu*sf%m(j)*theta)
             end do
             a%f10 = f10
@@ -505,6 +512,14 @@ contains
         end do
         status = NTV_OK
     end subroutine factor
+
+    !> d_theta ln b on the theta points from the mirror factor
+    !> stream d_theta(ln b)/2 of the line contract.
+    pure function log_b_slope(a) result(g)
+        type(ntv_system_t), intent(in) :: a
+        real(dp) :: g(a%n)
+        g = 2*a%mirror/a%stream
+    end function log_b_slope
 
     !> The two operator foldings of the axisymmetric solution: f10f is
     !> (1 - xi^2)/2 d_xi f_10 per Legendre degree from
