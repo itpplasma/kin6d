@@ -76,11 +76,14 @@ module kin6d_dk_ntv
     use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
     use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
+    use kin6d_dk_collop, only: collop_species_t, collop_grid_t, collop_t, collop_build, &
+        collop_moments, collop_vth, collop_nuhat, COLLOP_OK, COLLOP_FULL, &
+        COLLOP_TEST_PARTICLE, COLLOP_LORENTZ
     use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, MONO_OK
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
-    public :: ntv_f10, ntv_factor_t
+    public :: ntv_f10, ntv_factor_t, ntv_energy_coefficients
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2
     integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1
 
@@ -200,6 +203,53 @@ module kin6d_dk_ntv
             integer, intent(out) :: info
         end subroutine zgetrs
     end interface
+
+
+    ! Energy-coupled kernel (dk_ntv_energy.inc).
+    real(dp), parameter :: charge = 1.602176634e-19_dp
+    ! Relative residual of the energy-coupled GMRES solves.
+    real(dp), parameter :: energy_tolerance = 1e-7_dp
+
+    !> Factorised test-particle operator of one species.
+    type :: species_lu_t
+        complex(dp), allocatable :: s_lu(:, :, :), y(:, :, :)
+        integer, allocatable :: piv(:, :)
+    end type
+
+    !> Hybrid preconditioner: the node factors for pair blocks j >= j0 and
+    !> one dense factorisation of all nodes and species with the operator's
+    !> own collision rows for j < j0, where the field-particle part and the
+    !> energy scattering are strongest.
+    type :: hybrid_t
+        integer :: j0 = 0, nf = 0
+        type(species_lu_t), allocatable :: node(:, :)
+        ! The single-node systems, sharing the theta-block caches.
+        type(energy_system_t), allocatable :: sys(:)
+        complex(dp), allocatable :: s_lu(:, :, :), y(:, :, :)
+        integer, allocatable :: piv(:, :)
+    end type
+
+    ! Pair blocks factorised densely: degrees l < 2 low_pairs.
+    integer, parameter :: low_pairs = 2
+
+    !> Everything the operator applies need.
+    type :: energy_system_t
+        integer :: ns = 0, nx = 0, nn = 0, nb = 0, n = 0
+        type(ntv_system_t) :: gs, go, gp
+        real(dp), allocatable :: m2(:, :), m3(:, :), m4(:, :), d4(:), d6(:)
+        real(dp), allocatable :: vt(:), tz(:), row(:, :)
+        ! Scaled collision rows c_l per species pair: (nx, nx, ns, ns, 0:lmax)
+        ! for the preconditioner (pre) and the full operator (full).
+        real(dp), allocatable :: pre(:, :, :, :, :), full(:, :, :, :, :)
+        logical :: coupled = .false.
+        ! n = 0 system: each node's theta-averaged degree-0 row is replaced by
+        ! the constraint that the theta average of its degree-0 part vanish.
+        logical :: border = .false.
+        ! theta blocks (j, j + d), d = -1, 0, 1, of the streaming, rotation and
+        ! precession parts, shared by every species and node.
+        complex(dp), pointer, contiguous :: cs(:, :, :, :) => null(), &
+            co(:, :, :, :) => null(), cp(:, :, :, :) => null()
+    end type
 
 contains
 
@@ -979,5 +1029,7 @@ contains
             end do
         end if
     end subroutine drive
+
+    include 'dk_ntv_energy.inc'
 
 end module kin6d_dk_ntv

@@ -35,7 +35,7 @@ module kin6d_dk_collop
     private
     public :: collop_species_t, collop_grid_t, collop_t
     public :: collop_make_grid, collop_build, collop_build_jvp, collop_mass
-    public :: collop_basis, collop_nuhat, collop_vth
+    public :: collop_basis, collop_nuhat, collop_vth, collop_moments
     integer, parameter, public :: COLLOP_LORENTZ = 1, COLLOP_TEST_PARTICLE = 2, &
         COLLOP_FULL = 3, COLLOP_KROOK = 4
     integer, parameter, public :: COLLOP_OK = 0, COLLOP_BAD_INPUT = 1
@@ -152,6 +152,33 @@ contains
         dphi = matmul(phi, grid%d)*2/h
         first = (e - 1)*(grid%order - 1) + 1
     end subroutine collop_basis
+
+    !> Radial moments over [0, oo) with the polynomial tail: the matrix
+    !> int phi_i phi_j x^p exp(-x^2) dx and the vector int phi_i x^q
+    !> exp(-x^2) dx, for the kinetic terms that a solver writes in the same
+    !> Galerkin form as the collision operator.
+    subroutine collop_moments(grid, p, q, matrix, vector)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: p, q
+        real(dp), intent(out) :: matrix(grid%n, grid%n), vector(grid%n)
+        real(dp), allocatable :: xq(:), wq(:)
+        real(dp) :: phi(grid%order), dphi(grid%order), g
+        integer :: k, i, j, first
+        call panel_rule(tail_edges(grid), xq, wq)
+        matrix = 0
+        vector = 0
+        do k = 1, size(xq)
+            call collop_basis(grid, xq(k), first, phi, dphi)
+            g = wq(k)*exp(-xq(k)**2)
+            do j = 1, grid%order
+                vector(first + j - 1) = vector(first + j - 1) + g*xq(k)**q*phi(j)
+                do i = 1, grid%order
+                    matrix(first + i - 1, first + j - 1) = matrix(first + i - 1, first + j - 1) &
+                        + g*xq(k)**p*phi(i)*phi(j)
+                end do
+            end do
+        end do
+    end subroutine collop_moments
 
     pure real(dp) function collop_vth(s)
         type(collop_species_t), intent(in) :: s

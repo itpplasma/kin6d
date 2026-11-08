@@ -34,7 +34,9 @@ module kin6d_ntv_device
         boozer_average, BOOZER_OK
     use kin6d_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
     use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
-        ntv_f10, NTV_OK, NTV_WEIGHT_FULL
+        ntv_f10, ntv_energy_coefficients, NTV_OK, NTV_WEIGHT_FULL
+    use kin6d_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
+        collop_nuhat, collop_vth, COLLOP_OK
     implicit none
     private
     public :: ntv_species_t, ntv_profile_t, ntv_resolution_t, ntv_species_result_t
@@ -63,6 +65,11 @@ module kin6d_ntv_device
         ! above which the next surface is factorised afresh.
         integer :: chunk = 8, max_iterations = 60
         logical :: sources = .true.
+        ! 0: monoenergetic pitch-angle scattering on Gauss-Laguerre nodes;
+        ! otherwise a kin6d_dk_collop model on the speed grid of nelem
+        ! elements of the given order on [0, x_max] (energy-coupled kernel).
+        integer :: collisions = 0, nelem = 4, order = 4
+        real(dp) :: x_max = 5
     end type
 
     !> Per surface and species: K_1j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
@@ -117,6 +124,11 @@ contains
                 psi_pol_s(i), status)
             if (status /= DEVICE_OK) return
         end do
+        if (res%collisions /= 0) then
+            call energy_profile(eq, n_tor, species, prof, res, sf, psi_pol_s, dpsi_dr, &
+                result, status)
+            return
+        end if
         allocate (x(res%n_x), w(res%n_x))
         call gauss_gen_laguerre(res%n_x, 2.5_dp, x, w)
 
@@ -214,6 +226,83 @@ contains
 
     end subroutine ntv_device_profile
 
+    !> Energy-coupled kernel per surface (one OpenMP unit per surface), with
+    !> the species coupled through the collision operator:
+    !> Gamma_psi of a = -n_a sum_b (K(a, b, 1) A_1 + K(a, b, 2) A_2) of b.
+    !> The common Coulomb logarithm follows from kappa of each species.
+    subroutine energy_profile(eq, n_tor, species, prof, res, sf, psi_pol_s, dpsi_dr, &
+            result, status)
+        type(boozer_file_t), intent(in) :: eq
+        integer, intent(in) :: n_tor
+        type(ntv_species_t), intent(in) :: species(:)
+        type(ntv_profile_t), intent(in) :: prof
+        type(ntv_resolution_t), intent(in) :: res
+        type(ntv_surface_t), intent(in) :: sf(:)
+        real(dp), intent(in) :: psi_pol_s(:), dpsi_dr(:)
+        type(ntv_species_result_t), allocatable, intent(out) :: result(:, :)
+        integer, intent(out) :: status
+        type(collop_grid_t) :: grid
+        integer, allocatable :: ustat(:)
+        integer :: i, ns, nsp
+        ns = size(prof%s)
+        nsp = size(species)
+        status = DEVICE_BAD_INPUT
+        if (n_tor == 0 .or. .not. allocated(eq%spline%x)) return
+        call collop_make_grid(res%x_max, res%nelem, res%order, grid, i)
+        if (i /= COLLOP_OK) return
+        allocate (result(ns, nsp), ustat(ns))
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(i)
+        do i = 1, ns
+            call energy_surface(i, ustat(i))
+        end do
+        !$omp end parallel do
+        status = DEVICE_SOLVE
+        if (any(ustat /= DEVICE_OK)) return
+        status = DEVICE_OK
+    contains
+        subroutine energy_surface(i, st)
+            integer, intent(in) :: i
+            integer, intent(out) :: st
+            type(collop_species_t) :: sp(nsp)
+            type(ntv_surface_t) :: local
+            real(dp) :: lnl(nsp, nsp), kk(nsp, nsp, 2), a1(nsp), a2(nsp)
+            integer :: a, b, its, ks
+            st = DEVICE_SOLVE
+            do a = 1, nsp
+                sp(a) = collop_species_t(species(a)%mass, species(a)%z, prof%density(i, a), &
+                    prof%temperature(i, a))
+            end do
+            do a = 1, nsp
+                lnl(a, :) = 3*sqrt(pi)/8*collop_vth(sp(a))*prof%kappa(i, a) &
+                    /collop_nuhat(sp(a), sp(a), 1.0_dp)
+            end do
+            local = sf(i)
+            call ntv_energy_coefficients(local, sp, lnl, grid, res%collisions, &
+                -prof%omega_te(i), res%n_theta, res%n_leg, kk, its, ks)
+            if (ks /= NTV_OK) return
+            do a = 1, nsp
+                a2(a) = prof%temperature_s(i, a)/(prof%temperature(i, a)*psi_pol_s(i))
+                a1(a) = prof%density_s(i, a)/(prof%density(i, a)*psi_pol_s(i)) &
+                    + species(a)%z*elementary/prof%temperature(i, a)*prof%omega_te(i) &
+                    - 1.5_dp*a2(a)
+            end do
+            do a = 1, nsp
+                result(i, a)%k11 = kk(a, a, 1)
+                result(i, a)%k12 = kk(a, a, 2)
+                result(i, a)%dpsi_dr = dpsi_dr(i)
+                result(i, a)%gamma_psi = 0
+                do b = 1, nsp
+                    result(i, a)%gamma_psi = result(i, a)%gamma_psi &
+                        - prof%density(i, a)*(kk(a, b, 1)*a1(b) + kk(a, b, 2)*a2(b))
+                end do
+                result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
+                result(i, a)%factorisations = 1
+                result(i, a)%iterations = its
+            end do
+            st = DEVICE_OK
+        end subroutine energy_surface
+    end subroutine energy_profile
+
     !> Kernel surface of label s: the equilibrium line, the perturbation
     !> harmonics of toroidal number n_tor resolved by the theta grid, and the
     !> flux-function factors of the torque.
@@ -238,7 +327,8 @@ contains
         if (st /= NTV_LINE_OK) return
         call boozer_surface(pert, s, ps, st)
         if (st /= BOOZER_OK) return
-        keep = ps%n == n_tor .and. abs(ps%m) <= (res%n_theta - 1)/2 .and. &
+        ! Toroidal mode numbers of the file count per field period.
+        keep = ps%n*ps%nper == n_tor .and. abs(ps%m) <= (res%n_theta - 1)/2 .and. &
             (ps%bmn /= 0 .or. ps%bma /= 0)
         if (.not. any(keep)) return
         ! The file holds delta B = Re sum_m (bmnc - i bmns) e^{i(m theta + n phi)}
