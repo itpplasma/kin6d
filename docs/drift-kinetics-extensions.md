@@ -243,33 +243,46 @@ of its stage has passed; until then the difference is labelled as numerical plus
 Each item lands with its checks before the next starts; derivatives and cost records accompany
 every item.
 
-1. Close step 0: energy convergence of the AUG ion full operator at resonances.
-2. Step 1: hp prototype and its go/no-go.
-3. Rename to MILCA.
-4. Composed-term architecture: the current kernel expressed as a term list with the `neo2-ql`
+Foundation, while the current work finishes:
+
+1. Step 1: hp prototype and its go/no-go.
+2. Rename to MILCA.
+3. Composed-term architecture: the current kernel expressed as a term list with the `neo2-ql`
    preset, results unchanged within solver tolerance. All later terms are added to this.
-5. Local tokamak parity on the existing kernel: axisymmetric transport matrix (bootstrap,
-   conductivity, Ware pinch), heat flux K_2j, local parallel current, poloidal rotation coefficient,
-   E_r from force balance.
-6. Full perturbation drive in the local kernel: field-line bending and b.delta B, delta Phi_n, the
-   misaligned potential with its zero-current test, rotating perturbations.
-7. Step 2 (hp with all energies), if step 1 passed.
-8. Validity indicators (step 4), needed to decide where the complete model must run.
-9. Finite orbit width on the canonical Maxwellian (step 3).
-10. Perturbation in the orbits, isolated resonances, thin orbit and with finite orbit width
-    (steps 5 and 6).
-11. AUG 30835 and TC24 curves of these effects separately and combined (step 8, first part).
-12. Surface-varying background: Phi_1 from quasineutrality, sonic rotation, strong-E guiding-centre
-    equations.
-13. Stellarators (K1): 3D |B| with ripple wells, tangential drift, ambipolar roots, rabe.
-14. Edge, scrape-off layer and divertor: the continuum model hierarchy below, with divertor heat
+
+Full NEO-2 parity, each item faster and leaner than NEO-2 at matched accuracy:
+
+4. NTV (NEO-2-QL): energy convergence of the AUG ion full operator at resonances, non-axisymmetric
+   heat flux K_2j, E_r from force balance, offset rotation.
+5. Bootstrap: axisymmetric transport matrix with the full operator (bootstrap current, parallel
+   conductivity, Ware pinch), poloidal rotation coefficient, parallel flows.
+6. The rest: local parallel current and flow over the surface, misaligned-potential drive;
+   stellarators (NEO-2-PAR, K1) with ripple wells, tangential drift, ambipolar roots and rabe;
+   relativistic operator and current drive (generalised Spitzer function). Step 2 (hp with all
+   energies) where step 1 passed.
+
+NEO-RT and POTATO parity with finite orbits:
+
+7. Validity indicators (step 4).
+8. Finite orbit width on the canonical Maxwellian (step 3), against POTATO.
+9. Perturbation in the orbits for isolated resonances, thin orbit against NEO-RT Theta(D), then
+   with finite orbit width (steps 5 and 6).
+
+Extensions needed by NTV, then all effects combined:
+
+10. Full perturbation drive (field-line bending, b.delta B, delta Phi_n), rotating perturbations,
+    Phi_1 with sonic rotation and strong-E guiding-centre equations, overlapping resonances.
+11. AUG 30835 and TC24 with every effect alone and combined, ranking which effects matter where
+    (step 8).
+
+Then:
+
+12. Edge, scrape-off layer and divertor: the continuum model hierarchy below, with divertor heat
     loads as the first product.
 
 Deferred until a concrete case needs them, and then only after the items above: a second
-action-angle implementation (NEO-RT and POTATO remain the action-angle references), overlapping
-resonances in the global solve (Monte Carlo covers them), second order in the gyroradius, edge
-sources and orbit loss, fast-ion backgrounds (ASCOT, SIMPLE), the relativistic operator and
-current drive (NEO-2-PAR), FLR and self-consistent fields (KAMEL, MEPHIT and
+action-angle implementation (NEO-RT and POTATO remain the action-angle references), second order in the gyroradius, edge
+sources and orbit loss, fast-ion backgrounds (ASCOT, SIMPLE), FLR and self-consistent fields (KAMEL, MEPHIT and
 [response-unified.md](response-unified.md)), kinetic delta W feedback (MARS-K), magnetic islands,
 the turbulence-spectrum operator, and presets other than
 `neo2-ql`, `neo-rt`, `potato` and `sfincs`. hp beyond step 1 continues only if step 1 shows a
@@ -277,7 +290,7 @@ clear gain.
 
 ## Turbulence, time dependence and the edge
 
-The turbulence and time-dependence parts are deferred; the edge is item 14 of the order above.
+The turbulence and time-dependence parts are deferred; the edge is item 12 of the order above.
 
 Turbulence enters as a given saturated spectrum (from a gyrokinetic code or a quasilinear model
 such as TGLF or QuaLiKiz, with amplitudes, frequencies and cross-phases), not as a computed
