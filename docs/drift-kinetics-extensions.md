@@ -201,7 +201,8 @@ and the operator is assembled from that list by one kernel. Consequences:
 
 - no Boolean flag per effect inside numerical routines; a term that is absent is not assembled;
 - one solver path for all combinations; a combination needs no new code, only its check;
-- each term owns its coefficients, its source, its output moments and its limit test (removing
+- each term owns its coefficients, its source, its output moments, its continuous amplitude and
+  its limit test (removing
   it reproduces the run without it), so tests compose with the terms;
 - geometry, collisions, velocity mesh and solver are separate interfaces; a new effect touches
   one of them, never copies a solver;
@@ -212,6 +213,24 @@ and the operator is assembled from that list by one kernel. Consequences:
 Sonic rotation, Phi_1 and the misaligned potential share one building block: a background whose
 density and potential vary on the surface (centrifugal force, perturbation, or both), closed by the
 same quasineutrality condition.
+
+## Attribution of effects without combinatorics
+
+Every term carries a continuous amplitude epsilon_i in [0, 1] (orbit-width terms through a scaled
+gyroradius, the canonical Maxwellian through F(psi + epsilon (psi* - psi), H)), so the effect of
+each term on an output O is measured without enumerating combinations:
+
+- Sensitivities: one forward and one adjoint solve of the complete model give dO/d epsilon_i for
+  all terms at once (the adjoint model-defect estimate of the [roadmap](../ROADMAP.md)).
+- Exact additive split: integrating these gradients along the path epsilon = t (1, ..., 1),
+  t from 0 to 1, with about 5 to 10 quadrature points, splits O(complete) - O(reduced) into one
+  contribution per term that sums exactly to the total (Aumann-Shapley attribution).
+- Leave-one-out: N + 1 runs (complete, and each term removed) give the nonlinear removal effect.
+  Where it differs from the gradient estimate, terms interact, and only those pairs get a pair
+  run or a second-order (Hessian-vector) adjoint.
+
+Results are reported per surface, species and energy band, so a device curve shows which effect
+matters where.
 
 ## Complete model and reduced presets
 
