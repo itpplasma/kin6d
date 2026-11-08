@@ -4,18 +4,18 @@ module kin6d_nonnested_exterior
     !! so this entry point admits net toroidal plasma current I_phi = 0.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use fortfem_parametric_laplace_bem_3d, only: bem_surface_t, bem_operators_t, &
-                                   bem_exterior_dtn_t, build_exterior_dtn, assignment(=)
+    use fortfem_parametric_laplace_bem_3d, only: bem_surface_t
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
         bem_pair_report_t, assemble_parametric_bem_p2_circulant
-    use fortfem_bem_circulant, only: bem_circulant_t
+    use fortfem_bem_circulant, only: bem_circulant_t, circulant_matrix_t, &
+        build_circulant_exterior_dtn, assignment(=)
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_generated_bem_frame, only: bem_frame
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_point_basis
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl
     use fortnum_linalg, only: dense_solve
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_from_triplet, &
-                          fortsparse_status_t, status_ok
+        fortsparse_status_t, status_ok
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use kin6d_mhd_mesh, only: flux_mesh_ring_edge, flux_mesh_geometry
@@ -29,7 +29,8 @@ module kin6d_nonnested_exterior
     public :: nn_attach_exterior_operators
     real(dp), parameter :: pi = acos(-1.0_dp)
     type :: nn_exterior_t
-        type(bem_exterior_dtn_t) :: dtn
+        type(bem_circulant_t) :: rotational
+        type(circulant_matrix_t) :: steklov
         real(dp), allocatable :: normal_map(:, :), coil_normal(:), potential_map(:, :)
         real(dp), allocatable :: flux_pairing(:, :)
         integer, allocatable :: magnetic_dofs(:)
@@ -98,7 +99,7 @@ contains
         ne = field%mesh%nth(field%mesh%nring); nf = 2*ne*nphi
         surface%order = order
         allocate (surface%edge(2, 0:order, ne), surface%parameters(2, 3, nf), &
-                  surface%panel_edge(nf), surface%triangles(ne), faces(3, nf))
+            surface%panel_edge(nf), surface%triangles(ne), faces(3, nf))
         do e = 1, ne
             call flux_mesh_ring_edge(field%mesh, field%mesh%nring, e, t, th0, th1)
             surface%triangles(e) = t
@@ -115,7 +116,7 @@ contains
             do e = 1, ne
                 next = mod(e, ne) + 1
                 ids = [e + (j - 1)*ne, e + (after - 1)*ne, &
-                       next + (j - 1)*ne, next + (after - 1)*ne]
+                    next + (j - 1)*ne, next + (after - 1)*ne]
                 p = p + 1; faces(:, p) = ids([1, 2, 3]); surface%panel_edge(p) = e
                 surface%parameters(:, :, p) = &
                     reshape([0.0_dp, p0, 0.0_dp, p1, 1.0_dp, p0], [2, 3])
@@ -128,7 +129,7 @@ contains
     end subroutine
 
     subroutine nn_attach_exterior(field, problem, coils, currents, nphi, degree, &
-                                  options, exterior, report, status)
+            options, exterior, report, status)
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(inout) :: problem
         type(coil_set_t), intent(in) :: coils
@@ -139,13 +140,11 @@ contains
         type(bem_pair_report_t), intent(out) :: report
         integer, intent(out) :: status
         type(coupling_surface_t) :: surface
-        type(bem_operators_t) :: op
-        type(bem_circulant_t) :: rotational
         type(csc_t) :: curl, ct
         type(fortsparse_status_t) :: sparse_status
         type(nc_layout_t) :: lay
         real(dp), allocatable :: moment(:, :), normal(:, :), steklov(:, :), load(:)
-        real(dp), allocatable :: coil_normal(:)
+        real(dp), allocatable :: coil_normal(:), mass(:, :)
         integer, allocatable :: faces(:, :), td(:, :), fd(:, :)
         integer :: j, p, n
         integer(int64) :: tick0, tick1, rate
@@ -162,29 +161,34 @@ contains
         call system_clock(tick0, rate)
         ! A swept meridian repeats exactly under toroidal rotations.
         call assemble_parametric_bem_p2_circulant(surface, faces, nphi, options, &
-            rotational, td, fd, report, status)
+            exterior%rotational, td, fd, report, status)
         if (status /= 0) return
-        call rotational%expand(op, status)
         call system_clock(tick1)
         exterior%assembly_seconds = real(tick1 - tick0, dp)/rate
-        if (status /= 0) return
         call system_clock(tick0)
-        call build_exterior_dtn(op, exterior%dtn, status)
+        call build_circulant_exterior_dtn(exterior%rotational, exterior%steklov, status)
         if (status /= 0) return
-        call exterior%dtn%matrix(steklov, status)
+        call exterior%steklov%expand(steklov, status)
         if (status /= 0) return
         call system_clock(tick1)
         exterior%dtn_seconds = real(tick1 - tick0, dp)/rate
-        exterior%flux_pairing = transpose(op%mass)
-        exterior%panels = size(faces, 2); exterior%trace_dofs = size(op%w, 1)
-        exterior%flux_dofs = size(op%v, 1)
-        exterior%operator_bytes = 8_int64*(size(op%v, kind=int64) &
-                               + size(op%k, kind=int64) + size(op%adjoint, kind=int64) &
-                                   + size(op%w, kind=int64) + size(op%mass, kind=int64))
+        call exterior%rotational%mass%expand(mass, status)
+        if (status /= 0) return
+        exterior%flux_pairing = transpose(mass)
+        deallocate (mass)
+        exterior%panels = size(faces, 2)
+        exterior%trace_dofs = size(exterior%rotational%w%row_dofs)
+        exterior%flux_dofs = size(exterior%rotational%v%row_dofs)
+        exterior%operator_bytes = 8_int64*(size(exterior%rotational%v%blocks, kind=int64) &
+            + size(exterior%rotational%k%blocks, kind=int64) &
+            + size(exterior%rotational%w%blocks, kind=int64) &
+            + size(exterior%rotational%mass%blocks, kind=int64) &
+            + size(exterior%steklov%blocks, kind=int64) &
+            + size(exterior%flux_pairing, kind=int64))
         call system_clock(tick0)
         lay = nc_layout(field)
         call trace_moments(field, surface, td, coils, currents, degree, &
-                           moment, coil_normal, status)
+            moment, coil_normal, status)
         if (status /= 0) return
         call meridian_fourier_curl(field%fs, lay%modes, curl, status)
         if (status /= 0) return
@@ -308,7 +312,7 @@ contains
     end subroutine
 
     subroutine trace_moments(field, surface, td, coils, currents, degree, &
-                             moment, coil_normal, status)
+            moment, coil_normal, status)
         type(free_b_field_t), intent(in) :: field
         type(coupling_surface_t), intent(in) :: surface
         integer, intent(in) :: td(:, :), degree
@@ -323,7 +327,7 @@ contains
         if (status /= 0) return
         nb2 = field%fs%sp(2)%ndof; nl = field%fs%sp(2)%nloc
         allocate (moment(maxval(td), nb2*(2*ubound(field%b, 2) + 1)), &
-                  coil_normal(maxval(td)))
+            coil_normal(maxval(td)))
         moment = 0; coil_normal = 0; failure = 0
         !$omp parallel do default(shared) private(p, a, j, bk, row, col, t, ierr, &
         !$omp& local, drive) schedule(static) reduction(max:failure)
@@ -362,12 +366,12 @@ contains
                 call surface%evaluate(p, [xi(q), eta(q)], x, a, b, status)
                 if (status /= 0) return
                 call bem_frame(a(1), a(2), a(3), b(1), b(2), b(3), &
-                               jacobian, normal(1), normal(2), normal(3))
+                    jacobian, normal(1), normal(2), normal(3))
                 par = surface%parameters(:, 1, p) &
-                   + xi(q)*(surface%parameters(:, 2, p) - surface%parameters(:, 1, p)) &
+                    + xi(q)*(surface%parameters(:, 2, p) - surface%parameters(:, 1, p)) &
                     + eta(q)*(surface%parameters(:, 3, p) - surface%parameters(:, 1, p))
                 call meridian_point_basis(field%fs, field%pb, 2, t, par(1), &
-                                          0.0_dp, rz, basis, status)
+                    0.0_dp, rz, basis, status)
                 if (status /= 0) return
                 call frame(rz, par(2), unused, rot)
                 ncy = matmul(transpose(rot), normal)
@@ -380,7 +384,7 @@ contains
                     do j = 1, nl
                         do i = 1, 6
                             local(i, j, bk) = local(i, j, bk) + w*v(i)*tr(bk) &
-                                 *dot_product(ncy, basis(:, j))*field%fs%sp(2)%sgn(j, t)
+                                *dot_product(ncy, basis(:, j))*field%fs%sp(2)%sgn(j, t)
                         end do
                     end do
                 end do
@@ -421,7 +425,7 @@ contains
                     do bk = 0, ubound(tr, 1)
                         do i = 1, nl
                             local(i, bk, t) = local(i, bk, t) + w/nphi*tr(bk) &
-                                   *dot_product(basis(:, i), b)*field%fs%sp(2)%sgn(i, t)
+                                *dot_product(basis(:, i), b)*field%fs%sp(2)%sgn(i, t)
                         end do
                     end do
                 end do
@@ -440,7 +444,7 @@ contains
     end subroutine
 
     subroutine nn_exterior_trace(exterior, magnetic, potential, flux, load, &
-                                 interface_defect, status, physical_defect)
+            interface_defect, status, physical_defect)
         !! The algebraic weak normal defect uses S u and is distinct from a
         !! continuous field/trace error or a virtual-casing comparison.
         type(nn_exterior_t), intent(in) :: exterior
@@ -449,19 +453,26 @@ contains
         real(dp), intent(out), optional :: physical_defect
         real(dp), intent(out) :: interface_defect
         integer, intent(out) :: status
-        real(dp), allocatable :: normal(:)
+        real(dp), allocatable :: normal(:), jump(:), mass(:)
         status = 1; interface_defect = huge(1.0_dp)
         if (.not. allocated(exterior%potential_map)) return
         if (size(magnetic) < maxval(exterior%magnetic_dofs)) return
         if (.not. all(ieee_is_finite(magnetic))) return
         potential = matmul(exterior%potential_map(:, :size(exterior%magnetic_dofs)), &
-                           magnetic(exterior%magnetic_dofs)) &
-                    - exterior%potential_map(:, size(exterior%magnetic_dofs) + 1)
+            magnetic(exterior%magnetic_dofs)) &
+            - exterior%potential_map(:, size(exterior%magnetic_dofs) + 1)
         allocate (flux(exterior%flux_dofs), load(exterior%trace_dofs))
-        call exterior%dtn%apply(potential, flux, load, status)
+        allocate (jump(exterior%flux_dofs), mass(exterior%flux_dofs))
+        call exterior%rotational%k%apply(potential, jump, status)
+        if (status /= 0) return
+        call exterior%rotational%mass%apply(potential, mass, status)
+        if (status /= 0) return
+        call exterior%rotational%v%solve(jump - .5_dp*mass, flux, status)
+        if (status /= 0) return
+        call exterior%steklov%apply(potential, load, status)
         if (status /= 0) return
         normal = matmul(exterior%normal_map, magnetic(exterior%magnetic_dofs)) &
-                 - exterior%coil_normal
+            - exterior%coil_normal
         interface_defect = norm2(load - normal)/max(norm2(normal), tiny(1.0_dp))
         if (present(physical_defect)) physical_defect = &
             norm2(normal + matmul(exterior%flux_pairing, flux)) &
