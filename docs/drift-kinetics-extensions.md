@@ -160,6 +160,25 @@ after its check has passed.
 Outside this scope: turbulence and finite-Larmor-radius gyrokinetics, time dependence beyond the
 steady state, open field lines and the scrape-off layer, and stochastic magnetic fields.
 
+## Design: one operator, composed terms
+
+Every effect above is a term of the one equation, not a mode of the code. A run is described by
+the list of terms it contains (streaming, drifts, each drive, each collision part, each closure),
+and the operator is assembled from that list by one kernel. Consequences:
+
+- no Boolean flag per effect inside numerical routines; a term that is absent is not assembled;
+- one solver path for all combinations; a combination needs no new code, only its check;
+- each term owns its coefficients, its source, its output moments and its limit test (removing
+  it reproduces the run without it), so tests compose with the terms;
+- geometry, collisions, velocity mesh and solver are separate interfaces; a new effect touches
+  one of them, never copies a solver;
+- defaults reproduce the validated thin-orbit quasilinear model, and a term requested outside
+  its validity is refused with the indicator that failed.
+
+Sonic rotation, Phi_1 and the misaligned potential share one building block: a background whose
+density and potential vary on the surface (centrifugal force, perturbation, or both), closed by the
+same quasineutrality condition.
+
 ## Working rule
 
 Exploration uses focused tests and resolution ladders. Pre-registered acceptance rules, error
