@@ -143,6 +143,7 @@ after its check has passed.
 | drifts | perturbation in the orbits: superbanana regime, resonance islands, overlap | 5-7 | NEO-RT Theta(D), Monte Carlo |
 | rotation | slow rotation (Mach number M << 1, current ordering) | 0 | NEO-2 |
 | rotation | sonic rotation M ~ 1: rotating-frame Maxwellian, centrifugal and Coriolis drifts, centrifugal trapping, poloidal density asymmetry with Phi_1 | new | Hinton-Wong and Catto-Bernstein-Tessarotto theory; NEO (Belli-Candy) sonic option; heavy-impurity asymmetry |
+| rotation | strong electric field, v_E ~ v_th: guiding-centre equations from the Lagrangian in the frame drifting with v_E (Littlejohn 1983; Cary and Brizard, Rev. Mod. Phys. 81, 693 (2009); Brizard 1995 for rotating tokamaks), with the centrifugal, Coriolis and polarisation-type drifts and the modified magnetic moment; poloidal E x B comparable to the poloidal projection of parallel streaming in the pedestal, which changes trapping | new, with sonic rotation | Kagan-Catto pedestal banana-regime theory; NEO sonic option; weak-field limit reproduces the current drifts |
 | potential | prescribed E_r; E_r from force balance; ambipolar E_r with ion and electron roots | 0, K1, K2 | NEO-2 (force balance), SFINCS, DKES-based root finding |
 | potential | Phi_1 on the surface from quasineutrality; misaligned-potential drive and local parallel current; delta Phi_n of the perturbation | parity | NEO-2 pull request 240, KiLCA, SFINCS Phi_1, EUTERPE/KNOSOS |
 | potential | inductive E_par: Ware pinch, parallel conductivity | parity | Sauter fits, NEO-2 |
