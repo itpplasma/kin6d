@@ -154,6 +154,7 @@ after its check has passed.
 | collisions | classical (gyro-) transport of impurities next to neoclassical | new | Braginskii, Buller-Helander stellarator impurity flux |
 | background | Maxwellian; canonical Maxwellian; slowing-down fast ions and alphas | 0, 3, new | ASCOT, SIMPLE Monte Carlo |
 | ordering | second order in the gyroradius over the scale length: neoclassical momentum flux and intrinsic rotation in up-down symmetric tokamaks, which vanish at first order | new | Parra-Catto higher-order theory; global finite-orbit-width limit of step 3 |
+| gyrokinetic | finite Larmor radius in the steady linear response: gyroaverages J0, J1 (k_perp rho) of delta Phi, delta A_par, delta B_par, polarisation density in quasineutrality, FLR terms of the collision operator (which also give classical transport); radially nonlocal kernel where k_perp rho ~ 1. Fields closed by Poisson and Ampere in the kinetic layer strips of [response-unified.md](response-unified.md); no turbulence | R-K strips, new | KiLCA and KIM of KAMEL in the cylinder limit; drift-kinetic limit k_perp rho -> 0 |
 | sources | neutral friction (charge exchange, ionisation), beam particle, momentum and heat sources, orbit loss through the last closed surface as the outer boundary of the global solve | K2, new | edge E_r and rotation analytics; Monte Carlo orbit loss |
 | regimes | banana, plateau, Pfirsch-Schlueter; 1/nu, sqrt(nu)-nu, nu, superbanana plateau, superbanana, bounce and transit resonances, ripple plateau; nu* down to 1e-6 and up to the Pfirsch-Schlueter limit | 0-7 | analytic limits per regime |
 | outputs | full transport matrix, particle, heat and momentum fluxes per species, non-ambipolar fluxes, NTV torque per species and n, offset rotation, bootstrap current, conductivity, poloidal rotation coefficient, parallel flows and local parallel current, impurity flux, current-drive efficiency (generalised Spitzer function by the adjoint) | 0, parity | NEO-2, NEO, SFINCS, Sauter fits |
@@ -162,7 +163,7 @@ after its check has passed.
 E_r-shear orbit squeezing needs no term of its own: it follows from Phi(psi) in the total energy
 H once orbit width is retained.
 
-Outside this scope: turbulence and finite-Larmor-radius gyrokinetics, time dependence beyond the
+Outside this scope: turbulence (nonlinear fluctuation dynamics), time dependence beyond the
 steady state, open field lines and the scrape-off layer, and stochastic magnetic fields.
 
 ## Design: one operator, composed terms
@@ -203,6 +204,7 @@ mesh and solver:
 | `dkes`, `monkes` | 3D, monoenergetic, Lorentz operator (DKES with momentum correction) |
 | `neo` | axisymmetric, full operator, sonic rotation with poloidal asymmetry |
 | `perfect` | axisymmetric, global finite orbit width, full operator |
+| `kilca` | cylinder, linear response with FLR, self-consistent fields in the resonant layer |
 
 The standard product of a device case is the complete result together with the reduced presets
 that were used before, so that the model error of each established approach is shown directly as
