@@ -413,40 +413,44 @@ contains
 
     !> Band LU with partial pivoting (LAPACK dgbtrf) of the bordered system.
     !> Unknowns: block 0 = (h_0 on all nodes, the sources mu), then h_l,
-    !> l >= 1; the half bandwidth is n0 + nb - 1 with n0 = nb + n_x. Block
+    !> l >= 1. Inspect the assembled nonzeros before allocating the band so
+    !> sparse speed-mass blocks do not reserve unused diagonals. Block
     !> elimination in l without pivoting across degrees was tried first and
     !> left backward errors up to 1e-2 at low collisionality, which
     !> refinement did not remove.
     subroutine factor(sys, info)
         type(system_t), intent(inout) :: sys
         integer, intent(out) :: info
-        integer :: l, nb, n0, k
+        integer :: l, nb, n0, k, pass
         real(dp), allocatable :: blk(:, :)
         nb = sys%nb
         n0 = nb + sys%nx
-        sys%kband = n0 + nb - 1
         sys%nall = n0 + sys%lmax*nb
-        allocate (sys%band(3*sys%kband + 1, sys%nall), sys%piv(sys%nall))
-        sys%band = 0
-        do l = 0, sys%lmax
-            call put(start(l), start(l), diagonal(sys, l))
-            if (l > 0) call put(start(l), start(l - 1), couple(sys, sys%lo(:, :, l), identity(nb)))
-            if (l < sys%lmax) call put(start(l), start(l + 1), &
-                couple(sys, sys%up(:, :, l), identity(nb)))
+        sys%kband = 0
+        do pass = 1, 2
+            if (pass == 2) then
+                allocate (sys%band(3*sys%kband + 1, sys%nall), sys%piv(sys%nall))
+                sys%band = 0
+            end if
+            do l = 0, sys%lmax
+                call put(start(l), start(l), diagonal(sys, l))
+                if (l > 0) call put(start(l), start(l - 1), couple(sys, sys%lo(:, :, l), identity(nb)))
+                if (l < sys%lmax) call put(start(l), start(l + 1), &
+                    couple(sys, sys%up(:, :, l), identity(nb)))
+            end do
+            allocate (blk(nb, sys%nx))
+            blk = 0
+            do k = 1, sys%nx
+                blk((k - 1)*sys%nth + 1:k*sys%nth, k) = 1
+            end do
+            call put(1, nb + 1, blk)
+            blk = 0
+            do k = 1, sys%nx
+                blk((k - 1)*sys%nth + 1:k*sys%nth, k) = sys%weight
+            end do
+            call put(nb + 1, 1, transpose(blk))
+            deallocate (blk)
         end do
-        ! Sources on every theta point of node k and the constraint that the
-        ! weighted theta average of h_k,0 vanishes.
-        allocate (blk(nb, sys%nx))
-        blk = 0
-        do k = 1, sys%nx
-            blk((k - 1)*sys%nth + 1:k*sys%nth, k) = 1
-        end do
-        call put(1, nb + 1, blk)
-        blk = 0
-        do k = 1, sys%nx
-            blk((k - 1)*sys%nth + 1:k*sys%nth, k) = sys%weight
-        end do
-        call put(nb + 1, 1, transpose(blk))
         call dgbtrf(sys%nall, sys%nall, sys%kband, sys%kband, sys%band, 3*sys%kband + 1, &
             sys%piv, info)
     contains
@@ -461,7 +465,12 @@ contains
             integer :: i, j
             do j = 1, size(m, 2)
                 do i = 1, size(m, 1)
-                    sys%band(2*sys%kband + 1 + (i0 + i - 1) - (j0 + j - 1), j0 + j - 1) = m(i, j)
+                    if (m(i, j) == 0) cycle
+                    if (pass == 1) then
+                        sys%kband = max(sys%kband, abs(i0 + i - j0 - j))
+                    else
+                        sys%band(2*sys%kband + 1 + i0 + i - j0 - j, j0 + j - 1) = m(i, j)
+                    end if
                 end do
             end do
         end subroutine put
