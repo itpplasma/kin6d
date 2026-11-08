@@ -367,8 +367,9 @@ contains
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k
         integer :: u, nm, j, n_theta, n_leg, nx, status, ios, with_indicators, weight, stream, &
-            order
+            order, dpar, dlf10
         real(dp) :: re, im, v, nu_d, omega, pre
+        real(dp), allocatable :: f10(:, :)
         character(256) :: line, spectrum_file
         integer :: us
         ! Optional third argument: file for the Legendre spectrum per node.
@@ -377,8 +378,18 @@ contains
             status='replace', action='write')
         open (newunit=u, file=file, status='old', action='read')
         read (u, '(a)') line
+        ! Optional after the current: the #192 switches source_dpar and
+        ! source_dlf10 (0/1); f_10 then comes from ntv_f10 per node.
+        dpar = 0
+        dlf10 = 0
         read (line, *, iostat=ios) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm, weight, stream, &
-            sf%current
+            sf%current, dpar, dlf10
+        if (ios /= 0) then
+            dpar = 0
+            dlf10 = 0
+            read (line, *, iostat=ios) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm, weight, &
+                stream, sf%current
+        end if
         if (ios /= 0) sf%current = 0
         if (ios /= 0) read (line, *, iostat=ios) sf%eps, sf%k, sf%q, sf%offset, sf%n, nm, &
             weight, stream
@@ -406,8 +417,17 @@ contains
         read (u, *) nx
         do j = 1, nx
             read (u, *) v, nu_d, omega, pre
-            call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status, &
-                indicators=with_indicators /= 0, theta_order=order)
+            sf%source_dpar = dpar /= 0
+            sf%source_dlf10 = dlf10 /= 0
+            if (sf%source_dlf10) then
+                call ntv_f10(sf, v, nu_d, n_theta, n_leg, f10, status)
+                if (status /= NTV_OK) error stop 'f10 provider failed'
+                call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status, &
+                    indicators=with_indicators /= 0, theta_order=order, f10=f10)
+            else
+                call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status, &
+                    indicators=with_indicators /= 0, theta_order=order)
+            end if
             if (status /= NTV_OK) error stop 'kernel failed'
             print '(5es24.15)', k%r, k%indicator_theta, k%indicator_leg, k%dr_dnu, k%dr_domega
             if (len_trim(spectrum_file) > 0) write (us, '(*(es12.4))') k%spectrum
