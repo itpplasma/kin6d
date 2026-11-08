@@ -262,6 +262,8 @@ every item.
 12. Surface-varying background: Phi_1 from quasineutrality, sonic rotation, strong-E guiding-centre
     equations.
 13. Stellarators (K1): 3D |B| with ripple wells, tangential drift, ambipolar roots, rabe.
+14. Edge, scrape-off layer and divertor: the continuum model hierarchy below, with divertor heat
+    loads as the first product.
 
 Deferred until a concrete case needs them, and then only after the items above: a second
 action-angle implementation (NEO-RT and POTATO remain the action-angle references), overlapping
@@ -269,13 +271,13 @@ resonances in the global solve (Monte Carlo covers them), second order in the gy
 sources and orbit loss, fast-ion backgrounds (ASCOT, SIMPLE), the relativistic operator and
 current drive (NEO-2-PAR), FLR and self-consistent fields (KAMEL, MEPHIT and
 [response-unified.md](response-unified.md)), kinetic delta W feedback (MARS-K), magnetic islands,
-the turbulence-spectrum operator and the edge coupling (GORILLA), and presets other than
+the turbulence-spectrum operator, and presets other than
 `neo2-ql`, `neo-rt`, `potato` and `sfincs`. hp beyond step 1 continues only if step 1 shows a
 clear gain.
 
 ## Turbulence, time dependence and the edge
 
-Deferred; recorded so that the design does not exclude it.
+The turbulence and time-dependence parts are deferred; the edge is item 14 of the order above.
 
 Turbulence enters as a given saturated spectrum (from a gyrokinetic code or a quasilinear model
 such as TGLF or QuaLiKiz, with amplitudes, frequencies and cross-phases), not as a computed
@@ -317,8 +319,23 @@ framework:
   fluid or kinetic neutrals) by the indicators, as the roadmap's adaptive model hierarchy states.
 - Tests carry model-class labels and run by what a change affects, never as the full suite.
 
-GORILLA Monte Carlo remains the independent kinetic reference across the separatrix and to the
-wall.
+All edge models are continuum models in this framework, in a hierarchy whose levels are term
+lists on the same block atlas and check each other:
+
+| Level | Model | Benchmarks |
+|---|---|---|
+| E0 | field-line fluid scrape-off layer with sheath boundary | two-point model, Stangeby sheath analytics |
+| E1 | 2D axisymmetric multi-fluid Braginskii with drifts and fluid neutrals | SOLPS-ITER, UEDGE |
+| E2 | 3D fluid on field-aligned or FCI blocks: RMP edges, stellarator island divertors | EMC3-EIRENE, W7-X |
+| E3 | deterministic kinetic neutrals (discrete-velocity Boltzmann/BGK), hybrid with fluid neutrals by Knudsen number | EIRENE |
+| E4 | full-f drift kinetics in the edge blocks where fluid closures fail: nonlocal parallel heat flux, kinetic sheath | COGENT, analytic nonlocal heat-flux limits |
+| E5 | turbulence as spectrum term or resolved region | GENE-X, experiment |
+
+Divertor heat loads (convective, conductive, radiative and neutral), target profiles, impurity
+sources and detachment are the products, compared with infrared heat-load measurements on AUG
+and W7-X. Reactions are bookkept in species and reaction tables with a conservation ledger:
+atomic and molecular rates (ADAS, AMJUEL/HYDHEL), sputtering yields and fusion reaction cross
+sections. GORILLA Monte Carlo serves as one independent benchmark, not as the edge model.
 
 ## Working rule
 
