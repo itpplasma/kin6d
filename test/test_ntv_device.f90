@@ -1,6 +1,7 @@
 !> NTV torque profile on Boozer files (kin6d_ntv_device): the deflection
 !! frequency in its Lorentz limit, and sweeps over neighbouring surfaces
-!! preconditioned by one factorisation agree with a factorisation per surface.
+!! preconditioned by one factorisation agree with a factorisation per surface,
+!! and a second solve at the reported offset rotation carries no flux.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -15,6 +16,7 @@ program test_ntv_device
     call lorentz_limit()
     call preconditioned_sweep()
     call energy_coupled()
+    call offset_rotation()
     if (failures > 0) error stop 'FAIL'
     print '(a)', 'All tests passed!'
 
@@ -144,6 +146,48 @@ contains
         call check('field-particle part acts', &
             abs(full(1, 1)%k11/lorentz(1, 1)%k11 - 1) > 1e-3_dp .and. full(1, 1)%iterations > 0)
     end subroutine energy_coupled
+
+    !> Weak gradients keep the offset rotation small against the collision
+    !> frequency, so the coefficients barely change between Omega_tE = 0 and
+    !> the offset, and the second solve there must carry almost no flux.
+    subroutine offset_rotation()
+        character(*), parameter :: eq_name = 'ntv_offset_eq.bc', pert_name = 'ntv_offset_pert.bc'
+        type(boozer_file_t) :: eq, pert
+        type(ntv_species_t) :: sp(1)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_species_result_t), allocatable :: rest(:, :), shifted(:, :)
+        integer :: status
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        prof%s = [0.45_dp]
+        prof%omega_te = [0.0_dp]
+        allocate (prof%density(1, 1), prof%temperature(1, 1), prof%density_s(1, 1), &
+            prof%temperature_s(1, 1), prof%kappa(1, 1))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev
+        prof%density_s = -1e16_dp
+        prof%temperature_s = -1e-3_dp*kev
+        prof%kappa = 3e-3_dp
+        res%n_theta = 17
+        res%n_leg = 24
+        res%n_x = 16
+        res%sources = .false.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, rest, status)
+        call check('offset: solve at rest', status == DEVICE_OK)
+        if (failures > 0) return
+        prof%omega_te = [rest(1, 1)%offset_rotation]
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, shifted, status)
+        call check('offset: solve at the offset', status == DEVICE_OK)
+        if (failures > 0) return
+        print '(a,3es12.4)', 'offset', rest(1, 1)%offset_rotation, rest(1, 1)%gamma_psi, &
+            shifted(1, 1)%gamma_psi
+        call check('flux vanishes at the offset rotation', rest(1, 1)%gamma_psi /= 0 .and. &
+            abs(shifted(1, 1)%gamma_psi) < 1e-3_dp*abs(rest(1, 1)%gamma_psi))
+    end subroutine offset_rotation
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.

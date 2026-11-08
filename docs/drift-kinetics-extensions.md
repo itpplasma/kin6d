@@ -142,8 +142,8 @@ features, each checked against NEO-2 on the same inputs before it counts as cove
 | NEO-2 feature | Status |
 |---|---|
 | quasilinear NTV torque, all species, full linearised operator, both quasilinear sources (NEO-2-QL) | covered (step 0) |
-| E_r from the radial force balance of one species with prescribed toroidal rotation (`isw_calc_er = 1`) | missing; input-side computation |
-| non-axisymmetric heat flux (`isw_qflux_NA`) | missing; needs the K_2j coefficients next to K_1j |
+| E_r from the radial force balance of one species with prescribed toroidal rotation (`isw_calc_er = 1`) | missing; needs the axisymmetric D_31 and D_32, so it comes with the bootstrap step |
+| non-axisymmetric heat flux (`isw_qflux_NA`) | covered: K_21, K_22 and the energy flux; within 2 % of NEO-2 on ITER TC24 (4 % worst case) |
 | axisymmetric transport matrix with the full operator: bootstrap current, parallel conductivity, Ware pinch | the n = 0 solve exists inside the NTV kernel; not yet an output |
 | relativistic collision operator (Braams-Karney) and the generalised Spitzer function for current drive | missing |
 | misaligned-potential drive: radial E x B drift of the potential harmonic not aligned with the perturbed surfaces, Phi^MA_m = Phi_m + E_0r Delta_m (Delta_m the surface displacement), acting on d f0/dr, with the local parallel current over the surface (NEO-2 pull request 240, draft) | missing; one more right-hand side of the kernel, which already resolves theta. Check: a corrugation without misaligned potential gives zero parallel current at any collisionality with a momentum-conserving operator; collisionless limit against KiLCA |
@@ -272,9 +272,9 @@ Foundation, while the current work finishes:
 Full NEO-2 parity, each item faster and leaner than NEO-2 at matched accuracy:
 
 4. NTV (NEO-2-QL): energy convergence of the AUG ion full operator at resonances, non-axisymmetric
-   heat flux K_2j, E_r from force balance, offset rotation.
+   heat flux K_2j, offset rotation.
 5. Bootstrap: axisymmetric transport matrix with the full operator (bootstrap current, parallel
-   conductivity, Ware pinch), poloidal rotation coefficient, parallel flows.
+   conductivity, Ware pinch), poloidal rotation coefficient, parallel flows, E_r from force balance.
 6. The rest: local parallel current and flow over the surface, misaligned-potential drive;
    stellarators (NEO-2-PAR, K1) with ripple wells, tangential drift, ambipolar roots and rabe;
    relativistic operator and current drive (generalised Spitzer function). Step 2 (hp with all
