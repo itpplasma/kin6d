@@ -31,17 +31,17 @@ module kin6d_dk_hp
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre, gauss_lobatto_legendre
     use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights
-    use fortsparse, only: csc_t, csc_from_triplet, sparse_solver_t, sparse_factor, &
+    use fortsparse, only: csc_t, csc_z_t, csc_from_triplet, sparse_solver_t, sparse_factor, &
         sparse_solve_op, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_OP_NORMAL, FORTSPARSE_OP_TRANSPOSE, FORTSPARSE_BACKEND_NATIVE, &
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
-    use kin6d_dk_hp_leaves, only: dk_hp_point, dk_hp_stream
+    use kin6d_dk_hp_leaves, only: dk_hp_point, dk_hp_stream, dk_hp_ntv
     use kin6d_dk_mono, only: mono_coefficients_t
     implicit none
     private
     public :: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_system_t, &
         hp_assemble, hp_factor, hp_solve, hp_coefficients, hp_free, hp_estimate, &
-        hp_refine
+        hp_refine, hp_operator_t, hp_ntv_kernel
     integer, parameter, public :: HP_OK = 0, HP_BAD_INPUT = 1, HP_SINGULAR = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -64,10 +64,16 @@ module kin6d_dk_hp
         real(dp), allocatable :: theta(:), lam(:), zeta(:)
     end type
 
-    !> Operator per unit speed: b.grad theta = k b**k_power, nu = nu_D/v.
+    !> Operator per unit speed: b.grad theta = k b**k_power, nu = nu_D/v; for
+    !! one toroidal harmonic n of the NTV problem (kin6d_dk_ntv) also q, the
+    !! speed v, omega_E, the precession prefactor pre and offset, the drift
+    !! weight sign wsign and the perturbation c_m exp(i m theta).
     type :: hp_operator_t
-        real(dp) :: k = 0, nu = 0
-        integer :: k_power = 0
+        real(dp) :: k = 0, nu = 0, q = 0, v = 1, omega_e = 0, pre = 0, offset = 0, &
+            wsign = -1
+        integer :: k_power = 0, n = 0
+        integer, allocatable :: m(:)
+        complex(dp), allocatable :: c(:)
     end type
 
     !> Assembled system of n pitch unknowns with its element matrices
@@ -76,8 +82,8 @@ module kin6d_dk_hp
     type :: hp_system_t
         integer :: n = 0
         real(dp) :: norm = 0 ! int dtheta dxi/(b b.grad theta)
-        real(dp), allocatable :: drive(:, :), density(:), mat(:, :), load(:, :, :), &
-            dens(:, :)
+        real(dp), allocatable :: density(:), mat(:, :), dens(:, :)
+        complex(dp), allocatable :: drive(:, :), load(:, :, :)
         integer, allocatable :: loc(:, :)
         type(csc_t) :: a
         type(sparse_solver_t) :: solver
@@ -170,7 +176,7 @@ contains
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         type(hp_system_t), intent(inout) :: sys
-        real(dp), allocatable, intent(out) :: mat(:, :)
+        complex(dp), allocatable, intent(out) :: mat(:, :)
         integer, intent(out) :: status
         integer :: p, n_col, n_row, n_lev, n_th, n_jr, ec, er, e, i, j, a1, a2, &
             n_loc, j_lo, j_hi, n_el
@@ -207,7 +213,7 @@ contains
 
         n_loc = (p + 1)**2
         n_el = n_col*n_row
-        allocate (sys%loc(n_loc, n_el), sys%load(n_loc, 2, n_el), &
+        allocate (sys%loc(n_loc, n_el), sys%load(n_loc, 4, n_el), &
             sys%dens(n_loc, n_el), mat(n_loc**2, n_el))
         !$omp parallel do default(shared) private(e, ec, er, a1, a2) schedule(dynamic)
         do e = 1, n_el
@@ -223,7 +229,7 @@ contains
                 ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e))
         end do
         !$omp end parallel do
-        allocate (sys%drive(sys%n, 2), sys%density(sys%n))
+        allocate (sys%drive(sys%n, 4), sys%density(sys%n))
         sys%drive = 0; sys%density = 0
         do e = 1, n_el
             sys%drive(sys%loc(:, e), :) = sys%drive(sys%loc(:, e), :) + sys%load(:, :, e)
@@ -242,7 +248,7 @@ contains
         type(hp_system_t), intent(out) :: sys
         integer, intent(out) :: status
         type(hp_operator_t) :: op
-        real(dp), allocatable :: mat(:, :)
+        complex(dp), allocatable :: mat(:, :)
         integer, allocatable :: rows(:), cols(:)
         real(dp), allocatable :: vals(:)
         integer :: e, i, j, n_loc, nt
@@ -254,11 +260,11 @@ contains
         call elements(f, mesh, op, sys, mat, status)
         if (status /= HP_OK) return
         status = HP_BAD_INPUT
-        call move_alloc(mat, sys%mat)
+        sys%mat = real(mat, dp)
         n_loc = (mesh%p + 1)**2
-        nt = size(sys%mat)
+        nt = size(mat)
         allocate (rows(nt + 1), cols(nt + 1))
-        do e = 1, size(sys%mat, 2)
+        do e = 1, size(mat, 2)
             do j = 1, n_loc
                 do i = 1, n_loc
                     rows((e - 1)*n_loc**2 + i + n_loc*(j - 1)) = sys%loc(i, e)
@@ -278,20 +284,22 @@ contains
     end subroutine hp_assemble
 
     !> Galerkin matrix of one element by tensor Gauss quadrature, column
-    !> major in s, with its loads (radial and parallel drive) and density
-    !> weights.
+    !> major in s, with its loads (radial and parallel drive, NTV drive and
+    !> torque functional) and density weights.
     subroutine element(f, mesh, op, kinds, vals, ec, load, dens, s)
         type(hp_field_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         real(dp), intent(in) :: vals(2)
         integer, intent(in) :: kinds(2), ec
-        real(dp), intent(out) :: load(:, :), s(:), dens(:)
-        integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc
+        complex(dp), intent(out) :: load(:, :), s(:)
+        real(dp), intent(out) :: dens(:)
+        integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc, j
         real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), dphi(:, :), &
             b_ab(:), d_ab(:), da(:), db_(:), psi(:, :)
         real(dp) :: th, th_a, xi_lo, xi_hi, d_lo, d_hi, xi, xi_b, bb, db, k, &
-            col, dr, de, den, ww, psi_a, psi_b
+            col, dr, de, den, ww, psi_a, psi_b, phase, precess, drive, torque
+        complex(dp) :: loc_term, src
 
         p = mesh%p
         n_loc = (p + 1)**2
@@ -328,10 +336,21 @@ contains
             call curve(f, kinds(1), vals(1), th, xi_lo, d_lo)
             call curve(f, kinds(2), vals(2), th, xi_hi, d_hi)
             xi_b = (xi_hi - xi_lo)/2
+            src = 0
+            if (allocated(op%m)) then
+                do j = 1, size(op%m)
+                    src = src + (0, 1)*op%n*op%c(j)*exp((0, 1)*op%m(j)*th)
+                end do
+            end if
             do q2 = 1, nq
                 xi = xi_lo + xi_b*(1 + xq(q2))
                 ww = wq(q1)*wq(q2)*th_a*xi_b
                 call dk_hp_point(bb, db, xi, k, op%nu, col, dr, de, den)
+                call dk_hp_ntv(bb, xi, k, cos(th), op%offset, op%wsign, phase, precess, &
+                    drive, torque)
+                ! -i n q xi k + i (n/v)(omega_E + pre (1 + wsign xi^2)(cos - offset)/b)
+                loc_term = (0, 1)*op%n*(-op%q*phase + (op%omega_e*den + op%pre*precess) &
+                    /op%v)
                 do a2 = 0, p
                     do a1 = 0, p
                         ia = 1 + a1 + (p + 1)*a2
@@ -346,10 +365,12 @@ contains
                 do ic = 1, n_loc
                     s((ic - 1)*n_loc + 1:ic*n_loc) = s((ic - 1)*n_loc + 1:ic*n_loc) &
                         + wq(q1)*wq(q2)*b_ab*(psi_b*da(ic) - psi_a*db_(ic)) &
-                        + ww*col*d_ab*d_ab(ic)
+                        + ww*(col*d_ab*d_ab(ic) + loc_term*b_ab*b_ab(ic))
                 end do
                 load(:, 1) = load(:, 1) + ww*dr*b_ab
                 load(:, 2) = load(:, 2) + ww*de*b_ab
+                load(:, 3) = load(:, 3) + ww*drive*src/op%v*b_ab
+                load(:, 4) = load(:, 4) + ww*torque*conjg(src)*b_ab
                 dens = dens + ww*den*b_ab
             end do
         end do
@@ -430,12 +451,12 @@ contains
         if (status /= HP_OK) return
         if (present(n_dof)) n_dof = sys%n
         allocate (g(sys%n), z(sys%n))
-        call hp_solve(sys, sys%drive(:, i), g, mu, status)
-        if (status == HP_OK) call hp_solve(sys, sys%drive(:, j), z, mu_z, status, &
+        call hp_solve(sys, real(sys%drive(:, i), dp), g, mu, status)
+        if (status == HP_OK) call hp_solve(sys, real(sys%drive(:, j), dp), z, mu_z, status, &
             adjoint=.true.)
         call hp_free(sys)
         if (status /= HP_OK) return
-        value = dot_product(sys%drive(:, j), g)/sys%norm
+        value = dot_product(real(sys%drive(:, j), dp), g)/sys%norm
 
         mesh_fine = mesh
         mesh_fine%p = mesh%p + 1
@@ -444,7 +465,7 @@ contains
         call hp_factor(fine, status)
         if (status /= HP_OK) return
         allocate (zf(fine%n))
-        call hp_solve(fine, fine%drive(:, j), zf, mu_f, status, adjoint=.true.)
+        call hp_solve(fine, real(fine%drive(:, j), dp), zf, mu_f, status, adjoint=.true.)
         call hp_free(fine)
         if (status /= HP_OK) return
 
@@ -466,7 +487,7 @@ contains
                 [p + 1, p + 1]), transpose(lag))), [n_loc])
         end do
         do e = 1, size(fine%loc, 2)
-            r = fine%load(:, i, e) - mu*fine%dens(:, e) &
+            r = real(fine%load(:, i, e), dp) - mu*fine%dens(:, e) &
                 - matmul(reshape(fine%mat(:, e), [n_loc, n_loc]), gf(fine%loc(:, e)))
             eta = eta + dot_product(zf(fine%loc(:, e)) - izf(fine%loc(:, e)), r)/fine%norm
             ! Marking uses node-wise magnitudes; signed element sums cancel.
@@ -548,6 +569,114 @@ contains
         end do
     end subroutine sort_desc
 
+    !> Flux kernel R = int dtheta dxi (2/b)(1 + wsign xi^2)/b Re(S^* F) of one
+    !! toroidal harmonic (the kernel of kin6d_dk_ntv), op%k the constant
+    !! b.grad theta (k_power = 0) or k b (k_power = 1). Without a null space
+    !! the complex system is solved directly.
+    subroutine hp_ntv_kernel(f, mesh, op, r, status, n_dof)
+        type(hp_field_t), intent(in) :: f
+        type(hp_mesh_t), intent(in) :: mesh
+        type(hp_operator_t), intent(in) :: op
+        real(dp), intent(out) :: r
+        integer, intent(out) :: status
+        integer, intent(out), optional :: n_dof
+        type(hp_system_t) :: sys
+        type(csc_z_t) :: a, scaled
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: st
+        complex(dp), allocatable :: mat(:, :), x(:), res(:), dx(:)
+        real(dp), allocatable :: rs(:), cs(:)
+        integer, allocatable :: rows(:), cols(:)
+        integer :: e, i, j, n_loc, nt, it
+
+        status = HP_BAD_INPUT
+        if (op%n == 0 .or. .not. allocated(op%m)) return
+        call elements(f, mesh, op, sys, mat, status)
+        if (status /= HP_OK) return
+        if (present(n_dof)) n_dof = sys%n
+        status = HP_BAD_INPUT
+        n_loc = (mesh%p + 1)**2
+        nt = size(mat)
+        allocate (rows(nt), cols(nt))
+        do e = 1, size(mat, 2)
+            do j = 1, n_loc
+                do i = 1, n_loc
+                    rows((e - 1)*n_loc**2 + i + n_loc*(j - 1)) = sys%loc(i, e)
+                    cols((e - 1)*n_loc**2 + i + n_loc*(j - 1)) = sys%loc(j, e)
+                end do
+            end do
+        end do
+        call csc_from_triplet(sys%n, sys%n, rows, cols, reshape(mat, [nt]), a, st)
+        if (.not. status_ok(st)) return
+        status = HP_SINGULAR
+        ! Equilibrated rows and columns keep the static-pivot growth of the
+        ! supernodal LU in bounds on graded meshes; without it the factor
+        ! falls back to the scalar LU.
+        scaled = a
+        call equilibrate(scaled, rs, cs)
+        solver%backend_id = FORTSPARSE_BACKEND_NATIVE
+        solver%options%ordering = FORTSPARSE_ORDER_AMD
+        solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+        call sparse_factor(solver, scaled, st)
+        if (.not. status_ok(st)) return
+        allocate (x(sys%n), dx(sys%n))
+        res = rs*sys%drive(:, 3)
+        call sparse_solve_op(solver, res, x, FORTSPARSE_OP_NORMAL, st)
+        x = cs*x
+        do it = 1, 3
+            if (.not. status_ok(st)) exit
+            res = rs*(sys%drive(:, 3) - apply_z(a, x))
+            call sparse_solve_op(solver, res, dx, FORTSPARSE_OP_NORMAL, st)
+            x = x + cs*dx
+        end do
+        call sparse_destroy(solver)
+        if (.not. status_ok(st)) return
+        r = real(sum(sys%drive(:, 4)*x), dp)
+        status = HP_OK
+    end subroutine hp_ntv_kernel
+
+    !> Row and column scalings rs, cs with rs A cs of unit row and column
+    !> maxima, by three sweeps of Ruiz's iteration; a is replaced.
+    subroutine equilibrate(a, rs, cs)
+        type(csc_z_t), intent(inout) :: a
+        real(dp), allocatable, intent(out) :: rs(:), cs(:)
+        real(dp), allocatable :: r(:), c(:)
+        integer :: sweep, j, k
+        allocate (rs(a%nrow), cs(a%ncol), r(a%nrow), c(a%ncol))
+        rs = 1; cs = 1
+        do sweep = 1, 3
+            r = 0; c = 0
+            do j = 1, a%ncol
+                do k = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                    r(a%row_idx(k)) = max(r(a%row_idx(k)), abs(a%val(k)))
+                    c(j) = max(c(j), abs(a%val(k)))
+                end do
+            end do
+            where (r > 0) r = 1/sqrt(r)
+            where (c > 0) c = 1/sqrt(c)
+            do j = 1, a%ncol
+                do k = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                    a%val(k) = a%val(k)*r(a%row_idx(k))*c(j)
+                end do
+            end do
+            rs = rs*r
+            cs = cs*c
+        end do
+    end subroutine equilibrate
+
+    pure function apply_z(a, x) result(y)
+        type(csc_z_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:)
+        complex(dp) :: y(a%nrow)
+        integer :: j, k
+        y = 0
+        do j = 1, a%ncol
+            do k = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                y(a%row_idx(k)) = y(a%row_idx(k)) + a%val(k)*x(j)
+            end do
+        end do
+    end function apply_z
+
     !> A x or A^T x of a CSC matrix.
     pure function apply(a, x, transpose) result(y)
         type(csc_t), intent(in) :: a
@@ -591,14 +720,14 @@ contains
         if (status /= HP_OK) return
         n = sys%n
         allocate (g1(n), g3(n))
-        call hp_solve(sys, sys%drive(:, 1), g1, c%border(1), status)
-        if (status == HP_OK) call hp_solve(sys, sys%drive(:, 2), g3, c%border(2), status)
+        call hp_solve(sys, real(sys%drive(:, 1), dp), g1, c%border(1), status)
+        if (status == HP_OK) call hp_solve(sys, real(sys%drive(:, 2), dp), g3, c%border(2), status)
         call hp_free(sys)
         if (status /= HP_OK) return
-        c%d11 = dot_product(sys%drive(:, 1), g1)/sys%norm
-        c%d31 = dot_product(sys%drive(:, 2), g1)/sys%norm
-        c%d13 = dot_product(sys%drive(:, 1), g3)/sys%norm
-        c%d33 = dot_product(sys%drive(:, 2), g3)/sys%norm
+        c%d11 = dot_product(real(sys%drive(:, 1), dp), g1)/sys%norm
+        c%d31 = dot_product(real(sys%drive(:, 2), dp), g1)/sys%norm
+        c%d13 = dot_product(real(sys%drive(:, 1), dp), g3)/sys%norm
+        c%d33 = dot_product(real(sys%drive(:, 2), dp), g3)/sys%norm
     end subroutine hp_coefficients
 
     !> xi and d xi/d theta on a row curve: a passing level of sign kind

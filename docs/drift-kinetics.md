@@ -512,6 +512,49 @@ eta 140 at eps = 0.01, where it diverges at 200, so that row has no matched
 accuracy. Not measured: the 16 energy nodes solved in parallel, which
 KIN6D's layout allows, and other node types.
 
+The orbit-class elements (`dk_hp`) solve the same stage-1 harmonic
+(`hp_ntv_kernel`): in the measure dtheta dxi/(b b.grad theta) the streaming
+bracket is unchanged, and the shift -i n q xi k, the precession and the drive
+lambda S/v enter as local terms of a complex system. Checks (tests
+`dk_hp_ntv_*`, eps = 0.05, n = 3, m = 6, q = 2.2): against `dk_ntv` to 2e-9 at
+nu = 1e-3 and to 5e-7 with precession or rotation at nu = 1e-4; the rapid-
+rotation limit to 1.4e-3 at omega_E = 1; R nu extrapolated from nu = 1e-6 to
+1e-7 against the 1/nu bounce limit to 5e-5 (the Legendre kernel reaches 1e-2
+from 1e-5 to 1e-6); R at nu = 1e-8 within 1.5 % of the superbanana-plateau
+limit pi lambda_r^2 |S_b|^2/|n Omega_b'| of the bounce-averaged equation.
+
+A collisionality scan from 1e-3 to 1e-9 compares both kernels with the bounce-
+averaged equation, solved numerically for every nu (g = 0 at the separatrix).
+With precession and omega_E = 0 the ratio to the plateau limit is 0.51, 0.83,
+1.06 and 1.015 at nu = 1e-6, 1e-7, 3e-8 and 1e-8, and the bounce-averaged
+equation gives 0.47, 0.78, 1.07, 1.02, then 1.003 and 1.0015 at 3e-9 and 1e-9.
+The approach to the plateau is therefore slow and non-monotonic in this model
+itself; the deficit of the stage-1 rows above is of this kind and closes as nu
+-> 0. At nu = 1e-7 the two full kernels agree to 1e-7 and differ from the
+bounce average by 6 %, its O(n Omega/omega_b) defect; at 1e-8 they agree with
+each other to 7e-4 and with the bounce average to 0.4 %. Below 1e-8 the scaled-
+separatrix trapped rows do not resolve the resonant layer at the reversal level
+lambda_r, which they cross (meshes differ by 2 to 7 % at 3e-9 and 1e-9);
+trapped rows on levels of lambda are needed there. With E x B rotation and no
+precession the response leaves the 1/nu branch near nu/eps ~ n omega_E and then
+decreases with nu: between nu = 1e-6 and 1e-9 its local slope rises from 0.6 to
+0.8, in the elements as in the bounce-averaged equation. A pure sqrt(nu)
+asymptote is not reached on this range, so no closed-form nu-sqrt(nu) amplitude
+is checked; the bounce-averaged equation is the amplitude reference. At omega_E
+= 3e-5 elements and Legendre kernel agree to 2e-8 at nu = 1e-6 (Legendre 129 x
+800 in 1 s, elements 2.8 s, eight cores each) and to 3e-6 at 1e-7 (Legendre 257
+x 2400 in 11 s, still converging). At 1e-8 the largest Legendre run, 11 s, is
+1.5 % below the elements, which take 1.5 s (at 1e-7 two element meshes agree to
+4e-8). Both lie 1.8 to 4 % below the bounce-averaged equation in this regime.
+At omega_E = 1e-4 and nu <= 1e-9 the elements rise above the bounce average,
+consistent with bounce-resonant particles near the separatrix, which the bounce
+average omits; this is not checked against NEO-RT.
+
+Factorisation: the supernodal LU rejects factors with pivot growth above 1e6
+and refactors with the scalar LU, which costs up to tenfold at low nu. Row and
+column equilibration of the complex system halves that cost; the gate itself is
+a FortSparse setting.
+
 Energy grid and test-particle operator (`src/continuum/dk_collop.f90`, #184):
 each species has the speed x = v/v_ta on continuous GLL elements of degree
 at least 2 on [0, x_max], and the perturbation is f_a = F_a h_a P_l(xi) with

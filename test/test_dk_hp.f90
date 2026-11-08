@@ -25,6 +25,12 @@ program test_dk_hp
     case ('banana'); ok = banana()
     case ('pfirsch_schlueter'); ok = pfirsch_schlueter()
     case ('estimate'); ok = estimate()
+    case ('ntv_reference'); ok = ntv_reference()
+    case ('ntv_superbanana_plateau'); ok = ntv_superbanana_plateau()
+    case ('ntv_one_over_nu'); ok = ntv_one_over_nu()
+    case ('ntv_rotation'); ok = ntv_rotation()
+    case ('ntv_scan'); ok = ntv_scan()
+    case ('ntv_legendre'); ok = ntv_legendre()
     case ('scan'); ok = scan()
     case ('mono'); ok = mono_scan()
     case ('adapt'); ok = adapt_scan()
@@ -61,7 +67,8 @@ contains
     logical function close_to(name, got, want, tol) result(ok)
         character(*), intent(in) :: name
         real(dp), intent(in) :: got, want, tol
-        ok = abs(got - want) <= tol*abs(want)
+        ok = abs(got - want) <= tol*abs(want) .and. abs(want) < huge(want) &
+            .and. abs(got) < huge(got)
         print '(a,es14.6,a,es14.6,a,es9.2,a,l2)', name//' ', got, ' oracle ', want, &
             ' rel ', abs(got - want)/abs(want), ' pass', ok
     end function close_to
@@ -214,6 +221,285 @@ contains
         print '(a,2es12.4)', 'error after refinement, estimate ', err2, eta2
         ok = eta/err >= 0.5_dp .and. eta/err <= 2 .and. abs(err2) < abs(err)/10
     end function estimate
+
+    !> One toroidal harmonic with streaming shift, precession and drive,
+    !> against the Legendre-Fourier kernel kin6d_dk_ntv on the circular
+    !> stage-1 surface b = 1 - eps cos theta.
+    logical function ntv_reference() result(ok)
+        use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
+        use kin6d_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        type(ntv_surface_t) :: sf
+        type(ntv_kernel_t) :: k1
+        type(hp_operator_t) :: op
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh
+        real(dp), parameter :: nus(3) = [1e-3_dp, 1e-4_dp, 1e-4_dp], &
+            pres(3) = [0.0_dp, 1e-2_dp, 1e-2_dp], omegas(3) = [0.0_dp, 0.0_dp, 3e-3_dp]
+        real(dp) :: r, nu, pre, omega
+        integer :: status, i, j
+        sf%eps = 0.05_dp; sf%q = 2.2_dp; sf%k = 1/(sf%q*6.2_dp); sf%offset = 0
+        sf%n = 3; sf%m = [6]; sf%c = [(1e-3_dp, 0.0_dp)]
+        op%k = sf%k; op%k_power = 0; op%q = sf%q; op%n = sf%n; op%m = sf%m; op%c = sf%c
+        call hp_field([(1 - sf%eps*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f, status)
+        ok = .true.
+        do i = 1, 3
+            nu = nus(i); pre = pres(i); omega = omegas(i)
+            op%nu = nu; op%pre = pre; op%omega_e = omega
+            ! Unchanged to all printed digits at 193 x 900.
+            call ntv_kernel(sf, 1.0_dp, nu, omega, pre, 129, 600, k1, status, &
+                indicators=.false.)
+            if (status /= NTV_OK) error stop 'ntv_kernel failed'
+            call hp_default_mesh(f, 6, 16, 4, sqrt(nu), 0.3_dp, mesh)
+            call hp_ntv_kernel(f, mesh, op, r, status)
+            if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
+            ok = close_to('R', r, k1%r, 1e-6_dp) .and. ok
+        end do
+    end function ntv_reference
+
+    !> The stage-1 harmonic (eps 0.05, q 2.2, n 3, m 6) with the operator of
+    !> collisionality nu, precession pre and rotation omega_E.
+    function stage1(nu, pre, omega) result(op)
+        use kin6d_dk_hp, only: hp_operator_t
+        real(dp), intent(in) :: nu, pre, omega
+        type(hp_operator_t) :: op
+        op%k = 1/(2.2_dp*6.2_dp); op%k_power = 0; op%q = 2.2_dp; op%n = 3
+        op%m = [6]; op%c = [(1e-3_dp, 0.0_dp)]
+        op%nu = nu; op%pre = pre; op%omega_e = omega
+    end function stage1
+
+    real(dp) function stage1_kernel(op, p, n_col, n_bulk, delta) result(r)
+        use kin6d_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        type(hp_operator_t), intent(in) :: op
+        integer, intent(in) :: p, n_col, n_bulk
+        real(dp), intent(in) :: delta
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh
+        integer :: status, j
+        call hp_field([(1 - 0.05_dp*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f, status)
+        call hp_default_mesh(f, p, n_col, n_bulk, delta, 0.3_dp, mesh)
+        call hp_ntv_kernel(f, mesh, op, r, status)
+        if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
+    end function stage1_kernel
+
+    !> As nu -> 0 with a precession reversal inside the trapped region the
+    !> kernel tends to the resonant limit of the bounce-averaged equation
+    !> (sbp_limit). It approaches it slowly from below, then overshoots by
+    !> about 2 % at nu = 1e-8 (the bounce-averaged equation, solved
+    !> numerically, gives 1.021 there); the Legendre reference cannot reach
+    !> this collisionality. The check bounds the ratio at nu = 1e-8.
+    logical function ntv_superbanana_plateau() result(ok)
+        real(dp) :: r, limit
+        r = stage1_kernel(stage1(1e-8_dp, 1e-4_dp, 0.0_dp), 6, 16, 8, 1e-4_dp)
+        limit = sbp_limit(0.05_dp, stage1(1e-8_dp, 1e-4_dp, 0.0_dp))
+        ok = close_to('R/R_sbp at nu = 1e-8', r/limit, 1.0_dp, 0.03_dp)
+    end function ntv_superbanana_plateau
+
+    !> R nu at omega_E = pre = 0 from three collisionalities extrapolated as
+    !> A + C sqrt(nu) + B nu against the 1/nu limit
+    !>   R nu -> (1/2) int dlambda |Q|^2/(lambda I),
+    !>   Q(lambda) = int_lambda^{1/b_min} lambda' S_b dlambda',
+    !> derived in test_dk_ntv (one_over_nu_limit), where the Legendre
+    !> reference reaches 1e-2 from nu = 1e-5 to 1e-6.
+    logical function ntv_one_over_nu() result(ok)
+        use kin6d_dk_hp, only: hp_operator_t
+        integer, parameter :: ns = 96
+        real(dp) :: nu(3), y(3), m(3, 3), lc, lm, xs(ns), ws(ns), xt(ns), wt(ns), &
+            s, lam, lam2, outer, limit, qq, fit
+        integer :: i, j, piv(3), info
+        type(hp_operator_t) :: op
+        interface
+            subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+                integer, intent(out) :: ipiv(*), info
+            end subroutine dgesv
+        end interface
+        nu = [1e-6_dp, 3e-7_dp, 1e-7_dp]
+        do i = 1, 3
+            y(i) = nu(i)*stage1_kernel(stage1(nu(i), 0.0_dp, 0.0_dp), 6, 16, 8, &
+                0.3_dp*sqrt(nu(i)))
+            m(i, :) = [1.0_dp, sqrt(nu(i)), nu(i)]
+        end do
+        call dgesv(3, 1, m, 3, piv, y, 3, info)
+        fit = y(1)
+        op = stage1(1.0_dp, 0.0_dp, 0.0_dp)
+        lc = 1/(1 + 0.05_dp)
+        lm = 1/(1 - 0.05_dp)
+        call gauss_legendre_local(ns, xs, ws)
+        xs = (xs + 1)/2
+        ws = ws/2
+        outer = 0
+        do i = 1, ns
+            lam = lc + (lm - lc)*xs(i)**2
+            call gauss_legendre_local(ns, xt, wt)
+            qq = 0
+            do j = 1, ns
+                s = xs(i) + (1 - xs(i))*(xt(j) + 1)/2
+                lam2 = lc + (lm - lc)*s**2
+                qq = qq + wt(j)*(1 - xs(i))/2*2*(lm - lc)*s*lam2 &
+                    *op%n*abs(op%c(1))*well(0.05_dp, op, lam2, 1)
+            end do
+            outer = outer + ws(i)*2*(lm - lc)*xs(i)*qq**2/(lam*speed(0.05_dp, lam))
+        end do
+        limit = outer/2
+        ok = close_to('R nu at nu -> 0', fit, limit, 1e-3_dp)
+    end function ntv_one_over_nu
+
+    !> sum_sigma oint dtheta |xi|/b over the well of b = 1 - eps cos theta.
+    real(dp) function speed(eps, lam) result(r)
+        real(dp), intent(in) :: eps, lam
+        integer, parameter :: nq = 200
+        real(dp) :: u(nq), w(nq), t0, th, a
+        integer :: k
+        call gauss_legendre_local(nq, u, w)
+        t0 = acos(max(-1.0_dp, min(1.0_dp, (1 - 1/lam)/eps)))
+        r = 0
+        do k = 1, nq
+            a = (pi/4)*(u(k) + 1)
+            th = t0*sin(a)
+            r = r + w(k)*(pi/4)*xi_well(eps, lam, t0, th)/(1 - eps*cos(th))*t0*cos(a)
+        end do
+        r = 4*r
+    end function speed
+
+    !> |xi| = sqrt(lam eps (cos theta - cos theta_t)) without cancellation.
+    pure real(dp) function xi_well(eps, lam, t0, th)
+        real(dp), intent(in) :: eps, lam, t0, th
+        xi_well = sqrt(lam*eps*2*sin((t0 + th)/2)*sin((t0 - th)/2))
+    end function xi_well
+
+
+    !> Rapid rotation, omega_E large against streaming and pre = 0:
+    !>   R -> (16/15) nu |c|^2/omega_E^2 int_0^2pi dtheta/b^3,
+    !>   int_0^2pi dtheta/(1 - eps cos theta)^3 = pi (2 + eps^2)/(1 - eps^2)^(5/2),
+    !> approached as omega_E^-2 (derivation in test_dk_ntv, rotation_limit).
+    logical function ntv_rotation() result(ok)
+        real(dp), parameter :: eps = 0.05_dp, nu = 1e-3_dp, omega = 1.0_dp
+        real(dp) :: r, limit
+        r = stage1_kernel(stage1(nu, 0.0_dp, omega), 4, 8, 2, 0.1_dp)
+        limit = 16/15.0_dp*nu*1e-6_dp/omega**2*pi*(2 + eps**2)/(1 - eps**2)**2.5_dp
+        ok = close_to('R/limit at omega_E = 1', r/limit, 1.0_dp, 2e-3_dp)
+    end function ntv_rotation
+
+    !> R of the stage-1 harmonic (eps 0.05, q 2.2, n 3, m 6) on a uniform
+    !> mesh, with its superbanana-plateau limit.
+    logical function ntv_scan() result(ok)
+        use kin6d_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        character(16) :: arg
+        type(hp_operator_t) :: op
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh
+        real(dp) :: r, eps, delta
+        integer :: status, j, p, ncol, nb, n
+        integer(8) :: t0, t1, rate
+        eps = 0.05_dp
+        op%k = 1/(2.2_dp*6.2_dp); op%k_power = 0; op%q = 2.2_dp; op%n = 3
+        op%m = [6]; op%c = [(1e-3_dp, 0.0_dp)]
+        call get_command_argument(2, arg); read (arg, *) op%nu
+        call get_command_argument(3, arg); read (arg, *) op%pre
+        call get_command_argument(4, arg); read (arg, *) op%omega_e
+        call get_command_argument(5, arg); read (arg, *) p
+        call get_command_argument(6, arg); read (arg, *) ncol
+        call get_command_argument(7, arg); read (arg, *) nb
+        call get_command_argument(8, arg); read (arg, *) delta
+        call hp_field([(1 - eps*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f, status)
+        call hp_default_mesh(f, p, ncol, nb, delta, 0.3_dp, mesh)
+        call system_clock(t0, rate)
+        call hp_ntv_kernel(f, mesh, op, r, status, n)
+        call system_clock(t1)
+        print '(a,3es10.2,3i4,es10.2,i9,es22.13,es14.6,f9.2)', 'ntv', op%nu, op%pre, &
+            op%omega_e, p, ncol, nb, delta, n, r, r/sbp_limit(eps, op), &
+            real(t1 - t0)/rate
+        ok = status == HP_OK
+    end function ntv_scan
+
+    !> The same harmonic with the Legendre-Fourier kernel kin6d_dk_ntv.
+    logical function ntv_legendre() result(ok)
+        use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
+        character(16) :: arg
+        type(ntv_surface_t) :: sf
+        type(ntv_kernel_t) :: k
+        real(dp) :: nu, pre, omega
+        integer :: status, nt, nl
+        integer(8) :: t0, t1, rate
+        sf%eps = 0.05_dp; sf%q = 2.2_dp; sf%k = 1/(sf%q*6.2_dp); sf%offset = 0
+        sf%n = 3; sf%m = [6]; sf%c = [(1e-3_dp, 0.0_dp)]
+        call get_command_argument(2, arg); read (arg, *) nu
+        call get_command_argument(3, arg); read (arg, *) pre
+        call get_command_argument(4, arg); read (arg, *) omega
+        call get_command_argument(5, arg); read (arg, *) nt
+        call get_command_argument(6, arg); read (arg, *) nl
+        call system_clock(t0, rate)
+        call ntv_kernel(sf, 1.0_dp, nu, omega, pre, nt, nl, k, status, indicators=.false.)
+        call system_clock(t1)
+        print '(a,3es10.2,2i6,es22.13,f9.2)', 'legendre', nu, pre, omega, nt, nl, k%r, &
+            real(t1 - t0)/rate
+        ok = status == NTV_OK
+    end function ntv_legendre
+
+    !> Superbanana-plateau limit of the bounce-averaged stage-1 equation
+    !>   i n Omega_b g - 2 nu d_lambda(lambda I d_lambda g) = lambda S_b,
+    !>   Omega_b = sum_sigma oint dtheta Omega/|xi|, Omega = pre lambda cos theta,
+    !>   S_b = sum_sigma oint dtheta e^{-i n q theta} S/|xi|,
+    !> as nu -> 0: R = int dlambda lambda Re(S_b^* g) = pi lambda_r^2
+    !> |S_b|^2/|n Omega_b'| at the zero lambda_r of Omega_b (offset = 0,
+    !> omega_E = 0). Bounce integrals by Gauss quadrature in
+    !> theta = theta_t sin(u), which removes the turning-point singularity.
+    real(dp) function sbp_limit(eps, op) result(r)
+        use kin6d_dk_hp, only: hp_operator_t
+        real(dp), intent(in) :: eps
+        type(hp_operator_t), intent(in) :: op
+        real(dp) :: lo, hi, mid, h, d
+        integer :: it
+        lo = 1/(1 + eps)*(1 + 1e-9_dp)
+        hi = 1/(1 - eps)*(1 - 1e-9_dp)
+        do it = 1, 200
+            mid = (lo + hi)/2
+            if (lo*well(eps, op, lo, 0)*mid*well(eps, op, mid, 0) <= 0) then
+                hi = mid
+            else
+                lo = mid
+            end if
+        end do
+        h = 1e-6_dp*mid
+        d = ((mid + h)*well(eps, op, mid + h, 0) - (mid - h)*well(eps, op, mid - h, 0)) &
+            /(2*h)
+        r = pi*mid**2*(op%n*abs(op%c(1))*well(eps, op, mid, 1))**2/abs(op%n*op%pre*d)
+    end function sbp_limit
+
+    !> 4 int_0^theta_t w(theta) dtheta/|xi|, w = cos theta (kind 0) or
+    !> cos((m - n q) theta) (kind 1); |xi|^2 = lam eps (cos - cos theta_t).
+    real(dp) function well(eps, op, lam, kind) result(s)
+        use kin6d_dk_hp, only: hp_operator_t
+        real(dp), intent(in) :: eps, lam
+        type(hp_operator_t), intent(in) :: op
+        integer, intent(in) :: kind
+        integer, parameter :: nq = 400
+        real(dp) :: u(nq), w(nq), t0, th, a
+        integer :: j
+        call gauss_legendre_local(nq, u, w)
+        t0 = acos(max(-1.0_dp, min(1.0_dp, (1 - 1/lam)/eps)))
+        s = 0
+        do j = 1, nq
+            a = (pi/4)*(u(j) + 1)
+            th = t0*sin(a)
+            if (kind == 0) then
+                s = s + w(j)*(pi/4)*cos(th)/xi_well(eps, lam, t0, th)*t0*cos(a)
+            else
+                s = s + w(j)*(pi/4)*cos((op%m(1) - op%n*op%q)*th) &
+                    /xi_well(eps, lam, t0, th)*t0*cos(a)
+            end if
+        end do
+        s = 4*s
+    end function well
+
+    subroutine gauss_legendre_local(n, x, w)
+        use fortnum_quadrature, only: gauss_legendre
+        integer, intent(in) :: n
+        real(dp), intent(out) :: x(n), w(n)
+        call gauss_legendre(n, x, w)
+    end subroutine gauss_legendre_local
 
     logical function scan() result(ok)
         real(dp), parameter :: eps = 0.1_dp
