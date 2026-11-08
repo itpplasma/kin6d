@@ -172,12 +172,37 @@ and the operator is assembled from that list by one kernel. Consequences:
   it reproduces the run without it), so tests compose with the terms;
 - geometry, collisions, velocity mesh and solver are separate interfaces; a new effect touches
   one of them, never copies a solver;
-- defaults reproduce the validated thin-orbit quasilinear model, and a term requested outside
+- presets are term lists, never flags; the `neo2-ql` preset reproduces the validated thin-orbit
+  quasilinear model, and a term requested outside
   its validity is refused with the indicator that failed.
 
 Sonic rotation, Phi_1 and the misaligned potential share one building block: a background whose
 density and potential vary on the surface (centrifugal force, perturbation, or both), closed by the
 same quasineutrality condition.
+
+## Complete model and reduced presets
+
+One input runs the most complete model the case admits: all terms whose validity indicators pass,
+with the full operator. Named presets are fixed term lists that reproduce the models of established
+codes, so a reduced run is the complete model with terms removed, on the same geometry, profiles,
+mesh and solver:
+
+| Preset | Terms (removed from the complete model) |
+|---|---|
+| `complete` | all admitted terms |
+| `neo2-ql` | thin orbit, slow rotation, Phi_1 = 0, delta B to first order with the |B|-only drive, local Maxwellian |
+| `neo2-par` | 3D |B|, thin orbit, no perturbation, Phi_1 = 0 |
+| `neo-rt` | thin orbit, bounce-averaged resonant transport, model collision diffusion, nonlinear attenuation |
+| `potato` | finite orbit width, canonical Maxwellian, collisionless resonant limit |
+| `sfincs` | 3D, radially local, full operator, optional Phi_1 |
+| `dkes`, `monkes` | 3D, monoenergetic, Lorentz operator (DKES with momentum correction) |
+| `neo` | axisymmetric, full operator, sonic rotation with poloidal asymmetry |
+| `perfect` | axisymmetric, global finite orbit width, full operator |
+
+The standard product of a device case is the complete result together with the reduced presets
+that were used before, so that the model error of each established approach is shown directly as
+the difference to the complete model. A preset reproduces its code only after the code benchmark
+of its stage has passed; until then the difference is labelled as numerical plus model error.
 
 ## Working rule
 
