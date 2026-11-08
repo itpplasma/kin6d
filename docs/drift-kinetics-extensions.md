@@ -64,6 +64,14 @@ The unknowns grow by the number of radial points for `orbit_width` and by 2K + 1
 factorisations, which works while the psi and harmonic couplings are weak. The cost risk is the
 superbanana regime at very low collisionality, where layers at the island separatrix must be resolved.
 
+Flux coordinates describe the field and label the outputs in every mode. With `orbit_width` the
+phase-space coordinates are the invariants: psi* replaces psi, orbits are lines of constant
+(psi*, H, mu), and the radial drift disappears from the operator, while collisions, which change
+v_par at fixed position, and delta B carry the radial coupling. Moments map back to psi through
+the orbit-weighted moment map. The limits are the magnetic axis, where orbit classes change, and
+orbits that cross the last closed surface, which leave this solver and are handed to the edge
+treatment.
+
 ## Velocity-space mesh
 
 The hp mesh (finite elements adapting both element size h and polynomial degree p) places element
@@ -101,7 +109,7 @@ scenario TC24; their data stay outside the repository.
 | 0 | thin-orbit quasilinear model with the full operator, device profiles | passed: torque profiles within 5% of NEO-2 with 10 Laguerre energy basis functions on both devices. Open: energy convergence of the AUG ion full operator at resonances |
 | 1 | hp prototype: axisymmetric, monoenergetic, (theta, xi) mesh fitted to lambda | spectral convergence down to nu* ~ 1e-6; banana, plateau and Pfirsch-Schlueter limits of D11, D31, D33; axisymmetric bootstrap coefficient against the Sauter fit and NEO-2; faster or leaner than the Legendre solver at the same accuracy |
 | 2 | hp for the thin-orbit quasilinear model with all energies (after a passed step 1) | agrees with the spectral full-operator kernel; 1/nu, sqrt(nu)-nu, superbanana-plateau and rapid-rotation limits; converges the AUG ion resonances where uniform speed elements did not |
-| 3 | `orbit_width` on the canonical Maxwellian: radial elements in psi, GMRES with surface factors, radial buffer boundaries, axis region excluded | orbit width -> 0 reproduces step 0 with the expected scaling; first-order expansion of F_c reproduces the thin-orbit drive; moments map n(psi*) to n(psi); manufactured solution; particle and p_phi conservation; GMRES iterations bounded under psi refinement; POTATO in its thin-orbit limit and at finite orbit width; PERFECT pedestal case |
+| 3 | `orbit_width` on the canonical Maxwellian: radial coordinate psi* = p_phi/(Z e) at fixed (H, mu), so that unperturbed orbits stay at one radial node and only collisions and delta B couple radii; orbit classes (trapped, passing, potato) as in POTATO; the Eulerian form in psi (as PERFECT) as an independent check; outer boundary at the last closed surface absorbing outgoing orbits; GMRES with surface factors | orbit width -> 0 reproduces step 0 with the expected scaling; first-order expansion of F_c reproduces the thin-orbit drive; moments map n(psi*) to n(psi); manufactured solution; particle and p_phi conservation; GMRES iterations bounded under psi refinement; POTATO in its thin-orbit limit and at finite orbit width; PERFECT pedestal case |
 | 4 | validity indicators per surface, species and energy: D; island width over resonance spacing; d(resonant frequency)/d p_phi, which sets the island width; orbit width over gradient length | D against NEO-RT and canonical frequencies against POTATO on shared cases |
 | 5 | `nonlinear_orbits` for one isolated resonance, thin orbit | delta B -> 0 reproduces step 0 with torque proportional to delta B^2; attenuation against NEO-RT Theta(D) over D; Theta -> 1 in the quasilinear limit |
 | 6 | `nonlinear_orbits` with `orbit_width` for isolated resonances | each switch off reproduces steps 3 and 5; resonance shifts against POTATO canonical frequencies |
