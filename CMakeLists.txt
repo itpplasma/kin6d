@@ -1081,7 +1081,8 @@ kin6d_test_labels(dk_mono_neo2_tok02 fast CLASSES continuum equilibrium
     TARGETS test_dk_mono)
 add_executable(test_dk_hp test/test_dk_hp.f90)
 target_link_libraries(test_dk_hp PRIVATE kin6d)
-foreach(check reference onsager collisionless banana pfirsch_schlueter estimate)
+foreach(check reference onsager collisionless banana pfirsch_schlueter estimate
+        ntv_reference ntv_superbanana_plateau ntv_one_over_nu ntv_rotation)
     add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
     kin6d_test_labels(dk_hp_${check} fast CLASSES continuum TARGETS test_dk_hp)
 endforeach()

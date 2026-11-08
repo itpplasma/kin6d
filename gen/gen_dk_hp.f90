@@ -4,18 +4,19 @@ program gen_dk_hp
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
-    type(expr_t) :: b, b_theta, xi, k, nu, measure, lambda
+    type(expr_t) :: b, b_theta, xi, k, nu, measure, lambda, cos_t, offset, wsign
 
     ! Local drift-kinetic equation per unit speed in (theta, xi) along a
     ! field line with b = |B|/B0 and k = b.grad theta,
     !   xi k d_theta g - (1 - xi^2)/2 k d_theta(ln b) d_xi g
-    !     - (nu/2) d_xi((1 - xi^2) d_xi g) = s,
+    !     - (nu/2) d_xi((1 - xi^2) d_xi g) + (local terms) = s,
     ! weighted with the phase-space measure dtheta dxi/(b k). In it the
     ! streaming term is the bracket psi_xi d_theta g - psi_theta d_xi g of
     ! the stream function psi = -lambda/2, lambda = (1 - xi^2)/b, the
     ! conserved pitch, for any k(theta).
     b = sym('b'); b_theta = sym('b_theta'); xi = sym('xi')
-    k = sym('k'); nu = sym('nu')
+    k = sym('k'); nu = sym('nu'); cos_t = sym('cos_t'); offset = sym('offset')
+    wsign = sym('wsign')
     measure = 1/(b*k)
     lambda = (1 - xi*xi)/b
 
@@ -34,6 +35,15 @@ program gen_dk_hp
         [measure*nu*(1 - xi*xi)/2, -measure*k*b_theta*(1 + xi*xi)/(2*b*b), &
         measure*xi*b, measure], ad=.true.)
     call writer%emit('dk_hp_stream', ['b ', 'xi'], ['psi'], [-lambda/2], ad=.true.)
+    ! One toroidal harmonic n in the frame exp(-i n zeta) (kin6d_dk_ntv):
+    ! times the measure, the factor xi k of -i n q, the precession factor
+    ! (1 + wsign xi^2)(cos theta - offset)/b of i (n/v) pre and the drive
+    ! factor (1 + wsign xi^2)/b of S/v (wsign = -1: lambda, grad-B only);
+    ! the torque weight (2/b)(1 + wsign xi^2)/b of Re(S^* F) per dtheta dxi.
+    call writer%emit('dk_hp_ntv', ['b     ', 'xi    ', 'k     ', 'cos_t ', 'offset', &
+        'wsign '], ['phase  ', 'precess', 'drive  ', 'torque '], &
+        [measure*xi*k, measure*(1 + wsign*xi*xi)*(cos_t - offset)/b, &
+        measure*(1 + wsign*xi*xi)/b, 2*(1 + wsign*xi*xi)/(b*b)], ad=.true.)
     call writer%line('end module kin6d_dk_hp_leaves')
     call writer%close()
 end program gen_dk_hp
