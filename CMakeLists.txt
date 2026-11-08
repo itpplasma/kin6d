@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "35a9cd26ab20cf50ba6f7347d7daf13566e0dc91")
-set(KIN6D_FORTNUM_REVISION "19d2dbd36ae6765ccf28e15840b5b3dd8743bade")
+set(KIN6D_FORTNUM_REVISION "742d49a73517a9be61ebc9ca18fc0a4c63f2f08c")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot

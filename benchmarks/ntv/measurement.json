@@ -1,0 +1,26 @@
+{
+  "baseline_repository": "https://github.com/itpplasma/kin6d",
+  "baseline_revision": "87c89c9df7184ffd99e06a3a45f1ccc45a7b822f",
+  "cpu": "AMD Ryzen 9 5950X",
+  "compiler": "GNU Fortran (GCC) 16.2.1 20260810",
+  "flags": "-O3 -fno-fast-math -ffp-contract=off -frecursive -fopenmp -foffload=disable",
+  "threads": {
+    "OPENBLAS_NUM_THREADS": 1,
+    "OMP_NUM_THREADS": 1
+  },
+  "n_theta": 129,
+  "n_legendre": 128,
+  "indicators": false,
+  "warmups": 1,
+  "measured_repetitions": 3,
+  "execution_order": [
+    "before,after,blas",
+    "blas,after,before"
+  ],
+  "variants": {
+    "before": "baseline, one forward tangent per parameter",
+    "after": "one torque adjoint; original Schur matrix products",
+    "blas": "one torque adjoint; BLAS Schur matrix products"
+  },
+  "scope": "Synthetic Lorentz kernel with torque and all amplitude/collision-rate/rotation sensitivities. No device, full-collision, continuous-error or matched-certificate speed claim. Local workstation measurements; no exclusive-node claim."
+}

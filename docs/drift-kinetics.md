@@ -333,7 +333,12 @@ streaming shift -i n q, the grad-B precession Omega = omega_E +
 pre lambda (cos theta - offset) and the drive lambda S, whose bounce average
 is the stage-1 bounce reference. (1 - xi^2) couples l to l +- 2, so pairs
 (2j, 2j + 1) form blocks of size 2 n_theta, eliminated as for n = 0;
-derivatives in nu and omega_E reuse the factors and agree with centred
+the nu, omega_E and amplitude sensitivities share one coefficient-space
+torque adjoint through the same factors, so their cost no longer grows
+with the number of amplitudes; the dense Schur products use BLAS. The
+repeated spectrum-size timings behind that design change are retained
+in `benchmarks/ntv`, a kernel comparison without a full-collision or
+device claim. Derivatives in nu and omega_E agree with centred
 differences to 4e-8 (test `dk_ntv_jvp`). So do the derivatives with respect
 to every perturbation amplitude c_m and along (eps, k, offset, c_J), with the
 operator and drive tangents from the FortSym JVP of the pointwise leaves
