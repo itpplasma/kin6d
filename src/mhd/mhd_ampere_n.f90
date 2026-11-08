@@ -1,4 +1,4 @@
-module kin6d_mhd_ampere_n
+module milca_mhd_ampere_n
     !! L4 (first stage): per-n Ampere operator of a plasma-response field with
     !! the exact exterior.
     !!
@@ -32,7 +32,7 @@ module kin6d_mhd_ampere_n
     !!
     !! Units.  SI; A in T m, B in T, J in A/m^2.  Inner products carry the
     !! measure R dR dZ (the 2 pi of the phi integral is dropped throughout).
-    !! Complex amplitudes follow kin6d_coils_3d: a field X(R, Z) e^{i n phi}
+    !! Complex amplitudes follow milca_coils_3d: a field X(R, Z) e^{i n phi}
     !! stands for the physical field X e^{i n phi} + c.c.
     !!
     !! Coupled error (ampere_n_coupled_error).  The equilibrated bound of
@@ -69,7 +69,7 @@ module kin6d_mhd_ampere_n
         csc_conjugate_transpose, fortsparse_status_t, status_ok, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         csc_normalize_symmetric_raw
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, &
         gs_direct_factor, gs_direct_solve, gs_direct_free
     implicit none
     private
@@ -610,4 +610,4 @@ contains
         if (allocated(amp%sinv)) deallocate (amp%sinv)
     end subroutine ampere_n_free
 
-end module kin6d_mhd_ampere_n
+end module milca_mhd_ampere_n

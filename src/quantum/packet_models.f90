@@ -26,18 +26,18 @@
 ! integral by trapezoid of sampled ||r_h||). The continuum statement adds the
 ! reference's discretization error and the model projection defect (both
 ! reported, neither bounded).
-module kin6d_packet_models
+module milca_packet_models
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_gaussian_pair, only: gaussian_t, pair_rule_t, pair_rule_init, pair_elements, &
+    use milca_gaussian_pair, only: gaussian_t, pair_rule_t, pair_rule_init, pair_elements, &
                                    gaussian_value, gaussian_norm2
-    use kin6d_packet_models_leaves
-    use kin6d_coulomb_encounter, only: encounter_t, encounter_state, encounter_project, &
+    use milca_packet_models_leaves
+    use milca_coulomb_encounter, only: encounter_t, encounter_state, encounter_project, &
                                        encounter_angular_bins, encounter_norm, in_sector, &
                                        SECTOR_PRODUCT, SECTOR_SINGLET, SECTOR_TRIPLET
-    use kin6d_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
+    use milca_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
     use fortnum_ode_cash_karp, only: cash_karp_step
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     implicit none
     private
     public :: packet_spec_t, packet_sample_t, packet_trace_t
@@ -879,4 +879,4 @@ contains
         nm = encounter_norm(enc, a - da, sector); pm = pq(1)*nm
         dpv = ((pp - pm)/2 - p*(np - nm)/2)/encounter_norm(enc, a, sector)
     end subroutine packet_bin_jvp
-end module kin6d_packet_models
+end module milca_packet_models

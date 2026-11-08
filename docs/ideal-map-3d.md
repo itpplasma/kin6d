@@ -2,14 +2,14 @@
 
 Status: first verified stage of step N1 of the 3D TC24 design (nonlinear lane,
 DESIGN section 7). Fixed boundary, ideal, nested-compatible, gamma = 0.
-Module `kin6d_ideal_map` (`src/mhd/ideal_map.f90`); generated leaves
-`src/generated/kin6d_ideal_map_leaves.f90` from `gen/gen_ideal_map.f90`.
+Module `milca_ideal_map` (`src/mhd/ideal_map.f90`); generated leaves
+`src/generated/milca_ideal_map_leaves.f90` from `gen/gen_ideal_map.f90`.
 
 ## Formulation
 
 The unknown is a map X from abstract coordinates s = (s1, s2, s3) into
 Cartesian space: (s1, s2) are the master coordinates of each triangle of the
-KIN6D 2D reference mesh (curved P2/P3) and s3 = phi-hat. The frozen reference
+MILCA 2D reference mesh (curved P2/P3) and s3 = phi-hat. The frozen reference
 flux density b (a closed 2-form, contravariant density in s) and pressure p are
 carried by the reference. With J = sigma det DX > 0,
 
@@ -97,14 +97,14 @@ not multiples of nfp: restricting all axis modes to nfp*m would retrace the
 same axis nfp times and violate injectivity. nfp = 1 admits general curves.
 
 **Generated mathematics and derivatives.** `gen/gen_curve_chart.f90` emits
-`src/generated/kin6d_curve_chart_leaves.f90` using pinned FortSym. The leaves
+`src/generated/milca_curve_chart_leaves.f90` using pinned FortSym. The leaves
 supply Fourier derivatives through order four, normalization and cross-product
 jets, and H through d3H. Handwritten code sums modes and assembles tensor
 symmetries. For fixed axis/guide data, the jet defines consistent q tangents
 and Euclidean adjoints by contraction with dH (and their derivatives with
 d2H/d3H). Parameter sensitivities of the admission decisions are unavailable;
 these discrete decisions are not differentiated. Ordinary consumers need no
-CAS. With `KIN6D_FORTSYM_BUILD` configured, build `gen_curve_chart`, run it
+CAS. With `MILCA_FORTSYM_BUILD` configured, build `gen_curve_chart`, run it
 from the source root, and run `equilibrium_curve_chart_regeneration` to check
 both the circular symbolic identities and equality of regenerated output.
 
@@ -290,7 +290,7 @@ Local seed ladders (SuperLU, OMP 4, tol 1e-11 x g_seed per mesh, all
 Damped Newton (Levenberg--Marquardt, Hessian diagonal metric) on the reduced
 (nu, omega, sigma) coefficients with the exact assembled Hessian (all Fourier
 modes coupled), factorised by threaded MUMPS LDL^T (nested dissection) when
-KIN6D is built with MUMPS, serial SuperLU LU otherwise. The CSR pattern is
+MILCA is built with MUMPS, serial SuperLU LU otherwise. The CSR pattern is
 built once per map. Steps must keep J > 0
 at every quadrature point. A step is accepted if W decreases clearly; inside
 the roundoff band of W it is accepted only if the trapezoidal energy change
@@ -326,7 +326,7 @@ preconditioner (L4) is the other lever.
 ## Nested seed (`src/mhd/ideal_seed.f90`)
 
 `nested_seed_t` builds the frozen data from a boundary b(t), q(s), p(s) in
-normalised poloidal flux s and the total toroidal flux Phi_edge (the KIN6D 2D
+normalised poloidal flux s and the total toroidal flux Phi_edge (the MILCA 2D
 prescribed-q inputs). The boundary is extended harmonically into the unit disk
 (Fourier coefficients of b, kept above 1e-13 of the size), optionally with the
 seed axis moved to a chosen centre; labels chi = psi_axis (1 - |zeta|^2) and
@@ -343,7 +343,7 @@ Exact states: Solovev A3 (R0 = 6.2, a = R0/3, FF' = 0) and a shaped Solovev
 through an interior shift Y (Y = id on the LCFS, axis offset about 0.2 m), so
 the seed X0 = id is not an equilibrium and the solver must return the axis and
 surfaces. Gauge-invariant error: RMS of psi_exact(X(y)) - chi(y) over the
-reference, divided by |psi_axis|; the same with KIN6D's 2D fixed-boundary GS
+reference, divided by |psi_axis|; the same with MILCA's 2D fixed-boundary GS
 solution psi_2D on the same mesh is the second oracle.
 
 - `ideal_map_hessian_sum_factorisation_oracle`: P2/P3, toroidal truncations

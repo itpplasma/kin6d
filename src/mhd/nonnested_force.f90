@@ -1,4 +1,4 @@
-module kin6d_nonnested_force
+module milca_nonnested_force
     ! Projected force on the NN1 real-Fourier FEEC complex
     ! (docs/relaxation-comparators.md, items 3 and 5; docs/nonnested-force.md).
     ! The force of a state is P(J x B), the L2 projection of J x B onto the
@@ -29,7 +29,7 @@ module kin6d_nonnested_force
     ! The Lorentz load uses by default the strong current J = C B1 in V2,
     ! B1 the full-V1 L2 projection of B = C A + f_vac/R e_phi; dual = .true.
     ! selects the FEEC curl* J = M1^-1 (C^T M2 B + f_vac C^T <V2, e_phi/R>)
-    ! in V1_0 of kin6d_nonnested_relax (nphi-point phi mean).
+    ! in V1_0 of milca_nonnested_relax (nphi-point phi mean).
     ! All results are candidate diagnostics (no enclosure).
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -42,10 +42,10 @@ module kin6d_nonnested_force
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, &
         nn_factor, nn_factor_solve_real, nn_factor_free
-    use kin6d_metriplectic_leaves, only: lorentz_force
-    use kin6d_nonnested_mapped, only: map_metric_t, METRIC_IDENTITY, nn_map_t, &
+    use milca_metriplectic_leaves, only: lorentz_force
+    use milca_nonnested_mapped, only: map_metric_t, METRIC_IDENTITY, nn_map_t, &
         nn_harmonic_forms, nn_vector_field_i
     implicit none
     private
@@ -680,7 +680,7 @@ contains
         ! J = C B1 in V2 with B1 the full-V1 L2 projection of B (no boundary
         ! condition), the strong curl of the 1-form proxy. dual = .true.:
         ! J = M1^-1 (C^T M2 B + ck) in V1_0, the FEEC curl* of
-        ! kin6d_nonnested_relax; its zero tangential trace leaves an O(1)
+        ! milca_nonnested_relax; its zero tangential trace leaves an O(1)
         ! wall layer of width h when n x B /= 0 at the wall, so P(J x B)
         ! decreases only like h^1/2 there and masks real current sheets.
         ! report%jb_scale = <|J|^2 |B|^2>^1/2, report%b2 = <|B|^2>.
@@ -794,4 +794,4 @@ contains
         !$omp end parallel do
         error = sqrt(error); norm = sqrt(norm)
     end subroutine
-end module kin6d_nonnested_force
+end module milca_nonnested_force

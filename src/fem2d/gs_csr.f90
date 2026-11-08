@@ -1,4 +1,4 @@
-module kin6d_gs_csr
+module milca_gs_csr
     ! Row-parallel CSR kernels for the Grad--Shafranov operators, built on the
     ! fortfem element-to-CSR assembly. The pattern is the full symmetric one
     ! (diagonal stored). The stiffness is applied in exchange form,

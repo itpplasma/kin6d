@@ -2,7 +2,7 @@
 
 The literature corpus is a separate reproducible research asset. Papers,
 attachments, Zotero exports, DOI/download manifests, discovery queues and
-metadata outputs live in Zotero and an external local workspace. kin6d stores
+metadata outputs live in Zotero and an external local workspace. milca stores
 benchmark source identifiers and interpretation, not PDF papers or a corpus
 dump. The [atlas](benchmarks.md) links formulas to the evidence they need.
 
@@ -49,13 +49,13 @@ Chris&AI
 
 On 2026-10-05, the external workspace synchronized 75 curated DOI records and
 31 verified PDF attachments into the configured Zotero library. The manifest
-and synchronization/hash receipts remain outside kin6d. Imported records are
+and synchronization/hash receipts remain outside milca. Imported records are
 scientifically unreviewed until their assumptions and equations are checked;
 citation discovery does not automatically admit new physics or benchmark claims.
 
 ## Benchmark sources
 
-kin6d does not depend on access to closed-source codes. A benchmark reference
+milca does not depend on access to closed-source codes. A benchmark reference
 must be one of:
 
 - an analytical solution, manufactured solution, or limiting case whose

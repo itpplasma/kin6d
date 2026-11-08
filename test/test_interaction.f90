@@ -1,11 +1,11 @@
 program test_interaction
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use fortnum_interval, only: interval_t, ipoint
-    use kin6d_interaction_laboratory
-    use kin6d_interaction_leaves
-    use kin6d_coulomb_leaves, only: coulomb_pair, coulomb_pair_interval
-    use kin6d_species, only: units_t, species_t, atomic_units, electron
-    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
+    use milca_interaction_laboratory
+    use milca_interaction_leaves
+    use milca_coulomb_leaves, only: coulomb_pair, coulomb_pair_interval
+    use milca_species, only: units_t, species_t, atomic_units, electron
+    use milca_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step, nbody_step_jvp
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     implicit none

@@ -1,11 +1,11 @@
-!> NTV torque profile on Boozer files (kin6d_ntv_device): the deflection
+!> NTV torque profile on Boozer files (milca_ntv_device): the deflection
 !! frequency in its Lorentz limit, and sweeps over neighbouring surfaces
 !! preconditioned by one factorisation agree with a factorisation per surface,
 !! and a second solve at the reported offset rotation carries no flux.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
-    use kin6d_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
+    use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
+    use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
         ntv_species_result_t, ntv_device_profile, deflection_frequency, DEVICE_OK
     implicit none
     real(dp), parameter :: r0 = 1.7_dp, a = 0.5_dp, b0 = 2.3_dp, eps = 0.1_dp

@@ -237,7 +237,7 @@ If `x` is absent or zero, the existing nonrelativistic leaves run bit for bit.
 inputs.
 
 FortSym generates the relativistic leaves in `gen/gen_relativistic_fermi.f90`
-(`kin6d_relativistic_fermi_leaves`). They carry `s` as a chart variable with
+(`milca_relativistic_fermi_leaves`). They carry `s` as a chart variable with
 `ds/dr = x**2 r/s`. The chart identities are proved on `s**2 = 1 + x**2 r**2`,
 both the occupation derivatives and `d eps/dr = 2r/s`.
 

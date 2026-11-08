@@ -1,6 +1,6 @@
 program test_curved_triangle
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_curved_triangle, only: p2_geometry, p2_shapes, p2_locate, &
+    use milca_curved_triangle, only: p2_geometry, p2_shapes, p2_locate, &
         periodic_curve_t, initialize_periodic_curve, curve_value
     implicit none
     real(dp), parameter :: reference(2, 6) = reshape([ &

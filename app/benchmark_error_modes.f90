@@ -3,8 +3,8 @@ program benchmark_error_modes
     use fortnum_interval, only: interval_t
     use fortnum_rng, only: rng_t, rng_seed
     use fortnum_status, only: fortnum_status_t
-    use kin6d_quantum_fock, only: assemble_jellium_pair_sector
-    use kin6d_quantum_evolution
+    use milca_quantum_fock, only: assemble_jellium_pair_sector
+    use milca_quantum_evolution
     use error_benchmark_support
     implicit none
     integer :: trial, extent

@@ -1,4 +1,4 @@
-module kin6d_ideal_map
+module milca_ideal_map
     ! Nonlinear 3D ideal equilibrium as frozen-in energy minimisation over maps
     ! (DESIGN 7.1, choice A). The unknown is a map from abstract coordinates
     ! s = (s1, s2, s3): (s1, s2) the master coordinates of each triangle of a
@@ -37,16 +37,16 @@ module kin6d_ideal_map
     ! tests at two weights.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES, &
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES, &
         TRIANGLE_MAX_DEGREE
-    use kin6d_curved_triangle, only: triangle_locate
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_ideal_map_leaves, only: ideal_point_gradient_jets, &
+    use milca_curved_triangle, only: triangle_locate
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_ideal_map_leaves, only: ideal_point_gradient_jets, &
         ideal_point_hessian_jets, ideal_point_field_gradient_jets, &
         ideal_point_field_jets
-    use kin6d_ideal_field_angle_leaves, only: field_angle_mode
-    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
-    use kin6d_curve_chart_leaves, only: curve_omega_metric
+    use milca_ideal_field_angle_leaves, only: field_angle_mode
+    use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
+    use milca_curve_chart_leaves, only: curve_omega_metric
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
@@ -61,7 +61,7 @@ module kin6d_ideal_map
         sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
         FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t, FORTSPARSE_SYM_INDEFINITE, &
         sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
-    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
+    use milca_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
     private
@@ -490,7 +490,7 @@ contains
 
     subroutine ideal_map_init(map, mesh, chart, nfp, ntor, status, nphi, &
                               quadrature_order, mu0, axis_degree)
-        ! Reference mesh, element order and boundary flags from a KIN6D GS mesh.
+        ! Reference mesh, element order and boundary flags from a MILCA GS mesh.
         ! The reference chart coordinates of the nodes are mesh%points.
         type(ideal_map_t), intent(out) :: map
         type(gs_state_t), intent(in) :: mesh
@@ -3324,4 +3324,4 @@ contains
             end do
         end do
     end subroutine
-end module kin6d_ideal_map
+end module milca_ideal_map

@@ -23,7 +23,7 @@ or differentiates Newton/Krylov/continuation control flow.
 [DESC Part II](https://doi.org/10.1017/S0022377823000399) derives perturbation
 and continuation from equilibrium force balance and develops higher-order
 perturbations. It is a precedent for equation-level derivatives, not evidence
-of kin6d's matrix-free or rigorous sensitivity capabilities. Reuse primal
+of milca's matrix-free or rigorous sensitivity capabilities. Reuse primal
 operator/preconditioner infrastructure where valid; an adjoint preconditioner
 needs the appropriate transpose/weighted action rather than an assumed reuse
 of a nonsymmetric forward action.
@@ -117,7 +117,7 @@ flux, majorant/minorant and feasibility machinery belongs upstream.
 [Repin–Sauter](https://doi.org/10.1016/j.crma.2006.06.024) supplies functional
 reaction-diffusion bounds, and [Repin–Sauter–Smolianski](https://doi.org/10.1137/050641533)
 addresses mixed elliptic formulations. Their hypotheses must be instantiated
-for each kin6d operator; they are not general full-kinetic error theorems.
+for each milca operator; they are not general full-kinetic error theorems.
 Primal/complementary-dual feasible energies can give a certified gap.
 The variational dual flux is distinct from a goal sensitivity adjoint.
 

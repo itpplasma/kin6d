@@ -30,16 +30,16 @@ program test_island_closure
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, coordinates, exact
     use island_test_data, only: source, constant_source, g_shape, negative_shape
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, &
         meridian_qpoint, meridian_qgrad
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_riesz
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_report_t, nc_layout_t, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_riesz
+    use milca_nonnested_coupled, only: nc_problem_t, nc_report_t, nc_layout_t, &
         nc_layout, nc_solve, nc_fixed, nc_validate
-    use kin6d_island_case, only: island_case_read
-    use kin6d_island_closure, only: ISLAND_INVALID, ISLAND_UNSUPPORTED, &
+    use milca_island_case, only: island_case_read
+    use milca_island_closure, only: ISLAND_INVALID, ISLAND_UNSUPPORTED, &
         ISLAND_DELEGATE_B, ISLAND_DELEGATE_C, ISLAND_NULL_FIELD, ISLAND_BAD_DATA
-    use kin6d_island_report, only: island_report_t, island_residual_report
+    use milca_island_report, only: island_report_t, island_residual_report
     implicit none
     type(nc_problem_t) :: problem, other
     type(nc_report_t) :: report

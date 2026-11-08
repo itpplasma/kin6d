@@ -1,9 +1,9 @@
 program test_shielding_dynamics
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_shielding_dynamics, only: shielding_state_t, init_shielding, &
+    use milca_shielding_dynamics, only: shielding_state_t, init_shielding, &
      advance_shielding, sample_shielding, shielding_coefficients, shielding_plot_padding
-    use kin6d_shielding_dynamics_leaves, only: shielding_mode, shielding_mode_jvp, &
+    use milca_shielding_dynamics_leaves, only: shielding_mode, shielding_mode_jvp, &
                                                shielding_mode_vjp, shielding_equilibrium
     implicit none
     call continuous_oracle()

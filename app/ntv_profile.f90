@@ -1,4 +1,4 @@
-!> Quasilinear NTV torque profile on a Boozer equilibrium (kin6d_ntv_device).
+!> Quasilinear NTV torque profile on a Boozer equilibrium (milca_ntv_device).
 !! Usage: ntv_profile INPUT. INPUT, SI units, free format:
 !!   equilibrium .bc path
 !!   perturbation .bc path
@@ -11,8 +11,8 @@
 !! K_21, K_22, the energy flux [J Wb/(m^3 s)] and the offset rotation [rad/s].
 program ntv_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
-    use kin6d_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
-    use kin6d_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
+    use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
+    use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
         ntv_species_result_t, ntv_device_profile, DEVICE_OK
     implicit none
     type(boozer_file_t) :: eq, pert

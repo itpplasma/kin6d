@@ -24,16 +24,16 @@ program test_nonnested_island
     use nn_vacuum_fixture, only: pi, r0, ftor, field, active_mode, coil_mu0, &
         make_coil, mean_psi, gauge_potential, periodic_radius, &
         stability, island_edge, annulus_mesh
-    use kin6d_mhd_mesh, only: flux_mesh_t
+    use milca_mhd_mesh, only: flux_mesh_t
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
+    use milca_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
         nn_vacuum_mode, nn_point
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_P
-    use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_P
+    use milca_nonnested_residual, only: nn_residual
+    use milca_equilibrium_residual, only: equilibrium_residual_t
+    use milca_island_diagnostics, only: island_trace_options_t, island_point_t, &
         island_periodic_point
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
         nc_layout, nc_solve
     implicit none
     character(16) :: mode, arg

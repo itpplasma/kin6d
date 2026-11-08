@@ -7,7 +7,7 @@
 program test_result_io
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortio, only: fortio_file_t, fortio_status_t, hdf5_attribute_t
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp) :: scale = 1.5_dp
     integer :: count = 3
@@ -73,11 +73,11 @@ program test_result_io
     if (any(back3 /= cube)) error stop 'rank-3 round trip'
     call file%get_attributes('scale', attributes, status); call require(status, 'attrs')
     call expect(attributes, 'units', 'm')
-    call expect(attributes, 'kin6d_status', 'certified-discrete')
+    call expect(attributes, 'milca_status', 'certified-discrete')
     call file%get_attributes('/', attributes, status); call require(status, 'globals')
-    call expect(attributes, 'kin6d_application', 'test_result_io')
-    call expect(attributes, 'kin6d_config_resolved', run%resolved)
-    call expect(attributes, 'kin6d_config_literal', run%literal)
+    call expect(attributes, 'milca_application', 'test_result_io')
+    call expect(attributes, 'milca_config_resolved', run%resolved)
+    call expect(attributes, 'milca_config_literal', run%literal)
     call expect(attributes, 'probe_argument', trim(argument))
     call file%close(status)
     call require(status, 'close')

@@ -1,4 +1,4 @@
-module kin6d_gs_equilibrium
+module milca_gs_equilibrium
     ! psi lane -> core state adapter (docs/equilibrium-core.md, M1). The field
     ! of a solved gs_state_t is B = grad psi x grad phi + F(psi) grad phi with
     ! the profile law (or the linear p', FF' law) of the solve. The adapter
@@ -11,21 +11,21 @@ module kin6d_gs_equilibrium
     ! free-boundary mesh (sub-mesh, compactly renumbered).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_integral, &
+    use milca_grad_shafranov, only: gs_state_t, gs_profile_integral, &
         gs_axis_candidate, gs_cell_data
-    use kin6d_gs_field_readback, only: sample_gs_many
-    use kin6d_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_ampere_loop, only: gs_boundary_current
-    use kin6d_equilibrium_bulk_leaves, only: equilibrium_bulk_density
-    use kin6d_gs_axis_recovery, only: gs_magnetic_axis
-    use kin6d_curved_triangle, only: triangle_geometry
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use milca_gs_field_readback, only: sample_gs_many
+    use milca_gs_coarea, only: gs_level_coarea
+    use milca_gs_ampere_loop, only: gs_boundary_current
+    use milca_equilibrium_bulk_leaves, only: equilibrium_bulk_density
+    use milca_gs_axis_recovery, only: gs_magnetic_axis
+    use milca_curved_triangle, only: triangle_geometry
+    use milca_triangle_basis, only: triangle_basis_jet
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_equilibrium_state, only: labelled_field_t, equilibrium_state_t, &
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
+    use milca_equilibrium_state, only: labelled_field_t, equilibrium_state_t, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES, &
         EQ_GAUGE_AXIS, EQ_GAUGE_BOUNDARY, EQ_UNAVAILABLE
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     implicit none
     private
     public :: gs_field_t, gs_equilibrium, gs_profile_f, gs_readback_resolution
@@ -426,4 +426,4 @@ contains
         view%ready = .true.
         status = 0
     end subroutine
-end module kin6d_gs_equilibrium
+end module milca_gs_equilibrium

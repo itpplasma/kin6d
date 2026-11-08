@@ -5,15 +5,15 @@ program nested_equilibrium
     ! state's global quantities for cross-code comparison.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
+    use milca_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
+    use milca_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_energy, ideal_map_reduce, ideal_map_prolong_correction
-    use kin6d_map_3d_equilibrium, only: map_3d_coordinates, map_3d_sample
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_curved_triangle, only: triangle_locate
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_map_3d_equilibrium, only: map_3d_coordinates, map_3d_sample
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_curved_triangle, only: triangle_locate
+    use milca_result_io, only: run_t, result_file_t
     use fortnum_quadrature, only: gauss_legendre
     implicit none
     integer, parameter :: mmax = 64, nmax = 32, kmax = 32
@@ -218,7 +218,7 @@ contains
             do j = 1, ns
                 call profile%evaluate(s(j), iota_s(j), unused1, unused2)
             end do
-            ! KIN6D's frozen field needs iota without zeros: halve an update
+            ! MILCA's frozen field needs iota without zeros: halve an update
             ! that would change its sign
             update = (target - measured)/slope
             do j = 1, 30

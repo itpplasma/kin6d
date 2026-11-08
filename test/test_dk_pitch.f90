@@ -2,7 +2,7 @@
 !! symmetry, null space and the convergence of odd-l eigenvalues.
 program test_dk_pitch
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_pitch, only: pitch_operator_t, build_pitch_operator
+    use milca_dk_pitch, only: pitch_operator_t, build_pitch_operator
     implicit none
     interface
         subroutine dsygv(itype, jobz, uplo, n, a, lda, b, ldb, w, work, lwork, info)

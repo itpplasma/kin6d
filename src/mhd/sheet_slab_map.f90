@@ -1,4 +1,4 @@
-module kin6d_sheet_slab_map
+module milca_sheet_slab_map
     ! Nonlinear frozen-in ideal map of the sheared slab with a current sheet
     ! (docs/current-sheet-equilibrium.md section 4, stage 2), mu0 = 1.
     !
@@ -27,7 +27,7 @@ module kin6d_sheet_slab_map
     ! modes (LAPACK dgbsv, dgesv). [[p + B^2/2]] = 0 is the natural interface
     ! condition of the energy.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_current_sheet_leaves, only: sheet_map_energy, sheet_map_gradient, &
+    use milca_current_sheet_leaves, only: sheet_map_energy, sheet_map_gradient, &
         sheet_map_hessian, sheet_map_position, sheet_map_field, sheet_pinch_energy, &
         sheet_pinch_gradient, sheet_pinch_hessian, sheet_pinch_position, &
         sheet_pinch_field
@@ -690,4 +690,4 @@ contains
         end do
         status = 0
     end subroutine
-end module kin6d_sheet_slab_map
+end module milca_sheet_slab_map

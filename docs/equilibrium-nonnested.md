@@ -38,7 +38,7 @@ constrained: vacuum energy minimisation is not topology-preserving ideal
 magneto-friction, nor MRX's full admissible-variation algorithm. An open
 boundary with externally imposed currents need not conserve helicity.
 
-Do not copy generic FEEC, Piola, sparse factorisation or ODE code into KIN6D.
+Do not copy generic FEEC, Piola, sparse factorisation or ODE code into MILCA.
 The lane owns pressure restrictions, boundary/coil composition and provenance.
 The common D3 Maxwell-stress residual is the physics check; the n = 0
 implementation is reused directly. A three-dimensional D3 contraction
@@ -47,7 +47,7 @@ will use the same stress tensor, not a new equilibrium equation.
 ## Verification plan and limits
 
 1. N = 0 Solov'ev: an independent FEEC energy solve versus the existing
-   KIN6D GS solver and the analytic physical field on mesh ladders; check
+   MILCA GS solver and the analytic physical field on mesh ladders; check
    divergence, pressure compatibility, D3 and Newton return from an offset.
 2. Vacuum torus with a helical filament inside an excluded coil cavity:
    compare the coil-driven FEEC field and its field-line map with direct
@@ -71,7 +71,7 @@ that finite-pressure algorithm and makes no matched performance claim.
 
 ## Implemented equations and interfaces
 
-`kin6d_equilibrium_nonnested` stores V2 coefficients for modes 0:N with
+`milca_equilibrium_nonnested` stores V2 coefficients for modes 0:N with
 B_-n = conjugate(B_n), and the harmonic F_vac/R separately. At n = 0 the
 auxiliary scalar a = R A_phi satisfies
 
@@ -79,7 +79,7 @@ auxiliary scalar a = R A_phi satisfies
     B_pol = rot90(grad a)/R,  B_phi = F_vac/R.
 
 Thus the constant-p', constant-F GS restriction is solved independently in
-FortFEM's complex; the existing KIN6D GS solver is only an oracle. Its
+FortFEM's complex; the existing MILCA GS solver is only an oracle. Its
 functional is the convex axisymmetric magnetic energy minus the prescribed
 pressure load. At n > 0 the gauge a = 0 leaves a positive definite Nedelec
 curl-curl operator. A boundary potential is projected with the upstream
@@ -293,5 +293,5 @@ Mapped (phi-dependent) domain: [nn1-mapped-3d.md](nn1-mapped-3d.md).
 The [production scaling ledger](benchmarks.md#production-estimator-scaling)
 records NN1 reconstruction/solve ratios and strong scaling on the mapped
 Solov'ev torus. Its geometry-hull preparation now uses OpenMP. The measured
-upstream basis optimization requires the FortFEM campaign branch; the KIN6D
+upstream basis optimization requires the FortFEM campaign branch; the MILCA
 dependency pin is unchanged.

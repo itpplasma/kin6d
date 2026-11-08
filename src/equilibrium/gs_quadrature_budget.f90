@@ -1,4 +1,4 @@
-module kin6d_gs_quadrature_budget
+module milca_gs_quadrature_budget
     !! Outward-rounded continuous energy audit for a concrete production source:
     !! -div(grad psi/R)=mu0*R*pprime+ffprime/R on an affine polygon, psi=0 on
     !! its boundary. The candidate can be affine P1, P2 or P3. Its sampled RTp
@@ -17,10 +17,10 @@ module kin6d_gs_quadrature_budget
     use fortfem_verified_bernstein_majorant, only: verified_bernstein_majorant, &
         VERIFIED_BERNSTEIN_OK, verified_bernstein_source, &
         verified_bernstein_source_remainder
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_error_leaves, only: gs_error_friedrichs_interval, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_error_leaves, only: gs_error_friedrichs_interval, &
                                      gs_error_source_numerator_interval
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_checked_equilibrated_majorant, gs_checked_fixed_source_majorant
@@ -108,4 +108,4 @@ contains
         if (checked /= VERIFIED_BERNSTEIN_OK) return
         status = GS_CHECKED_OK
     end subroutine gs_checked_fixed_source_majorant
-end module kin6d_gs_quadrature_budget
+end module milca_gs_quadrature_budget

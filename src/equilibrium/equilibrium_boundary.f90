@@ -1,4 +1,4 @@
-module kin6d_equilibrium_boundary
+module milca_equilibrium_boundary
     ! One boundary layer for every lane (docs/equilibrium-core.md, D6,
     ! migration M4). A fixed axisymmetric curve Gamma_c in vacuum encloses the
     ! plasma, so the exterior separates in the toroidal mode n. The layer owns
@@ -12,7 +12,7 @@ module kin6d_equilibrium_boundary
     !                 (cached per curve, kind, n and flux degree) and on the
     !                 FEM trace, S_trace = R^T S_n R;
     !   the coils     one coil interface (axisymmetric circuits of
-    !                 kin6d_gs_coils, 3D polylines of kin6d_coils_3d) that
+    !                 milca_gs_coils, 3D polylines of milca_coils_3d) that
     !                 returns per unit circuit current the toroidal harmonics
     !                 of B and, where the set has one, the poloidal flux;
     !   the traces    the per-n traces of a coil field on Gamma_c.
@@ -27,7 +27,7 @@ module kin6d_equilibrium_boundary
     !                   operators_2d); this is the n = 1 vector mode of the
     !                   toroidal kernel and the psi lane's coupling.
     ! Units are SI. Fourier harmonics are two-sided, X = sum_n X_n e^{i n phi}
-    ! with X_{-n} = conjg(X_n), as in kin6d_coils_3d.
+    ! with X_{-n} = conjg(X_n), as in milca_coils_3d.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
         gs_bem_operators_t, gs_bem_curve_from_nodes, gs_bem_assemble, &
@@ -35,11 +35,11 @@ module kin6d_equilibrium_boundary
     use fortfem_toroidal_mode_boundary_operators_2d, only: tm_bem_assemble, &
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_gs_timers, only: gs_phase_tick
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_coils_3d, only: coil_set_t, coil_set_modes
-    use kin6d_equilibrium_state, only: EQ_UNAVAILABLE
-    use kin6d_real_identity, only: same_real_value
+    use milca_gs_timers, only: gs_phase_tick
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_coils_3d, only: coil_set_t, coil_set_modes
+    use milca_equilibrium_state, only: EQ_UNAVAILABLE
+    use milca_real_identity, only: same_real_value
     implicit none
     private
     public :: gamma_c_t, gamma_c_chain, gamma_c_build, gamma_c_edge_weights
@@ -735,4 +735,4 @@ contains
         end if
         status = GAMMA_C_OK
     end subroutine
-end module kin6d_equilibrium_boundary
+end module milca_equilibrium_boundary

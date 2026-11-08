@@ -1,4 +1,4 @@
-module kin6d_nonnested_relax
+module milca_nonnested_relax
     ! Metriplectic relaxation on the NN1 FEEC Fourier complex, derived in
     ! docs/metriplectic-relaxation.md. The state is the full real-Fourier
     ! V1 potential A (boundary tangential trace fixed), B = curl A + F/R e_phi.
@@ -21,11 +21,11 @@ module kin6d_nonnested_relax
     use fortsparse, only: csc_t, csc_matvec, csc_matmul, csc_transpose, &
         csc_from_triplet, fortsparse_status_t, status_ok
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK, KRYLOV_STAGNATION
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
-    use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, METRIC_IDENTITY, &
+    use milca_nonnested_mapped, only: nn_map_t, map_metric_t, METRIC_IDENTITY, &
         nn_harmonic_forms
-    use kin6d_metriplectic_leaves, only: friction_drift
+    use milca_metriplectic_leaves, only: friction_drift
     implicit none
     private
     public :: relax_system_t, relax_options_t, relax_report_t, relax_state_t
@@ -683,4 +683,4 @@ contains
             c(m%col_ptr(j):m%col_ptr(j + 1) - 1) = j
         end do
     end function
-end module kin6d_nonnested_relax
+end module milca_nonnested_relax

@@ -5,7 +5,7 @@ program coil_modes
     !! point and mode n = 0..nmax): n R Z, then Re/Im of B_R, B_phi, B_Z of the
     !! two-sided component B_n (physical n>0 harmonic = 2 Re[B_n e^{i n phi}]), in T.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_coils_3d
+    use milca_coils_3d
     implicit none
     type(coil_set_t) :: set
     character(len=512) :: arg

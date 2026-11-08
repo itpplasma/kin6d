@@ -1,4 +1,4 @@
-module kin6d_equilibrium_nonnested
+module milca_equilibrium_nonnested
     ! NN1: closed FEEC magnetic states and the quadratic vacuum / N=0
     ! pressure restriction. Generic spaces and sparse solves stay upstream.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -15,13 +15,13 @@ module kin6d_equilibrium_nonnested
         csc_normalize_symmetric_raw, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate
-    use kin6d_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_locate
+    use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_nonnested_leaves, only: axisymmetric_pressure, fieldline_velocity
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_nonnested_leaves, only: axisymmetric_pressure, fieldline_velocity
     implicit none
     private
     public :: free_b_field_t, nn_report_t, nn_build, nn_solve, nn_export
@@ -730,4 +730,4 @@ contains
         end if
         factor%ready = .false.
     end subroutine
-end module kin6d_equilibrium_nonnested
+end module milca_equilibrium_nonnested

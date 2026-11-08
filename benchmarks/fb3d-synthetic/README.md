@@ -1,4 +1,4 @@
-# Synthetic nfp = 3 free boundary: KIN6D against VMEC++
+# Synthetic nfp = 3 free boundary: MILCA against VMEC++
 
 A public synthetic case for the 3D free boundary on the curve chart
 (decision 19, step a to b). No device data are involved.
@@ -23,7 +23,7 @@ python make_coils.py coils.fb3d_synth
 python run_vmecpp.py coils.fb3d_synth vmec --nzeta 96 --grid 121 121 96 --mpol 8 --ntor 6 --ns 16 32 64
 fb3d_synthetic coils.fb3d_synth vmec/iota.dat 0.0314159 k 12 16 2 12 18 384 -1 300
 python compare.py k vmec/wout.nc
-python vacuum_reference.py 0.0314159 --kin6d k --wout vmec/wout.nc
+python vacuum_reference.py 0.0314159 --milca k --wout vmec/wout.nc
 python iota_sign.py --wout vmec/wout.nc
 ```
 

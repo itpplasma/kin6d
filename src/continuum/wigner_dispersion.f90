@@ -1,11 +1,11 @@
 !> Independent linear-response oracle for Q7 part 2: dielectric function of
 !> drifting Maxwellian electron beams under the Wigner (hbar > 0) or Vlasov
 !> (hbar = 0) equation with a neutralizing background, in the units of
-!> kin6d_wigner_leaves (omega_p = 1, m = 1, v/v_ref). The plasma dispersion
+!> milca_wigner_leaves (omega_p = 1, m = 1, v/v_ref). The plasma dispersion
 !> function Z and Z' come from FortNum's Faddeeva routine, valid in both
 !> half-planes (Landau continuation for Im(zeta) < 0).
 !> This module shares no formula with the split-step solver.
-module kin6d_wigner_dispersion
+module milca_wigner_dispersion
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_special_faddeeva, only: plasma_dispersion_z, plasma_dispersion_z_derivative
     implicit none
@@ -87,4 +87,4 @@ contains
         call dielectric(k, omega, hbar, beams, eps, de, dh)
         domega_dhbar = -dh/de
     end subroutine
-end module kin6d_wigner_dispersion
+end module milca_wigner_dispersion

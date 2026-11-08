@@ -1,7 +1,7 @@
 !> Ewald parameters of the periodic Coulomb sum, chosen from a requested
 !> truncation tolerance rather than fixed numbers.
 !>
-!> Convention (kin6d_symbolic_physics): cube of edge L, neutralizing uniform
+!> Convention (milca_symbolic_physics): cube of edge L, neutralizing uniform
 !> background, tin-foil boundary, k = 2 pi n/L with n /= 0. The real-space sum
 !> runs over images with max-norm index <= real_cutoff after wrapping the
 !> separation into [-L/2,L/2]^3; the reciprocal sum over 0 < |n|_inf <=
@@ -14,10 +14,10 @@
 !> and exp(-(pi m/(alpha L))^2), so the neglected remainder is far below the
 !> reported bound. The bound holds for the pair potential (potential_bound,
 !> units |g|/L) and each Cartesian force component (force_bound, |g|/L^2).
-module kin6d_ewald
+module milca_ewald
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_coulomb_leaves, only: ewald_real_shell_bound, &
+    use milca_coulomb_leaves, only: ewald_real_shell_bound, &
                                     ewald_reciprocal_shell_bound
     implicit none
     private
@@ -134,4 +134,4 @@ contains
             if (u <= 1.0e-20_dp*potential .and. f <= 1.0e-20_dp*force) exit
         end do
     end subroutine
-end module kin6d_ewald
+end module milca_ewald

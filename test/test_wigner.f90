@@ -4,9 +4,9 @@
 !> order, hbar -> 0 convergence, tangent-vs-FD, and unclipped negativity.
 program test_wigner
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_wigner_poisson
-    use kin6d_wigner_dispersion, only: beam_t, dispersion_root
-    use kin6d_wigner_leaves, only: wigner_bohm_gross, wigner_cold_two_stream
+    use milca_wigner_poisson
+    use milca_wigner_dispersion, only: beam_t, dispersion_root
+    use milca_wigner_leaves, only: wigner_bohm_gross, wigner_cold_two_stream
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     type(beam_t) :: maxwell(1), cold(1), streams(2)

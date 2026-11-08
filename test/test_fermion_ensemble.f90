@@ -6,10 +6,10 @@ program test_fermion_ensemble
     ! ground-state asymptotics and finite differences of independent solves.
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use fortnum_interval, only: interval_t, interval, operator(+), operator(*)
-    use kin6d_fermion_ensemble
-    use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
+    use milca_fermion_ensemble
+    use milca_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, occupation_fermi_gas
-    use kin6d_fermion_ensemble_leaves, only: fermion_box_eos, fermion_box_eos_jvp
+    use milca_fermion_ensemble_leaves, only: fermion_box_eos, fermion_box_eos_jvp
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), scan(3) = [0.05_dp, 1.0_dp, 10.0_dp]
     type(fermion_spectrum_t) :: spec, wide

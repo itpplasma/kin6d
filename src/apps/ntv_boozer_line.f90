@@ -1,15 +1,15 @@
-!> NTV field line of an axisymmetric Boozer `.bc` surface (kin6d_boozer_file)
+!> NTV field line of an axisymmetric Boozer `.bc` surface (milca_boozer_file)
 !! as a dk_ntv provider: |B|, d|B|/dtheta and d|B|/ds along theta_B, and the
 !! flux functions, through the FortSym leaf ntv_boozer_point. The kernel's
 !! precession prefactor for this line is m v^2/(2 e) [V], b = |B|/B_ref with
 !! B_ref the (0, 0) harmonic. Only n = 0 rows enter; a file with n /= 0 rows
 !! is refused.
-module kin6d_ntv_boozer_line
+module milca_ntv_boozer_line
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_dk_ntv, only: ntv_line_t
-    use kin6d_boozer_file, only: boozer_surface_t
-    use kin6d_ntv_boozer_leaves, only: ntv_boozer_point
+    use milca_dk_ntv, only: ntv_line_t
+    use milca_boozer_file, only: boozer_surface_t
+    use milca_ntv_boozer_leaves, only: ntv_boozer_point
     implicit none
     private
     public :: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK, NTV_LINE_REFUSED
@@ -77,4 +77,4 @@ contains
         end associate
     end subroutine boozer_sample
 
-end module kin6d_ntv_boozer_line
+end module milca_ntv_boozer_line

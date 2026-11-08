@@ -1,9 +1,9 @@
 # GLL nested-map experiment and port decision
 
 Status: opt-in axisymmetric operator spike, not a production equilibrium solver.
-KIN6D base 22d6cb5; FortFEM ac673dc6 (#110 MF1, #109 SPL1 and #117 IGAAX); FortNum
+MILCA base 22d6cb5; FortFEM ac673dc6 (#110 MF1, #109 SPL1 and #117 IGAAX); FortNum
 1cfe3cba. The ordinary triangle path and its dependency pins are unchanged
-when `KIN6D_BUILD_GLL_SPIKE=OFF`. The option selects the stated FortFEM revision.
+when `MILCA_BUILD_GLL_SPIKE=OFF`. The option selects the stated FortFEM revision.
 
 ## Mathematical contract
 
@@ -26,8 +26,8 @@ W = integral [ |DX b|^2/(2 mu0 J) - p J ] ds1 ds2 dphi_hat .
 
 `p` is the gamma=0 material pressure used by the existing map, rather than a
 new pressure equation. The sign `sigma` is the chart orientation: cylindrical
-`(R,Z,phi)` has sigma=-1. KIN6D's authoritative energy is the shared
-`frozen_energy` imported by `gen/kin6d_symbolic_ideal.f90:1` and used in
+`(R,Z,phi)` has sigma=-1. MILCA's authoritative energy is the shared
+`frozen_energy` imported by `gen/milca_symbolic_ideal.f90:1` and used in
 `gen/gen_ideal_map.f90:49`. The reference-form pullback is already generated
 there (`gen/gen_ideal_map.f90:109`). Existing freeze and energy integration
 are `src/mhd/ideal_map.f90:440` and `:976` on this base.
@@ -56,12 +56,12 @@ DX = [ R_s1        R_s2       0
 
 `gen/gen_ideal_gll.f90:29` substitutes this into the same `frozen_energy` and
 derives the seven-gradient and symmetric Hessian with FortSym. Checked-in
-leaves are `src/generated/kin6d_ideal_gll_leaves.f90:11`, `:33`, `:66`.
+leaves are `src/generated/milca_ideal_gll_leaves.f90:11`, `:33`, `:66`.
 The nonlinear R factors and all their mixed Hessian terms are retained.
 
 ## Unknowns, axis and constraints
 
-Production should preserve KIN6D's reduced unknowns: transversal displacement
+Production should preserve MILCA's reduced unknowns: transversal displacement
 nu and omega per node/mode, plus the global axis-expansion coefficients.
 `ideal_map.f90:210`, `:217`, `:224` and `:263` define indexing, reduction and
 expansion. The frozen transversal is `grad chi/|grad chi|` away from the axis;
@@ -97,8 +97,8 @@ All FortFEM paths below refer to ac673dc6 unless a branch is named.
 | Piece | Available public seam and evidence | Remaining work |
 |---|---|---|
 | GLL nodes, rules, tables | `src/discretisation/gll_line.f90:8` | Application chooses overintegration; collocation is not exact for rational map energy. |
-| Regular disk/torus O-grid | `tensor_mesh.f90:242` `ogrid_tensor_mesh(dim,n,p,...,q)`; five patches, outer boundary only at `:332` | KIN6D composes the physical seed geometry and frozen profiles. |
-| Gather/transpose contractions | `tensor_contractions.f90:7` `tensor_contract` | No private sum factorization in KIN6D. |
+| Regular disk/torus O-grid | `tensor_mesh.f90:242` `ogrid_tensor_mesh(dim,n,p,...,q)`; five patches, outer boundary only at `:332` | MILCA composes the physical seed geometry and frozen profiles. |
+| Gather/transpose contractions | `tensor_contractions.f90:7` `tensor_contract` | No private sum factorization in MILCA. |
 | Quadrature geometry, colouring | `tensor_operator.f90:71` `build_tensor_operator`; points/J/weights/colour arrays at `:27` | Public implementation data is used by this pinned spike; a stable coupled value/gradient callback is desirable. |
 | Ready-made MF apply | `tensor_operator.f90:277` `apply_tensor_operator` | Scalar SPD diffusion plus reaction only; not the nonlinear map's coupled Hessian. |
 | p-MG | `tensor_solver.f90:15`, `:49`, `:393` expose `build_tensor_multigrid`, `tensor_vcycle` | Scalar diffusion hierarchy, not block/constraint/Schur p-MG. |
@@ -107,7 +107,7 @@ All FortFEM paths below refer to ac673dc6 unless a branch is named.
 | Krylov | FortNum `src/linalg/fortnum_krylov.f90:69` CG, `:704` FGMRES | Procedure CG at pinned 1cfe3cba suffices; #111 object API is not required by this spike. |
 | Curved unstructured mesh | UNS1 #114, 9d09504f: `tensor_mesh_gmsh.f90:14`, `island_quad_mesh.f90:21`, `tensor_mesh_tools.f90:11` | Optional future island carrier, not required for this nested O-grid. |
 
-KIN6D owns pointwise energy and derivatives, charts, material profiles,
+MILCA owns pointwise energy and derivatives, charts, material profiles,
 flux/pressure constraints, gauge choice and physical error checks, with
 continuous leaves retained in `gen/`. FortFEM owns tensor interpolation,
 assembly, topology and multilevel algebra. FortNum owns generic Krylov and
@@ -138,13 +138,13 @@ the map's near-null energy directions and tight seed-return ladders.
 
 ## Reproduction and evidence
 
-Configure the ordinary project with `-DKIN6D_BUILD_GLL_SPIKE=ON`, then build
+Configure the ordinary project with `-DMILCA_BUILD_GLL_SPIKE=ON`, then build
 `benchmark_ideal_gll`. The option requires OpenMP and the usual native
 FortSparse AMD setup. Run, for example,
 
 ```
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 build/benchmarks/gll/benchmark_ideal_gll 6 1 1000 0.01
-ctest --test-dir build -j4 -R '^(ideal_gll_derivatives_p[468]|ideal_map_derivatives_and_rotation_null|ideal_map_curve_chart_landreman|kin6d_layering)$' --output-on-failure
+ctest --test-dir build -j4 -R '^(ideal_gll_derivatives_p[468]|ideal_map_derivatives_and_rotation_null|ideal_map_curve_chart_landreman|milca_layering)$' --output-on-failure
 ```
 
 Arguments are degree, cells per patch direction, timing repetitions and
@@ -225,7 +225,7 @@ about three iterations at the present n=1,p=6 costs. For p=4/p=8 the same
 MG scenario is 1.32/8.30 s with the measured iteration counts.
 
 There is no verified end-to-end time at matched L B/p/ds error. The reference
-0.445 s KIN6D and 0.029 s VMEC++ times are for eps=0.5 and ntor=4, whereas
+0.445 s MILCA and 0.029 s VMEC++ times are for eps=0.5 and ntor=4, whereas
 this experiment has eps=0 and no phi coupling. The production reduced gauge,
 LM metric, inexact forcing and trial counts also differ. Matching one energy
 integral is insufficient to select the spatial/phi resolution at the B/p/ds
@@ -280,7 +280,7 @@ experimental controls do not change a production default.
 - `tensor_solver.f90:49`, `:393` expose scalar diffusion p-MG. A production
   consumer needs block/constraint-aware transfer and smoothing, an omega
   Schur solve with moment constraints, and frozen-operator reuse across LM
-  shifts. KIN6D supplies its gauge and physics; the reusable algebra belongs
+  shifts. MILCA supplies its gauge and physics; the reusable algebra belongs
   upstream. The measured hundreds of iterations are an observed limitation
   of this surrogate, not evidence that all p-MG formulations will fail.
 - NEQ1 b02d2ef1 `newton_krylov.f90:54`, `:122` still needs landing and the
@@ -297,4 +297,4 @@ experimental controls do not change a production default.
   leaves into the multi-field seam, including the value channel and energy
   gradient, rather than optimizing diffusion HVPs alone. The GEN1 emitter is
   already available through FortSym/FortGen; no private emitter or tensor
-  contraction implementation belongs in KIN6D.
+  contraction implementation belongs in MILCA.

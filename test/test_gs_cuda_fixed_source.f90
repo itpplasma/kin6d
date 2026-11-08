@@ -3,17 +3,17 @@ program test_gs_cuda_fixed_source
     !! This is a host-staged solve prototype, not a resident GPU equilibrium.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, assemble_gs_rhs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, assemble_gs_rhs, &
         apply_gs, gs_cell_data
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_factor, gs_direct_solve, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_factor, gs_direct_solve, &
         gs_direct_free
-    use kin6d_gs_csr, only: gs_csr_spd_matrix
-    use kin6d_gs_options, only: gs_set_options
-    use kin6d_gs_timers, only: gs_wall_s
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_gs_csr, only: gs_csr_spd_matrix
+    use milca_gs_options, only: gs_set_options
+    use milca_gs_timers, only: gs_wall_s
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t
-    use kin6d_gs_quadrature_budget, only: gs_checked_equilibrated_majorant
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use milca_gs_quadrature_budget, only: gs_checked_equilibrated_majorant
+    use milca_grad_shafranov_leaves, only: gs_source
     use fortnum_interval, only: interval_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use nn_solovev_fixture, only: boundary, exact, minor, pp

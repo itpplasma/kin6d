@@ -4,9 +4,9 @@ module beltrami_mr_fixture
     ! amplitude epsilon in 2 phi, toroidal flux 1, closed wall), without
     ! the external SPEC samples, and a peak-memory probe.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i8 => int64
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
-    use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_build
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6.0_dp
     real(dp) :: epsilon = 0.1_dp
@@ -76,7 +76,7 @@ program test_nonnested_beltrami_mr
     !   inertia k nr N mu          negative eigenvalues of the A block at mu
     !                              (factored inertia at mu minus that at 0)
     use beltrami_mr_fixture
-    use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
+    use milca_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve, beltrami_constraint, beltrami_mr_options_t, &
         BELTRAMI_PC_NONE, BELTRAMI_PC_JACOBI, BELTRAMI_PC_BLOCK
     implicit none

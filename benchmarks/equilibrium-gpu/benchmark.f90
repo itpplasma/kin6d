@@ -4,11 +4,11 @@ program benchmark_equilibrium_gpu
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use omp_lib, only: omp_get_max_threads
     use ideal_map_gpu_cpu, only: ideal_hessian_f64, ideal_hvp_f64
-    use kin6d_ideal_map_leaves, only: ideal_energy_hessian
+    use milca_ideal_map_leaves, only: ideal_energy_hessian
     implicit none
     interface
         integer(c_int) function gpu(n, repeats, precision, action, x, y, metrics) &
-            bind(c, name='kin6d_gpu_benchmark')
+                bind(c, name='milca_gpu_benchmark')
             import c_int, c_double
             integer(c_int), value :: n, repeats, precision, action
             real(c_double), intent(in) :: x(*)

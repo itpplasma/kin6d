@@ -5,12 +5,12 @@ program test_equilibrium_3d
     ! Without a coarse level, a reversed-iota control must be clearly worse.
     ! With a coarse level, every sampled error must decrease under refinement.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_harness, only: equilibrium_resolution_t, &
+    use milca_equilibrium_harness, only: equilibrium_resolution_t, &
         equilibrium_run_report_t, run_equilibrium_case, write_equilibrium_report
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_equilibrium_3d_driver, only: equilibrium_3d_driver_t, &
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_3d_driver, only: equilibrium_3d_driver_t, &
         nested_integer_driver, run_boundary_profile_equilibrium
-    use kin6d_nested_oracles, only: nested_oracle_t
+    use milca_nested_oracles, only: nested_oracle_t
     use omp_lib, only: omp_get_wtime, omp_get_max_threads
     implicit none
     type(nested_oracle_t) :: oracle

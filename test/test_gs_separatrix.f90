@@ -6,11 +6,11 @@ program test_gs_separatrix
     !! or external fixture enters the interpolation/tracing oracle.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use omp_lib, only: omp_set_num_threads, omp_get_wtime
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, sample_gs
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_lcfs_levels, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, sample_gs
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_lcfs_levels, &
                                       gs_fb_trace_lcfs, GS_FB_XPOINT, GS_FB_OK
-    use kin6d_cerfon_freidberg_leaves, only: cerfon_freidberg_jet
-    use kin6d_gs_separatrix_leaves, only: gs_lcfs_ray_jet, &
+    use milca_cerfon_freidberg_leaves, only: cerfon_freidberg_jet
+    use milca_gs_separatrix_leaves, only: gs_lcfs_ray_jet, &
                                           gs_lcfs_ray_jet_jvp, gs_lcfs_ray_jet_vjp
     implicit none
     integer, parameter :: npoints = 256

@@ -29,17 +29,17 @@
 !> represented by the lifted/projected asymptotes), so no near force is
 !> counted twice; the far zone b > b_s stays classical. The naive diagnostic
 !> (rotate v at r_det) double counts the outer-leg deflection and is reported.
-module kin6d_hybrid_encounter
+module milca_hybrid_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform, rng_normal
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_species, only: units_t, species_t, pair_scales_t, pair_scales
-    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
+    use milca_species, only: units_t, species_t, pair_scales_t, pair_scales
+    use milca_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step, nbody_encounter_step
-    use kin6d_quantum_collision_kernel, only: quantum_cut_log, classical_cut_log
-    use kin6d_quantum_collision_leaves
+    use milca_quantum_collision_kernel, only: quantum_cut_log, classical_cut_log
+    use milca_quantum_collision_leaves
     implicit none
     private
     public :: hybrid_config_t, hybrid_model_t, encounter_record_t
@@ -512,4 +512,4 @@ contains
             end do
         end do
     end subroutine hybrid_beam_step
-end module kin6d_hybrid_encounter
+end module milca_hybrid_encounter

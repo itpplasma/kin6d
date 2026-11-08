@@ -1,4 +1,4 @@
-module kin6d_response_calibration
+module milca_response_calibration
     !! Direct spot readback. No singular powers or asymptotic transport.
     !! Fixed sample coordinates have a linear storage JVP/VJP. Changes in
     !! equilibrium, spot and sample coordinates need a separate derivative.
@@ -6,7 +6,7 @@ module kin6d_response_calibration
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_polynomial, only: lagrange_deriv_weights
-    use kin6d_response_calibration_leaves, only: sheet_field, &
+    use milca_response_calibration_leaves, only: sheet_field, &
         distance_leaf => spot_distance
     implicit none
     private
@@ -96,4 +96,4 @@ contains
         if (.not. all(ieee_is_finite([br, bi]))) return
         status = 0
     end subroutine equivalent_sheet_field
-end module kin6d_response_calibration
+end module milca_response_calibration

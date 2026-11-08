@@ -3,9 +3,9 @@ module cerfon_freidberg_fixture
     ! Cerfon & Freidberg, Phys. Plasmas 17, 032502 (2010),
     ! https://doi.org/10.1063/1.3328818, eqs. (5)-(11), Secs. V-VI.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_cerfon_freidberg_leaves, only: cerfon_freidberg_jet, &
+    use milca_cerfon_freidberg_leaves, only: cerfon_freidberg_jet, &
         cerfon_freidberg_jet_jvp, cerfon_freidberg_jet_vjp
-    use kin6d_equilibrium_bulk_leaves, only: equilibrium_bulk_density, &
+    use milca_equilibrium_bulk_leaves, only: equilibrium_bulk_density, &
         equilibrium_bulk_density_jvp, equilibrium_bulk_density_vjp, &
         equilibrium_bulk_normalize, equilibrium_bulk_normalize_jvp, &
         equilibrium_bulk_normalize_vjp
@@ -69,7 +69,7 @@ contains
         call constraints(model, residual)
         if (maxval(abs(residual)) > 2e-11_dp) error stop 'CF boundary residual'
         ! Up-down symmetry makes the axis lie on y=0. Bracket the derivative;
-        ! no KIN6D axis search or readback enters this oracle.
+        ! no MILCA axis search or readback enters this oracle.
         call root_brent(axis_derivative, 1 - model%eps, 1 + model%eps, &
             model%axis, root_status, 2e-14_dp, 1e-15_dp, 128)
         if (root_status%code /= FORTNUM_OK) error stop 'CF exact axis root'

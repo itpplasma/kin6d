@@ -1,6 +1,6 @@
 !> Quasilinear NTV torque density of every species on a set of flux surfaces
 !! of a Boozer equilibrium with one toroidal harmonic n of a Boozer |B|
-!! perturbation, from the monoenergetic kernel of kin6d_dk_ntv with the
+!! perturbation, from the monoenergetic kernel of milca_dk_ntv with the
 !! NEO-2-QL switch set (weight (1 + xi^2)/b, Boozer streaming, both #192
 !! sources) and pitch-angle scattering on all species.
 !!
@@ -27,15 +27,15 @@
 !! under OpenMP with dynamic scheduling. Each unit factorises its first
 !! surface and solves the following ones by GMRES preconditioned with that
 !! factorisation, refactorising when the iteration count exceeds a bound.
-module kin6d_ntv_device
+module milca_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_gen_laguerre, gauss_legendre
-    use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, &
+    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, &
         boozer_average, BOOZER_OK
-    use kin6d_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
-    use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
+    use milca_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
+    use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
         ntv_f10, ntv_energy_coefficients, NTV_OK, NTV_WEIGHT_FULL
-    use kin6d_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
+    use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
         collop_nuhat, collop_vth, COLLOP_OK
     implicit none
     private
@@ -66,7 +66,7 @@ module kin6d_ntv_device
         integer :: chunk = 8, max_iterations = 60
         logical :: sources = .true.
         ! 0: monoenergetic pitch-angle scattering on Gauss-Laguerre nodes;
-        ! otherwise a kin6d_dk_collop model on the speed grid of nelem
+        ! otherwise a milca_dk_collop model on the speed grid of nelem
         ! elements of the given order on [0, x_max] (energy-coupled kernel).
         integer :: collisions = 0, nelem = 4, order = 4
         real(dp) :: x_max = 5
@@ -624,4 +624,4 @@ contains
         status = DEVICE_OK
     end subroutine surface
 
-end module kin6d_ntv_device
+end module milca_ntv_device

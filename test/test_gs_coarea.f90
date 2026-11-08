@@ -1,10 +1,10 @@
 program test_gs_coarea
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, &
+    use milca_grad_shafranov, only: gs_state_t, &
                                     initialize_gs, gs_axis_candidate, &
                                     gs_element_jet
-    use kin6d_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_coarea_leaves, &
+    use milca_gs_coarea, only: gs_level_coarea
+    use milca_gs_coarea_leaves, &
         only: gs_contour_root_response
     implicit none
     type(gs_state_t) :: state, plus_state, minus_state

@@ -1,9 +1,9 @@
-module kin6d_gs_options
+module milca_gs_options
     ! Run-time switches for the Grad--Shafranov linear algebra. The defaults are
     ! the fast path (CSR operators, cached Cholesky factor). The old element-wise
     ! operator and the Jacobi-CG solvers stay selectable for comparison:
-    !   KIN6D_GS_OPERATOR = csr (default) | element
-    !   KIN6D_GS_LINEAR   = direct (native default) | iterative
+    !   MILCA_GS_OPERATOR = csr (default) | element
+    !   MILCA_GS_LINEAR   = direct (native default) | iterative
     ! The variables are read once, on first use, outside parallel regions.
     implicit none
     private
@@ -16,22 +16,22 @@ contains
         integer :: length
         if (initialised) return
         initialised = .true.
-        call get_environment_variable('KIN6D_GS_OPERATOR', value, length)
+        call get_environment_variable('MILCA_GS_OPERATOR', value, length)
         if (length > 0) then
             select case (trim(value))
             case ('csr'); csr_on = .true.
             case ('element'); csr_on = .false.
             case default
-                error stop 'KIN6D_GS_OPERATOR must be csr (default) or element'
+                error stop 'MILCA_GS_OPERATOR must be csr (default) or element'
             end select
         end if
-        call get_environment_variable('KIN6D_GS_LINEAR', value, length)
+        call get_environment_variable('MILCA_GS_LINEAR', value, length)
         if (length > 0) then
             select case (trim(value))
             case ('direct'); direct_on = .true.
             case ('iterative'); direct_on = .false.
             case default
-                error stop 'KIN6D_GS_LINEAR must be direct (default) or iterative'
+                error stop 'MILCA_GS_LINEAR must be direct (default) or iterative'
             end select
         end if
     end subroutine

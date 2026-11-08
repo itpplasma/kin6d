@@ -17,11 +17,11 @@ program test_gs_coil_inverse
     !!     where the predicted decrease falls below the forward resolution of Phi.
     use, intrinsic :: iso_fortran_env, only: dp => real64
 !$  use omp_lib
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
                      gs_fb_evaluate, gs_fb_factor, gs_fb_release, gs_fb_newton, GS_FB_OK
-    use kin6d_gs_coil_inverse
+    use milca_gs_coil_inverse
     use gs_ci_fixture
     implicit none
 

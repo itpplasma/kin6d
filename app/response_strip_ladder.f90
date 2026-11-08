@@ -16,7 +16,7 @@ program response_strip_ladder
     !! strip against ln S.  Cases run in parallel (OpenMP over cases).
     !$ use omp_lib, only: omp_get_max_threads
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_response_strip, only: cyl_step_t, strip_options_t, &
+    use milca_response_strip, only: cyl_step_t, strip_options_t, &
         strip_solution_t, step_rational, step_fprime, step_delta_prime, &
         strip_growth_rate, strip_mesh, strip_solve, layer_width, &
         ri_dispersion_gamma

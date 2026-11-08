@@ -13,7 +13,7 @@ program test_mhd_shield_torus
     !! 1/(u - u_s) at every resonant surface; a surface without sheet
     !! (resonant_surfaces_missing lists them all) makes the response of the
     !! other surfaces depend on where its pole falls between the half rings
-    !! (observed in KIN6D response runs: |b_shield| of q = 2 at nrad 64 / 96 /
+    !! (observed in MILCA response runs: |b_shield| of q = 2 at nrad 64 / 96 /
     !! 128 / 160 = 1.66 / 1.95 / 1.72 / 1.70e-4 T, converged and equal to
     !! GPEC's 1.633e-4 T with the q = 3 sheet).
     !! Checks (q = 2 sheet): |b_shield| differs by less than 2 % between all
@@ -23,15 +23,15 @@ program test_mhd_shield_torus
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read, flux_ray_point, &
+    use milca_vacuum_surfaces, only: psi_grid_t, eqdsk_read, flux_ray_point, &
         surface_t, surface_build
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+    use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, ring_sheet_load, &
         ring_area, layer_closure_t, closure_shield_init, resonant_surfaces_missing
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+    use milca_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     implicit none
 
@@ -78,7 +78,7 @@ contains
 
     subroutine make_equilibrium()
         !! Coarse (65 x 65) copy of the circular CHEASE equilibrium of the
-        !! KIN6D response study: A = 10, q0 = 1.55, q = 2 at psin 0.37 and
+        !! MILCA response study: A = 10, q0 = 1.55, q = 2 at psin 0.37 and
         !! q = 3 at psin 0.95 (n = 1).
         character(len=512) :: path
         real(dp), allocatable :: qs(:)

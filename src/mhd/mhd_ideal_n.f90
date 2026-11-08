@@ -1,4 +1,4 @@
-module kin6d_mhd_ideal_n
+module milca_mhd_ideal_n
     !! L4 (stage 3): volume current of the linear ideal-MHD perturbed
     !! equilibrium (static, omega = 0) in the form used by MEPHIT (Albert,
     !! Lainer and Biro, Comput. Phys. Commun. 277 (2022) 108401; Markl et al.,
@@ -21,9 +21,9 @@ module kin6d_mhd_ideal_n
     !! diagonal in the Fourier index k of theta_g: phi_k = rho_k/(i (k + n q)),
     !! singular only on rational surfaces (k + n q = 0), which are mesh rings
     !! and never half rings.  The resonant homogeneous solutions are the sheet
-    !! currents of kin6d_mhd_response_n, fixed by ideal shielding.
+    !! currents of milca_mhd_response_n, fixed by ideal shielding.
     !!
-    !! Equilibrium (kin6d_vacuum_surfaces conventions): B0_pol = (s/R)
+    !! Equilibrium (milca_vacuum_surfaces conventions): B0_pol = (s/R)
     !! (psi_Z, -psi_R), B0_phi = F/R, s = sgn(Ip) sgn(psi_edge - psi_axis);
     !! from mu0 curl(F/R e_phi) and radial force balance
     !!     mu0 J0_pol = (F'/R)(-psi_Z, psi_R),  J0_phi = -s (R p0' + F F'/(mu0 R)),
@@ -48,12 +48,12 @@ module kin6d_mhd_ideal_n
     use fortfem_meridian_feec_n, only: meridian_feec_t, &
         meridian_point_basis_t, meridian_point_basis, meridian_qpoint
     use fortfem_meridian_magnetic_coupling, only: meridian_edge_point
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_eval, profiles_of_psin, &
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_eval, profiles_of_psin, &
         surface_t, surface_build
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
-    use kin6d_mhd_ampere_n, only: mu0, ampere_n_error_t
-    use kin6d_ideal_response_error_leaves, only: ideal_ratio, ideal_tail
-    use kin6d_mhd_closure_n, only: frobenius_basis
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
+    use milca_mhd_ampere_n, only: mu0, ampere_n_error_t
+    use milca_ideal_response_error_leaves, only: ideal_ratio, ideal_tail
+    use milca_mhd_closure_n, only: frobenius_basis
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     implicit none
     private
@@ -786,9 +786,9 @@ contains
         !! of strips 2 .. nring, rings(nr) the boundary ring.  phi_tot returns
         !! the resonant fluxes of the total field on the closure flux rings.
         use fortnum_krylov, only: complex_gmres_operator
-        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+        use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
             ampere_n_error
-        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
+        use milca_mhd_response_n, only: layer_closure_t, closure_fluxes
         use fortsparse, only: csc_matvec
         use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
         type(meridian_feec_t), intent(in) :: fs
@@ -820,7 +820,7 @@ contains
         iters = 0
         resid = huge(1.0_dp)
         solve_status = 0
-        call get_environment_variable('KIN6D_L4_DEBUG', env)
+        call get_environment_variable('MILCA_L4_DEBUG', env)
         debug = len_trim(env) > 0
         nr = size(rings)
         ns = cl%ns
@@ -1022,4 +1022,4 @@ contains
         end subroutine final_error
     end subroutine ideal_response
 
-end module kin6d_mhd_ideal_n
+end module milca_mhd_ideal_n

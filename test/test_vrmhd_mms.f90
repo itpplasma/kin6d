@@ -1,9 +1,9 @@
 program test_vrmhd_mms
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section
     use vrmhd_mms_leaves, only: mms_rotation, mms_screw
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight

@@ -5,7 +5,7 @@
 !> eta = g/(hbar v), b90 = g/(mu v^2) = eta/k, lambdabar = 1/k. Screening is
 !> either a sharp impact-parameter (classical) / partial-wave (quantum) cut at
 !> lambda_D, kappa = k lambda_D, or the static Yukawa potential
-!> g exp(-r/lambda_D)/r (gen/kin6d_symbolic_physics.f90).
+!> g exp(-r/lambda_D)/r (gen/milca_symbolic_physics.f90).
 !>
 !> Every Coulomb logarithm is the momentum-transfer cross section normalized
 !> as lnL = sigma_tr/(4 pi b90^2); the Landau/Spitzer rates use it linearly.
@@ -26,15 +26,15 @@
 !> beyond r_turn + tail*lambda_D, matched to Riccati-Bessel functions by least
 !> squares. d delta_l/d eta from the same factorization (implicit equation-level
 !> tangent (H - E) da = -(dV/dg) a), not by differentiating iterations.
-module kin6d_quantum_collision_kernel
+module milca_quantum_collision_kernel
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_special_gamma, only: digamma_complex, trigamma_complex
     use fortnum_special_riccati_bessel, only: riccati_bessel
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
-    use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
-    use kin6d_coulomb_encounter_leaves, only: ce_mott
-    use kin6d_quantum_collision_leaves
+    use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
+    use milca_coulomb_encounter_leaves, only: ce_mott
+    use milca_quantum_collision_leaves
     implicit none
     private
     public :: SPIN_DISTINGUISHABLE, SPIN_SINGLET, SPIN_TRIPLET, SPIN_UNPOLARIZED
@@ -551,4 +551,4 @@ contains
         dlnl = dlnl/eta**2 - 2*lnl/eta
         if (present(viscosity)) viscosity = viscosity_from_phases(delta)/eta**2
     end subroutine yukawa_transfer_log
-end module kin6d_quantum_collision_kernel
+end module milca_quantum_collision_kernel

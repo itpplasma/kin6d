@@ -1,12 +1,12 @@
 # Plasma-physics capability catalogue
 
 Status: canonical long-range scope map, 2026-10-05. This document describes
-the **available design space KIN6D intends to cover**, not implementation order
+the **available design space MILCA intends to cover**, not implementation order
 and not a promise that every Cartesian product is meaningful.
 
 ## Product goal
 
-KIN6D aims to be a one-stop shop for **plasma physics below the QED
+MILCA aims to be a one-stop shop for **plasma physics below the QED
 boundary**, with a classical production hierarchy and quantum-fundamentals/
 dense-plasma extensions, across
 
@@ -31,7 +31,7 @@ selects a small number of vertical slices by scientific value and leverage.
 
 ## Microscopic relativistic parent
 
-Before continuum kinetics, KIN6D admits the full finite-\(N\), multispecies,
+Before continuum kinetics, MILCA admits the full finite-\(N\), multispecies,
 relativistic Maxwell--Lorentz particle-field system. The reduction ladder is
 
 \[
@@ -231,7 +231,7 @@ hard-coded.
 
 ### Matter/ionization regime
 
-KIN6D should span
+MILCA should span
 
 \[
 \text{fully ionized}
@@ -267,7 +267,7 @@ Radiation is an independent closure/state axis:
 
 This keeps radiation native where reduced transport is sufficient while
 avoiding a requirement to implement the entire non-LTE line-transfer discipline
-inside KIN6D.
+inside MILCA.
 
 See [radiation](radiation.md).
 
@@ -400,7 +400,7 @@ Spatial locality and timescale separation are independent assumptions.
 
 ## Waves and statistical closures
 
-KIN6D should support
+MILCA should support
 
 - prescribed quasilinear diffusion;
 - ray/eikonal transport;
@@ -433,7 +433,7 @@ These examples test coverage; they do not receive dedicated core modes.
 
 ## Deliberate outer boundary
 
-KIN6D may couple to but does not initially own:
+MILCA may couple to but does not initially own:
 
 - general QED: quantized-radiation dynamics, pair creation/annihilation,
   strong-field QED cascades and radiative QED corrections;

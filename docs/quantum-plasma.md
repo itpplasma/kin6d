@@ -2,7 +2,7 @@
 
 Status: canonical long-range scope. Quantum-plasma capabilities are reference,
 teaching and closure-validation branches unless a prioritized scientific case
-promotes them. They do not make every KIN6D calculation quantum.
+promotes them. They do not make every MILCA calculation quantum.
 
 The implemented microscopic cases, their claims, the measured findings and
 the remaining order are in
@@ -14,7 +14,7 @@ path. Stellar structure remains outside the sequence.
 
 ## Scope boundary
 
-KIN6D extends beyond the purely classical hierarchy far enough to expose and
+MILCA extends beyond the purely classical hierarchy far enough to expose and
 test the quantum assumptions that matter in plasmas:
 
 - Fermi--Dirac degeneracy and relativistic Fermi statistics;
@@ -31,7 +31,7 @@ test the quantum assumptions that matter in plasmas:
 - DFT/TDDFT or equivalent orbital-density methods as microscopic
   quantum-matter providers/references.
 
-The deliberate fundamental boundary is **QED**. KIN6D does not attempt a
+The deliberate fundamental boundary is **QED**. MILCA does not attempt a
 general quantum-field-theoretic electron/positron/photon solver. Pair creation,
 strong-field QED cascades, radiative QED corrections and fully dynamical
 quantized radiation fields are external specialties.
@@ -234,7 +234,7 @@ statistical/sign-problem status is explicit.
 
 Use Eulerian, spectral, DG, semi-Lagrangian, tensor-product, sparse-grid or
 low-rank phase-space methods. This is the quantum branch most directly aligned
-with KIN6D's Vlasov machinery.
+with MILCA's Vlasov machinery.
 
 ### Quantum hydrodynamics and EOS closures
 
@@ -324,7 +324,7 @@ A staged EOS path is
 This covers main-sequence/solar-interior and white-dwarf-like plasma physics
 within the non-QED/non-neutron-star regime. Neutron-star interiors require
 nuclear-density matter, strong-interaction physics, superfluidity/
-superconductivity and GR and remain outside KIN6D's intended ownership.
+superconductivity and GR and remain outside MILCA's intended ownership.
 
 General stellar burning may extend the reaction graph beyond D--T/DD/D3He to
 pp chains, CNO, triple-alpha and larger networks. Neutrino transport and
@@ -359,7 +359,7 @@ examples.
 The hierarchy intentionally stops before general quantum field theory. If the
 dominant physics requires creation/annihilation of particles, quantized
 electromagnetic radiation, strong-field nonlinear QED or radiative QED loop
-corrections, the problem is beyond KIN6D's native fundamentals branch.
+corrections, the problem is beyond MILCA's native fundamentals branch.
 
 The provider boundary may still pass QED-derived rates or closure data into a
 classical/quantum plasma calculation when that is scientifically useful.

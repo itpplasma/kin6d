@@ -19,8 +19,8 @@ program test_mhd_ampere_n
         meridian_load, meridian_point_basis_t, meridian_point_basis_init
     use fortsparse, only: csc_z_t, csc_matvec, csc_conjugate_transpose, &
         fortsparse_status_t
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl, ampere_n_trace, ampere_n_field_point, mu0
     implicit none
 

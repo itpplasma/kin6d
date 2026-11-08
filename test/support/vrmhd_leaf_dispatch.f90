@@ -1,6 +1,6 @@
 module vrmhd_leaf_dispatch
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vrmhd_leaves
+    use milca_vrmhd_leaves
     implicit none
     integer, parameter :: nleaf = 27, maxargs = 33
     integer, parameter :: nargs(nleaf) = [ &

@@ -1,4 +1,4 @@
-module kin6d_island_closure
+module milca_island_closure
     ! I1 declaration only. B fitting/projection belongs to I5, Taylor regions to I2/I8.
     implicit none
     private

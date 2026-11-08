@@ -10,11 +10,11 @@ module island_a_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_vacuum_fixture, only: r0, ftor, field, active_mode, coil_mu0, &
         make_coil, mean_psi, gauge_potential, annulus_mesh
-    use kin6d_mhd_mesh, only: flux_mesh_t
+    use milca_mhd_mesh, only: flux_mesh_t
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
+    use milca_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
         nn_vacuum_mode
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout
     implicit none
     private
     public :: island_a_setup, shell_source, island_a_sample_points

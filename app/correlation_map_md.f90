@@ -1,5 +1,5 @@
 !> Independent-method cross-check of the H1a Monte Carlo chains: molecular
-!> dynamics of the same OCP (kin6d_ocp: PME + encounter-resolved splitting,
+!> dynamics of the same OCP (milca_ocp: PME + encounter-resolved splitting,
 !> plasma units). Preparation: uniform positions, Maxwellian velocities,
 !> isokinetic rescaling every 5 steps during equilibration only (declared
 !> thermostat); production is thermostat-free NVE. Gamma maps to the
@@ -7,11 +7,11 @@
 module correlation_map_md
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_thermostat, &
+    use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_thermostat, &
         ocp_advance, ocp_kinetic_temperature
-    use kin6d_nbody, only: nbody_system_t, nbody_energy
-    use kin6d_pair_correlation, only: pair_counts, pair_distribution
-    use kin6d_series_statistics, only: series_autocorrelation
+    use milca_nbody, only: nbody_system_t, nbody_energy
+    use milca_pair_correlation, only: pair_counts, pair_distribution
+    use milca_series_statistics, only: series_autocorrelation
     implicit none
     private
     public :: md_result_t, md_run

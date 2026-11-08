@@ -1,4 +1,4 @@
-module kin6d_triangle_basis
+module milca_triangle_basis
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_generated_p1_basis, only: generated_p1_jet
     use fortfem_generated_p2_basis, only: generated_p2_jet
@@ -8,7 +8,7 @@ module kin6d_triangle_basis
         generated_factor_product_jet2_order1
     use fortfem_generated_factor_product_jet3_order2, only: &
         generated_factor_product_jet3_order2
-    use kin6d_segment_leaves, only: gs_segment_cubic_value, gs_segment_cubic_slopes
+    use milca_segment_leaves, only: gs_segment_cubic_value, gs_segment_cubic_slopes
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     implicit none
@@ -22,7 +22,7 @@ module kin6d_triangle_basis
         (TRIANGLE_MAX_DEGREE + 1)*(TRIANGLE_MAX_DEGREE + 2)/2
 contains
     pure subroutine triangle_node_powers(degree, powers)
-        ! Barycentric powers of the nodal basis in KIN6D's local order: the
+        ! Barycentric powers of the nodal basis in MILCA's local order: the
         ! three vertices, then the degree - 1 nodes of each edge k -> k + 1,
         ! then the interior nodes. Node i sits at powers(:, i)/degree.
         integer, intent(in) :: degree

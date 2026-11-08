@@ -1,4 +1,4 @@
-module kin6d_gs_coil_inverse
+module milca_gs_coil_inverse
     !! Inverse coil-current problem on the free-boundary solver (DESIGN 3.1 to
     !! 3.4, step P9).
     !!
@@ -65,9 +65,9 @@ module kin6d_gs_coil_inverse
                                                                           ieee_is_finite
     use fortnum_bvls, only: bounded_least_squares, BVLS_OK, BVLS_MAX_ITERATIONS
     use fortnum_gsvd, only: generalized_svd
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
                                       gs_fb_evaluate, gs_fb_factor, gs_fb_solve_block, &
                                       gs_fb_release, gs_fb_newton, gs_fb_locate, &
                                       GS_FB_OK, GS_FB_XPOINT, GS_FB_LIMITER
@@ -977,4 +977,4 @@ contains
         c = matmul(transpose(rep%xmat), delta)
     end function gs_ci_mode_coefficients
 
-end module kin6d_gs_coil_inverse
+end module milca_gs_coil_inverse

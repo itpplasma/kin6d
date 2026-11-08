@@ -2,8 +2,8 @@ program response_qualify
     !! One frozen root, 72 cases x two phases x two target rationals.
     !! Optional adapters only serialize inputs; all gates are owned here.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_response_qualification, only: response_record_t, qualification_t, &
+    use milca_result_io, only: run_t, result_file_t
+    use milca_response_qualification, only: response_record_t, qualification_t, &
         qualify_response
     implicit none
     integer, parameter :: maxrows = 288

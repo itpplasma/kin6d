@@ -1,15 +1,15 @@
 program test_vrmhd_section
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
         GS_SCREW, GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section
-    use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section
+    use milca_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
+    use milca_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
         vrmhd_curl_rotation, vrmhd_curl_screw
-    use kin6d_vrmhd_leaves, only: vrmhd_chi_flux_limited, &
+    use milca_vrmhd_leaves, only: vrmhd_chi_flux_limited, &
         vrmhd_chi_flux_limited_jvp, &
         vrmhd_chi_flux_limited_vjp
     use fortfem_mesh_2d, only: mesh_2d_t

@@ -2,7 +2,7 @@ module island_a_study_trace
     ! Field-line tracing on the converged provider field that marks lines
     ! leaving the mesh instead of stopping (open lines reach the walls).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_velocity
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_velocity
     implicit none
     type(free_b_field_t), pointer :: traced => null()
     logical :: left_mesh = .false.
@@ -42,8 +42,8 @@ program study_island_closure_a
     use nn_vacuum_fixture, only: field, r0, pi
     use island_a_study_trace, only: traced, left_mesh, rhs
     use fortnum_ode_cash_karp, only: cash_karp_step
-    use kin6d_nonnested_coupled, only: nc_problem_t
-    use kin6d_island_provider, only: island_provider_t, island_provider_init, &
+    use milca_nonnested_coupled, only: nc_problem_t
+    use milca_island_provider, only: island_provider_t, island_provider_init, &
         island_provider_solve, island_provider_sample, IP_OK, IP_CHI_PAR, &
         island_provider_provenance
     implicit none

@@ -7,7 +7,7 @@ program test_poisson
                                   solve_coupled_steady, coupled_sample, &
                                   coupled_reference, coupled_certificate_radius, &
                                   coupled_certificate_accepts
-    use kin6d_poisson_leaves, only: poisson_coefficients_jvp, &
+    use milca_poisson_leaves, only: poisson_coefficients_jvp, &
                                    poisson_coefficients_vjp, &
                                    poisson_reconstruct_interval, &
                                    coupled_distribution_interval, &
@@ -15,7 +15,7 @@ program test_poisson
                                    coupled_density, coupled_collision, &
                                    coupled_collision_jvp, coupled_collision_vjp, &
                                    coupled_source_jvp
-    use kin6d_leaves, only: coordinate
+    use milca_leaves, only: coordinate
     implicit none
     real(dp), parameter :: pi = 3.141592653589793238462643383279502884_dp
     real(dp), parameter :: tolerance = 2.0e-14_dp

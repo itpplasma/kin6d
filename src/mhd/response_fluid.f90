@@ -1,13 +1,13 @@
-module kin6d_response_fluid
+module milca_response_fluid
     !! Point residual of non-rotating, single-fluid R2-R4 with full pressure.
     !! Cartesian physical jets are supplied by the spatial discretisation.
     !! gamma = -i omega; eta is electrical resistivity in Ohm m (SI).
     !! This kernel does not discretise or solve a strip or an outer interface.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_response_fluid_leaves, only: fluid_pressure, fluid_force, &
+    use milca_response_fluid_leaves, only: fluid_pressure, fluid_force, &
         fluid_pressure_vjp, fluid_force_vjp, fluid_stress, fluid_stress_vjp, &
         fluid_cut_balance, fluid_cut_balance_vjp
-    use kin6d_mhd_ampere_n, only: mu0
+    use milca_mhd_ampere_n, only: mu0
     implicit none
     private
 
@@ -254,4 +254,4 @@ contains
                          electric(3), velocity(3), current(3), magnetic(3), gp(3), &
                          out(1), out(2), out(3), out(4), out(5), out(6))
     end subroutine force_part
-end module kin6d_response_fluid
+end module milca_response_fluid

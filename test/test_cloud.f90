@@ -1,9 +1,9 @@
 program test_cloud
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_microscopic_cloud, only: cloud_model_t, cloud_system, cloud_initialize
-    use kin6d_nbody, only: nbody_system_t, nbody_force, nbody_step
-    use kin6d_coulomb_leaves, only: coulomb_sphere_inside, coulomb_pair, &
+    use milca_microscopic_cloud, only: cloud_model_t, cloud_system, cloud_initialize
+    use milca_nbody, only: nbody_system_t, nbody_force, nbody_step
+    use milca_coulomb_leaves, only: coulomb_sphere_inside, coulomb_pair, &
                                     coulomb_sphere_inside_jvp, coulomb_sphere_inside_vjp
     implicit none
     type(cloud_model_t) :: model

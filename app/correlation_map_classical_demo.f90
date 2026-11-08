@@ -1,7 +1,7 @@
 !> H1a: classical correlation-hierarchy map of the 3D OCP versus Gamma
 !> (docs/correlation-hierarchy.md). Canonical Metropolis MC (incremental
-!> Ewald, kin6d_ocp_monte_carlo) at each Gamma and two N; one MD cross-check
-!> (kin6d_ocp, PME + encounter splitting, thermostat only in equilibration).
+!> Ewald, milca_ocp_monte_carlo) at each Gamma and two N; one MD cross-check
+!> (milca_ocp, PME + encounter splitting, thermostat only in equilibration).
 !> Estimators: g2, S(k), g3, cumulants c3/U3, Kirkwood defect, conditional
 !> mean force; YBG closures (exact force, Kirkwood, first order); HNC and
 !> Debye-Hueckel reduced models; fluctuation derivative du/dGamma.
@@ -10,15 +10,15 @@
 !> and output/correlation-map-*.png.
 program correlation_map_classical_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_ocp_monte_carlo
-    use kin6d_correlation_hierarchy
-    use kin6d_ocp_hnc
-    use kin6d_series_statistics
-    use kin6d_pair_correlation, only: pair_counts, pair_distribution, structure_factor
-    use kin6d_correlation_hierarchy_leaves, only: ch_debye_wavenumber, &
+    use milca_ocp_monte_carlo
+    use milca_correlation_hierarchy
+    use milca_ocp_hnc
+    use milca_series_statistics
+    use milca_pair_correlation, only: pair_counts, pair_distribution, structure_factor
+    use milca_correlation_hierarchy_leaves, only: ch_debye_wavenumber, &
         ch_debye_hueckel_g, ch_debye_hueckel_linear_g, ch_debye_hueckel_energy, &
         ch_energy_fluctuation_derivative
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     use correlation_map_md, only: md_result_t, md_run
     use correlation_map_plots, only: plot_all
     use correlation_map_types

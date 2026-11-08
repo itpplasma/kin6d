@@ -1,7 +1,7 @@
 program test_gs_inverse
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_axis_candidate, gs_profile_implicit_response
-    use kin6d_gs_inverse, only: gs_inverse_result_t, gs_toroidal_flux, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_axis_candidate, gs_profile_implicit_response
+    use milca_gs_inverse, only: gs_inverse_result_t, gs_toroidal_flux, &
         solve_gs_constant_q
     implicit none
     type(gs_state_t) :: state, circular, reversed

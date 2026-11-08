@@ -22,18 +22,18 @@ program test_ideal_map_parallel
     !                      solves take another Newton path, and the end-point
     !                      oracle error agrees with the baseline.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
         ideal_map_hessian, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_parallel_mass, ideal_map_rdof, ideal_map_point, ideal_map_expand, &
         IDEAL_MAP_BAD_INPUT
-    use kin6d_ideal_seed, only: nested_seed_t, ideal_seed_init
+    use milca_ideal_seed, only: nested_seed_t, ideal_seed_init
     use fortfem_element_to_csr, only: csr_matrix_t
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use ideal_map_cases, only: setup_case, boundary_point, phi_edge, &
         solovev_profile_t, pi, a, psi_exact, psi_axis
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     implicit none
     character(16) :: mode, arg
     integer :: n = 32, degree = 2

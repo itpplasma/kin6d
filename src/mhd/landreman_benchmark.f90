@@ -1,9 +1,9 @@
-module kin6d_landreman_benchmark
+module milca_landreman_benchmark
     ! Numerical benchmark data, mu0=1. No validated continuation/error bound.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
+    use milca_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
                                       landreman_current_ray, landreman_toroidal_external
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     use fortnum_quadrature, only: gauss_legendre
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     implicit none
@@ -164,4 +164,4 @@ contains
         bc(1) = bc(1) + drive%circulation*gg(2)/r
         bc(3) = bc(3) - drive%circulation*gg(1)/r
     end subroutine
-end module kin6d_landreman_benchmark
+end module milca_landreman_benchmark

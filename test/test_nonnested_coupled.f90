@@ -6,8 +6,8 @@ module nn_coupled_case
     ! B.grad p = 0.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, pp, laplacian
-    use kin6d_equilibrium_nonnested, only: free_b_field_t
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
+    use milca_equilibrium_nonnested, only: free_b_field_t
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     implicit none
     real(dp) :: chi_perp = 1, g0 = 1
     type(free_b_field_t) :: field
@@ -49,15 +49,15 @@ program test_nonnested_coupled
         sample_cartesian
     use g6_external_comparison, only: g6_comparison_t, compare_external_samples
     use g6_solovev_oracle, only: exact_flux, exact_iota
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
-    use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_PSI, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_nonnested_residual, only: nn_residual
+    use milca_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_PSI, &
         EQ_P
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
         nc_layout, nc_residual, nc_jacobian, nc_solve, nc_fixed
     implicit none
     type(nc_problem_t) :: problem

@@ -2,12 +2,12 @@ program test_transport_sampling
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval
-    use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
+    use milca_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport, sample_transport_coefficients_interval
-    use kin6d_transport_certificate, only: transport_certificate_t, &
+    use milca_transport_certificate, only: transport_certificate_t, &
         certify_transport_tangent, certify_transport_sample, &
         certify_transport_tangent_sample
-    use kin6d_transport_sampling, only: transport_basis_t, &
+    use milca_transport_sampling, only: transport_basis_t, &
         transport_sampling_workspace_t, initialize_transport_sampling, &
         prepare_transport_basis, sample_transport_cached, &
         sample_transport_input_cached, &

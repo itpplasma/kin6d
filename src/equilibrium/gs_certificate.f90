@@ -1,25 +1,25 @@
-module kin6d_gs_certificate
+module milca_gs_certificate
     ! Fixed-boundary estimates prefer local RT equilibration. The legacy
     ! functional recovery remains a fallback, and neither sampled quadrature
     ! nor floating-point geometry is silently promoted to a certificate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_certificate, only: equilibrium_certifier_t, &
+    use milca_equilibrium_certificate, only: equilibrium_certifier_t, &
         EQ_STABILITY_NONE, EQ_STABILITY_ESTIMATE, EQ_STABILITY_BOUND
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_grad_shafranov_leaves, only: gs_source
-    use kin6d_gs_profile_law, only: gs_law_sources
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_grad_shafranov_leaves, only: gs_source
+    use milca_gs_profile_law, only: gs_law_sources
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t, GS_EQ_OK
-    use kin6d_gs_error_control, only: gs_stability_t, gs_fixed_stability, &
+    use milca_gs_error_control, only: gs_stability_t, gs_fixed_stability, &
         gs_fixed_source_stability, GS_ERROR_OK
-    use kin6d_gs_quadrature_budget, only: gs_checked_equilibrated_majorant, &
+    use milca_gs_quadrature_budget, only: gs_checked_equilibrated_majorant, &
         GS_CHECKED_OK
     use fortnum_interval, only: interval_t
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: gs_forcing_t
-    use kin6d_gs_free_boundary, only: gs_fb_system_t
-    use kin6d_gs_majorant, only: gs_functional_majorant, gs_fb_majorant, &
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: gs_forcing_t
+    use milca_gs_free_boundary, only: gs_fb_system_t
+    use milca_gs_majorant, only: gs_functional_majorant, gs_fb_majorant, &
         gs_coupled_estimator_t, gs_fb_majorant_t, GS_CM_OK
     implicit none
     private
@@ -185,4 +185,4 @@ contains
         stability = certifier%last%beta
         kind = EQ_STABILITY_ESTIMATE
     end subroutine
-end module kin6d_gs_certificate
+end module milca_gs_certificate

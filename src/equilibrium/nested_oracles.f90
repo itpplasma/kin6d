@@ -1,9 +1,9 @@
-module kin6d_nested_oracles
+module milca_nested_oracles
     ! Exact nested ideal-MHD references, mu0=1. No solver uses these as forcing.
     ! Local mathematics (including derivatives) is in gen/gen_nested_oracles.f90.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
-    use kin6d_nested_oracle_leaves, only: nested_integer_field, &
+    use milca_nested_oracle_leaves, only: nested_integer_field, &
                  nested_sheared_field, nested_integer_surface, nested_sheared_surface, &
                                           nested_setup, nested_integer_domain, &
      nested_ray, nested_reduce, nested_integer_field_interval, &

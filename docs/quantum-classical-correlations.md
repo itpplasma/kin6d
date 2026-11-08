@@ -9,7 +9,7 @@ How large are diffraction, exchange and degeneracy effects on pair and
 three-body correlations, measured against the classical parent with the
 same N, periodic cube, uniform neutralizing background, density and
 temperature? Electrons only, atomic units, `r_s`, `Theta = kT/E_F` and
-`Gamma = g/(a kT)` from `kin6d_species` (`a = r_s`). On the grid
+`Gamma = g/(a kT)` from `milca_species` (`a = r_s`). On the grid
 `Gamma = r_s/(1.8416 Theta)` and the thermal wavelength
 `lambda_T = (2 pi hbar^2/(m kT))^(1/2)` gives `lambda_T/a = 1.847 Theta^(-1/2)`,
 a function of `Theta` alone.
@@ -17,7 +17,7 @@ a function of `Theta` alone.
 ## Models (one cell, two mechanics)
 
 - Classical parent (`src/classical/classical_cell.f90`): N point electrons with the
-  shared Ewald energy (`kin6d_nbody`/`kin6d_ewald`). The energy is pairwise
+  shared Ewald energy (`milca_nbody`/`milca_ewald`). The energy is pairwise
   additive with the zero-mean Ewald pair potential `u` (Fourier `Q = 0`
   removed, as in the quantum Hamiltonian). Spin does not enter the classical
   Boltzmann weight; spin labels are spectators with probability 1/2 that a
@@ -28,13 +28,13 @@ a function of `Theta` alone.
   - N = 3, 4: canonical Metropolis Monte Carlo with single-particle moves
     by the one periodic-cell sampler shared with H1a
     (`src/classical/ocp_monte_carlo.f90`, `mc_setup_cell`: incremental Ewald with a
-    real image cube chosen by the `kin6d_ewald` cost model). The Kelbg and
+    real image cube chosen by the `milca_ewald` cost model). The Kelbg and
     Kelbg+Pauli laws are a declared short-range addition
     (`src/pairs/pair_law.f90`) on top of the one Ewald Coulomb energy.
     Intervals are batch-means statistical errors (40 batches,
-    `kin6d_series_statistics`). They are labelled statistical, never
+    `milca_series_statistics`). They are labelled statistical, never
     certified. The N = 2 quadrature uses the independent two-body
-    `kin6d_nbody` pair potential and is the sampler's oracle.
+    `milca_nbody` pair potential and is the sampler's oracle.
 - Exact quantum N = 2 (`src/quantum/quantum_pair_cell.f90`): the centre of mass and
   relative coordinate separate exactly on the torus. The relative wave
   function is periodic or antiperiodic per axis according to the parity of
@@ -44,11 +44,11 @@ a function of `Theta` alone.
   `pi/L`) are kept. `kmax2` makes the cutoff kinetic energy at least
   `tau kT` at the largest Theta (tau = 36). The cutoff indicator repeats the
   calculation with tau = 25.
-- Q4 cell for N = 3, 4 (`kin6d_jellium_cell`): every `(S_z, K)` sector is
+- Q4 cell for N = 3, 4 (`milca_jellium_cell`): every `(S_z, K)` sector is
   diagonalized densely (`jellium_full_spectrum`), so the canonical ensemble
   has no thermal truncation. The plane-wave cutoff (`|n|^2 <= c`) stays the
   limiting approximation.
-- Ideal fermions: Q3 `kin6d_fermion_ensemble` with fixed-N_sigma states,
+- Ideal fermions: Q3 `milca_fermion_ensemble` with fixed-N_sigma states,
   combined over all `S_z` with weights `Z_{N_up} Z_{N-N_up}`. The same Q4
   cell at coupling 0 serves as the ideal reference for three-body moments.
 

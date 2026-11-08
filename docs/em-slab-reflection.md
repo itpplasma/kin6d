@@ -4,14 +4,14 @@ Teaching case for the plasma-oscillation chapter: a plane electromagnetic wave
 at normal incidence on a cold electron plasma with a sharp edge. Below the
 electron plasma frequency the wave is reflected and the field decays inside
 over the skin depth; above it the wave is transmitted with the cold-plasma
-wavelength. It is the first kin6d case that couples particles to the full
+wavelength. It is the first milca case that couples particles to the full
 (one-dimensional) Maxwell equations rather than to an electrostatic field.
 
 Status: **candidate**. The dynamics is an untrusted PIC realization; the
 reported reflection/transmission coefficients, skin depth and wavelength are
 lock-in estimates compared with the linear cold-plasma oracle. No enclosure is
 claimed. Files: `src/em_slab.f90`, generator `gen/gen_em_slab.f90` with the
-emitted leaves `src/generated/kin6d_em_slab_leaves.f90`, tests
+emitted leaves `src/generated/milca_em_slab_leaves.f90`, tests
 `test/test_em_slab.f90`, application `app/em_slab_demo.f90`.
 
 ## Model
@@ -221,5 +221,5 @@ transverse and longitudinal displacements of sample electron sheets in
 \([0,4]\,c/\omega_{pe}\), the linear-theory and measured steady envelopes, and
 the measured and theoretical coefficients as declared parameters. Regenerate
 the leaves with a FortSym build at the pinned revision
-(`-DKIN6D_FORTSYM_BUILD=...`, target `gen_em_slab`, run from the source
+(`-DMILCA_FORTSYM_BUILD=...`, target `gen_em_slab`, run from the source
 directory).

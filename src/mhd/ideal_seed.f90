@@ -1,4 +1,4 @@
-module kin6d_ideal_seed
+module milca_ideal_seed
     ! Nested seed of the frozen-in energy map from a boundary and profiles
     ! (DESIGN 7.1, VMEC's interpolated initial guess made regular at the axis).
     ! The boundary b(t) = R + iZ, t in [0, 1), counter-clockwise, is extended
@@ -10,7 +10,7 @@ module kin6d_ideal_seed
     ! are smooth at the seed axis (a ray map y = c + rho (b - c) is only C1
     ! there unless the boundary is a circle about c, which caps the map's
     ! convergence order). Profiles are q(s) and p(s) in the normalised poloidal
-    ! flux s = |zeta|^2 with the total toroidal flux Phi_edge, as in KIN6D's 2D
+    ! flux s = |zeta|^2 with the total toroidal flux Phi_edge, as in MILCA's 2D
     ! prescribed-q solve:
     !     psi_axis = -Phi_edge/(2 pi int_0^1 q ds),   chi = psi_axis (1 - s),
     !     b3 = 4 pi |psi_axis| q(s) / (R K(s)),
@@ -24,8 +24,8 @@ module kin6d_ideal_seed
     ! diffeomorphism for convex boundaries (Rado-Kneser-Choquet); init checks
     ! det DY > 0 on a polar grid.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_curved_triangle, only: boundary_curve
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_curved_triangle, only: boundary_curve
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_fft, only: fft_c2c
     implicit none
@@ -223,4 +223,4 @@ contains
         call field%profile%evaluate(s, q, pressure)
         b3 = 4*pi*abs(field%psi_axis)*q/(point(1)*shell_weight(field, s))
     end subroutine
-end module kin6d_ideal_seed
+end module milca_ideal_seed

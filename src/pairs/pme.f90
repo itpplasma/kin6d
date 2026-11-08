@@ -1,7 +1,7 @@
 !> Particle-mesh Ewald (PME) action of the periodic Coulomb sum: the fast
-!> counterpart of the direct Ewald sum of kin6d_nbody, which stays the oracle.
+!> counterpart of the direct Ewald sum of milca_nbody, which stays the oracle.
 !>
-!> Same convention as kin6d_ewald/kin6d_symbolic_physics: cube of edge L,
+!> Same convention as milca_ewald/milca_symbolic_physics: cube of edge L,
 !> neutralizing uniform background, tin-foil boundary, Ewald parameter alpha.
 !> - Real space: g erfc(alpha r)/r for minimum-image pairs with r < cutoff,
 !>   cutoff < L/2, found by a linked cell list (no image beyond the minimum
@@ -20,14 +20,14 @@
 !> function for uncorrelated positions (computed here as an alias sum).
 !> Both are estimates; tests measure the error against direct Ewald.
 !> Hot path: no allocation, no all-pairs matrix, no dynamic dispatch.
-module kin6d_pme
+module milca_pme
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
-    use kin6d_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp, &
+    use milca_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp, &
         ewald_self, ewald_background, ewald_reciprocal_weight
-    use kin6d_near_encounter, only: near_split_t, near_pair, near_pair_jvp
-    use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8, &
+    use milca_near_encounter, only: near_split_t, near_pair, near_pair_jvp
+    use milca_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8, &
         pme_assignment_factor
     implicit none
     private
@@ -681,4 +681,4 @@ contains
                 s(4), s(5), s(6), s(7), s(8))
         end select
     end subroutine
-end module kin6d_pme
+end module milca_pme

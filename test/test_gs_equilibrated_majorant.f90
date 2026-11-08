@@ -6,10 +6,10 @@ program test_gs_equilibrated_majorant
     !! at the energy-error rate h^p and an efficiency index close to one, for
     !! P1, P2 and P3, and compares with the global functional majorant.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_linear_response, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_linear_response, &
         gs_cell_data
-    use kin6d_gs_majorant, only: gs_functional_majorant
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_gs_majorant, only: gs_functional_majorant
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t, GS_EQ_OK
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none

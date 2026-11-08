@@ -1,19 +1,19 @@
 program shielding_dynamics_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, linear_interpolation_remainder
-    use kin6d_shielding_dynamics, only: shielding_state_t, init_shielding, &
+    use milca_shielding_dynamics, only: shielding_state_t, init_shielding, &
                              advance_shielding, sample_shielding, shielding_plot_padding
-    use kin6d_shielding_dynamics_leaves, only: shielding_coordinate, shielding_time, &
+    use milca_shielding_dynamics_leaves, only: shielding_coordinate, shielding_time, &
                        shielding_mode, shielding_equilibrium, shielding_band_interval, &
         shielding_time_curvature_interval, shielding_radius_width_interval, &
         shielding_interval_length_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, &
           fill_between, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, &
           suptitle, set_yscale
-    use kin6d_demo_style, only: blue, black, grey, movie_fps, hold_frames, num
+    use milca_demo_style, only: blue, black, grey, movie_fps, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: modes = 6
     ! 193 frames span t = 0..4 in 8 s at 24 fps; a one-second hold follows.

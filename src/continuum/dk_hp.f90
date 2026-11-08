@@ -1,5 +1,5 @@
 !> Monoenergetic drift-kinetic coefficients D11, D31, D13, D33 on an
-!! axisymmetric surface, the equation of kin6d_dk_mono, by continuous
+!! axisymmetric surface, the equation of milca_dk_mono, by continuous
 !! spectral elements on a mesh of the (theta, xi) cylinder that is fitted to
 !! the orbit classes.
 !!
@@ -24,10 +24,10 @@
 !! the second coordinate. The weak form uses the measure (1/b^2) dtheta dxi/2
 !! of the flux-surface and pitch averages, in which streaming is
 !! divergence free; there is no inflow boundary, so no upwinding. The
-!! density null space is bordered as in kin6d_dk_mono, and the system is
+!! density null space is bordered as in milca_dk_mono, and the system is
 !! factorised once by a sparse direct solver; adjoint solves reuse the
 !! factors through the transpose.
-module kin6d_dk_hp
+module milca_dk_hp
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre, gauss_lobatto_legendre
     use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights
@@ -35,8 +35,8 @@ module kin6d_dk_hp
         sparse_solve_op, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_OP_NORMAL, FORTSPARSE_OP_TRANSPOSE, FORTSPARSE_BACKEND_NATIVE, &
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
-    use kin6d_dk_hp_leaves, only: dk_hp_point, dk_hp_stream, dk_hp_ntv
-    use kin6d_dk_mono, only: mono_coefficients_t
+    use milca_dk_hp_leaves, only: dk_hp_point, dk_hp_stream, dk_hp_ntv
+    use milca_dk_mono, only: mono_coefficients_t
     implicit none
     private
     public :: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_system_t, &
@@ -65,7 +65,7 @@ module kin6d_dk_hp
     end type
 
     !> Operator per unit speed: b.grad theta = k b**k_power, nu = nu_D/v; for
-    !! one toroidal harmonic n of the NTV problem (kin6d_dk_ntv) also q, the
+    !! one toroidal harmonic n of the NTV problem (milca_dk_ntv) also q, the
     !! speed v, omega_E, the precession prefactor pre and offset, the drift
     !! weight sign wsign and the perturbation c_m exp(i m theta).
     type :: hp_operator_t
@@ -570,7 +570,7 @@ contains
     end subroutine sort_desc
 
     !> Flux kernel R = int dtheta dxi (2/b)(1 + wsign xi^2)/b Re(S^* F) of one
-    !! toroidal harmonic (the kernel of kin6d_dk_ntv), op%k the constant
+    !! toroidal harmonic (the kernel of milca_dk_ntv), op%k the constant
     !! b.grad theta (k_power = 0) or k b (k_power = 1). Without a null space
     !! the complex system is solved directly.
     subroutine hp_ntv_kernel(f, mesh, op, r, status, n_dof)
@@ -818,4 +818,4 @@ contains
         th = modulo(th, 2*pi)
     end function newton_extremum
 
-end module kin6d_dk_hp
+end module milca_dk_hp

@@ -1,4 +1,4 @@
-module kin6d_ideal_free_boundary_bem3d
+module milca_ideal_free_boundary_bem3d
     !! R2 adapter for the fixed coupling surface of the ideal-map shell.
     !! Plasma Gamma_p remains free and fully 3D; Gamma_c is fixed.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -7,11 +7,11 @@ module kin6d_ideal_free_boundary_bem3d
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
                                           bem_pair_report_t, build_p2_trace_connectivity
     use fortfem_generated_bem_frame, only: bem_frame
-    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
-    use kin6d_triangle_basis, only: triangle_basis_jet
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
+    use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
+    use milca_triangle_basis, only: triangle_basis_jet
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
         gamma_c_3d_build_periodic
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_attach_exterior_3d, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_attach_exterior_3d, &
                                    ideal_fb_full_turn_traces, IDEAL_FB_BAD_INPUT
     implicit none
     private

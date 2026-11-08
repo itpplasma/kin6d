@@ -1,12 +1,12 @@
 module ideal_map_hessian_oracle
-    ! Frozen copy of the coefficient-Hessian assembly of kin6d_ideal_map before
+    ! Frozen copy of the coefficient-Hessian assembly of milca_ideal_map before
     ! its sum factorisation (point loop with per-point rank updates, then
     ! P^T H P and reflection). It is the independent oracle of the production
     ! assembly in test_ideal_map_hessian: same definition, different loop
     ! structure. Do not optimise or share code with src/mhd/ideal_map.f90.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_map_t
-    use kin6d_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
+    use milca_ideal_map, only: ideal_map_t
+    use milca_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
         ideal_energy_hessian
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks

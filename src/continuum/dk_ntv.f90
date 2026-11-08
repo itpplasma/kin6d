@@ -70,16 +70,16 @@
 !! = |B|/B_ref. The perturbation spectrum (any m, n) and q stay in the
 !! surface. Tangents along (eps, k, offset, c_J) exist only for the circular
 !! surface.
-module kin6d_dk_ntv
+module milca_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortnum_fourier, only: fourier_derivative
-    use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
+    use milca_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
     use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
-    use kin6d_dk_collop, only: collop_species_t, collop_grid_t, collop_t, collop_build, &
+    use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_t, collop_build, &
         collop_moments, collop_vth, collop_nuhat, COLLOP_OK, COLLOP_FULL, &
         COLLOP_TEST_PARTICLE, COLLOP_LORENTZ
-    use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, MONO_OK
+    use milca_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, MONO_OK
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
@@ -1032,4 +1032,4 @@ contains
 
     include 'dk_ntv_energy.inc'
 
-end module kin6d_dk_ntv
+end module milca_dk_ntv

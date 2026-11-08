@@ -1,4 +1,4 @@
-module kin6d_gs_coils
+module milca_gs_coils
     !! Coils and circuits for the free-boundary Grad-Shafranov problem.
     !!
     !! Flux convention.  Every coil flux is the poloidal flux per radian
@@ -34,7 +34,7 @@ module kin6d_gs_coils
     !! Text coil table (neutral format; units m, A, turns).  Lines; '#'
     !! starts a comment; tokens are blank separated; names contain no blank.
     !!
-    !!     kin6d-coil-table 1
+    !!     milca-coil-table 1
     !!     coil NAME rect R Z DR DZ TURNS [quad=N] [fil=SIZE]
     !!     coil NAME filament R Z TURNS
     !!     circuit NAME IMIN IMAX MEMBER [MEMBER ...]
@@ -49,7 +49,7 @@ module kin6d_gs_coils
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_rect_coil_t, &
         gs_rect_coil_flux, gs_rect_coil_flux_gradient, gs_green, gs_green_gradient
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     implicit none
     private
 
@@ -352,7 +352,7 @@ contains
 
         open (newunit=u, file=path, status='replace', action='write', iostat=stat)
         if (stat /= 0) return
-        write (u, '(a)') 'kin6d-coil-table 1'
+        write (u, '(a)') 'milca-coil-table 1'
         write (u, '(a)') '# units: m, A, turns; flux per ampere includes turns'
         do c = 1, size(set%coils)
             associate (coil => set%coils(c))
@@ -429,8 +429,8 @@ contains
             call split_tokens(line, tok, ntok)
             if (ntok == 0) cycle
             if (.not. header) then
-                if (ntok /= 2 .or. tok(1) /= 'kin6d-coil-table' .or. tok(2) /= '1') then
-                    call fail(11, 'missing header "kin6d-coil-table 1"')
+                if (ntok /= 2 .or. tok(1) /= 'milca-coil-table' .or. tok(2) /= '1') then
+                    call fail(11, 'missing header "milca-coil-table 1"')
                     exit
                 end if
                 header = .true.
@@ -658,4 +658,4 @@ contains
         call move_alloc(tmp, inc)
     end subroutine grow_incidence
 
-end module kin6d_gs_coils
+end module milca_gs_coils

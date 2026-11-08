@@ -1,9 +1,9 @@
 # 3D free boundary of the map lane (N4)
 
 Status: first implementation on branch `gs-3d-free-boundary` (built on the N1
-map lane and the L4 per-n BEM). Design: kin6d_3d_tc24 DESIGN §7.3, row N4;
+map lane and the L4 per-n BEM). Design: milca_3d_tc24 DESIGN §7.3, row N4;
 [equilibrium-core.md](equilibrium-core.md) D3, D6, D8. Module
-`kin6d_ideal_free_boundary` (`src/mhd/ideal_free_boundary.f90`), vacuum leaves
+`milca_ideal_free_boundary` (`src/mhd/ideal_free_boundary.f90`), vacuum leaves
 `gen/gen_vacuum_shell.f90`, driver `app/gs_free_3d.f90`.
 Formulation theory and proof-obligation map: [free-boundary-theory.md](free-boundary-theory.md).
 Circuit currents as parameters of this residual (JVP/VJP, coil circuits):
@@ -166,7 +166,7 @@ below used an incomplete real-phase block and is superseded by the
 
 DCON reports this FB-cut state n = 3 unstable without a wall (−0.097). The
 historical comparison does not establish disagreement between the physical
-models: the KIN6D probe omitted the sine partner. [H] Resolution of the
+models: the MILCA probe omitted the sine partner. [H] Resolution of the
 edge-current drive and differences between the supplied equilibria still need
 the corrected resolution ladder.
 
@@ -175,8 +175,8 @@ ellipse, which violates the formulation (coils must be outside Γ_c). The first
 scan used that ellipse and is invalid. `gamma_c_scale = 1.08` (the 2D boundary
 scaled about the axis, 0.31 m coil clearance) is the RMP setting.
 
-FB-taper(0.997, w = 0.0228), the adopted stable family. Reference: KIN6D 2D
-`kin6d_fbtaper0997_w023n_fwdref_20261013_01/cases/fwd_p3_l3`.
+FB-taper(0.997, w = 0.0228), the adopted stable family. Reference: MILCA 2D
+`milca_fbtaper0997_w023n_fwdref_20261013_01/cases/fwd_p3_l3`.
 
 - Resolution limits accuracy and convergence. With 128 chain and 192 Γ_c
   nodes, r0 sits 1.77 mm (max) from the 2D boundary and Newton creeps at
@@ -416,7 +416,7 @@ with μ0 = 1, δ = 0.01, ψ = (R² − 1)²/4 + Z² and S0 = {ψ = δ}:
   −2(R² − 1)/sqrt(1 − 4ψ)).
 
 `gen/gen_landreman.f90` retains these definitions and emits checked-in primal,
-JVP and VJP leaves in `src/generated/kin6d_landreman_leaves.f90`. Six exact
+JVP and VJP leaves in `src/generated/milca_landreman_leaves.f90`. Six exact
 FortSym native zero tests check divergence, field tangency, all three force
 balance components and current tangency. UNKNOWN fails; no probe is accepted.
 CTest checks the invariants at roundoff, the current against an independent
@@ -425,7 +425,7 @@ the Euclidean scalar-input/output pairing. No CAS is required for ordinary
 builds. To regenerate with the repository-pinned FortSym build:
 
 ```sh
-cmake -S . -B build -DKIN6D_FORTSYM_BUILD=/path/to/pinned/fortsym/build
+cmake -S . -B build -DMILCA_FORTSYM_BUILD=/path/to/pinned/fortsym/build
 cmake --build build --target gen_landreman
 ./build/gen_landreman
 ```
@@ -474,7 +474,7 @@ Measured numerical evidence (GNU Fortran, Release, two OpenMP threads):
 | ψ-lane interior poloidal field error | 3.2e-4 → 3.3e-5 |
 | ψ-lane interior pressure error (μ0-scaled) | 4.8e-5 → 4.9e-6 |
 
-The same test also runs `kin6d_gs_free_boundary` on both meshes with the
+The same test also runs `milca_gs_free_boundary` on both meshes with the
 fitted rings as ordinary filament coils. Its χ = −ψ convention requires
 p′ = 2/μ0 and FF′ = 2, and circuit current scale 1/μ0 for the dimensionless
 ring coefficients. The target-mean boundary functional sets χ_b on S0.
@@ -593,28 +593,28 @@ named rigid displacement; it is not a full-spectrum stability claim.
 total -0.09743 (imaginary part 1.21e-5). Its input has `wall = .false.`.
 DCON constructs W_T = W_P + W_V in `dcon/free.f`, normalizes boundary response
 vectors with `jmat/v1`, and contracts both matrices with the same eigenvector.
-It does not use a volume kinetic-energy norm. KIN6D uses |diag H|, so the
-magnitudes -0.09743 and a KIN6D Rayleigh quotient cannot be compared directly.
-The KIN6D ledger prints raw plasma, vacuum, exterior, constraint and total
+It does not use a volume kinetic-energy norm. MILCA uses |diag H|, so the
+magnitudes -0.09743 and a MILCA Rayleigh quotient cannot be compared directly.
+The MILCA ledger prints raw plasma, vacuum, exterior, constraint and total
 half-quadratic forms for the same converged vector. Exterior is the negative
 potential co-energy trace term; vacuum includes it and shell geometry work.
 It must not be added a second time. A conducting-wall contribution is absent;
 Gamma_c is a transparent coupling surface, not a perfectly conducting wall.
 
-[V] KIN6D's frozen pressure has gamma = 0 (`gen/gen_ideal_map.f90`), without
+[V] MILCA's frozen pressure has gamma = 0 (`gen/gen_ideal_map.f90`), without
 an explicit incompressibility constraint or mass-density operator. The
 cylinder displacement above is incompressible, so its comparison does not
 rely on interpreting gamma = 0 as incompressibility. [H] Equivalence of the
 full ITER regular displacement space and DCON's minimized singular-surface
 response space needs a separate comparison on matched equilibrium data and
-the same boundary displacement. The 2D KIN6D re-solve and the imported DCON
+the same boundary displacement. The 2D MILCA re-solve and the imported DCON
 state must not be assumed identical merely because both are called FB-cut.
 
 [V] FB-D2 relates physical Morse index to bordered KKT inertia only under
 vacuum-block negativity and full rank of the constraints plus slide rows.
 `ideal_fb_hypotheses` tests these numerically on small states; the shifted
 probe does not establish either hypothesis or an inertia count at ITER size.
-The verified error is in the old KIN6D stability inference. [H] The corrected
+The verified error is in the old MILCA stability inference. [H] The corrected
 ITER n = 3 sign, term parity on matched vectors and resolution convergence
 remain pending cluster evidence; no defect in DCON is established here.
 
@@ -661,7 +661,7 @@ helical sign oracle and unconverged inverse-iteration rejection remain active.
 
 The next B1 check isolates the original logical panel pair (1,2) on the
 public Landreman coupling geometry before any full boundary assembly or
-equilibrium response. It uses the original a364188e KIN6D geometry with
+equilibrium response. It uses the original a364188e MILCA geometry with
 FortFEM 3804f58e, the same 32-point plasma chain, 48 coupling segments, 12 toroidal sectors,
 and cubic nodes and normals,
 and the original degree-eight rule, four-degree increments, degree 96 cap,

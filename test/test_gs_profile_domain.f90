@@ -1,7 +1,7 @@
 program test_gs_profile_domain
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs_profiles
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs_profiles
     implicit none
     type(gs_state_t) :: state
     real(dp) :: contour(2, 4), mu0

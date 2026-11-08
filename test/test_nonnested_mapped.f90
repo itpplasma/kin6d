@@ -4,7 +4,7 @@ module nn_mapped_fixture
     ! x + i y, so curl B = 0 and div B = 0 everywhere. Potential
     ! A = (0, B_v R/2, -F ln R + sum_m c_m R0 (R/R0)^m sin(m phi)).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_chart, only: ideal_chart_t, curve_chart_t
+    use milca_equilibrium_chart, only: ideal_chart_t, curve_chart_t
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 3, minor = 1, ftor = 3
@@ -211,12 +211,12 @@ program test_nonnested_mapped
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_mapped_fixture
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve
-    use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t, nn_map_set_chart, &
         nn_map_point, map_metric_t, nn_mapped_cartesian_data, &
         nn_mapped_cartesian_error, nn_vector_field_i
@@ -257,7 +257,7 @@ program test_nonnested_mapped
             end if
         end do
         if (size(errs) > 1) then
-            call get_environment_variable('KIN6D_MAPPED_MIN_ORDER', env, status=st)
+            call get_environment_variable('MILCA_MAPPED_MIN_ORDER', env, status=st)
             if (st == 0) read (env, *) min_order
             if (log(errs(size(errs) - 1)/errs(size(errs))) &
                 /log(real(list(size(list)), dp)/list(size(list) - 1)) < min_order) &

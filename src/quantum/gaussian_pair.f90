@@ -15,7 +15,7 @@
 ! Elementary functions per Gaussian: e1 = g, e2 = u_x g, e3 = u_z g,
 ! e4 = |u|^2 g with u = r - q. These complex closed forms are written by hand
 ! because FortSym does not emit complex arithmetic (docs/packet-models.md).
-module kin6d_gaussian_pair
+module milca_gaussian_pair
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
     implicit none
@@ -157,4 +157,4 @@ contains
         type(gaussian_t), intent(in) :: gk
         n2 = (pi/(2*real(gk%alpha)))**1.5_dp
     end function gaussian_norm2
-end module kin6d_gaussian_pair
+end module milca_gaussian_pair

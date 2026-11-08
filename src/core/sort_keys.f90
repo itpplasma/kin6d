@@ -1,7 +1,7 @@
 !> Stable merge-sort permutation for 64-bit integer keys.
 !> Used to group sparse many-body contributions by residual determinant or
 !> by reduced-density-matrix coordinate. No floating-point data are touched.
-module kin6d_sort_keys
+module milca_sort_keys
     use, intrinsic :: iso_fortran_env, only: i64 => int64
     implicit none
     private
@@ -58,4 +58,4 @@ contains
         end do
         order(lo:hi) = scratch(lo:hi)
     end subroutine merge_runs
-end module kin6d_sort_keys
+end module milca_sort_keys

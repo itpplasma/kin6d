@@ -1,9 +1,9 @@
 program test_vrmhd_evolve
     !! BDF2 evolution gates of docs/vrmhd-section.md#time-evolution.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis
-    use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis
+    use milca_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
         vrmhd_evolve_expand, vrmhd_evolve_consistent
     use vrmhd_periodic_slab, only: periodic_slab_t, periodic_slab_build, &
         periodic_scalar, periodic_potential
@@ -14,14 +14,14 @@ program test_vrmhd_evolve
     use fortsparse, only: csc_t, csc_matmul, csc_transpose, sparse_solve_once, &
         csc_from_triplet, &
         fortsparse_status_t, status_ok
-    use kin6d_vrmhd_section, only: vrmhd_section_jacobian, VRMHD_EDGE_SECOND
+    use milca_vrmhd_section, only: vrmhd_section_jacobian, VRMHD_EDGE_SECOND
     use vrmhd_spectrum_support, only: spectrum, block_dofs
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_section, only: vrmhd_section_build
-    use kin6d_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
+    use milca_vrmhd_section, only: vrmhd_section_build
+    use milca_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
         vrmhd_stationary_residual, vrmhd_stationary_jacobian
-    use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_LOOP_VOLTAGE
+    use milca_vrmhd_drive, only: vrmhd_drive_build, VRMHD_LOOP_VOLTAGE
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes

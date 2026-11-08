@@ -1,10 +1,10 @@
 program test_s0_gs_kink
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrium, only: gs_equilibrium
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_s0_gs_space, only: s0_gs_space_t, s0_gs_tables, s0_gs_assemble
-    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrium, only: gs_equilibrium
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_s0_gs_space, only: s0_gs_space_t, s0_gs_tables, s0_gs_assemble
+    use milca_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
     use fortsparse, only: csc_z_t, fortsparse_status_t, FORTSPARSE_OK, &
         FORTSPARSE_INERTIA_RELIABLE, csc_matvec

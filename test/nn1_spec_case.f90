@@ -1,13 +1,13 @@
-! NN1 (vacuum, prescribed traces) on the common KIN6D/SPECTRE case: a circular annulus
+! NN1 (vacuum, prescribed traces) on the common MILCA/SPECTRE case: a circular annulus
 ! a_in < rho < a_out about (R0, 0); the traces and the harmonic F come from N helical closed
 ! polygonal filaments outside the domain (direct Biot-Savart is the shared oracle).
 ! Usage: nn1_spec_case case.nml grid.txt out_prefix nr nmodes [nphi]
 !   grid.txt: lines "R Z phi" (m, m, rad).  Writes out_prefix.B.txt: R Z phi BR BZ BPHI | direct BR BZ BPHI
 module nn1_spec_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
         coil_set_modes, coil_mu0
-    use kin6d_nonnested_leaves, only: segment_potential, vacuum_gauge
+    use milca_nonnested_leaves, only: segment_potential, vacuum_gauge
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     type(coil_set_t) :: coils
@@ -107,12 +107,12 @@ end module
 program nn1_spec_case
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn1_spec_fixture
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve, nn_vacuum_mode, nn_point
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     implicit none
     type(flux_mesh_t) :: fm
     type(mesh_2d_t) :: topo

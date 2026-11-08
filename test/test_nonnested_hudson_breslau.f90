@@ -15,11 +15,11 @@ module hb_fixture
     ! The paper's perturbation is 2 chi_21 = 3 chi_32 = k, k = 2.1e-3, just
     ! above the critical value 2.039e-3 of the iota = 0.5607 KAM surface.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
-    use kin6d_nonnested_leaves, only: anisotropic_conductivity
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_nonnested_leaves, only: anisotropic_conductivity
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -204,7 +204,7 @@ program test_nonnested_hudson_breslau
         meridian_qpoint
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_index, &
         meridian_fourier_value, meridian_fourier_load
-    use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
+    use milca_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
     implicit none
     character(32) :: mode, arg
     real(dp) :: kpert, lratio

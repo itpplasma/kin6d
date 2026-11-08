@@ -9,8 +9,8 @@ program test_nonnested_vacuum_mode_residual
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_vacuum_fixture, only: r0, ftor, field, active_mode, coil_mu0, &
         make_coil, gauge_potential, annulus_mesh
-    use kin6d_mhd_mesh, only: flux_mesh_t
-    use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_vacuum_mode
+    use milca_mhd_mesh, only: flux_mesh_t
+    use milca_equilibrium_nonnested, only: nn_report_t, nn_build, nn_vacuum_mode
     implicit none
     integer, parameter :: k = 3
     type(flux_mesh_t) :: fm

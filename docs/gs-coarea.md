@@ -1,6 +1,6 @@
 # Native P2/P3 coarea candidate
 
-`kin6d_gs_coarea::gs_level_coarea` evaluates
+`milca_gs_coarea::gs_level_coarea` evaluates
 
 \[
 K(\psi_s)=\oint_{\psi=\psi_s}\frac{dl}{R|\nabla\psi|},
@@ -58,7 +58,7 @@ against central differences of separately located contours. Deliberately
 omitting the moving-face terms fails that fixture. Existing P1/P2 physical,
 current, gauge, symbolic, variational and output contracts remain gates.
 
-`kin6d_gs_readback::read_gs_equilibrium` combines these contours with the
+`milca_gs_readback::read_gs_equilibrium` combines these contours with the
 constant FFprime law and returns signed q, the physical axis, volume and full
 edge toroidal flux. Zero radial/angular settings select automatic budgets:
 `max(17,ceil(sqrt(Ncells))+1)` radial samples and `16*(degree+2)` angular budget.

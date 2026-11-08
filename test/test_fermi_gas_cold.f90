@@ -10,7 +10,7 @@
 program test_fermi_gas_cold
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use fortnum_interval, only: interval_t
-    use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
+    use milca_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
         initialize_fermi_workspace, solve_fermi_gas
     implicit none
     real(dp), parameter :: thetas(7) = [0.025_dp, 0.02_dp, 0.01_dp, 3.0e-3_dp, &

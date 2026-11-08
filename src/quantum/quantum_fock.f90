@@ -1,8 +1,8 @@
-module kin6d_quantum_fock
+module milca_quantum_fock
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, ipoint, entire
-    use kin6d_quantum_fock_leaves, only: &
+    use milca_quantum_fock_leaves, only: &
         qf_accumulate, &
         qf_accumulate_interval, &
         qf_accumulate_jvp, &
@@ -23,7 +23,7 @@ module kin6d_quantum_fock
         qf_pair_action_accumulate_interval, &
         qf_pair_integral, &
         qf_pair_integral_interval
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     implicit none
     private
     public :: fock_basis_t, fock_hamiltonian_t, init_fock_basis, &
@@ -1688,4 +1688,4 @@ contains
             keys(raw) = s*m3 + u; pr_(raw) = pr; pi_(raw) = pi
         end subroutine
     end subroutine
-end module kin6d_quantum_fock
+end module milca_quantum_fock

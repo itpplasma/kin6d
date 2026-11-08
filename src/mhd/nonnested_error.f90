@@ -1,4 +1,4 @@
-module kin6d_nonnested_error
+module milca_nonnested_error
     ! Equilibrated-flux (Prager--Synge) energy bound for the N = 0 restriction
     ! of the NN1 free-B lane, nn_solve(field, 0, ...): on the meridian V0 space
     !   -div(grad psi / R) = mu0 p' R   (measure dR dZ),
@@ -26,12 +26,12 @@ module kin6d_nonnested_error
     ! for the planar model with the phi-sampled mean coefficient (scope string).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_nonnested, only: free_b_field_t
-    use kin6d_triangle_basis, only: triangle_bernstein_controls
-    use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
+    use milca_equilibrium_nonnested, only: free_b_field_t
+    use milca_triangle_basis, only: triangle_bernstein_controls
+    use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
         gs_error_friedrichs
-    use kin6d_grad_shafranov_leaves, only: gs_source
-    use kin6d_nonnested_leaves, only: transport_error_data, &
+    use milca_grad_shafranov_leaves, only: gs_source
+    use milca_nonnested_leaves, only: transport_error_data, &
         transport_error_lower, transport_error_friedrichs
     use fortfem_meridian_feec_n, only: meridian_feec_t
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t, &
@@ -420,4 +420,4 @@ contains
         if (any(order == 0)) return
         status = 0
     end subroutine
-end module kin6d_nonnested_error
+end module milca_nonnested_error

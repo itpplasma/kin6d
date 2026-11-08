@@ -98,14 +98,14 @@ end module vrmhd_spd_extremes
 
 program test_vrmhd_stationary
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section
-    use kin6d_vrmhd_stationary
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section
+    use milca_vrmhd_stationary
     use vrmhd_wall_oracle, only: current_wall_dofs
-    use kin6d_vrmhd_boundary, only: vrmhd_current_lift
-    use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
+    use milca_vrmhd_boundary, only: vrmhd_current_lift
+    use milca_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use vrmhd_mms_leaves, only: mms_rotation, mms_screw
     use vrmhd_spd_extremes, only: spd_extremes

@@ -3,13 +3,13 @@ program test_gs_cerfon_freidberg
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use cerfon_freidberg_fixture, only: cf_case_t, cf_setup, cf_jet, cf_surface, &
         cf_oracle, cf_q
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, gs_cell_data
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_equilibrium, only: gs_equilibrium
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, EQ_PSI, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, gs_cell_data
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_equilibrium, only: gs_equilibrium
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, EQ_PSI, &
         EQ_BR, EQ_BZ, EQ_BPHI
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
-    use kin6d_equilibrium_harness, only: equilibrium_case_t, equilibrium_start_t, &
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_equilibrium_harness, only: equilibrium_case_t, equilibrium_start_t, &
         equilibrium_resolution_t, equilibrium_run_report_t, run_equilibrium_case
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none

@@ -28,7 +28,7 @@ and for adaptive classical/quantum and correlation-order switching
 
 ## Foundation decisions (F)
 
-- F1 `kin6d_species`/units: one record with charge, mass, hbar, Coulomb
+- F1 `milca_species`/units: one record with charge, mass, hbar, Coulomb
   coupling g = q_i q_j/(4 pi eps0) in declared reduced units and an SI map.
   Physical scales (Bohr radius, Rydberg, Sommerfeld eta, Gamma, Theta, r_s,
   lambda_D, omega_p) are generated from this record, never retyped.
@@ -43,7 +43,7 @@ and for adaptive classical/quantum and correlation-order switching
 - F5 namelist configuration and FortIO NetCDF-4/HDF5 results with embedded
   literal/resolved configuration and provenance for every demo.
 - F6 generic Hermite/Bernstein ODE residual certificate moved upstream to
-  FortNum; kin6d slab/quantum consumers use it.
+  FortNum; milca slab/quantum consumers use it.
 - F7 one plot style and robust MP4/GIF pipeline (fortplot owns fixes).
 
 ## Case ladder
@@ -82,7 +82,7 @@ self-promote. Waves:
 4. Plan/doc consolidation, gallery render, review.
 
 Build: `FC=gfortran cmake --preset cpu`. Regeneration:
-`-DKIN6D_FORTSYM_BUILD=<fortsym build>` at the pinned revision; generators
+`-DMILCA_FORTSYM_BUILD=<fortsym build>` at the pinned revision; generators
 run from the repository root and must reproduce committed leaves exactly.
 
 ## Log
@@ -91,9 +91,9 @@ run from the repository root and must reproduce committed leaves exactly.
   17 leaf families with FortSym a614271 reproduces the committed leaves
   bit-identically. Fixed generator link to use the platform shared-library
   suffix.
-- 2026-10-05 (worker, F1-F4): `gen/kin6d_gen_support.f90` is the one emit
+- 2026-10-05 (worker, F1-F4): `gen/milca_gen_support.f90` is the one emit
   helper for all generators; the FortSym revision comes only from
-  `KIN6D_FORTSYM_REVISION` (configured include). `gen/kin6d_symbolic_physics.f90`
+  `MILCA_FORTSYM_REVISION` (configured include). `gen/milca_symbolic_physics.f90`
   holds the single symbolic Coulomb/sphere/Ewald/jellium/partial-wave and
   scale definitions; `gen_coulomb` and `gen_species` emit them.
   `src/core/species.f90` (units with SI map, species, pair/plasma scales),
@@ -119,7 +119,7 @@ run from the repository root and must reproduce committed leaves exactly.
   thermodynamic-limit hole (deviation 8.6e-5 at N=1021), grand-canonical
   EOS (e_N-e_TL ~ 1/N), classical limits and finite differences. The
   alternating power-sum recursion cancels up to 5e36 cold; it is used only
-  as a cross-check. Q8: relativistic option in `kin6d_fermi_gas`
+  as a cross-check. Q8: relativistic option in `milca_fermi_gas`
   (`gen_relativistic_fermi`, convexity tail, graded Fermi-window mesh;
   nonrelativistic path bit-identical). Certified to x_F=10 at 1e7 K;
   NR/UR/Chandrasekhar/classical limits checked by an independent binary128
@@ -128,7 +128,7 @@ run from the repository root and must reproduce committed leaves exactly.
   the nonrelativistic certificate fails below theta of about 1e-3 (graded
   mesh not applied); fortplot subplot axis scales leak between panels.
 - 2026-10-05 (controller): FortNum main 7f6a0ba adds the generic
-  `fortnum_ode_residual_certificate` (F6; 7.8x faster than the kin6d copy
+  `fortnum_ode_residual_certificate` (F6; 7.8x faster than the milca copy
   at equal radius on the 125-mode case) and BSD-sed-portable tests. fortplot
   branch `mp4-quality` (local): BT.709-tagged yuv420p H.264, faststart,
   1 s keyframes, CRF 18, even-size padding, exclusive frame directory,
@@ -152,10 +152,10 @@ run from the repository root and must reproduce committed leaves exactly.
   autocorrelation vs exact levels 1e-10 to 1.1 T_rev. 23/23 CTest green in
   Release and Debug. Open: GLL and normalized Legendre belong in FortNum; no
   continuum discretization bound.
-- 2026-10-05 (F5 worker): `kin6d_io` (`src/apps/result_io.f90`) plus FortIO
+- 2026-10-05 (F5 worker): `milca_io` (`src/apps/result_io.f90`) plus FortIO
   pinned at 38add03 via FetchContent. All 22 applications read `--config FILE`
   namelists (defaults unchanged, one group per app) and write
-  `output/<app>.nc` (NetCDF-4/HDF5) with units, per-variable `kin6d_status`,
+  `output/<app>.nc` (NetCDF-4/HDF5) with units, per-variable `milca_status`,
   literal/resolved configuration, build-time and runtime git commit/tree
   state, compiler version/options, FortSym/FortNum/fortplot/FortIO pins, UTC
   time and command line. quantum_reference_demo and classical_pair_demo share
@@ -169,12 +169,12 @@ run from the repository root and must reproduce committed leaves exactly.
   resolve idempotence and rejection cases; the gallery records `.nc` sha256.
   Open: in-file groups, generated schema, external-input hashes, hardware
   records; new apps (coulomb_encounter, ocp_*, jellium_cell, screening,
-  wigner) must adopt the module and join the `kin6d_io` list in CMake.
+  wigner) must adopt the module and join the `milca_io` list in CMake.
 - 2026-10-05 (worker, Q7): `src/quantum/screening_hierarchy.f90`,
   `src/continuum/wigner_poisson.f90`, `src/continuum/wigner_dispersion.f90` (independent Z-ODE
   dispersion oracle), leaves from `gen/gen_screening.f90` and
   `gen/gen_wigner.f90` (deterministic regeneration); FortNum fft compiled as
-  `kin6d_fft`; docs/screening-wigner.md. Static ideal-gas RPA (no LFC):
+  `milca_fft`; docs/screening-wigner.md. Static ideal-gas RPA (no LFC):
   T=0 momentum route vs closed form 4.7e-15, momentum vs Maldague routes
   8.7e-15, Sommerfeld 2e-8, Dawson limit 3e-5, Friedel period 3.1382/kF,
   rigorous truncation tails, quadrature indicators. Wigner-Poisson split
@@ -190,7 +190,7 @@ run from the repository root and must reproduce committed leaves exactly.
   workaround for the old fortplot pin.
 - 2026-10-06 (controller, pause): merged F5 (namelist + FortIO results),
   Q1/Q1b (partial-wave encounter, Rydberg packet), Q3/Q8, Q7 (screening,
-  Wigner-Poisson); kin6d uses FortNum 0f643d0 GLL/Legendre and fortplot
+  Wigner-Poisson); milca uses FortNum 0f643d0 GLL/Legendre and fortplot
   67834eb; 28/28 CTest green. Unmerged worker branches (resume/integrate):
   worktree-agent-a555f8713dd7a8d74 (Q4 jellium + F6 migration),
   worktree-agent-a6bde7f3f0e416042 (C3/C4 OCP), worktree-agent-a13ae492e23305233
@@ -211,14 +211,14 @@ run from the repository root and must reproduce committed leaves exactly.
   `slab_oscillation` use FortNum `fortnum_ode_residual_certificate`; the
   generated qe residual/Bernstein/radius-interval and slab residual/radius
   leaves are gone. Quantum radii unchanged (two-level 1.0976e-7, tangent
-  1.9888e-7, n=125 8.719e-6; ~15 ms/cell, dominated by the kin6d dense
+  1.9888e-7, n=125 8.719e-6; ~15 ms/cell, dominated by the milca dense
   interval action). The slab moved to the componentwise first-order
   reconstruction: O(h^3) instead of O(h^2) residual, demo radius 6.61e-3 ->
   3.30e-4. Q4: `src/quantum/jellium_cell.f90` on new engine pieces (sector bases,
   sparse coupled action with fail-closed leakage, factorized 1/2/3-RDMs,
   `add_fock_one_body`) and new FortNum `fortnum_symmetric_eigen` (dense
   eigen + block Lanczos; branch `symmetric-lanczos-eigen` 80b7340, NOT
-  pushed: the pin KIN6D_FORTNUM_REVISION=80b7340 needs the controller to push
+  pushed: the pin MILCA_FORTNUM_REVISION=80b7340 needs the controller to push
   it, local builds use -DFETCHCONTENT_SOURCE_DIR_FORTNUM). `cutoff=2`
   (M=38) default: N=2 E0(rs=2)=-1.668e-2 Ha (cutoff 1/2/3: -1.426/-1.668/
   -1.709e-2); N=4 sector dims up to 73815 states. chi/chi0_Lindhard at
@@ -280,7 +280,7 @@ run from the repository root and must reproduce committed leaves exactly.
   recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
 - 2026-10-06 (worker, Q2): `src/quantum/packet_models.f90`, `src/quantum/gaussian_pair.f90`,
   leaves from `gen/gen_packet_models.f90` (Gaussian-averaged Coulomb added to
-  `kin6d_symbolic_physics`), `encounter_project` (generic Q1 projection),
+  `milca_symbolic_physics`), `encounter_project` (generic Q1 projection),
   docs/packet-models.md, `packet_models_demo` (result_io). Models M2 (WPMD
   product), M2S/M2T (two-determinant), M3 (relative TDVP Gaussian), M3S/M3T,
   M4 K = 2/4/8 (vMCG, guided zero-population enrichment, Tikhonov status and
@@ -357,7 +357,7 @@ run from the repository root and must reproduce committed leaves exactly.
   - c3 resolution (0.6a bins lower `||c3||^2` by 33%);
   - generic series statistics could move to FortNum;
   - a FortSym `sqrt(1*3)` folding defect (worked around in the generator);
-  - the default kin6d_ocp MD step fails closed at Gamma 1 (the demo uses
+  - the default milca_ocp MD step fails closed at Gamma 1 (the demo uses
     dt/4).
 - 2026-10-06 (controller, pause 2): merged Q2, QG6, Q5, cleanup, both
   figure passes, C3/C4 code (final Landau evidence pending on its branch),
@@ -453,4 +453,4 @@ run from the repository root and must reproduce committed leaves exactly.
   New docs/theory-map.md: verified model-reduction graph (classical and
   quantum branches), derivation status ladder, FortSym as primary derivation
   engine with listed upstream extensions, Lean for selected structural and
-  analytic theorems, first milestones T1-T6 paired with KIN6D experiments.
+  analytic theorems, first milestones T1-T6 paired with MILCA experiments.

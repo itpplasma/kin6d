@@ -3,15 +3,15 @@
   "configurePresets": [
     {"name":"cpu","generator":"Ninja","binaryDir":"${sourceDir}/build",
      "cacheVariables":{"CMAKE_BUILD_TYPE":"Release","BUILD_TESTING":"ON",
-      "KIN6D_CHECK_LEAN":"OFF","KIN6D_ENABLE_OPENMP":"ON"}},
+      "MILCA_CHECK_LEAN":"OFF","MILCA_ENABLE_OPENMP":"ON"}},
     {"name":"debug","inherits":"cpu","binaryDir":"${sourceDir}/build-debug",
      "cacheVariables":{"CMAKE_BUILD_TYPE":"Debug",
       "CMAKE_Fortran_FLAGS_DEBUG":"-g -O0 -fcheck=all -fbacktrace"}},
     {"name":"formal","inherits":"cpu","binaryDir":"${sourceDir}/build-formal",
-     "cacheVariables":{"KIN6D_CHECK_LEAN":"ON"}},
+     "cacheVariables":{"MILCA_CHECK_LEAN":"ON"}},
     {"name":"dev-fast","inherits":"cpu","binaryDir":"${sourceDir}/build-dev-fast",
-     "cacheVariables":{"KIN6D_BUILD_EXTRAS":"OFF",
-      "CMAKE_PROJECT_TOP_LEVEL_INCLUDES":"${sourceDir}/cmake/kin6d_shared_deps.cmake"}}
+     "cacheVariables":{"MILCA_BUILD_EXTRAS":"OFF",
+      "CMAKE_PROJECT_TOP_LEVEL_INCLUDES":"${sourceDir}/cmake/milca_shared_deps.cmake"}}
   ],
   "buildPresets": [{"name":"cpu","configurePreset":"cpu"},
                     {"name":"debug","configurePreset":"debug"},

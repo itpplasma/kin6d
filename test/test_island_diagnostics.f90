@@ -4,7 +4,7 @@ module island_diagnostic_fixture
     ! In the rotating frame this is an exact pendulum. This is a diagnostic
     ! oracle, not an NN2 solution or a tokamak equilibrium.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, EQ_BPHI
     implicit none
     real(dp), parameter :: centre(2) = [10.0_dp, 0.0_dp], is = 0.25_dp, shear = 2
     type, extends(equilibrium_field_t) :: pendulum_t
@@ -42,7 +42,7 @@ end module
 program test_island_diagnostics
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use island_diagnostic_fixture, only: pendulum_t, centre, is, shear
-    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+    use milca_island_diagnostics, only: island_trace_options_t, island_point_t, &
                        island_width_t, island_trace, island_periodic_point, island_width
     implicit none
     type(pendulum_t) :: field

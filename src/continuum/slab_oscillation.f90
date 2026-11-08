@@ -1,4 +1,4 @@
-module kin6d_slab_oscillation
+module milca_slab_oscillation
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, intersect, is_empty, mag, &
@@ -6,7 +6,7 @@ module kin6d_slab_oscillation
     use fortnum_ode_cash_karp, only: cash_karp_step
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_ode_residual_certificate, only: certify_linear_trajectory
-    use kin6d_slab_oscillation_leaves, only: slab_oscillation_rhs, &
+    use milca_slab_oscillation_leaves, only: slab_oscillation_rhs, &
                slab_oscillation_rhs_interval, &
                slab_oscillation_rhs_vjp, slab_oscillation_time, slab_oscillation_span, &
                                              slab_oscillation_hermite, &
@@ -408,4 +408,4 @@ contains
         cell = min(left, size(grid) - 1)
     end function locate
 
-end module kin6d_slab_oscillation
+end module milca_slab_oscillation

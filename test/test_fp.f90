@@ -1,11 +1,11 @@
 program test_fp
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, sample_fp, &
+    use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, sample_fp, &
                                  fp_certificate_radius, fp_certificate_accepts, &
                                  fp_sample_band, fp_reference_band, fp_mass_interval, &
                                  fp_normalization_interval
-    use kin6d_fp_leaves, only: fp_flux, fp_flux_jvp, fp_flux_vjp, fp_step_jvp, &
+    use milca_fp_leaves, only: fp_flux, fp_flux_jvp, fp_flux_vjp, fp_step_jvp, &
                               fp_mass_error_band
     use fortnum_interval, only: interval_t, interval
     implicit none

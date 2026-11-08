@@ -1,4 +1,4 @@
-module kin6d_makegrid_circuits
+module milca_makegrid_circuits
     !! Circuits of a MAKEGRID coils file, read with the libneo reader
     !! (neo_makegrid_coils, https://github.com/itpplasma/libneo). Coil c becomes
     !! a closed coils_3d polygon in circuit(c) = its MAKEGRID group (the EXTCUR
@@ -9,7 +9,7 @@ module kin6d_makegrid_circuits
     !! coil_circuit_basis_t treats as not connected.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use neo_makegrid_coils, only: makegrid_coils_t, read_makegrid_coils
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_name_len
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_name_len
     implicit none
     private
     public :: makegrid_circuits_read
@@ -71,4 +71,4 @@ contains
         status = 0
     end subroutine
 
-end module kin6d_makegrid_circuits
+end module milca_makegrid_circuits

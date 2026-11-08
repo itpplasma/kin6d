@@ -14,12 +14,12 @@
 !! preserving even/odd parity. Normalized coefficients and iota use not-a-knot
 !! cubic splines; surfaces outside the tabulated range are refused.
 !! Lengths in m, |B| in T, |grad s| in 1/m.
-module kin6d_boozer_file
+module milca_boozer_file
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use bc_file, only: bc_data_t, read_bc_file
     use fortnum_cubic_spline, only: cubic_spline_t, cubic_spline_init, &
         cubic_spline_eval
-    use kin6d_boozer_file_leaves, only: boozer_axis_factor, boozer_metric
+    use milca_boozer_file_leaves, only: boozer_axis_factor, boozer_metric
     implicit none
     private
     public :: boozer_file_t, boozer_surface_t, boozer_point_t
@@ -235,4 +235,4 @@ contains
         b2 = b2/total
     end subroutine boozer_average
 
-end module kin6d_boozer_file
+end module milca_boozer_file

@@ -3,7 +3,7 @@
 !> quantity gets a batch/jackknife statistical interval.
 module correlation_map_types
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_correlation_hierarchy, only: triplet_histogram_t
+    use milca_correlation_hierarchy, only: triplet_histogram_t
     implicit none
     private
     public :: chain_t, nouts, output_names, power_fit

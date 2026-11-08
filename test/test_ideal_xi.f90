@@ -1,10 +1,10 @@
 program test_ideal_xi
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_xi, only: xi_bilinear, xi_gradient_n, xi_volume_energy, &
+    use milca_ideal_xi, only: xi_bilinear, xi_gradient_n, xi_volume_energy, &
         xi_energy_report_t, XI_OK, XI_BAD_INPUT
-    use kin6d_ideal_map_leaves, only: ideal_energy_hessian
-    use kin6d_ideal_xi_leaves, only: xi_form_dp, xi_form_jvp_dp, xi_form_vjp_dp
+    use milca_ideal_map_leaves, only: ideal_energy_hessian
+    use milca_ideal_xi_leaves, only: xi_form_dp, xi_form_jvp_dp, xi_form_vjp_dp
     implicit none
     real(dp) :: h(9,9), packed(45), b(3), mu, p, expected, tolerance
     real(dp) :: x(23), dx(23), g(23), tangent, fd, step, energy

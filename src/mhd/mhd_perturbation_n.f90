@@ -1,4 +1,4 @@
-module kin6d_mhd_perturbation_n
+module milca_mhd_perturbation_n
     !! L7 core: displacement, Lagrangian field and curvature coupling of a per-n
     !! linear response on flux surfaces of an axisymmetric equilibrium.
     !!
@@ -24,14 +24,14 @@ module kin6d_mhd_perturbation_n
     !! = -B (kappa.xi + div xi_perp).  The parallel displacement is gauge:
     !! xi_par shifts |B|_L by xi_par b.grad|B|; we set xi_par = 0.
     !!
-    !! Charts: spectra use the SFL angles of kin6d_vacuum_surfaces (PEST,
+    !! Charts: spectra use the SFL angles of milca_vacuum_surfaces (PEST,
     !! Hamada) in the convention of `surface_harmonics`: X e^{i n phi} =
     !! e^{i n zeta} sum_m X_m e^{-i m theta_s}, zeta = phi - (nu - q theta_s).
     !! Boozer angles are not provided by the core yet (no D7 Boozer map).
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, int8
-    use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, angle_pest, &
+    use milca_vacuum_surfaces, only: psi_grid_t, surface_t, angle_pest, &
         angle_hamada
-    use kin6d_mhd_ideal_n, only: equilibrium_point, ideal_options_t
+    use milca_mhd_ideal_n, only: equilibrium_point, ideal_options_t
     implicit none
     private
 
@@ -383,7 +383,7 @@ contains
 
     subroutine perturbation_export(path, res, source, cocos_declared, s_pol, ip_sign, &
             status)
-        !! One documented ASCII file `path` (format kin6d-l7-v1) with all
+        !! One documented ASCII file `path` (format milca-l7-v1) with all
         !! surfaces of res(:), and the sidecar path//'.sha256' in sha256sum
         !! format.  status 0 on success.
         character(len=*), intent(in) :: path, source
@@ -397,8 +397,8 @@ contains
         status = 1
         open (newunit=u, file=path, status='replace', action='write', iostat=ios)
         if (ios /= 0) return
-        write (u, '(a)') '# KIN6D L7 perturbation export'
-        write (u, '(a)') 'format = kin6d-l7-v1'
+        write (u, '(a)') '# MILCA L7 perturbation export'
+        write (u, '(a)') 'format = milca-l7-v1'
         write (u, '(a)') 'source = '//trim(source)
         write (u, '(a,i0)') 'n = ', res(1)%n
         write (u, '(a)') 'n_sign = physical field X_phys = '// &
@@ -610,4 +610,4 @@ contains
         end do
     end subroutine sha256_bytes
 
-end module kin6d_mhd_perturbation_n
+end module milca_mhd_perturbation_n

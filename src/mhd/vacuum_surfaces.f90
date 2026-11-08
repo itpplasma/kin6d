@@ -1,4 +1,4 @@
-module kin6d_vacuum_surfaces
+module milca_vacuum_surfaces
     !! L3: flux-surface geometry from a poloidal-flux grid psi(R, Z) (G-EQDSK)
     !! and the projection of a per-n field onto straight-field-line harmonics.
     !!
@@ -30,7 +30,7 @@ module kin6d_vacuum_surfaces
     !!    f = (B.n) R |x'| (T m^2 per rad^2, = J B.grad psi) in place of B.n and
     !!    no Jacobian factor d theta_s/d theta_g.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     implicit none
     private
 

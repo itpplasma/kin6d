@@ -1,6 +1,6 @@
 # Taylor closure on the non-nested complex
 
-[V] `kin6d_nonnested_beltrami` solves a single fixed-boundary region with constant
+[V] `milca_nonnested_beltrami` solves a single fixed-boundary region with constant
 mu and `curl B - mu B = f`. Pressure is constant. This is one regional closure
 of the equilibrium problem, with no interface motion or traction balance.
 The magnetic state uses the NN1 cylindrical FEEC complex times Fourier phi,

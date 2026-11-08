@@ -7,9 +7,9 @@ program test_gs_prescribed_q_pedestal
     ! The solver's own independent q check (interleaved radial grid, doubled arc
     ! quadrature) and the delivered p' law are the oracles.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_gs_prescribed_q, only: solve_gs_prescribed_q
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = r0/10, mu0 = 1.2566370614359173e-6_dp
     real(dp), parameter :: pedestal = 8.0_dp, pi = acos(-1.0_dp)

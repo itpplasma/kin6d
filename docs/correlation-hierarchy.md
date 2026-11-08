@@ -12,7 +12,7 @@ neutralizing background and the bare Coulomb interaction in a periodic cube
 with tin-foil Ewald sums. Units are Wigner-Seitz: `a = 1`,
 `e^2/(4 pi eps0) = 1`, `n = 3/(4 pi)`, `L = (4 pi N/3)^(1/3)` and
 `beta = Gamma`, so `beta v(r) = Gamma/r`. Gamma and the Debye wavenumber
-`kappa a = sqrt(3 Gamma)` come from the shared `kin6d_species` scales and the
+`kappa a = sqrt(3 Gamma)` come from the shared `milca_species` scales and the
 generated `ch_debye_wavenumber` leaf. Couplings are
 Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 
@@ -20,7 +20,7 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 
 - `src/classical/ocp_monte_carlo.f90` runs canonical Metropolis Monte Carlo with
   single-particle moves, uniform in `[-d, d]^3`. The energy is the Ewald sum
-  of `kin6d_coulomb_leaves`. Its parameters come from `kin6d_ewald` with the
+  of `milca_coulomb_leaves`. Its parameters come from `milca_ewald` with the
   new `real_cutoff = 0` (minimum-image real space; every omitted image is at
   least `L/2` away, and the existing shell bound covers it). The reciprocal
   sum uses the cube `0 < |n|_inf <= nk`. A move costs O(N) for the real-space
@@ -28,7 +28,7 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
   for the truncated Hamiltonian. At tolerance 1e-5 the reported truncation
   bound is about 6e-9 per pair (units 1/L). The same sampler serves the
   H1b finite-N cell (`mc_setup_cell`: general units, a real image cube for
-  small N, and the `kin6d_pair_law` Kelbg/Pauli addition;
+  small N, and the `milca_pair_law` Kelbg/Pauli addition;
   docs/quantum-classical-correlations.md). The OCP path is unchanged
   bit for bit.
 - Preparation: a uniform random start, then 2000 equilibration sweeps. The
@@ -41,7 +41,7 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 - Finite size: N = 1000 and N = 500 at every Gamma, plus a linear 1/N
   extrapolation of `u`.
 - Independent method: molecular dynamics at Gamma = 1, N = 500, from
-  `kin6d_ocp` (PME, encounter-resolved splitting) at a quarter of its
+  `milca_ocp` (PME, encounter-resolved splitting) at a quarter of its
   default step. An isokinetic thermostat acts during equilibration only;
   production is NVE.
 
@@ -245,7 +245,7 @@ JVP/VJP. No derivative of the YBG/HNC outputs is propagated yet.
   equation (the second YBG equation for g3), are not implemented.
 - The quoted c3 is a 0.2a bin average (resolution indicator above). A
   finer, statistics-limited g3 near contact needs more sampling.
-- Time-series statistics (`kin6d_series_statistics`) are generic and could
+- Time-series statistics (`milca_series_statistics`) are generic and could
   move to FortNum. `ocp_shielding_demo` and the H1b batch means use them.
 - FortSym emits `sqrt(1*3)` (an integer argument) for `sqrt(3*one)` with a
   rational one. The generator works around it with `sqrt(rat(3))`; this is a
@@ -257,7 +257,7 @@ JVP/VJP. No derivative of the YBG/HNC outputs is propagated yet.
 ## Oracles (CTest `correlation_hierarchy_h1a_oracles`)
 
 - The MC Ewald energy agrees with the tiled direct Ewald sum of
-  `kin6d_nbody` (different alpha, real cutoff 2) to 2e-11, below the 2.6e-9
+  `milca_nbody` (different alpha, real cutoff 2) to 2e-11, below the 2.6e-9
   bound. After sweeps, the incremental energy matches a full recompute to
   1e-10. MC forces match central differences to 6e-9 (relative max).
 - The N = 2 Metropolis chain gives `<U>` equal to direct quadrature of the

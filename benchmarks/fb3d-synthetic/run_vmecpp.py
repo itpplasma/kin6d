@@ -2,7 +2,7 @@
 
 beta = 0, zero net toroidal current (ncurr = 1, curtor = 0), phiedge from
 --phiedge. The external field is VMEC++'s makegrid response table computed
-from the same MAKEGRID coils file that KIN6D reads (one circuit, EXTCUR = 1).
+from the same MAKEGRID coils file that MILCA reads (one circuit, EXTCUR = 1).
 Writes <out>/wout.nc, <out>/lcfs.dat (R, Z on phi cuts), <out>/iota.dat and
 <out>/timing.json (wall time of the makegrid step and of the run).
 """

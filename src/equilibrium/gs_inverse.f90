@@ -1,18 +1,18 @@
-module kin6d_gs_inverse
+module milca_gs_inverse
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, solve_gs, gs_axis_candidate, &
+    use milca_grad_shafranov, only: gs_state_t, solve_gs, gs_axis_candidate, &
         gs_element_jet, gs_profile_response, gs_profile_implicit_response, &
         gs_profile_response_cache_t, prepare_gs_profile_response_cache, &
         gs_profile_value, gs_profile_integral
-    use kin6d_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_inverse_leaves, only: gs_f_from_coarea, gs_square_slope, gs_f_from_square, &
+    use milca_gs_coarea, only: gs_level_coarea
+    use milca_gs_inverse_leaves, only: gs_f_from_coarea, gs_square_slope, gs_f_from_square, &
         gs_f_from_square_jvp, gs_profile_square_response, gs_q_log_residual, gs_q_log_residual_jvp, &
         gs_profile_mean_last, gs_profile_mean_last_jvp, gs_ff_zero
-    use kin6d_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_profile_law, only: gs_profile_law_t
     use fortnum_linalg, only: dense_solve
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_inverse_result_t, solve_gs_constant_q, gs_inverse_f, gs_toroidal_flux, gs_inverse_profile_status
@@ -486,4 +486,4 @@ contains
         end do
         status = 0
     end subroutine check_half_nodes
-end module kin6d_gs_inverse
+end module milca_gs_inverse

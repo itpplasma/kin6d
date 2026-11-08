@@ -189,7 +189,7 @@ choice:
 \text{external high-fidelity non-LTE spectral provider}.
 \]
 
-This is sufficient to make reduced radiation hydrodynamics an ordinary KIN6D
+This is sufficient to make reduced radiation hydrodynamics an ordinary MILCA
 configuration for dense/thermal plasma where justified. Detailed line-by-line
 angle/frequency non-LTE transfer remains an external specialty provider until a
 prioritized case justifies internalizing a subset.
@@ -374,7 +374,7 @@ Do not silently absorb:
 
 Reduced radiation hydrodynamics through grey/multigroup/moment closures,
 classical nonideal EOS/opacity models and conservative adjacent-media interfaces
-remain inside the KIN6D envelope. External specialties may couple through narrow
+remain inside the MILCA envelope. External specialties may couple through narrow
 reusable provider interfaces.
 
 Chris&AI

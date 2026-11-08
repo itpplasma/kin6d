@@ -1,8 +1,8 @@
 program test_s0_tae
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
-    use kin6d_s0_leaves, only: s0_tae_block_dp, s0_tae_block_sp, &
+    use milca_s0_leaves, only: s0_tae_block_dp, s0_tae_block_sp, &
         s0_tae_block_jvp_dp, s0_tae_block_vjp_dp, s0_tae_edges_dp
-    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+    use milca_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
     use fortsparse, only: csc_z_t, csc_from_triplet, csc_matvec, &
         fortsparse_status_t, FORTSPARSE_OK, FORTSPARSE_INERTIA_RELIABLE

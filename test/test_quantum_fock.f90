@@ -3,7 +3,7 @@ program test_quantum_fock
                                                              qp => real128, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint
-    use kin6d_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, init_fock_basis, &
+    use milca_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, init_fock_basis, &
         fock_basis_info, get_fock_states, fock_pair_indices, fermion_apply, &
         prepare_fock_hamiltonian, prepare_jellium_hamiltonian, &
         assemble_fock_hamiltonian, assemble_fock_hamiltonian_interval, fock_matvec, &

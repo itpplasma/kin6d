@@ -1,8 +1,8 @@
-module kin6d_vrmhd_point
+module milca_vrmhd_point
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_dispatch, only: vrmhd_leaf
-    use kin6d_vrmhd_leaf_ids, only: &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_dispatch, only: vrmhd_leaf
+    use milca_vrmhd_leaf_ids, only: &
         leaf_ampere, leaf_chi_flux_limited, leaf_chi_parallel, &
         leaf_compression, leaf_conduction, leaf_density_advection, &
         leaf_equipartition, leaf_eta, leaf_induction_ideal, &
@@ -175,4 +175,4 @@ contains
             value = value + sign*h; tangent = tangent + sign*dh
         end subroutine
     end subroutine
-end module kin6d_vrmhd_point
+end module milca_vrmhd_point

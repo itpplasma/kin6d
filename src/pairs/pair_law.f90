@@ -1,7 +1,7 @@
 !> Short-range semiclassical pair term of the periodic electron cell
 !> (docs/quantum-classical-correlations.md): the declared addition to the
 !> one Ewald Coulomb pair energy, so the long-range part keeps a single
-!> definition (kin6d_ewald/kin6d_coulomb_leaves).
+!> definition (milca_ewald/milca_coulomb_leaves).
 !>
 !> pair_coulomb       no addition (bare Ewald Coulomb);
 !> pair_kelbg         periodic image sum of the Kelbg diffraction excess
@@ -11,10 +11,10 @@
 !>
 !> Every image |d + nL| beyond the image range carries Kelbg/exchange terms
 !> below exp(-36) relative to their contact values. Leaves come from
-!> kin6d_quantum_classical_leaves (one symbolic source).
-module kin6d_pair_law
+!> milca_quantum_classical_leaves (one symbolic source).
+module milca_pair_law
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_quantum_classical_leaves, only: qcm_kelbg, qcm_kelbg_series, &
+    use milca_quantum_classical_leaves, only: qcm_kelbg, qcm_kelbg_series, &
         qcm_kelbg_excess, qcm_exchange, qcm_pauli
     implicit none
     private
@@ -102,4 +102,4 @@ contains
             end do
         end do
     end function
-end module kin6d_pair_law
+end module milca_pair_law

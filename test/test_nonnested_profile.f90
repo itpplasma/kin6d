@@ -1,9 +1,9 @@
 module fitted_profile_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
                                        EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
-    use kin6d_nonnested_profile, only: nn_profile_t
+    use milca_nonnested_profile, only: nn_profile_t
     use nn_solovev_fixture, only: r0, pp, ftor, exact, laplacian
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -100,15 +100,15 @@ program test_nonnested_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fitted_profile_fixture
     use nn_solovev_fixture, only: minor, mapping, coordinates
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
 use fortfem_meridian_fourier_scalar, only: meridian_fourier_value, meridian_fourier_load
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
-    use kin6d_nonnested_profile, only: nn_fitted_source_t, nn_fit_source, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_nonnested_profile, only: nn_fitted_source_t, nn_fit_source, &
                                        nn_state_profile_t, nn_profile_defect_t
-    use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
+    use milca_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
                        nc_layout, nc_solve, nc_fixed, nc_store, nc_jacobian, nc_residual
     implicit none
     character(24) :: mode, arg

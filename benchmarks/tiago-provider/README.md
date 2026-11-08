@@ -1,15 +1,15 @@
 # Island reconstruction with TIAGO
 
 This optional benchmark reconstructs the perturbation amplitude of a synthetic
-helical-coil annulus from point polarization angles. KIN6D supplies its existing
+helical-coil annulus from point polarization angles. MILCA supplies its existing
 fixed-wall nonnested stationary field and implicit derivatives. TIAGO supplies
 its existing motional Stark effect (MSE) polarization operator and maximum a
 posteriori (MAP) optimizer. Neither implementation is copied into the adapter.
 
-Configure the normal KIN6D build with `-DKIN6D_TIAGO_SOURCE_DIR=/path/to/tiago`,
+Configure the normal MILCA build with `-DMILCA_TIAGO_SOURCE_DIR=/path/to/tiago`,
 using TIAGO with the [shared core targets](https://github.com/itpplasma/tiago/pull/76)
 that provide `cmake/TiagoInferenceCore.cmake`. The
-adapter links the existing `fortnum` target selected by KIN6D. Run:
+adapter links the existing `fortnum` target selected by MILCA. Run:
 
 ```sh
 cmake --build build --target test_tiago_island

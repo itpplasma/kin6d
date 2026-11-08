@@ -1,11 +1,11 @@
 !> Q7 part 1 oracles: T=0 Lindhard closed form, two independent finite-T
-!> routes, kin6d_fermi_gas long-wavelength limit, Sommerfeld and Boltzmann
+!> routes, milca_fermi_gas long-wavelength limit, Sommerfeld and Boltzmann
 !> (Dawson) limits, exact Yukawa inversion, tail bound and Friedel period.
 program test_screening
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_species, only: atomic_units, electron
-    use kin6d_screening_hierarchy
+    use milca_species, only: atomic_units, electron
+    use milca_screening_hierarchy
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     type(screening_state_t) :: st, zero
@@ -62,7 +62,7 @@ program test_screening
             end if
             if (max(a%tail, b%tail) > 1e-15_dp) failures = failures + 1
         end do
-        ! 5. Long-wavelength limit vs kin6d_fermi_gas screening ratio.
+        ! 5. Long-wavelength limit vs milca_fermi_gas screening ratio.
         ! G(0) must lie in the certified fermi_gas enclosure of (ks/kTF0)^2.
         b = lindhard_maldague(st, 1e-6_dp)
         write (*, '(a,f6.2,a,es10.3)') 'theta=', thetas(j), &

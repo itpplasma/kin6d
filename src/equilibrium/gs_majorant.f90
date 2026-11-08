@@ -1,40 +1,40 @@
-module kin6d_gs_majorant
+module milca_gs_majorant
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
                                   gs_linear_response, gs_recovery_t
-    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp
-    use kin6d_triangle_basis, only: triangle_bernstein_controls
+    use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp
+    use milca_triangle_basis, only: triangle_bernstein_controls
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
     use fortfem_triangle_rt_arbitrary_order, only: triangle_rt_basis_t, &
         initialize_triangle_raviart_thomas, evaluate_triangle_raviart_thomas
-    use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux
+    use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux
     use fortfem_generated_equilibrated_flux_normal_component, only: &
         generated_equilibrated_flux_normal_component
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_gs_nonlinear, only: gs_forcing_t
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_gs_nonlinear, only: gs_forcing_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK, &
         KRYLOV_MAX_ITERATIONS
-    use kin6d_gs_csr, only: gs_csr_build, gs_csr_apply_full, csr_matrix_t
-    use kin6d_gs_options, only: gs_use_direct
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_gs_csr, only: gs_csr_build, gs_csr_apply_full, csr_matrix_t
+    use milca_gs_options, only: gs_use_direct
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
-    use kin6d_gs_timers, only: gs_phase_tick
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_bem_nodes, &
+    use milca_gs_timers, only: gs_phase_tick
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_bem_nodes, &
         gs_coupled_apply, gs_coupling_steklov
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
         gs_fb_evaluate, gs_fb_factor, gs_fb_solve, gs_fb_release, GS_FB_OK
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
         gs_bem_panel_point, gs_bem_trace_node_index
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
         sparse_direct_factor_csc, sparse_direct_solve_factored, sparse_direct_free
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     use, intrinsic :: iso_fortran_env, only: i64 => int64
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_functional_majorant

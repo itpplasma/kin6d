@@ -3,12 +3,12 @@ program test_ideal_fb_surface
     !! BEM assembly: rotated-sector versus all-pairs Steklov forms.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t
-    use kin6d_ideal_free_boundary_bem3d, only: coupling_surface_t, ideal_fb_surface
+    use milca_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t
+    use milca_ideal_free_boundary, only: ideal_fb_t
+    use milca_ideal_free_boundary_bem3d, only: coupling_surface_t, ideal_fb_surface
     use fortfem_parametric_bem_high_order, only: build_p2_trace_connectivity, &
                                           bem_pair_options_t, bem_pair_report_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), radius = .15_dp
     real(dp), parameter :: nodes(2, 6) = reshape( &

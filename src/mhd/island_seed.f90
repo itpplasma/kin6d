@@ -1,4 +1,4 @@
-module kin6d_island_seed
+module milca_island_seed
     ! Energy-criterion island seeding on the NN1 FEEC Fourier complex
     ! (docs/island-seed.md; item 4 of docs/relaxation-comparators.md).
     !
@@ -27,10 +27,10 @@ module kin6d_island_seed
     use fortfem_meridian_feec_n, only: meridian_point_basis, meridian_op_complex, &
         meridian_qpoint, meridian_real_to_complex
     use fortsparse, only: csc_z_t, csc_matvec
-    use kin6d_mhd_mesh, only: flux_mesh_locate
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_mhd_mesh, only: flux_mesh_locate
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve, nn_factor_free
-    use kin6d_island_seed_leaves, only: circle_rotation, seed_potential, &
+    use milca_island_seed_leaves, only: circle_rotation, seed_potential, &
         pendulum_width
     implicit none
     private
@@ -702,4 +702,4 @@ contains
         if (info /= 0) return
         call dpotrs('L', n, 1, a, n, b, n, info)
     end subroutine
-end module kin6d_island_seed
+end module milca_island_seed

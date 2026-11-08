@@ -3,7 +3,7 @@ program test_ideal_mhd_coordinates
     use ideal_mhd_energy_generated, only: generated_two_energy, &
         generated_perpendicular_energy, generated_perpendicular_matrix, &
         generated_perpendicular_jvp, generated_perpendicular_vjp
-    use kin6d_ideal_xi, only: xi_bilinear
+    use milca_ideal_xi, only: xi_bilinear
     implicit none
     real(dp) :: w(1), m(2,2), jv(2), vg(8), x(7), dx(7), expected, mx(2)
     complex(dp) :: a(3,3)

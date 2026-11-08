@@ -8,18 +8,18 @@ program test_nonnested_relax
     !            fluxes kept to roundoff, energy bounded below by the Taylor
     !            (Woltjer) minimum at that helicity.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_point, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_point, &
         nn_linear_solve
-    use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
+    use milca_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve, beltrami_constraint
-    use kin6d_nonnested_relax, only: relax_system_t, relax_options_t, &
+    use milca_nonnested_relax, only: relax_system_t, relax_options_t, &
         relax_report_t, relax_state_t, relax_prepare, relax_run, relax_state, &
         relax_store, relax_free, RELAX_IDEAL, RELAX_TAYLOR
     use fortfem_meridian_feec_n, only: meridian_load
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
-    use kin6d_equilibrium_nonnested, only: nn_report_t, nn_solve, nn_vacuum_mode
-    use kin6d_nonnested_relax, only: relax_pack_modes
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
+    use milca_equilibrium_nonnested, only: nn_report_t, nn_solve, nn_vacuum_mode
+    use milca_nonnested_relax, only: relax_pack_modes
     use nn_vacuum_fixture, only: vfield => field, ftor, nmodes, active_mode, &
         coil_mu0, make_coil, mean_psi, gauge_potential, annulus_mesh, &
         periodic_radius, full_periodic, stability, island_edge

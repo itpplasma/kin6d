@@ -1,8 +1,8 @@
 program test_nested_oracles
     ! Independent complex formulas, spatial differences and volume integration.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
-    use kin6d_nested_oracle_leaves, only: nested_integer_averages, &
+    use milca_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
+    use milca_nested_oracle_leaves, only: nested_integer_averages, &
                                    nested_sheared_field_jvp, nested_sheared_field_vjp, &
                          nested_sheared_field_interval, nested_integer_field_interval, &
                                       nested_integer_field_jvp, nested_integer_field_vjp
@@ -320,7 +320,7 @@ contains
     end function
 
     subroutine check_flux_derivatives()
-        use kin6d_nested_oracle_leaves, only: nested_sheared_flux_density, &
+        use milca_nested_oracle_leaves, only: nested_sheared_flux_density, &
                         nested_sheared_flux_density_jvp, nested_sheared_flux_density_vjp
         real(dp) :: a(7), d(7), b(2), jv(2), jt(7), plus(2), minus(2)
         a = [0.4_dp, 0.7_dp, 0.3_dp, 1.2_dp, 0.4_dp, 1.4_dp, 1.6_dp]
@@ -397,7 +397,7 @@ contains
         end do
     end function
     subroutine field_leaf(a, v)
-        use kin6d_nested_oracle_leaves, only: nested_sheared_field, nested_integer_field
+        use milca_nested_oracle_leaves, only: nested_sheared_field, nested_integer_field
         real(dp), intent(in)::a(:)
         real(dp), intent(out)::v(20)
         if (size(a) == 6) then

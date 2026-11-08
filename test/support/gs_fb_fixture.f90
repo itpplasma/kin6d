@@ -4,8 +4,8 @@ module gs_fb_fixture
     !! supported analytic flux bumps (a main plasma bump and an optional
     !! second one that creates an X point), and nodal sampling.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_profile_law, only: gs_profile_law_t
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_profile_law, only: gs_profile_law_t
     implicit none
     private
 

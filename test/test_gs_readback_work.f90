@@ -1,9 +1,9 @@
 program test_gs_readback_work
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_axis_candidate
-    use kin6d_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_coarea_leaves, only: gs_cubic_flux, gs_cubic_flux_jvp, &
+    use milca_gs_coarea, only: gs_level_coarea
+    use milca_gs_coarea_leaves, only: gs_cubic_flux, gs_cubic_flux_jvp, &
         gs_cubic_flux_vjp
     implicit none
     type(gs_state_t) :: state

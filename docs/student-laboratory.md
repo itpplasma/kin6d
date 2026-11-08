@@ -113,7 +113,7 @@ succeeds or fails. The full plan with claims and findings is
 
 A reduced stellar-structure example that crosses from thermal to degeneracy
 support remains planned; the current EOS is pressure-only. The point is not a
-separate quantum course hidden in KIN6D: each example retains the
+separate quantum course hidden in MILCA: each example retains the
 provenance, error and verification conventions of the classical gallery.
 
 ## Kinetic teaching sequence

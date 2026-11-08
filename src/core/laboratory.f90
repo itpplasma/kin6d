@@ -1,7 +1,7 @@
-module kin6d_laboratory
+module milca_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_leaves, only: coordinate, initial_coefficients, &
+    use milca_leaves, only: coordinate, initial_coefficients, &
                             stream_factors, stream_cached, &
                             interpolate, interpolation_weight, reconstruct, &
                             steady_source, &

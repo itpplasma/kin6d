@@ -3,13 +3,13 @@
 !> the classical Boltzmann weight; spin labels are spectators.
 !>
 !> The periodic energy is pairwise additive, U = const + sum_{i<j} u(x_i-x_j),
-!> with u the zero-mean Ewald pair potential of the shared kin6d_nbody/kin6d_ewald path
+!> with u the zero-mean Ewald pair potential of the shared milca_nbody/milca_ewald path
 !> (a two-particle periodic system). Optional semiclassical pair models add
-!> the declared short-range term of kin6d_pair_law (periodic-image Kelbg
+!> the declared short-range term of milca_pair_law (periodic-image Kelbg
 !> excess, spin-averaged Pauli potential) on top of that Coulomb part.
 !> N >= 3 is sampled by the one periodic-cell Metropolis sampler
-!> (kin6d_ocp_monte_carlo, mc_setup_cell); the N = 2 quadrature uses the
-!> independent two-body kin6d_nbody path and is the oracle for the sampler.
+!> (milca_ocp_monte_carlo, mc_setup_cell); the N = 2 quadrature uses the
+!> independent two-body milca_nbody path and is the oracle for the sampler.
 !>
 !> Estimators (common with the quantum cell, docs/quantum-classical-
 !> correlations.md): shell-averaged spin-summed g on equal shells in |r|<L/2,
@@ -17,28 +17,28 @@
 !> S = {1 <= |n|^2 <= 3}, Wigner--Kirkwood and leading-exchange reweighting,
 !> and the beta derivative of g by the energy covariance. Monte Carlo
 !> intervals are batch-means statistical intervals (labelled), not bounds.
-module kin6d_classical_cell
+module milca_classical_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_coulomb_leaves, only: ewald_background
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
-    use kin6d_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
-    use kin6d_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
+    use milca_ewald, only: ewald_parameters_t, ewald_select
+    use milca_coulomb_leaves, only: ewald_background
+    use milca_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
+    use milca_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
+    use milca_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
         pair_law_exchange_sum, pair_coulomb, pair_kelbg, pair_kelbg_pauli
-    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces
-    use kin6d_series_statistics, only: series_batch_means
+    use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces
+    use milca_series_statistics, only: series_batch_means
     implicit none
     private
     public :: classical_cell_t, classical_mc_t, init_classical_cell
     public :: cell_pair_energy, cell_exchange_sum, cell_total_energy
     public :: cell_q_set, cell_triple_set, classical_cell_mc
     public :: classical_pair_quadrature, cell_shell_volume, cell_sampler_offset
-    !> Pair-law selectors (kin6d_pair_law).
+    !> Pair-law selectors (milca_pair_law).
     integer, parameter, public :: model_coulomb = pair_coulomb, &
         model_kelbg = pair_kelbg, model_kelbg_pauli = pair_kelbg_pauli
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -46,7 +46,7 @@ module kin6d_classical_cell
     type :: classical_cell_t
         integer :: n = 0, model = model_coulomb
         real(dp) :: length = 0, volume = 0, coupling = 1, mass = 1, hbar = 1
-        !> Relative Ewald truncation tolerance (kin6d_ewald units).
+        !> Relative Ewald truncation tolerance (milca_ewald units).
         real(dp) :: tolerance = 1.0e-10_dp
         real(dp) :: rs = 0, theta = 0, gamma = 0, fermi = 0, kt = 0, beta = 0
         !> Pair thermal length hbar/sqrt(2 mu kT), mu = m/2 (Kelbg/exchange).
@@ -70,7 +70,7 @@ module kin6d_classical_cell
     end type
 contains
     !> Cell of n electrons at density parameter rs (L from the shared rs map,
-    !> as kin6d_jellium_cell) and Theta = kT/E_F; model selects the pair law.
+    !> as milca_jellium_cell) and Theta = kT/E_F; model selects the pair law.
     subroutine init_classical_cell(cell, n, rs, theta, model, ok, tolerance)
         type(classical_cell_t), intent(out) :: cell
         integer, intent(in) :: n, model
@@ -218,7 +218,7 @@ contains
     end function
 
     !> Canonical Metropolis Monte Carlo of the cell with the shared periodic
-    !> sampler (kin6d_ocp_monte_carlo: single-particle uniform cube moves,
+    !> sampler (milca_ocp_monte_carlo: single-particle uniform cube moves,
     !> step tuned during equilibration only). One measurement per sweep of n
     !> moves; batch means over `batches`. reweight (Coulomb model) adds the
     !> Wigner--Kirkwood and leading-order exchange reweighted g and the
@@ -362,7 +362,7 @@ contains
         ok = all(ieee_is_finite(mc%g)) .and. ieee_is_finite(mc%c2)
     end subroutine
 
-    !> Mean and standard error over batch columns (kin6d_series_statistics).
+    !> Mean and standard error over batch columns (milca_series_statistics).
     subroutine batch_stats(a, mean, err)
         real(dp), intent(in) :: a(:, :)
         real(dp), allocatable, intent(out) :: mean(:), err(:)
@@ -492,4 +492,4 @@ contains
             xx = 1 - cell%same_spin*cell_exchange_sum(cell, dd)
         end subroutine
     end subroutine
-end module kin6d_classical_cell
+end module milca_classical_cell

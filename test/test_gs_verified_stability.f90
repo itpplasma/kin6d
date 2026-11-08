@@ -1,12 +1,12 @@
 program test_gs_verified_stability
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use omp_lib, only: omp_get_wtime
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t
-    use kin6d_gs_error_control, only: gs_stability_t, gs_fixed_stability, &
+    use milca_gs_error_control, only: gs_stability_t, gs_fixed_stability, &
         gs_fixed_stability_verified, gs_state_error_bound, GS_ERROR_OK, &
         GS_ERROR_UNAVAILABLE, GS_ERROR_NONCOERCIVE
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature

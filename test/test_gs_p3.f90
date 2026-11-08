@@ -1,8 +1,8 @@
 program test_gs_p3
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots
-    use kin6d_curved_triangle, only: triangle_geometry, triangle_shapes, triangle_locate
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_triangle_basis, only: triangle_basis_jet, cubic_segment_roots
+    use milca_curved_triangle, only: triangle_geometry, triangle_shapes, triangle_locate
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_linear_response, write_gs_mesh, read_gs_mesh, sample_gs
     implicit none
     real(dp), parameter :: reference(2, 10) = reshape([ &

@@ -6,7 +6,7 @@ program test_gs_mirror_mesh
     ! their input numbers, and the area is that of the curved disc. Loops
     ! that are not symmetric, or that meet the line between nodes, fail.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), rc = 0.2_dp, xm = 0.5_dp
     integer, parameter :: levels(2, 3) = reshape([12, 16, 16, 20, 20, 24], [2, 3])

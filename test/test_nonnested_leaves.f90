@@ -1,14 +1,14 @@
 program test_nonnested_leaves
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_core_leaves, only: maxwell_stress_delta, &
+    use milca_equilibrium_core_leaves, only: maxwell_stress_delta, &
         maxwell_stress_delta_jvp, maxwell_stress_delta_vjp, stress_residual_density
-    use kin6d_nonnested_leaves, only: segment_potential, segment_potential_jvp, &
+    use milca_nonnested_leaves, only: segment_potential, segment_potential_jvp, &
         segment_potential_vjp, fieldline_velocity, fieldline_velocity_jvp, &
         fieldline_velocity_vjp, coupled_current, coupled_current_jvp, &
         coupled_current_vjp, anisotropic_flux, island_defect_density, &
         island_defect_density_jvp, island_defect_density_vjp, island_defect_norm, &
         island_defect_norm_jvp, island_defect_norm_vjp
-    use kin6d_coils_3d, only: segment_b, coil_mu0
+    use milca_coils_3d, only: segment_b, coil_mu0
     implicit none
     real(dp) :: x(6), dx(6), g(6), w(9), y(9), yp(9), ym(9), dy(9), c(5)
     real(dp) :: err, dot_error, h, a(3), l(3), p(3), pp(3), ap(3), am(3)

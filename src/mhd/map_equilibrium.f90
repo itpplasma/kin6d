@@ -1,4 +1,4 @@
-module kin6d_map_equilibrium
+module milca_map_equilibrium
     ! Read-only N=0 cylindrical map -> S adapter. The reference form is retained
     ! with the map, rather than reconstructed from truncated Fourier B modes.
     ! Inverting the represented map is a geometric root solve; the field leaf
@@ -8,21 +8,21 @@ module kin6d_map_equilibrium
     ! the projection and quadrature errors are not enclosed.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: flux_labelled_field_t, equilibrium_state_t, &
+    use milca_equilibrium_state, only: flux_labelled_field_t, equilibrium_state_t, &
                    EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES, &
                                        EQ_UNAVAILABLE
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
-    use kin6d_ideal_map_leaves, only: ideal_axisymmetric_field, ideal_reference_form, &
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t
+    use milca_ideal_map_leaves, only: ideal_axisymmetric_field, ideal_reference_form, &
         ideal_region_weight, ideal_contour_density
-    use kin6d_grad_shafranov, only: gs_state_t, gs_axis_candidate, gs_element_jet
-    use kin6d_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_axis_recovery, only: gs_magnetic_axis
+    use milca_grad_shafranov, only: gs_state_t, gs_axis_candidate, gs_element_jet
+    use milca_gs_coarea, only: gs_level_coarea
+    use milca_gs_axis_recovery, only: gs_magnetic_axis
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use kin6d_gs_equilibrium, only: gs_geometry_view, gs_readback_resolution
-    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls, &
+    use milca_gs_equilibrium, only: gs_geometry_view, gs_readback_resolution
+    use milca_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls, &
         TRIANGLE_MAX_NODES
-    use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
+    use milca_curved_triangle, only: triangle_geometry, triangle_locate
     use delaunay_types, only: mesh_t
     use point_location, only: locate_point
     implicit none
@@ -435,4 +435,4 @@ contains
         !$omp end parallel do
         status = failed
     end subroutine
-end module kin6d_map_equilibrium
+end module milca_map_equilibrium

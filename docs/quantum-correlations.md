@@ -53,7 +53,7 @@ ensemble with independent fractional occupations can be a valid grandcanonical
 state without having a sharp particle number. The helper does not confuse that
 ensemble with a fixed-N correlated state.
 
-`kin6d_quantum_correlations` re-exports generated `quantum_wick_pair` and
+`milca_quantum_correlations` re-exports generated `quantum_wick_pair` and
 `quantum_cumulant_pair`, each with `_jvp`, `_vjp` and `_interval` variants.
 Coordinates are paired real/imaginary values. Supply x=gamma(i,k), y=gamma(j,l),
 z=gamma(i,l), w=gamma(j,k); the cumulant additionally takes gr+i*gi=Gamma(i,j,k,l).

@@ -2,7 +2,7 @@ module ideal_fb_circuits_test_field
     ! Smooth nested frozen data (elliptic labels about (3.05, 0), F = 6 T m),
     ! the same simple data as the N4 derivative checks.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     type, extends(ideal_frozen_t), public :: elliptic_field_t
@@ -23,25 +23,25 @@ end module ideal_fb_circuits_test_field
 
 program test_ideal_fb_circuits
     ! Circuit currents as parameters of the nested-map free-boundary residual
-    ! (kin6d_ideal_fb_circuits), synthetic public coils only, nfp = 3, N = 1:
+    ! (milca_ideal_fb_circuits), synthetic public coils only, nfp = 3, N = 1:
     !   derivatives  JVP in the currents against central differences of the
     !                residual (exact for its quadratic current dependence),
     !                adjoint identity <v, J w> = <J^T v, w>, superposition of
     !                the vacuum traces and of the F_vac-free residual part,
     !                Ampere oracle for F_vac of the toroidal-field circuit.
     !   exterior3d   the same JVP/VJP checks with a frozen full-surface R2
-    !                exterior attached (kin6d_equilibrium_boundary_3d form).
+    !                exterior attached (milca_equilibrium_boundary_3d form).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     use ideal_fb_circuits_test_field, only: elliptic_field_t
     implicit none

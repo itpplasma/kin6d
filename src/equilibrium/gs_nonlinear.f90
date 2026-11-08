@@ -1,24 +1,24 @@
-module kin6d_gs_nonlinear
+module milca_gs_nonlinear
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
+    use milca_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
                                     gs_cell_data, gs_axis_candidate, &
                                     gs_linear_response, gs_factor_ready, &
                                     gs_apply_inverse, gs_requested_device, &
                                     GS_UNSUPPORTED_DEVICE
-    use kin6d_gs_csr, only: gs_csr_dirichlet_apply, gs_csr_fill_masked
-    use kin6d_gs_options, only: gs_use_csr
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
+    use milca_gs_csr, only: gs_csr_dirichlet_apply, gs_csr_fill_masked
+    use milca_gs_options, only: gs_use_csr
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
                                   gs_law_c1, gs_law_sources_batch
-    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
+    use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
                                       gs_cut_discriminant, gs_cut_quadratic_discriminant
-    use kin6d_gs_load_batch, only: batch_position_flux, batch_moments
+    use milca_gs_load_batch, only: batch_position_flux, batch_moments
     use gs_source_batch_mod, only: gs_source_batch
     use gs_source_tangents_batch_mod, only: gs_source_tangents_batch
-    use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
+    use milca_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
                                     triangle_bernstein_controls, &
                                     cubic_segment_stationary
-    use kin6d_curved_triangle, only: triangle_locate
+    use milca_curved_triangle, only: triangle_locate
     use fortfem_triangle_level_quadrature, only: triangle_level_workspace_t, &
                        initialize_triangle_level_workspace, integrate_triangle_levels, &
                                                  triangle_level_coefficients
@@ -26,14 +26,14 @@ module kin6d_gs_nonlinear
     use fortnum_krylov, only: real_gmres_operator, real_conjugate_gradient_operator, &
                                KRYLOV_OK, KRYLOV_MAX_ITERATIONS
     use fortnum_linalg, only: det2
-    use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, gs_timer_iterations, &
+    use milca_gs_timers, only: gs_wall_s, gs_timer_add, gs_timer_iterations, &
                                gs_progress, gs_progress_enabled, GS_T_ASSEMBLY, &
                                GS_T_LOAD_CELLS, GS_T_JAC_CG, GS_T_JAC_GMRES, &
                                GS_T_PRECOND_CG
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_SCREW, &
+    use milca_gs_symmetry, only: GS_ROTATION, GS_SCREW, &
         GS_UNSUPPORTED_SYMMETRY, gs_reduced_source
-    use kin6d_gs_profile_law, only: gs_law_primitives
+    use milca_gs_profile_law, only: gs_law_primitives
     implicit none
     private
     public :: gs_forcing_t, gs_normalize_current

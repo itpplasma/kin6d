@@ -1,5 +1,5 @@
-module kin6d_gs_direct
-    ! Build without MUMPS (KIN6D_ENABLE_MUMPS=OFF): no direct factor is available
+module milca_gs_direct
+    ! Build without MUMPS (MILCA_ENABLE_MUMPS=OFF): no direct factor is available
     ! and every caller keeps the iterative path.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none

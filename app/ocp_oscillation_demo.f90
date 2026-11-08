@@ -12,20 +12,20 @@ module ocp_oscillation_app
     ! three axes; ensemble mean with a 95% Student-t interval (statistical).
     ! Oracles: linear Vlasov initial-value response (Volterra), Landau root
     ! of the Maxwellian dielectric, Bohm-Gross and the cold rigid slab
-    ! (kin6d_slab_oscillation). Snapshots and g(r)/S(k) feed C5/H1.
+    ! (milca_slab_oscillation). Snapshots and g(r)/S(k) feed C5/H1.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
+    use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
         ocp_advance_jvp, ocp_thermostat, ocp_kinetic_temperature, ocp_mode, &
         ocp_displace, ocp_displace_tangent
-    use kin6d_nbody, only: nbody_system_t, nbody_energy
-    use kin6d_vlasov_response, only: landau_root, vlasov_density_response, &
+    use milca_nbody, only: nbody_system_t, nbody_energy
+    use milca_vlasov_response, only: landau_root, vlasov_density_response, &
         fit_damped_cosine
-    use kin6d_pair_correlation, only: pair_counts, pair_distribution, structure_factor
-    use kin6d_slab_oscillation, only: slab_oscillation_state_t, &
+    use milca_pair_correlation, only: pair_counts, pair_distribution, structure_factor
+    use milca_slab_oscillation, only: slab_oscillation_state_t, &
         initialize_slab_oscillation, solve_slab_oscillation, sample_slab_oscillation
-    use kin6d_ocp_leaves, only: bohm_gross, debye_structure
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_ocp_leaves, only: bohm_gross, debye_structure
+    use milca_result_io, only: run_t, result_file_t
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &
         tight_layout, savefig, colorbar

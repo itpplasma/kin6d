@@ -1,10 +1,10 @@
-module kin6d_transport_certificate
+module milca_transport_certificate
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, mag
-    use kin6d_transport_laboratory, only: transport_state_t, transport_valid, &
+    use milca_transport_laboratory, only: transport_state_t, transport_valid, &
                                           sample_transport_coefficients_interval
-    use kin6d_transport_leaves, only: transport_residual_cell_interval, &
+    use milca_transport_leaves, only: transport_residual_cell_interval, &
                transport_residual_box_interval, transport_certificate_radius_interval, &
                  transport_tangent_radius_interval, transport_tangent_source_interval, &
                              transport_goal_band_interval, transport_scalar_add_interval, &

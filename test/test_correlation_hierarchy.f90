@@ -1,10 +1,10 @@
 program test_correlation_hierarchy
     ! Independent oracles of the H1a correlation-hierarchy map:
-    ! - MC Ewald energy against the tiled direct Ewald sum of kin6d_nbody with
+    ! - MC Ewald energy against the tiled direct Ewald sum of milca_nbody with
     !   different (tighter) parameters; incremental energy against a full
     !   recompute; MC forces against central differences of the MC energy;
     ! - the Metropolis chain for N = 2 against <U> by direct quadrature of
-    !   the periodic pair Boltzmann factor (kin6d_nbody energy);
+    !   the periodic pair Boltzmann factor (milca_nbody energy);
     ! - triplet bin measure against the analytic two-ball overlap integral;
     !   ideal-gas g3 = 1 and c3 = 0;
     ! - YBG first-order closure force against the analytic Gaussian-cloud
@@ -16,14 +16,14 @@ program test_correlation_hierarchy
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform, rng_normal
-    use kin6d_species, only: atomic_units, electron, species_t
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_energy
-    use kin6d_ocp_monte_carlo
-    use kin6d_correlation_hierarchy
-    use kin6d_ocp_hnc
-    use kin6d_series_statistics
-    use kin6d_correlation_hierarchy_leaves, only: ch_ocp_energy_fit, &
+    use milca_species, only: atomic_units, electron, species_t
+    use milca_ewald, only: ewald_parameters_t, ewald_select
+    use milca_nbody, only: nbody_system_t, nbody_periodic, nbody_energy
+    use milca_ocp_monte_carlo
+    use milca_correlation_hierarchy
+    use milca_ocp_hnc
+    use milca_series_statistics
+    use milca_correlation_hierarchy_leaves, only: ch_ocp_energy_fit, &
         ch_ocp_energy_fit_jvp, ch_debye_hueckel_energy, ch_debye_wavenumber
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -45,7 +45,7 @@ contains
         end if
     end subroutine
 
-    !> kin6d_nbody direct Ewald system of n electrons (tight, real_cutoff 2).
+    !> milca_nbody direct Ewald system of n electrons (tight, real_cutoff 2).
     subroutine direct_system(n, length, system)
         integer, intent(in) :: n
         real(dp), intent(in) :: length

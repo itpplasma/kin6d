@@ -1,8 +1,8 @@
-module kin6d_frozen_current
+module milca_frozen_current
     ! Level 2 of the device island field hierarchy: the magnetic field of a
     ! frozen current density J on the NN1 FEEC complex times a real Fourier
     ! series in phi (modes 0..N, FortFEM's real block layout as in
-    ! kin6d_nonnested_coupled). Unknowns x = [A (V1 blocks) | lambda (V0)]:
+    ! milca_nonnested_coupled). Unknowns x = [A (V1 blocks) | lambda (V0)]:
     !     <curl dA, curl A>/mu0 + <dA, grad lambda> = <dA, J>,
     !     <A, grad chi> = 0,
     ! for test functions with zero trace: the Coulomb-gauge saddle point of
@@ -41,12 +41,12 @@ module kin6d_frozen_current
     use fortfem_axisymmetric_gs_kernel, only: gs_green
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, sparse_solver_t, &
         sparse_solve, sparse_destroy, fortsparse_status_t, status_ok
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free
-    use kin6d_nonnested_coupled, only: nc_layout_t, nc_layout, nc_store, &
+    use milca_nonnested_coupled, only: nc_layout_t, nc_layout, nc_store, &
         nc_factor_reduced
-    use kin6d_nonnested_leaves, only: vacuum_gauge
-    use kin6d_island_leaves, only: biot_savart_integrand
+    use milca_nonnested_leaves, only: vacuum_gauge
+    use milca_island_leaves, only: biot_savart_integrand
     implicit none
     private
     public :: fc_current_i, fc_exterior_t, fc_report_t, fc_exterior, fc_solve

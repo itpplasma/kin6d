@@ -6,10 +6,10 @@
 ! ensemble, finite differences and the dot-product identity.
 program test_coulomb_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
-    use kin6d_radial_dvr
-    use kin6d_coulomb_encounter
-    use kin6d_coulomb_kepler
-    use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_rutherford, ce_free_width
+    use milca_radial_dvr
+    use milca_coulomb_encounter
+    use milca_coulomb_kepler
+    use milca_coulomb_encounter_leaves, only: ce_mott, ce_rutherford, ce_free_width
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab, gauss_lobatto_legendre
     use fortnum_special_legendre, only: legendre_p_normalized_table
     implicit none

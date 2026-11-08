@@ -5,8 +5,8 @@
 program test_animation_export
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32, &
         int8, int16
-    use kin6d_result_io, only: run_t
-    use kin6d_animation_export, only: animation_export_t
+    use milca_result_io, only: run_t
+    use milca_animation_export, only: animation_export_t
     implicit none
     character(len=*), parameter :: root = 'output/test_animation_export'
     type(run_t) :: run
@@ -66,7 +66,7 @@ program test_animation_export
         error stop 'note not escaped'
     if (index(json, 'say \"hi\"\\path') == 0) error stop 'resolved text not escaped'
     if (index(json, '"shape": [2, 3]') == 0) error stop 'shape missing'
-    if (index(json, '"schema": "kin6d-animation-export-v1"') == 0) &
+    if (index(json, '"schema": "milca-animation-export-v1"') == 0) &
         error stop 'schema missing'
     print '(a)', 'animation export contract: ok'
 contains

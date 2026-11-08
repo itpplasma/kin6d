@@ -1,17 +1,17 @@
-module kin6d_map_3d_equilibrium
+module milca_map_3d_equilibrium
     ! Cylindrical Fourier maps -> the common physical-field evaluator.
     ! Retain the frozen form; never Fourier-fit B from a sampled candidate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
+    use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
                       EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
-    use kin6d_ideal_seed_3d, only: toroidal_seed_t, ideal_seed_3d_angle_density
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
-    use kin6d_curve_chart_leaves, only: curve_fourier_mode
-    use kin6d_ideal_map_leaves, only: ideal_reference_form
-    use kin6d_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t
+    use milca_ideal_seed_3d, only: toroidal_seed_t, ideal_seed_3d_angle_density
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
+    use milca_curve_chart_leaves, only: curve_fourier_mode
+    use milca_ideal_map_leaves, only: ideal_reference_form
+    use milca_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &
                                             map_3d_determinant, map_3d_flux
     implicit none
     private

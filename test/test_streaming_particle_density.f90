@@ -2,9 +2,9 @@ program test_streaming_particle_density
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval
-    use kin6d_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
+    use milca_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
         init_streaming, init_streaming_particles
-    use kin6d_streaming_particle_density
+    use milca_streaming_particle_density
     implicit none
 
     call uniform_oracle()

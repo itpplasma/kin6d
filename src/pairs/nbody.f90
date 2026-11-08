@@ -2,32 +2,32 @@
 !> the microscopic cases (C0 relative encounter, C1 periodic pair, C2 cloud).
 !>
 !> State layout: state(1:3n) positions, state(3n+1:6n) velocities.
-!> Interactions come only from kin6d_coulomb_leaves (one Coulomb definition):
+!> Interactions come only from milca_coulomb_leaves (one Coulomb definition):
 !> - isolated: bare pair Coulomb, optional fixed point sources and a fixed
 !>   uniform sphere centred at the origin;
-!> - periodic: Ewald sum (kin6d_ewald parameters) with neutralizing
+!> - periodic: Ewald sum (milca_ewald parameters) with neutralizing
 !>   background; the energy includes self-image, self and background terms.
-!> - periodic mesh: particle-mesh Ewald (kin6d_pme: cell-list real space and
+!> - periodic mesh: particle-mesh Ewald (milca_pme: cell-list real space and
 !>   B-spline mesh), the scalable action verified against the direct sum.
 !> Particles may be fixed (infinite mass: an impurity held at rest).
 !> Pair work is a tiled direct sum (or structure-factor reciprocal sum); the
 !> logical all-pairs matrix is never stored. There is no softening: a
 !> coincident pair or non-finite force fails closed with a domain error.
 !> One splitting path: FortNum geometric Strang (kick-drift-kick).
-module kin6d_nbody
+module milca_nbody
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK, FORTNUM_DOMAIN_ERROR, &
                               status_set
     use fortnum_ode_geometric, only: geometric_strang_step
-    use kin6d_coulomb_leaves, only: coulomb_pair, coulomb_pair_jvp, &
+    use milca_coulomb_leaves, only: coulomb_pair, coulomb_pair_jvp, &
         coulomb_sphere_inside, coulomb_sphere_inside_jvp, ewald_real_pair, &
         ewald_real_pair_jvp, ewald_reciprocal_weight, ewald_self, ewald_background
-    use kin6d_ewald, only: ewald_parameters_t
-    use kin6d_near_encounter, only: near_t, near_setup, near_flow
-    use kin6d_pme, only: pme_parameters_t, pme_t, pme_setup, pme_force, &
+    use milca_ewald, only: ewald_parameters_t
+    use milca_near_encounter, only: near_t, near_setup, near_flow
+    use milca_pme, only: pme_parameters_t, pme_t, pme_setup, pme_force, &
                          pme_force_jvp, pme_constant
-    use kin6d_species, only: units_t, species_t
+    use milca_species, only: units_t, species_t
     implicit none
     private
     public :: nbody_system_t, nbody_isolated, nbody_periodic, nbody_add_source
@@ -122,7 +122,7 @@ contains
     end subroutine
 
     !> Periodic system with the particle-mesh Ewald action of parameters p
-    !> (kin6d_pme); ewald%length carries the box edge for minimum images.
+    !> (milca_pme); ewald%length carries the box edge for minimum images.
     subroutine nbody_periodic_mesh(system, units, particles, p, ok)
         type(nbody_system_t), intent(out) :: system
         type(units_t), intent(in) :: units
@@ -139,7 +139,7 @@ contains
         ok = ieee_is_finite(system%constant_energy)
     end subroutine
 
-    !> Encounter-resolved stepping (kin6d_near_encounter) for outer step dt
+    !> Encounter-resolved stepping (milca_near_encounter) for outer step dt
     !> and reference relative speed: the KDK kick uses the far force and the
     !> drift becomes the near-pair flow. Only for particle-mesh systems.
     subroutine nbody_set_encounter(system, dt, speed, ok, eta_outer, eta_inner)
@@ -857,4 +857,4 @@ contains
         end subroutine
     end subroutine
 
-end module kin6d_nbody
+end module milca_nbody

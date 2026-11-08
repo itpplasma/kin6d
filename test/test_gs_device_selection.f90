@@ -1,12 +1,12 @@
 program test_gs_device_selection
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_requested_device, GS_DEVICE_FAILURE, GS_UNSUPPORTED_DEVICE
-    use kin6d_gs_options, only: gs_set_options
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, &
+    use milca_gs_options, only: gs_set_options
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles, &
         gs_profile_jacobian_t, cubic_response => gs_profile_response
-    use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
+    use milca_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
         gs_fb_eval_t, gs_fb_factor_t, gs_fb_setup, gs_fb_newton, gs_fb_factor, &
         GS_FB_UNSUPPORTED_DEVICE
     implicit none

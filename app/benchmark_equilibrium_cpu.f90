@@ -1,9 +1,9 @@
 program benchmark_equilibrium_cpu
     ! Wall-clock profile of the actual 3D map consumer, with an fp64 residual.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
                                ideal_map_energy, ideal_map_hessian, ideal_map_residual
     use fortfem_element_to_csr, only: csr_matrix_t
     use ideal_map_cases, only: setup_case, boundary_point, pullback_field_t, &

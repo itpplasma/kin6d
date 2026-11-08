@@ -5,11 +5,11 @@ program test_gs_threads
     ! other results are sums that agree to a few ulp.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use omp_lib, only: omp_set_num_threads
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
-    use kin6d_gs_majorant, only: gs_functional_majorant
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium
+    use milca_gs_majorant, only: gs_functional_majorant
     implicit none
     integer, parameter :: counts(3) = [1, 3, 8]
     type(gs_state_t) :: state, uncached

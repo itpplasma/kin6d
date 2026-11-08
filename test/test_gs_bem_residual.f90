@@ -8,7 +8,7 @@ program test_gs_bem_residual
         gs_bem_exterior_neumann
     use fortfem_bem_residual_energy, only: bem_residual_factor, &
         bem_residual_energy, BEM_RESIDUAL_OK
-    use kin6d_gs_majorant, only: gs_coupled_majorant_t
+    use milca_gs_majorant, only: gs_coupled_majorant_t
     implicit none
     type(gs_bem_curve_t) :: curve
     type(gs_bem_operators_t) :: coarse, fine

@@ -8,10 +8,10 @@ program nn1_hx_ladder
     !   direct_linear_s,hx_linear_s (the *_s columns include the load)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     !$ use omp_lib, only: omp_get_max_threads
-    use kin6d_mhd_mesh, only: flux_mesh_t
-    use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_vacuum_mode, &
+    use milca_mhd_mesh, only: flux_mesh_t
+    use milca_equilibrium_nonnested, only: nn_report_t, nn_build, nn_vacuum_mode, &
         NN_SOLVER_DIRECT, NN_SOLVER_HX
-    use kin6d_coils_3d, only: coil_mu0
+    use milca_coils_3d, only: coil_mu0
     use nn_vacuum_fixture, only: field, annulus_mesh, make_coil, gauge_potential, &
         active_mode, nmodes, r0, ftor
     implicit none

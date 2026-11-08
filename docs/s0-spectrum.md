@@ -1,8 +1,8 @@
 # S0 physical-mass spectrum: plasma-volume slice
 
-`kin6d_s0_volume` assembles the existing fixed-pressure (`gamma=0`)
+`milca_s0_volume` assembles the existing fixed-pressure (`gamma=0`)
 [displacement Hessian](ideal-xi.md) and physical kinetic inertia in a supplied
-Galerkin space. `kin6d_s0_spectrum` consumes
+Galerkin space. `milca_s0_spectrum` consumes
 [FortNum](https://github.com/lazy-fortran/fortnum) eigen iterations and
 [FortSparse](https://github.com/lazy-fortran/fortsparse) native factors.
 Reports say **candidate / bound unavailable**. For exp(-i omega t),
@@ -68,7 +68,7 @@ terms to the volume assembler.
 
 ## Solved GS state to a fixed-wall m=1 kink
 
-`kin6d_s0_gs_space` supplies a production radial-P1 displacement adapter for a
+`milca_s0_gs_space` supplies a production radial-P1 displacement adapter for a
 circular meridional disk revolved about the symmetry axis. `s0_gs_tables`
 samples **the core state's field evaluator**, also used by D7, once in a batch;
 it never substitutes analytic fields for the GS solution. It explicitly
@@ -99,7 +99,7 @@ test includes every radial branch in this admitted m=1 space.
 
 `gen/gen_s0_gs_space.f90` emits the physical values, R/Z derivatives and polar
 volume Jacobian, with JVP/VJP leaves, into
-`src/generated/kin6d_s0_gs_space_leaves.f90`. The adapter reuses
+`src/generated/milca_s0_gs_space_leaves.f90`. The adapter reuses
 `xi_gradient_n` for the toroidal derivative and frame rotation, and FortFEM's
 generated line basis for radial P1 values and derivatives. Element loops
 use OpenMP and fixed-size local scratch. Four Gauss points per radial cell and

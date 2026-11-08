@@ -1,13 +1,13 @@
 program test_vrmhd_energy
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian
     use vrmhd_wall_oracle, only: current_wall_dofs
-    use kin6d_vrmhd_boundary, only: vrmhd_current_lift
-    use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
+    use milca_vrmhd_boundary, only: vrmhd_current_lift
+    use milca_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight

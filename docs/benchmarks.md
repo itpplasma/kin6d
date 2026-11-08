@@ -159,7 +159,7 @@ a speed ranking. Boundary errors are sampled indicators, not continuous
 bounds. The [comparison adapter](../benchmarks/nested/README.md) retains
 external states and uses a Fortran verifier for errors in B, pressure and
 surface labels and for the strong force defect. State bounds and estimator
-effectivity remain unavailable. The KIN6D epsilon>0 initializer and D8
+effectivity remain unavailable. The MILCA epsilon>0 initializer and D8
 admission exist for the integer family (docs/ideal-seed-3d.md); its accuracy
 ladder is open, so no production time-to-accuracy claim follows yet.
 
@@ -192,14 +192,14 @@ cross-code (X) and named after the physics problem:
 
 | Case | Class | Model lane | Producers |
 |---|---|---|---|
-| landreman_3d_nested | E0 | ideal nested | KIN6D, MRX, VMEC++, DESC, GVEC |
-| issan_3d_nonsymmetric | E0 | ideal nested | KIN6D, MRX, VMEC++, DESC, GVEC |
-| rotating_ellipse_3d | X | ideal non-nested/weak or vacuum | KIN6D, SPECTRE |
-| ncsx_relax_seed_relax | X | ideal non-nested/weak (incompressible relaxation) | KIN6D, MRX |
-| finite_pressure_island | X | ideal non-nested/weak; resistive relaxed | KIN6D, MRX; NTEC and HINT published results where equations match |
-| stochastic_finite_pressure | X | resistive relaxed | KIN6D; NTEC, HINT and PIES published results |
-| mrxmhd_island_chaos | X | MRxMHD | KIN6D-MRxMHD, SPEC/SPECTRE |
-| free_boundary_3d_nonnested | X | MRxMHD; ideal non-nested/weak | SPECTRE, KIN6D |
+| landreman_3d_nested | E0 | ideal nested | MILCA, MRX, VMEC++, DESC, GVEC |
+| issan_3d_nonsymmetric | E0 | ideal nested | MILCA, MRX, VMEC++, DESC, GVEC |
+| rotating_ellipse_3d | X | ideal non-nested/weak or vacuum | MILCA, SPECTRE |
+| ncsx_relax_seed_relax | X | ideal non-nested/weak (incompressible relaxation) | MILCA, MRX |
+| finite_pressure_island | X | ideal non-nested/weak; resistive relaxed | MILCA, MRX; NTEC and HINT published results where equations match |
+| stochastic_finite_pressure | X | resistive relaxed | MILCA; NTEC, HINT and PIES published results |
+| mrxmhd_island_chaos | X | MRxMHD | MILCA-MRxMHD, SPEC/SPECTRE |
+| free_boundary_3d_nonnested | X | MRxMHD; ideal non-nested/weak | SPECTRE, MILCA |
 
 Model match of the resistive comparators (checked against the papers). The
 Zhang--Zhu--Hegna code (NTEC) damps p by a parallel-only hyperbolic equation
@@ -217,7 +217,7 @@ field (k = 2.1e-3) is an unconverged ladder.
 Compare codes only within one model lane (ideal nested; ideal non-nested/weak;
 resistive relaxed; MRxMHD). A result from another lane is context, not a
 reference. The pressure closure is part of the lane: adiabatic transport with
-the map (kin6d map lane, SIESTA), a Lagrange multiplier for divergence-free
+the map (milca map lane, SIESTA), a Lagrange multiplier for divergence-free
 flow (MRX), parallel diffusion towards B·∇p = 0 (NTEC, HINT) and stepped
 pressure (SPEC, SPECTRE) give different equilibria in islands.
 
@@ -427,7 +427,7 @@ The FortFEM campaign branch removes that allocation/transform, reuses retained
 generated P1/P2 jets and generated cardinal-product leaves, and preserves node
 ordering. In the paired four-thread, 3,105-DOF check, median estimator cost
 fell from 0.554 to 0.227 s (2.44x); bounds changed by less than 4e-12 relative.
-KIN6D additionally parallelizes meridian/D3 geometry hulls, GS profile
+MILCA additionally parallelizes meridian/D3 geometry hulls, GS profile
 conversion and D3 stress-load conversion. Across the full driver sweeps,
 optimized bounds differ from baseline by less than 9e-10 relative. For
 `gs_free` the 48/72-node bounds agree within 8e-11; the 96-node bound spans
@@ -449,5 +449,5 @@ recipe is `benchmarks/run_estimator_gs_free.sh BUILD OUT`. Both retain two
 measurements at 1/2/4/8/16 threads and cap individual processes at 60 s. The
 optimized build uses `FETCHCONTENT_SOURCE_DIR_FORTFEM` pointing to FortFEM
 `eb/scale` at `a0f6fd49ba11b22dc019c518a94937dd54cd75a5`;
-KIN6D's dependency pin is unchanged. Source revisions are recorded in the
+MILCA's dependency pin is unchanged. Source revisions are recorded in the
 campaign handoff. No plots or large generated artifacts are tracked.

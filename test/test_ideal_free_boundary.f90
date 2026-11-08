@@ -2,7 +2,7 @@ module ideal_fb_test_field
     ! Smooth nested frozen data for the derivative checks: elliptic labels
     ! about (3.05, 0), F = 6 T m, pressure linear in the label.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     type, extends(ideal_frozen_t), public :: screw_field_t
@@ -54,7 +54,7 @@ contains
 end module ideal_fb_test_field
 
 program test_ideal_free_boundary
-    ! N4 building blocks of the 3D free boundary (kin6d_ideal_free_boundary).
+    ! N4 building blocks of the 3D free boundary (milca_ideal_free_boundary).
     !   derivatives      gradient of L against central differences of L, KKT
     !                    Hessian against differences of the gradient (N = 0
     !                    and N = 1, nfp = 3, perturbed state, all blocks)
@@ -89,11 +89,11 @@ program test_ideal_free_boundary
     !                    a rigid antisymmetric shift (N = 0, 1)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
         ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &
@@ -104,16 +104,16 @@ program test_ideal_free_boundary
         IDEAL_FB_NOT_CONVERGED, ideal_fb_attach_exterior_3d, ideal_fb_mode_weight, &
         ideal_fb_curvature_t, ideal_fb_negative_curvature, ideal_fb_trust_subproblem, &
         ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect
-    use kin6d_curved_triangle, only: triangle_locate
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
+    use milca_curved_triangle, only: triangle_locate
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
     use fortnum_symmetric_eigen, only: dense_oracle => symmetric_eigen
     use fortnum_quadrature, only: gauss_legendre
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use milca_triangle_basis, only: triangle_basis_jet
     use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
         cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
-    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+    use milca_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
     use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, FORTSPARSE_OK

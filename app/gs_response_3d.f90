@@ -5,11 +5,11 @@ program gs_response_3d
     !!    that cancel the total resonant flux (ideal shielding of a vacuum
     !!    plasma, no volume current);
     !!  - model = 'ideal': in addition the volume current of the linear ideal
-    !!    perturbed equilibrium (kin6d_mhd_ideal_n, MEPHIT form) with the
+    !!    perturbed equilibrium (milca_mhd_ideal_n, MEPHIT form) with the
     !!    field-aligned boundary sheet (boundary_sheet).
     !! closure selects the treatment of the rational surfaces in the ideal
     !! model: 'sheet' (L4: one sheet per rational ring, zero resonant flux
-    !! there) or 'frobenius' (L6, kin6d_mhd_closure_n: current-free layer
+    !! there) or 'frobenius' (L6, milca_mhd_closure_n: current-free layer
     !! |psin - psin_s| < layer_delta with edge sheets fixed by vanishing
     !! large-solution coefficients; rings graded geometrically with
     !! layer_ratio away from each layer, layer_nfit fit rings per side).
@@ -21,12 +21,12 @@ program gs_response_3d
     !! Output prefix_res.dat, one line per (phasing, rational):
     !!   q psin m area Phi_vac b_vac lambda b_shield
     !! with Phi_vac the resonant flux harmonic of the coil field (T m^2 per
-    !! rad^2, peak amplitude, kin6d_vacuum_surfaces phi_mn), area =
+    !! rad^2, peak amplitude, milca_vacuum_surfaces phi_mn), area =
     !! (1/2 pi) int R ds (m^2 per rad), b_vac = Phi_vac/area (T), lambda the
     !! sheet stream-function amplitude (A, peak), and b_shield = -M_ss lambda/
     !! area the resonant flux of the shielding sheet alone per area (the
     !! quantity GPEC reports as singflx).  m is the resonant m = n q of the
-    !! signed q of kin6d_vacuum_surfaces (GPEC labels it -m).
+    !! signed q of milca_vacuum_surfaces (GPEC labels it -m).
     !! With closure = 'frobenius' lambda and b_shield are the equivalent
     !! sheet amplitude lambda_eq of the jump of d Phi/d psin across
     !! psin_s -+ spot/(n |dq/dpsin|) (GPEC sing_spot) and its self flux per
@@ -35,7 +35,7 @@ program gs_response_3d
     !! prefix_layer.dat gives per (phasing, rational) D_I, mu, delta, the
     !! jump, the large-solution residuals |a1/Phi| on both sides, the two
     !! edge-sheet amplitudes and the jump of the fitted outer slopes.
-    !! closure = 'resistive' (L5, kin6d_mhd_layer_n) uses the same layers and
+    !! closure = 'resistive' (L5, milca_mhd_layer_n) uses the same layers and
     !! edge sheets with the resistive matching conditions: continuous
     !! reconnected flux A and net layer current = Delta_layer A, the
     !! resistive-inertial(-viscous) layer response of a plasma rotating with
@@ -50,27 +50,27 @@ program gs_response_3d
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_coils_3d
-    use kin6d_vacuum_surfaces
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+    use milca_coils_3d
+    use milca_vacuum_surfaces
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
         ring_labels_smooth
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl, ampere_n_error_t, ampere_n_coupled_error
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+    use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, &
         ring_sheet_load, ring_area, resonant_surfaces_missing, ring_sheet_edges, &
         ring_sheet_density
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+    use milca_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response, sample_field, ideal_response_error_t
-    use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
+    use milca_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
         perturbation_add_spectra, perturbation_export
-    use kin6d_mhd_response_n, only: layer_closure_t, closure_shield_init, &
+    use milca_mhd_response_n, only: layer_closure_t, closure_shield_init, &
         closure_fluxes
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+    use milca_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
         layer_xmax, layer_fit_widths, &
         layer_init, layer_closure, layer_coefficients, layer_slope, &
         layer_regular_slope, layer_jump, layer_kink, layer_large, layer_inside
-    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
+    use milca_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
         layer_delta, layer_metrics, resistive_closure
     implicit none
     integer, parameter :: maxr = 32, maxp = 4
@@ -440,7 +440,7 @@ program gs_response_3d
             phivac(i) = ring_flux_from_values(ra(i), n, m_rat(i), thg, bn, wq)
             deallocate (bn)
             ! independent L3 path: coil field on the surface_build points and
-            ! the phi_mn of kin6d_vacuum_surfaces
+            ! the phi_mn of milca_vacuum_surfaces
             call surface_build(g, ul(ring_of(i))**2, nfine, surf, st)
             allocate (xs(2, nfine), bs(3, 1, nfine), bb(2, nfine))
             xs(1, :) = surf%r
@@ -550,7 +550,7 @@ program gs_response_3d
 contains
     subroutine sheet_error(label, ring, angles, m)
         !! Coupled equilibrated bound of the unit-sheet solution a on ring
-        !! (kin6d_mhd_ampere_n, ampere_n_coupled_error); one output row.
+        !! (milca_mhd_ampere_n, ampere_n_coupled_error); one output row.
         character(*), intent(in) :: label
         integer, intent(in) :: ring, m
         type(ring_angles_t), intent(in) :: angles

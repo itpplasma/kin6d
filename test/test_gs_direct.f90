@@ -4,12 +4,12 @@ program test_gs_direct
     ! solves, and the Krylov work per Newton solve does not grow with the mesh.
     ! Manufactured P3 problem of test_gs_nonlinear on a circle-like boundary.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, apply_gs
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_gs_options, only: gs_set_options
-    use kin6d_gs_direct, only: gs_direct_available
-    use kin6d_gs_timers, only: gs_timer_reset, gs_timer_total, gs_timer_calls, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, apply_gs
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_gs_options, only: gs_set_options
+    use milca_gs_direct, only: gs_direct_available
+    use milca_gs_timers, only: gs_timer_reset, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, &
         GS_T_FACTOR, GS_T_DIRECT
     implicit none

@@ -1,11 +1,11 @@
 !> The one `&periodic_pair` namelist group shared by quantum_reference_demo
 !> and classical_pair_demo: box, interaction and time grid that both
-!> experiments must agree on. Defaults come from kin6d_species. A demo that
+!> experiments must agree on. Defaults come from milca_species. A demo that
 !> cannot realize a value must reject it explicitly.
-module kin6d_periodic_pair_config
+module milca_periodic_pair_config
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_result_io, only: run_t
-    use kin6d_species, only: units_t, species_t, periodic_pair_units, &
+    use milca_result_io, only: run_t
+    use milca_species, only: units_t, species_t, periodic_pair_units, &
         periodic_pair_length, electron, pair_coupling
     implicit none
     private
@@ -65,4 +65,4 @@ contains
         frames = pair%frames
         write (unit, nml=periodic_pair)
     end subroutine
-end module kin6d_periodic_pair_config
+end module milca_periodic_pair_config

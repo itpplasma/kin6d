@@ -4,19 +4,19 @@
 !> (finite-N classical parent, docs/quantum-classical-correlations.md).
 !>
 !> mc_setup_cell takes the cell edge L, beta = 1/kT and the Coulomb coupling
-!> g = e^2/(4 pi eps0) in any consistent units, and a kin6d_pair_law
+!> g = e^2/(4 pi eps0) in any consistent units, and a milca_pair_law
 !> selector. mc_setup is the OCP form: Wigner-Seitz radius a = 1, g = 1, so
 !> the reduced energy U is in e^2/(4 pi eps0 a) and beta = Gamma;
 !> n = 3/(4 pi), L = (4 pi N/3)^(1/3). Gamma is checked against the shared
-!> kin6d_species scales (one definition).
+!> milca_species scales (one definition).
 !>
-!> Energy: Ewald sum of kin6d_coulomb_leaves with parameters from
-!> kin6d_ewald (real space: minimum image for real_cutoff = 0, the OCP
+!> Energy: Ewald sum of milca_coulomb_leaves with parameters from
+!> milca_ewald (real space: minimum image for real_cutoff = 0, the OCP
 !> choice, else the image cube |n|_inf <= real_cutoff of the minimum-image
 !> separation, with the self-image constant; reciprocal cube
 !> 0 < |n|_inf <= nk, tin-foil), self and background constants, plus the
-!> declared short-range pair addition of kin6d_pair_law (Kelbg/Pauli) per
-!> minimum-image pair. The Ewald truncation bound of kin6d_ewald holds per
+!> declared short-range pair addition of milca_pair_law (Kelbg/Pauli) per
+!> minimum-image pair. The Ewald truncation bound of milca_ewald holds per
 !> pair in units g/L. A single-particle move updates the energy exactly for
 !> this truncated Hamiltonian: O(N) real-space differences and an O(modes)
 !> update of the structure factors rho_k = sum_j exp(i k.x_j). The chain
@@ -27,17 +27,17 @@
 !> wrapped into the cube; Metropolis acceptance. The step d (initially a/2)
 !> may be tuned only during equilibration (mc_sweep tune=.true.); production
 !> sweeps keep it fixed so that detailed balance holds.
-module kin6d_ocp_monte_carlo
+module milca_ocp_monte_carlo
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
-    use kin6d_coulomb_leaves, only: ewald_real_pair, ewald_reciprocal_weight, &
+    use milca_coulomb_leaves, only: ewald_real_pair, ewald_reciprocal_weight, &
                                     ewald_self, ewald_background
-    use kin6d_correlation_hierarchy_leaves, only: ch_ewald_real_potential
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
-    use kin6d_pair_law, only: pair_law_t, pair_law_excess, pair_coulomb
+    use milca_correlation_hierarchy_leaves, only: ch_ewald_real_potential
+    use milca_ewald, only: ewald_parameters_t, ewald_select
+    use milca_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
+    use milca_pair_law, only: pair_law_t, pair_law_excess, pair_coulomb
     implicit none
     private
     public :: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, mc_energy, mc_forces, mc_acceptance
@@ -76,7 +76,7 @@ contains
 
     !> OCP chain of n electrons at coupling gamma (a = 1, g = 1, bare
     !> Coulomb), uniform random start.
-    !> tolerance: relative Ewald truncation tolerance (kin6d_ewald units).
+    !> tolerance: relative Ewald truncation tolerance (milca_ewald units).
     subroutine mc_setup(mc, n, gamma, tolerance, seed, ok)
         type(ocp_mc_t), intent(out) :: mc
         integer, intent(in) :: n
@@ -370,4 +370,4 @@ contains
             end do
         end do
     end subroutine
-end module kin6d_ocp_monte_carlo
+end module milca_ocp_monte_carlo

@@ -1,4 +1,4 @@
-module kin6d_fermi_gas
+module milca_fermi_gas
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, intersect, mag, is_empty
@@ -6,7 +6,7 @@ module kin6d_fermi_gas
     use fortnum_roots, only: root_newton
     use fortnum_status, only: fortnum_status_t, status_ok
     use fortnum_verified_quadrature, only: composite_midpoint_batch
-    use kin6d_fermi_gas_leaves, only: fermi_add_interval, fermi_apply_direction, &
+    use milca_fermi_gas_leaves, only: fermi_add_interval, fermi_apply_direction, &
         fermi_apply_direction_interval, fermi_apply_direction_vjp, &
         fermi_apply_direction_vjp_interval, fermi_argument, fermi_argument_interval, &
         fermi_curvature_interval, fermi_density_curvature_interval, &
@@ -21,7 +21,7 @@ module kin6d_fermi_gas
         fermi_tail_interval, fermi_theta_derivative, &
         fermi_theta_derivative_interval, fermi_weighted_add, &
         fermi_relativity_indicator, fermi_relativity_indicator_interval
-    use kin6d_relativistic_fermi_leaves, only: fermi_rel_root, fermi_rel_root_interval, &
+    use milca_relativistic_fermi_leaves, only: fermi_rel_root, fermi_rel_root_interval, &
         fermi_rel_argument, fermi_rel_argument_interval, fermi_rel_integrands, &
         fermi_rel_integrands_interval, fermi_rel_density_integrand, &
         fermi_rel_density_integrand_interval, fermi_rel_density_curvature_interval, &
@@ -845,4 +845,4 @@ contains
         ok = .true.
     end function finite_interval
 
-end module kin6d_fermi_gas
+end module milca_fermi_gas

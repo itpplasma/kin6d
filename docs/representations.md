@@ -10,7 +10,7 @@ kinetic certification remains planned.
 
 ## Principle
 
-KIN6D separates the **physical kinetic model** from the **finite-dimensional
+MILCA separates the **physical kinetic model** from the **finite-dimensional
 representation** used to approximate its distribution. A full-kinetic,
 gyrokinetic or drift-kinetic species must not be tied permanently to one carrier
 such as an Eulerian mesh or PIC particles.
@@ -150,7 +150,7 @@ generalize SIMPLE/GORILLA-like workloads.
 
 Particle storage and movement should be structure-of-arrays/AoSoA, tileable,
 GPU-resident when accelerated, and migration-aware when distributed. A generic
-particle runtime is not split out of KIN6D until repeated independent consumers
+particle runtime is not split out of MILCA until repeated independent consumers
 show which abstraction is actually stable.
 
 ### Physical particles versus superparticles
@@ -384,7 +384,7 @@ operators:
 KeOps-style pairwise or particle-mode expressions are logical reductions. A
 large interaction matrix is not stored.
 
-Establish reusable upstream benchmark support before new hot paths. KIN6D
+Establish reusable upstream benchmark support before new hot paths. MILCA
 supplies fixed physical cases; generic basis mathematics stays in FortFEM,
 generated mathematics in FortSym, and rigorous arithmetic/reductions in
 FortNum. Extract a generic particle runtime only after repeated consumers

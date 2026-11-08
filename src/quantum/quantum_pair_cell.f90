@@ -19,13 +19,13 @@
 !> spin channels in the Q4 normalization 2 (N/2)^2, the pair Fourier
 !> moments f2(Q) on S = {1 <= |n|^2 <= 3}, and dg/dTheta by the exact
 !> thermal covariance in the eigenbasis.
-module kin6d_quantum_pair_cell
+module milca_quantum_pair_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
-    use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
-    use kin6d_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
+    use milca_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
+    use milca_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
         jc_shell_average
     implicit none
     private
@@ -454,4 +454,4 @@ contains
         end do
         avg = avg/48
     end function
-end module kin6d_quantum_pair_cell
+end module milca_quantum_pair_cell

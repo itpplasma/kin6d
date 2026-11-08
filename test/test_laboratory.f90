@@ -1,9 +1,9 @@
 program test_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_laboratory, only: laboratory_t, initialize, advance, sample, &
+    use milca_laboratory, only: laboratory_t, initialize, advance, sample, &
                                 solve_steady, certificate_radius, certificate_accepts
-    use kin6d_leaves, only: characteristic_reference_qp, stream_jvp, stream_vjp, &
+    use milca_leaves, only: characteristic_reference_qp, stream_jvp, stream_vjp, &
                             stream_step, squared_norm, dot_four, steady_solve_jvp, &
                             steady_solve_vjp, steady_residual_jvp
     implicit none

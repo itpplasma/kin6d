@@ -2,9 +2,9 @@ program fp_relaxation_main
     ! B04 homogeneous relaxation of the drifting W3+ test population. Two
     ! resolutions (cells and time step both doubled) give the error estimate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_fp_relaxation, only: fp_relax_t, fp_relax_setup, fp_relax_initial, &
+    use milca_fp_relaxation, only: fp_relax_t, fp_relax_setup, fp_relax_initial, &
         fp_relax_run, fp_relax_cells, fp_relax_nmom
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     implicit none
     integer, parameter :: ntimes = 12
     real(dp), parameter :: amu = 1.66053906660e-27_dp, e_charge = 1.602176634e-19_dp
@@ -57,7 +57,7 @@ program fp_relaxation_main
     call execute_command_line('mkdir -p output/homma')
     call runtime_git(commit, tree, 'fp_relaxation')
     open (newunit=unit, file='output/homma/B04.csv', status='replace', action='write')
-    write (unit, '(a)') '# code: kin6d (fp_relaxation, Eulerian Legendre-mode FP)'
+    write (unit, '(a)') '# code: milca (fp_relaxation, Eulerian Legendre-mode FP)'
     write (unit, '(a)') '# code_revision: '//commit
     write (unit, '(a)') '# case_file: '//trim(case_file)
     write (unit, '(a)') '# case_sha256: '//trim(case_sha256)
@@ -116,7 +116,7 @@ contains
 
     subroutine tau_of_b04(tau)
         ! tau_s at v_a = sqrt(3 T_b/m_a) (case file), from the leaves.
-        use kin6d_fp_relaxation_leaves, only: fp_rel_gamma, fp_rel_speed, fp_rel_xs, &
+        use milca_fp_relaxation_leaves, only: fp_rel_gamma, fp_rel_speed, fp_rel_xs, &
             fp_rel_mu, fp_rel_tau_s
         real(dp), intent(out) :: tau
         real(dp) :: gam, vt, va, x, muf, mr

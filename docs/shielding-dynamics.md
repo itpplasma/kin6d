@@ -39,7 +39,7 @@ For each nonzero cosine mode,
 The application uses a generated explicit Euler candidate, with maximum
 normalized timestep `0.0025`. All mode, derivative, residual, enclosure and
 coordinate leaves are retained in `gen/gen_shielding_dynamics.f90` and emitted
-into `src/generated/kin6d_shielding_dynamics_leaves.f90`.
+into `src/generated/milca_shielding_dynamics_leaves.f90`.
 
 ## Continuous numerical certificate
 

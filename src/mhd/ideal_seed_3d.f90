@@ -1,4 +1,4 @@
-module kin6d_ideal_seed_3d
+module milca_ideal_seed_3d
     ! Fixed-boundary seed only: no exact interior equilibrium is used.
     ! Boundary convention: R,Z = sum C_mn cos(m theta-n*nfp*phi)
     !                                  + S_mn sin(m theta-n*nfp*phi).
@@ -6,16 +6,16 @@ module kin6d_ideal_seed_3d
     ! normalized TOROIDAL flux, unlike ideal_seed's poloidal-flux profiles.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_map_init, &
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_rdof, IDEAL_MAP_OK, &
         IDEAL_MAP_BAD_INPUT, IDEAL_MAP_FOLDED, ideal_map_angle_enable, &
         ideal_map_angle_value
-    use kin6d_ideal_map_leaves, only: ideal_reference_form
-    use kin6d_ideal_field_angle_leaves, only: field_angle_form
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
+    use milca_ideal_map_leaves, only: ideal_reference_form
+    use milca_ideal_field_angle_leaves, only: field_angle_form
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_triangle_basis, only: TRIANGLE_MAX_DEGREE
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
         seed_horner, seed_toroidal_form, seed_disk_coordinates, seed_disk_boundary, &
         seed_primitive_coefficient, seed_primitive_finish
     implicit none

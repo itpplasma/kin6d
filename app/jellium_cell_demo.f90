@@ -2,7 +2,7 @@
 !> density of the parity-even N = 2 ground state after the cos(q.x) kick is
 !> delta n(x, t) = (2/V) delta<A>(t) cos(q.x); the history and band are the
 !> data written to output/jellium-mode-history.csv.
-module kin6d_jellium_movie
+module milca_jellium_movie
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, xlim, ylim, legend, tight_layout, savefig, suptitle, &
@@ -81,7 +81,7 @@ contains
         call suptitle(trim(heading))
         call tight_layout()
     end subroutine
-end module kin6d_jellium_movie
+end module milca_jellium_movie
 
 !> Q4 interacting jellium cell: finite-N electrons in a periodic cube with a
 !> neutralizing background and bare Coulomb interaction, solved in exact
@@ -90,11 +90,11 @@ end module kin6d_jellium_movie
 !> response, cumulant size, kicked density-mode history).
 program jellium_cell_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_model_info, &
+    use milca_quantum_fock, only: fock_hamiltonian_t, fock_model_info, &
         fock_rdms
-    use kin6d_jellium_cell
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_jellium_movie, only: plot_kick_movie
+    use milca_jellium_cell
+    use milca_result_io, only: run_t, result_file_t
+    use milca_jellium_movie, only: plot_kick_movie
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, xlim, ylim, legend, tight_layout, savefig, xscale, yscale, suptitle
     implicit none
@@ -249,7 +249,7 @@ contains
     end subroutine
 
     real(dp) function ideal_ground(cell) result(e)
-        use kin6d_quantum_fock_leaves, only: qf_kinetic
+        use milca_quantum_fock_leaves, only: qf_kinetic
         type(jellium_cell_t), intent(in) :: cell
         real(dp) :: eps(62), tmp
         integer :: i, j

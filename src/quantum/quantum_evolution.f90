@@ -1,4 +1,4 @@
-module kin6d_quantum_evolution
+module milca_quantum_evolution
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint, interval, mag, intersect, entire
@@ -10,7 +10,7 @@ module kin6d_quantum_evolution
     use fortnum_sampled_norm, only: sampled_norm_upper
     use fortnum_ode_residual_certificate, only: hermite_cubic_enclosure, &
         linear_residual_bound, residual_radius_step
-    use kin6d_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_interval, &
+    use milca_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_interval, &
         qe_rhs_term_vjp, qe_add, qe_add_interval, qe_scale, qe_hermite, &
         qe_evaluate, qe_evaluate_interval, qe_square_add_interval, &
         qe_norm_interval, qe_radius, qe_band_interval, &
@@ -367,7 +367,7 @@ contains
     end subroutine
 
     ! FortNum's Hermite/Bernstein residual and radius accumulation on the
-    ! kin6d interval action -i H x/hbar. The generator is skew-adjoint in the
+    ! milca interval action -i H x/hbar. The generator is skew-adjoint in the
     ! packed real/imag Hilbert pairing, so the logarithmic norm is zero. The
     ! tangent residual adds the forcing -i dH y_h/hbar and the discrepancy
     ! ||dH||_F/hbar * radius(cell) of the primal reconstruction.
@@ -988,4 +988,4 @@ contains
             end do
         end select
     end subroutine
-end module kin6d_quantum_evolution
+end module milca_quantum_evolution

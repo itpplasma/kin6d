@@ -12,22 +12,22 @@
 !>   per-state sparse 2-/3-RDM entries. At
 !>   nonzero Q these are the Fourier coefficients of the Ursell (connected)
 !>   diagonal cumulants of a homogeneous state: the common classical/quantum
-!>   measure (kin6d_classical_cell computes the same moments).
+!>   measure (milca_classical_cell computes the same moments).
 !> - ideal_cell_pair: spin-summed/-resolved shell-averaged pair functions of
 !>   ideal fermions in the same box and canonical ensemble over all S_z,
-!>   assembled from the Q3 fixed-N_sigma states (kin6d_fermion_ensemble).
+!>   assembled from the Q3 fixed-N_sigma states (milca_fermion_ensemble).
 !> - difference norms used by the regime map.
-module kin6d_quantum_classical_map
+module milca_quantum_classical_map
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_jellium_cell, only: jellium_cell_t, jellium_sector_t, &
+    use milca_jellium_cell, only: jellium_cell_t, jellium_sector_t, &
         jellium_spectrum_t, jellium_sector, jellium_sector_momenta
-    use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_matvec, fock_rdm3_entries, &
+    use milca_quantum_fock, only: fock_hamiltonian_t, fock_matvec, fock_rdm3_entries, &
         fock_rdm2_entries
-    use kin6d_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
+    use milca_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
         jc_shell_average
-    use kin6d_fermion_ensemble, only: fermion_spectrum_t, canonical_state_t, &
+    use milca_fermion_ensemble, only: fermion_spectrum_t, canonical_state_t, &
         box_spectrum, box_cutoff, box_parameters, solve_canonical, same_spin_pair
     implicit none
     private
@@ -412,4 +412,4 @@ contains
         real(dp), intent(out) :: g_same(:), g_opp(:)
         g_same = g*(n - 1.0_dp)/n; g_opp = g_same
     end subroutine
-end module kin6d_quantum_classical_map
+end module milca_quantum_classical_map

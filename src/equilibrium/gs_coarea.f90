@@ -1,13 +1,13 @@
-module kin6d_gs_coarea
+module milca_gs_coarea
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, &
+    use milca_grad_shafranov, only: gs_state_t, &
                                     gs_element_jet, gs_axis_candidate, &
                                     gs_axis_safety_factor, GS_UNSUPPORTED_GEOMETRY
-    use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
-    use kin6d_triangle_basis, only: cubic_segment_roots, cubic_segment_stationary, &
+    use milca_curved_triangle, only: triangle_geometry, triangle_locate
+    use milca_triangle_basis, only: cubic_segment_roots, cubic_segment_stationary, &
         triangle_basis_jet
-    use kin6d_gs_coarea_leaves, only: gs_contour_weight, gs_cubic_flux, &
+    use milca_gs_coarea_leaves, only: gs_contour_weight, gs_cubic_flux, &
                                       gs_contour_weight_jvp, &
                                       gs_ray_trace, &
                                       gs_contour_root_response, &
@@ -16,7 +16,7 @@ module kin6d_gs_coarea
                                       gs_quadratic_translate, gs_polar_angle, &
                                       gs_polar_angle_jvp, &
                                       gs_boundary_weight, gs_boundary_weight_jvp
-    use kin6d_grad_shafranov_leaves, &
+    use milca_grad_shafranov_leaves, &
         only: gs_smooth_axis_q_jvp
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_linalg, only: dense_solve
@@ -24,7 +24,7 @@ module kin6d_gs_coarea
     use fortnum_multiroot, only: argsort
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_level_coarea
@@ -863,4 +863,4 @@ contains
             call gs_ray_trace(c, b, 2*a, x, y, derivative)
         end function polynomial
     end subroutine bracket_roots
-end module kin6d_gs_coarea
+end module milca_gs_coarea

@@ -1,4 +1,4 @@
-# kin6d roadmap
+# milca roadmap
 
 Status: staged delivery plan, 2026-10-06.
 
@@ -59,9 +59,9 @@ model, accuracy and claim strength. No speed ranking is asserted in advance.
 
 1. Establish reusable benchmark support in the owning upstream tools: fixed
    inputs, warm/repeated timings, measurement variability, memory, candidate,
-   certificate and derivative costs. KIN6D supplies the physical cases.
+   certificate and derivative costs. MILCA supplies the physical cases.
    Initial CPU fixtures are delivered in FortNum/FortSym, with independent
-   arithmetic/derivative oracles and raw samples; KIN6D has a resolution sweep.
+   arithmetic/derivative oracles and raw samples; MILCA has a resolution sweep.
    Production arithmetic selection and external speed comparisons remain open.
 2. Generalize prescribed-field damped transport to independently supplied
    sources. Bound the continuous reconstructed residual and source error using
@@ -104,7 +104,7 @@ science.
 
 ## EQS — equilibrium and stability spine (decided 2026-10-21)
 
-KIN6D is the group's code for MHD equilibrium and stability, first for
+MILCA is the group's code for MHD equilibrium and stability, first for
 axisymmetric (2D) configurations and then for stellarators and RMP-perturbed
 tokamaks (3D). This spine takes priority within [R12](#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
 and [S0](#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3). The
@@ -133,7 +133,7 @@ Agreement with a reference is numerical evidence. It is not a certificate.
   [GLISS](https://github.com/itpplasma/GLISS), local Hess W = L4, static per-n
   RMP response and resistive-layer closure.
 - The connection is missing. S0 consumes caller-supplied tables only and never
-  a solved GS state. No registered growth rate exists, and no KIN6D test
+  a solved GS state. No registered growth rate exists, and no MILCA test
   compares against DCON, MISHKA, CAS3D or GLISS. G-EQDSK export, COCOS
   handling, VMEC wout and chartmap interchange are also absent.
 
@@ -146,14 +146,14 @@ Agreement with a reference is numerical evidence. It is not a certificate.
   [FortSparse](https://github.com/lazy-fortran/fortsparse) for LDL^T/LDL^H
   inertia and complex LU; [FortFEM](https://github.com/lazy-fortran/fortfem)
   for FEEC spaces, Piola maps, per-n and 3D parametric BEM. A missing generic
-  capability is added there and pinned by commit, never duplicated in KIN6D.
+  capability is added there and pinned by commit, never duplicated in MILCA.
 - Formats and coordinates belong to [libneo](https://github.com/itpplasma/libneo):
-  G-EQDSK/COCOS, VMEC readers, chartmap and Boozer. KIN6D consumes libneo
+  G-EQDSK/COCOS, VMEC readers, chartmap and Boozer. MILCA consumes libneo
   through a narrow, pinned adapter.
 - Pointwise mathematics is emitted by FortSym generators in `gen/` with
   checked-in leaves in `src/generated/` and a regeneration test. This covers
   analytic oracle fields, delta-W and mass integrands, basis jets, Piola and
-  geometry factors, and JVP/VJP leaves. GLISS and KIN6D keep one energy source.
+  geometry factors, and JVP/VJP leaves. GLISS and MILCA keep one energy source.
   Handwritten code owns topology, assembly, solves, schedules and I/O.
 - Parallel hot paths are required. Cell and quadrature assembly, BEM pair
   loops and eigen solves use OpenMP with measured strong scaling and results
@@ -179,7 +179,7 @@ Agreement with a reference is numerical evidence. It is not a certificate.
 | E3.2 | RMP-perturbed tokamak: per-n linear perturbed equilibrium from E2.2 states | manufactured per-n response; force-free MDE identity (existing) | [MEPHIT](https://github.com/itpplasma/MEPHIT), GPEC, MARS-F on identical G-EQDSK and coils |
 | E3.3 | 3D free boundary on a general enclosing shell (FortFEM 3D parametric BEM), stellarator and curve-chart | Landreman epsilon=0 BEM gate within its 1800 s deadline | VMEC++ free boundary (mgrid) |
 | E3.4 | Non-nested islands and stochastic regions (NN lanes) | vacuum-island Biot–Savart widths (existing) | [SPECTRE](https://gitlab.com/spectre-eq/spectre) and HINT-class at matched model |
-| E3.5 | Device island field hierarchy for LHD and W7-X: vacuum; frozen nested current (curl B = μ₀j, div B = 0 in FEEC with exterior coupling, not a singular Biot–Savart volume integral); linear ideal/resistive-layer response about the same nested state; NN relaxation. Same coils, nested input and island width/phase measurement at every level, with JVP/VJP of width and phase in coil currents | analytic current with closed-form field; exterior agreement with virtual casing; radial/angular refinement of the frozen-current islands, which depend on the resolution of the near-resonant current | VMEX, VMEC++ and KIN6D nested inputs; Geiger's VMEC/EXTENDER and HINT fields for one W7-X case; SPECTRE |
+| E3.5 | Device island field hierarchy for LHD and W7-X: vacuum; frozen nested current (curl B = μ₀j, div B = 0 in FEEC with exterior coupling, not a singular Biot–Savart volume integral); linear ideal/resistive-layer response about the same nested state; NN relaxation. Same coils, nested input and island width/phase measurement at every level, with JVP/VJP of width and phase in coil currents | analytic current with closed-form field; exterior agreement with virtual casing; radial/angular refinement of the frozen-current islands, which depend on the resolution of the near-resonant current | VMEX, VMEC++ and MILCA nested inputs; Geiger's VMEC/EXTENDER and HINT fields for one W7-X case; SPECTRE |
 | S3.1 | 3D ideal stability (fixed, then free boundary) on E3.1 states | analytic cylinder/helical limits | GLISS; CAS3D/TERPSICHORE published cases |
 | S3.2 | Alfvén eigenmodes and EP drive (programme wave 4) | FortSym continua/gap widths | ITPA TAE benchmark; NEO-RT and SIMPLE as drive/orbit checks |
 
@@ -195,7 +195,7 @@ response.
 
 | Code | Disposition |
 |---|---|
-| libneo | interface: G-EQDSK/COCOS, VMEC, chartmap, Boozer; KIN6D never copies these readers |
+| libneo | interface: G-EQDSK/COCOS, VMEC, chartmap, Boozer; MILCA never copies these readers |
 | MEPHIT | absorb equations and oracles of the linear perturbed equilibrium; interface as the E3.2 comparator |
 | KAMEL (KiLCA/KIM) | absorb matched cylindrical kinetic limits as oracles for kinetic response; leave its cylindrical background solver |
 | GLISS | one shared FortSym energy package (existing); independent assembled-operator comparator for S2.x/S3.1 |
@@ -315,7 +315,7 @@ continuity or geometric long-time structure. Defer NUFFT, adaptive particles,
 stochastic collisions and GPU/MPI until these small cases require them.
 
 PIF/PIC are particle-in-basis specializations, not new physics modes. A generic
-particle runtime is extracted upstream only after at least two concrete KIN6D
+particle runtime is extracted upstream only after at least two concrete MILCA
 consumers demonstrate the stable abstraction.
 
 ## R3 — early turbulence gallery
@@ -701,11 +701,11 @@ Native equilibrium re-solves are added in R12 and should later be used to
 separate imported interpolation/reconstruction error from DK transport error.
 
 This is also the first production libneo dependency gate. Reuse existing
-libneo readers/field utilities behind a KIN6D adapter rather than cloning them.
+libneo readers/field utilities behind a MILCA adapter rather than cloning them.
 Before promoting each exercised path, audit and repair generic defects upstream
 in libneo with independent tests. Add reusable spatial derivatives or
 representation-level error diagnostics there when the need is generic; keep
-KIN6D's DK residual/adjoint/certificate mathematics in KIN6D. Existing libneo
+MILCA's DK residual/adjoint/certificate mathematics in MILCA. Existing libneo
 consumers should remain compatible and inherit the fixes.
 
 Required comparisons:
@@ -870,7 +870,7 @@ For static smooth ideal MHD, retain the actual constraint
 license arbitrary smooth pressure gradients in ergodic volumes. Different
 stationary solutions are stored as different equilibria with their own initial
 state/continuation provenance; no general probabilistic branch machinery belongs
-in KIN6D.
+in MILCA.
 
 The nested-surface 3D equilibrium lane (energy minimisation over a map from a
 reference domain) keeps its reference chart behind an abstract interface: the
@@ -886,7 +886,7 @@ boundary. Not scheduled before the TC24 lanes close.
 ARES/MEPHIT/MARS/GPEC and later JOREK/NIMROD-type cases remain response and
 evolution landmarks. VMEC/DESC/GVEC, MRX, HINT/PIES and SPEC/SPECTRE are equilibrium
 comparators with different model assumptions. Do not reimplement their entire
-feature sets before a KIN6D use case requires a shared capability.
+feature sets before a MILCA use case requires a shared capability.
 
 See [equilibria-inference.md](docs/equilibria-inference.md).
 
@@ -996,24 +996,24 @@ top-level solver families.
 
 ## R14 — diagnostics, TIAGO inference integration, design and adaptive fidelity
 
-Synthetic diagnostic forward operators enter KIN6D once their underlying
-physics exists, but reconstruction/inference is owned by TIAGO. KIN6D exposes
+Synthetic diagnostic forward operators enter MILCA once their underlying
+physics exists, but reconstruction/inference is owned by TIAGO. MILCA exposes
 states/observables together with matrix-free JVP/VJP and implicit-equilibrium
 adjoint actions; TIAGO owns measurements, likelihood/covariance models,
 diagnostic/calibration nuisance parameters, priors and posterior uncertainty.
 
 The first integration should keep TIAGO's current VMEC++ reconstruction as an
-independent reference and add a provider-neutral interface through which KIN6D
+independent reference and add a provider-neutral interface through which MILCA
 can supply Grad--Shafranov and later general MHD/DK/GK/FK stationary states.
 The default UQ remains a local Laplace/Gauss--Newton approximation. When the
-same data support several distinct KIN6D equilibria, fit them separately and
+same data support several distinct MILCA equilibria, fit them separately and
 optionally report a finite mixture of local Laplace approximations; do not
 average distinct equilibria into one state. More elaborate sampling is
 deferred until a concrete within-solution posterior is demonstrably
 non-Gaussian.
 
 Report reconstruction/measurement/calibration uncertainty separately from
-KIN6D numerical certificates and model-reduction error bands. Combine them only
+MILCA numerical certificates and model-reduction error bands. Combine them only
 under an explicitly justified probabilistic/mathematical model.
 
 Implicit adjoints also support stellarator/coil/divertor design and control.
@@ -1087,7 +1087,7 @@ For each rung retain:
 - solver and certifier profiles;
 - forward/JVP/VJP timing where derivatives are material.
 
-Optimize the owning dependency rather than accumulating KIN6D workarounds.
+Optimize the owning dependency rather than accumulating MILCA workarounds.
 
 ### Certification
 
@@ -1100,14 +1100,14 @@ theorems.
 ### Interchange, configuration and result contract
 
 Use libneo as the shared adapter/convention layer for established machine and
-code formats where it already owns the capability. KIN6D consumes normalized
+code formats where it already owns the capability. MILCA consumes normalized
 physical data and records the source format/conventions; it does not turn VMEC,
 EQDSK, SPECTRE, JOREK or another source into a fundamental internal model.
 
-Treat every new KIN6D dependency on a libneo code path as a boy-scout
+Treat every new MILCA dependency on a libneo code path as a boy-scout
 modernization opportunity: fix generic bugs and convention errors upstream,
 add missing reusable tests/derivatives/error diagnostics there, and keep
-existing downstream consumers working. The KIN6D adapter remains narrow so a
+existing downstream consumers working. The MILCA adapter remains narrow so a
 backend can still be replaced later; swappability is not a reason to duplicate
 or abandon reusable libneo mathematics.
 
@@ -1117,8 +1117,8 @@ provenance. Optional Python/web UX is layered above this contract.
 
 ### Build structure and fast development loop
 
-Decision 2026-10-15 (Chris + Claude). KIN6D stays one repository and one CMake/CTest
-project, but stops being one monolithic `kin6d` library: today about 106 modules,
+Decision 2026-10-15 (Chris + Claude). MILCA stays one repository and one CMake/CTest
+project, but stops being one monolithic `milca` library: today about 106 modules,
 145 executables and about 200 unlabelled tests. Separate repositories may follow
 later along the same seams. The build stays on CMake; no conversion to fpm.
 
@@ -1126,21 +1126,21 @@ Vertical layers (a layer uses only layers below it):
 
 | Layer | Target | Content |
 |---|---|---|
-| L0 | `kin6d_core` | intervals, ODE, species, sort keys, series statistics, laboratory, identity helpers |
-| L1 | `kin6d_fem2d` | FortFEM slice, triangle/curved bases, CSR and direct solvers, GS options, timers, load batches |
-| L1 | `kin6d_pairs` | Ewald, near encounter, PME, N-body, pair laws, radial DVR, quantum collision kernels |
-| L2 | model classes | `kin6d_equilibrium` (GS, equilibrium, 3D coils, equilibrated bounds); `kin6d_mhd` (MHD, ideal, response, vacuum surfaces, nonnested; may use equilibrium); `kin6d_classical`; `kin6d_quantum`; `kin6d_continuum` |
+| L0 | `milca_core` | intervals, ODE, species, sort keys, series statistics, laboratory, identity helpers |
+| L1 | `milca_fem2d` | FortFEM slice, triangle/curved bases, CSR and direct solvers, GS options, timers, load batches |
+| L1 | `milca_pairs` | Ewald, near encounter, PME, N-body, pair laws, radial DVR, quantum collision kernels |
+| L2 | model classes | `milca_equilibrium` (GS, equilibrium, 3D coils, equilibrated bounds); `milca_mhd` (MHD, ideal, response, vacuum surfaces, nonnested; may use equilibrium); `milca_classical`; `milca_quantum`; `milca_continuum` |
 | L3 | apps | applications, demos, animation export; only L3 links plotting and graphics IO |
 
 Rules:
 
-- `kin6d` remains an umbrella INTERFACE target, so existing consumers and tests
+- `milca` remains an umbrella INTERFACE target, so existing consumers and tests
   keep working.
 - A layering CTest checks the Fortran `use` graph against the table; an upward
   `use` fails it.
 - Every test carries CTest `LABELS`: its model class (or layer) plus a tier
   `fast`, `slow`, `regression` or `performance`.
-- Each class has a `kin6d_check_<class>` build target that builds its tests'
+- Each class has a `milca_check_<class>` build target that builds its tests'
   executables, and a CTest preset per class.
 - A `dev-fast` configure preset turns plotting and IO extras off and shares the
   FetchContent cache across worktrees.
@@ -1150,11 +1150,11 @@ Migration:
 1. CMake-only partition: assign the existing sources to layer targets, add labels,
    per-class targets, presets and the layering test. No files move. This starts
    after the open estimator branches are merged.
-   Implemented 2026-10-15 (`cmake/kin6d_layers.cmake`, `kin6d_layering` test,
-   `cmake/kin6d_test_labels.cmake`, `dev-fast` and per-class test presets). The
-   use graph required `interaction_laboratory` in `kin6d_pairs` (the quantum
-   encounter uses it), Wigner-Poisson/dispersion in `kin6d_continuum` (shared
-   streaming leaves) and `equilibrium_nonnested` in `kin6d_mhd`; `kin6d_io`
+   Implemented 2026-10-15 (`cmake/milca_layers.cmake`, `milca_layering` test,
+   `cmake/milca_test_labels.cmake`, `dev-fast` and per-class test presets). The
+   use graph required `interaction_laboratory` in `milca_pairs` (the quantum
+   encounter uses it), Wigner-Poisson/dispersion in `milca_continuum` (shared
+   streaming leaves) and `equilibrium_nonnested` in `milca_mhd`; `milca_io`
    (result IO, animation export) stays an L3 library because only applications
    use it. Tiers are `fast`/`slow` (over 60 s). Executables link the layers
    their sources use instead of the umbrella. The dev-fast preset shares the
@@ -1165,12 +1165,12 @@ Migration:
    generators retain their canonical output paths.
 
 Development loop (to go into AGENTS.md with step 1): edit, then
-`cmake --build build --target kin6d_check_<class>` and `ctest -L <class> -LE slow`;
+`cmake --build build --target milca_check_<class>` and `ctest -L <class> -LE slow`;
 never run the full suite, including at controller integration. With `fo`, the same
 loop is `fo test -L <class> -LE slow`, building only the selected tests' targets, and a Gremlin lane
 scoped by label. That `fo` support is implemented in `fo` as a
 backend-neutral project model (fo doc/CMAKE_GREMLIN_PLAN.md, 2026-10-15) that reads
-targets from the CMake file API and labels from CTest; KIN6D needs no fo-specific
+targets from the CMake file API and labels from CTest; MILCA needs no fo-specific
 files. Baseline for the speed-up: an incremental rebuild after touching one source
 takes 2-6 s, a single target 2.9 s, a clean build about 800 CPU-s; single tests run
 up to 1600 s.
@@ -1185,12 +1185,12 @@ valuable retained oracles as their production roles are subsumed.
 ## Deliberate outer boundary
 
 The fundamental quantum boundary is **QED**, not "all quantum matter".
-KIN6D may natively include quantum degeneracy, exchange/diffraction,
+MILCA may natively include quantum degeneracy, exchange/diffraction,
 Wigner/quantum kinetic models, quantum BBGKY/cumulants, orbital/QMC
 microscopic references and quantum-fluid/EOS closures. It may consume
 QED-derived rates as data.
 
-KIN6D does not initially own general quantized-radiation dynamics, pair
+MILCA does not initially own general quantized-radiation dynamics, pair
 creation/annihilation, strong-field QED cascades or radiative QED corrections.
 It likewise does not own general-relativistic plasma/gravity, neutron-star/
 nuclear-density matter, full reactor neutronics/nuclear engineering, detailed

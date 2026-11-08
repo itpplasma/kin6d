@@ -1,4 +1,4 @@
-module kin6d_current_sheet_oracles
+module milca_current_sheet_oracles
     ! Linear ideal current-sheet references, mu0 = 1
     ! (docs/current-sheet-equilibrium.md section 5). Oracles only: no solver
     ! uses them as forcing.
@@ -15,7 +15,7 @@ module kin6d_current_sheet_oracles
     ! series and recurrence here (hand-written: FortSym emits no Bessel
     ! runtime); admitted arguments are 0 < |k| r <= 2.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_current_sheet_leaves, only: sheet_slab_side, sheet_slab_interface
+    use milca_current_sheet_leaves, only: sheet_slab_side, sheet_slab_interface
     implicit none
     private
     public :: slab_sheet_t, pinch_sheet_t, modified_bessel_ik
@@ -340,4 +340,4 @@ contains
         end do
         status = 0
     end subroutine
-end module kin6d_current_sheet_oracles
+end module milca_current_sheet_oracles

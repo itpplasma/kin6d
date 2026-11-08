@@ -1,7 +1,7 @@
 module nn_anisotropy_fixture
     ! Independent analytical data for the Sovinec diagnostic, not production leaves.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, EQ_BR, EQ_BZ
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, EQ_BR, EQ_BZ
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -60,8 +60,8 @@ end module
 program test_nonnested_anisotropy
     use omp_lib, only: omp_get_wtime
     use nn_anisotropy_fixture, only: dp, pi, field_t, source_t, square_map
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_qgrad, meridian_lagrange_nodes
     use fortfem_meridian_curved_mesh, only: meridian_geometry_point

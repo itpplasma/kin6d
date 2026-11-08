@@ -1,7 +1,7 @@
-module kin6d_gs_profile_law
+module milca_gs_profile_law
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov_leaves, only: gs_cubic, gs_cubic_jvp, &
+    use milca_grad_shafranov_leaves, only: gs_cubic, gs_cubic_jvp, &
                           gs_cubic_primitive, gs_normalized_flux, gs_normalized_flux_jvp
     use gs_cubic_slope_batch_mod, only: gs_cubic_slope_batch
     use gs_normalized_flux_jets_batch_mod, only: gs_normalized_flux_jets_batch

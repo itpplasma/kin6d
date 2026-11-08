@@ -9,8 +9,8 @@ program test_sheet_pinch_map
     !                sheet current, design-order gates
     !   nonlinear    finite amplitude: self-convergence of the sheet current
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_sheet_slab_map, only: sheet_slab_map_t, SHEET_PINCH
-    use kin6d_current_sheet_oracles, only: pinch_sheet_t
+    use milca_sheet_slab_map, only: sheet_slab_map_t, SHEET_PINCH
+    use milca_current_sheet_oracles, only: pinch_sheet_t
     implicit none
     character(32) :: arg
     real(dp), parameter :: jump = 0.5_dp

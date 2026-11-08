@@ -24,8 +24,8 @@ git -C "$checkout" status --short
 case "$mode" in
     build)
         "$guard" 94.4 cmake -S "$checkout" -B "$build_root" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF \
-            -DKIN6D_CHECK_LEAN=OFF -DCMAKE_PREFIX_PATH="$HOME/fs1/mumps;$env_root" \
+            -DCMAKE_BUILD_TYPE=Release -DMILCA_BUILD_EXTRAS=OFF \
+            -DMILCA_CHECK_LEAN=OFF -DCMAKE_PREFIX_PATH="$HOME/fs1/mumps;$env_root" \
             -DCMAKE_BUILD_RPATH="$env_root/lib" \
             -DCMAKE_EXE_LINKER_FLAGS=-Wl,--enable-new-dtags \
             -DFORTSPARSE_ENABLE_AMD=ON \

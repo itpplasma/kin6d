@@ -1,4 +1,4 @@
-module kin6d_equilibrium_chart
+module milca_equilibrium_chart
     ! Chart of the common equilibrium state (docs/equilibrium-core.md, D1):
     ! X = H(q) from chart coordinates q into Cartesian space, with the jet H,
     ! dH, d2H, d3H. Lanes see the chart only through `jet`; a curve-following
@@ -8,9 +8,9 @@ module kin6d_equilibrium_chart
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
         ieee_quiet_nan
-    use kin6d_equilibrium_core_leaves, only: cylindrical_chart_position, &
+    use milca_equilibrium_core_leaves, only: cylindrical_chart_position, &
         cylindrical_chart_first, cylindrical_chart_second, cylindrical_chart_third
-    use kin6d_curve_chart_leaves, only: curve_fourier_mode, curve_normalize, &
+    use milca_curve_chart_leaves, only: curve_fourier_mode, curve_normalize, &
         curve_cross, curve_compose, curve_geometry, curve_norm, curve_rotate, &
         curve_mode_bounds, curve_tube_bounds, curve_admission_bounds, &
         curve_fourier_shift
@@ -283,4 +283,4 @@ contains
                 t(78), t(79), t(80), t(81))
         end subroutine
     end subroutine
-end module kin6d_equilibrium_chart
+end module milca_equilibrium_chart

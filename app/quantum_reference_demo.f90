@@ -4,25 +4,25 @@ program quantum_reference_demo
         compiler_options
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval
-    use kin6d_quantum_fock, only: assemble_jellium_pair_sector
-    use kin6d_species, only: units_t, periodic_pair_units
-    use kin6d_quantum_evolution, only: quantum_evolution_t, &
+    use milca_quantum_fock, only: assemble_jellium_pair_sector
+    use milca_species, only: units_t, periodic_pair_units
+    use milca_quantum_evolution, only: quantum_evolution_t, &
         initialize_quantum_evolution, solve_quantum_evolution, &
         sample_quantum_evolution
-    use kin6d_quantum_reference_gallery, only: quantum_observable_packet_t, &
+    use milca_quantum_reference_gallery, only: quantum_observable_packet_t, &
         prepare_quantum_pair_sector, &
         sample_quantum_observables, &
         quantum_occupation_bands, quantum_initial_norm, quantum_matrix_defect, &
         quantum_physical_radius
-    use kin6d_quantum_reference_gallery_leaves, only: qgallery_gap_interval, &
+    use milca_quantum_reference_gallery_leaves, only: qgallery_gap_interval, &
         qgallery_radius_interval, qgallery_time_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &
         tight_layout, savefig, set_yscale
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_periodic_pair_config, only: periodic_pair_t, read_periodic_pair, &
+    use milca_result_io, only: run_t, result_file_t
+    use milca_periodic_pair_config, only: periodic_pair_t, read_periodic_pair, &
         write_periodic_pair, periodic_pair_bins
     implicit none
     integer, parameter :: points = 193, bin_count = periodic_pair_bins, repeat = 3

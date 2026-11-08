@@ -3,11 +3,11 @@ module ideal_fb_traces3d_test_support
     ! chart and pulled back to the normal plane (q1, q2) = (Z, R - 3) of an
     ! nfp = 3 helical-axis curve chart, so that the coupling surface
     ! H(gamma x [0, 2 pi)) is not axisymmetric. The curve chart is the real
-    ! plasma chart of the nested-map lane (kin6d_equilibrium_chart), not a
+    ! plasma chart of the nested-map lane (milca_equilibrium_chart), not a
     ! test extension of the cylindrical chart.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_equilibrium_chart, only: curve_chart_t
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_equilibrium_chart, only: curve_chart_t
     implicit none
     private
     public :: helical_chart
@@ -73,7 +73,7 @@ program test_ideal_fb_traces3d
     !                 residual with a frozen R2 exterior.
     !   makegrid      the same coils written as a MAKEGRID file with groups
     !                 and read through libneo (neo_makegrid_coils): circuits,
-    !                 turns, identical traces, and kin6d Biot-Savart of each
+    !                 turns, identical traces, and milca Biot-Savart of each
     !                 group against libneo's neo_biotsavart.
     !   scaling       (not a CTest) trace-build strong scaling over threads.
     !   exterior      R2 exterior of the helical Gamma_c: the field-period
@@ -87,26 +87,26 @@ program test_ideal_fb_traces3d
     !                 differences, with a frozen R2 exterior and coil traces.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     !$ use omp_lib, only: omp_set_num_threads, omp_get_max_threads, omp_get_wtime
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
         ideal_chart_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
-    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
         coupling_surface_t
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
         bem_pair_report_t, assemble_parametric_bem_p2_circulant
     use fortfem_parametric_laplace_bem_3d, only: bem_operators_t, &
         bem_exterior_dtn_t, build_exterior_dtn
     use fortfem_bem_circulant, only: bem_circulant_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_hessian, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0, segment_b
-    use kin6d_makegrid_circuits, only: makegrid_circuits_read
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0, segment_b
+    use milca_makegrid_circuits, only: makegrid_circuits_read
     use neo_biotsavart, only: coils_t, compute_magnetic_field, clight
     use neo_makegrid_coils, only: makegrid_coils_t, read_makegrid_coils, &
         makegrid_to_biotsavart
@@ -588,7 +588,7 @@ contains
         real(dp), allocatable :: turns(:), pts(:, :), turns0(:)
         integer, allocatable :: circuit(:), npts(:), circuit0(:)
         character(len=16), allocatable :: group_name(:)
-        real(dp) :: x(3), b_kin6d(3), b_libneo(3), err, worst
+        real(dp) :: x(3), b_milca(3), b_libneo(3), err, worst
         integer :: ncircuit, st, k, c, s, i
         call write_makegrid(path, 64)
         call makegrid_circuits_read(path, coils, circuit, turns, ncircuit, st, &
@@ -619,7 +619,7 @@ contains
         print '(a,es10.2)', 'traces MAKEGRID vs direct coils ', err
         if (err > 1e-14_dp) error stop 'MAKEGRID traces'
         ! Independent Biot-Savart: libneo (Gaussian units, current/c) of each
-        ! group polygon against kin6d segments with winding counts.
+        ! group polygon against milca segments with winding counts.
         call read_makegrid_coils(path, mc)
         worst = 0
         do k = 1, nc
@@ -627,20 +627,20 @@ contains
             do i = 1, 7
                 x = [3.0_dp + 1.2_dp*cos(1.1_dp*i), 0.7_dp*sin(0.9_dp*i), &
                     1.5_dp*sin(1.7_dp*i)]
-                b_kin6d = 0
+                b_milca = 0
                 do c = 1, coils%ncoil
                     if (circuit(c) /= k) cycle
                     do s = coils%first(c), coils%first(c + 1) - 1
-                        b_kin6d = b_kin6d + turns(c)*segment_b(coils%a(:, s), &
+                        b_milca = b_milca + turns(c)*segment_b(coils%a(:, s), &
                             coils%l(:, s), x)
                     end do
                 end do
                 b_libneo = 1.0e-7_dp*clight*compute_magnetic_field(group_polygon, x)
-                worst = max(worst, norm2(b_kin6d - b_libneo)/norm2(b_kin6d))
+                worst = max(worst, norm2(b_milca - b_libneo)/norm2(b_milca))
             end do
         end do
-        print '(a,es10.2)', 'group field kin6d vs libneo Biot-Savart ', worst
-        if (worst > 1e-12_dp) error stop 'Biot-Savart kin6d vs libneo'
+        print '(a,es10.2)', 'group field milca vs libneo Biot-Savart ', worst
+        if (worst > 1e-12_dp) error stop 'Biot-Savart milca vs libneo'
         print '(a)', 'MAKEGRID circuits ok'
     end subroutine
 

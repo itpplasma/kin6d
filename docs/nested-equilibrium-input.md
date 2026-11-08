@@ -5,7 +5,7 @@ equilibrium (the D8 boundary/profile lane, [ideal-seed-3d](ideal-seed-3d.md))
 for a boundary, a toroidal flux and prescribed profiles, and writes the solved
 state's global quantities to `output/nested_equilibrium.nc`. It is the native
 entry for cross-code comparison with VMEC-class codes; converting a VMEC
-`&INDATA` deck into this namelist is the adapter's job, not KIN6D's.
+`&INDATA` deck into this namelist is the adapter's job, not MILCA's.
 
 ## Input: namelist `nested_input`
 
@@ -73,5 +73,5 @@ the axis within 1.5 mm of 3.0366 m and `wb` within 2e-5 of 0.0750949; PARVMEC
 `equilibrium_nested_circular-tokamak-current` prescribes I(s) = 340876 A * s on
 the same boundary, starting from iota = 0.3; PARVMEC with CURTOR = -340876 A and
 AC = 1 (its current sign convention is opposite) gives raxis 3.04266 m and wb
-0.0755050, KIN6D 3.04281 m and 0.0755056 after 4 iota updates.
+0.0755050, MILCA 3.04281 m and 0.0755056 after 4 iota updates.
 

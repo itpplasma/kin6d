@@ -4,8 +4,8 @@ module landreman_circuit_basis
     ! field B_phi = 1/R (unit F), then optional coils_3d circuits.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
-    use kin6d_ideal_free_boundary, only: ideal_fb_field_basis_t
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t
+    use milca_ideal_free_boundary, only: ideal_fb_field_basis_t
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t
     implicit none
     private
     type, extends(ideal_fb_field_basis_t), public :: ring_basis_t
@@ -51,26 +51,26 @@ program test_landreman_free_boundary
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, compiler_version, &
                                                                         compiler_options
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
+    use milca_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
                                 landreman_project_surface, landreman_axisymmetric_jvp, &
                                       landreman_axisymmetric_vjp
-    use kin6d_landreman_benchmark, only: landreman_frozen_t, landreman_drive_t, &
+    use milca_landreman_benchmark, only: landreman_frozen_t, landreman_drive_t, &
                                          landreman_volume_boundary, LANDREMAN_DELTA
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_coil_filaments
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
+    use milca_gs_coils, only: gs_circuit_set_t, gs_coil_filaments
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
              gs_fb_eval_t, gs_fb_history_t, gs_fb_setup, gs_fb_newton, gs_fb_evaluate, &
                                       gs_fb_locate, GS_FB_TARGET_MEAN
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_green_gradient
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
              ideal_fb_set_drive, ideal_fb_solve, ideal_fb_report_t, ideal_fb_shell_field
-    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use milca_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
-    use kin6d_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
+    use milca_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
              ideal_fb_set_currents, coil_circuit_basis_t, coil_circuit_basis_init
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
     use landreman_circuit_basis, only: ring_basis_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), delta = LANDREMAN_DELTA
@@ -78,7 +78,7 @@ program test_landreman_free_boundary
     real(dp) :: distance(2), field_error(2), pressure_error(2)
     integer :: st, l
     ! Modes: (none) set_drive with the fitted sampler; circuits: the same
-    ! drive through circuit currents (kin6d_ideal_fb_circuits); helical:
+    ! drive through circuit currents (milca_ideal_fb_circuits); helical:
     ! nfp = 3, N = 1 with an added 3-fold window-coil circuit; bem3d: the
     ! same chain=16,32 cases through the full-surface R2 BEM exterior
     ! (24 rotated sectors, block-circulant), each compared with the per-n

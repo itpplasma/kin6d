@@ -5,16 +5,16 @@ program fermion_ensemble_demo
     ! Writes CSV and preliminary PNG figures to output/ (not committed).
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use fortnum_interval, only: interval_t
-    use kin6d_fermion_ensemble
-    use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
+    use milca_fermion_ensemble
+    use milca_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, occupation_fermi_gas
-    use kin6d_fermion_ensemble_leaves, only: fermion_cold_density_matrix, &
+    use milca_fermion_ensemble_leaves, only: fermion_cold_density_matrix, &
         fermion_cold_density_matrix_series, fermion_exchange_hole, &
         fermion_boltzmann_hole, fermion_classical_limits
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, &
         legend, tight_layout, savefig, xscale, yscale, suptitle
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: colors(3, 4) = reshape([0.0_dp, 0.447_dp, 0.698_dp, &

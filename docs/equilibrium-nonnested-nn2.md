@@ -242,7 +242,7 @@ variations and is not an NN2 reference.
   checks the isotropic blocks against the per-n Dirichlet forms to 1.6e-15,
   the loads to 3.5e-16, and exact Galerkin reproduction of P2 x trig with a
   phi-dependent tensor to 8.7e-15.
-- KIN6D `kin6d_nonnested_transport`: `nt_conductivity_t` samples any
+- MILCA `milca_nonnested_transport`: `nt_conductivity_t` samples any
   `equilibrium_field_t`, including the NN1 free-B state, and `nt_solve`
   runs the Dirichlet solve through `nn_linear_solve`. The reported residual
   is the normwise backward error |r|/(||A||p|| + |rhs|), with up to two
@@ -311,7 +311,7 @@ and storage are O(cells * modes) at fixed spatial degree.
 
 ## Second increment (implemented): axisymmetric coupled Newton
 
-`kin6d_nonnested_coupled` solves the full n = 0 system on the NN1 complex.
+`milca_nonnested_coupled` solves the full n = 0 system on the NN1 complex.
 The unknowns are x = [A | lambda | p | Phi | V]. A = (A_pol, a = R A_phi)
 is the whole V1 space, so B_phi = F_vac/R - rot A_pol is free and poloidal
 current obeys Ampere. At n = 0 the Nedelec curl has the kernel grad V0_0,
@@ -391,7 +391,7 @@ inf-sup analysis of the coupled saddle system and no enclosure.
 
 ## Third increment (implemented): Fourier-coupled Newton
 
-`kin6d_nonnested_coupled` now solves modes 0..N (N = the field's mode
+`milca_nonnested_coupled` now solves modes 0..N (N = the field's mode
 count). Every V0/V1/V2 unknown uses FortFEM's real block layout (block 0,
 then cos(n phi), sin(n phi)); NN1's complex modes map by 2 B_n = c - i s.
 FortFEM `a27e21f7` (`fortfem_meridian_fourier_curl`) supplies the block
@@ -676,7 +676,7 @@ P3 nr = 16 is therefore open.
 
 ## Reusable island diagnostics and vacuum verification
 
-[V] `kin6d_island_diagnostics` takes any `equilibrium_field_t`. It traces
+[V] `milca_island_diagnostics` takes any `equilibrium_field_t`. It traces
 `d(R,Z)/dphi = R (B_R,B_Z)/B_phi` with FortNum Cash--Karp, either adaptive
 with declared absolute/relative tolerances or on an explicit fixed-step
 ladder. This chart requires nonzero B_phi and R > 0 along the whole trace.
@@ -737,7 +737,7 @@ nr=16 three-mode seed is a separate regression for the observed mode-1
 residual rejection at 1.189e-9. No new sparse kernel or backend is introduced.
 
 [V] Rung 0 uses the published synthetic NN1 192-segment filament and its
-annulus. `kin6d_coil_quadrature_field` integrates the exact polygon source
+annulus. `milca_coil_quadrature_field` integrates the exact polygon source
 with FortNum Gauss--Legendre nodes. The 8/12-node quadrature and the
 independent closed straight-segment formula are compared at 64 points.
 The P2/P3 ladders print `h=0.9/nr`, width, absolute error against the
@@ -776,7 +776,7 @@ without a true-error oracle; these timings retain the practical claim.
 
 ## Frozen-current field (E3.5 level 2)
 
-`kin6d_frozen_current` computes the field of a prescribed current density
+`milca_frozen_current` computes the field of a prescribed current density
 J on the Fourier FEEC spaces of the coupled solver: the same Coulomb-gauge
 saddle point (curl-curl block, gradient coupling, multiplier lambda) with J
 held fixed and no transport or Ohm rows. Testing Ampere with grad chi shows

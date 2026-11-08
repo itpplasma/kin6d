@@ -35,8 +35,8 @@ Spin-unresolved detection of the antisymmetrized |up,down> state gives
 cross term 2 Re f(theta) f*(pi-theta) ~ cos(eta ln tan^2(theta/2)).
 
 Scales: lambdabar = 1/k, v = hbar k/mu, Sommerfeld eta = g/(hbar v),
-head-on turning radius r0 = 2 eta lambdabar (kin6d_species and the generated
-leaves; physics from gen/kin6d_symbolic_physics.f90).
+head-on turning radius r0 = 2 eta lambdabar (milca_species and the generated
+leaves; physics from gen/milca_symbolic_physics.f90).
 
 ## Representation
 
@@ -166,7 +166,7 @@ coulomb-kepler-summary.csv, coulomb-cost-ledger.csv, the movies
 coulomb-encounter-{headon,offaxis}.mp4 with frame PNGs and per-frame CSVs
 (coulomb-movie-{headon,offaxis}.csv: time, slow-motion factor, sector norms,
 energy, wall probability), coulomb-turning-cut.{csv,png}, plus
-`coulomb_encounter_demo.nc` (kin6d_result_io: eta/impact-parameter bin
+`coulomb_encounter_demo.nc` (milca_result_io: eta/impact-parameter bin
 ratios, per-eta state bounds, Kepler series and errors, bin VJP, cost
 timings, literal/resolved configuration and provenance).
 
@@ -206,7 +206,7 @@ sqrt(2 z0) lambdabar) and below the classical histogram's one-count floor
 also runs at eta ~ 0.03 (`test_coulomb_encounter`).
 
 `--export DIR` writes compact animation data for the lecture scenes
-(`kin6d_animation_export`, src/apps/animation_export.f90) to
+(`milca_animation_export`, src/apps/animation_export.f90) to
 DIR/coulomb-encounter-{headon,offaxis,hot}/: every second movie frame (132),
 the quantum slices averaged over 2x2 pixels onto the 120 x 120 classical grid,
 panels classical / spin-unresolved product / singlet / triplet, log10 density

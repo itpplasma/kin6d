@@ -1,8 +1,8 @@
-module kin6d_ideal_free_boundary
+module milca_ideal_free_boundary
     ! 3D free boundary of the nested map lane (DESIGN 7.3, core note D6, N4).
     ! One reference mesh of the region inside a fixed axisymmetric coupling
     ! curve Gamma_c, with the plasma boundary Gamma_p as an internal chain:
-    !   plasma cells: the frozen-in energy of kin6d_ideal_map (unchanged), in
+    !   plasma cells: the frozen-in energy of milca_ideal_map (unchanged), in
     !     the position gauge: every node (Gamma_p included) carries its full
     !     poloidal position (q1, q2) per Fourier mode and the toroidal
     !     displacement omega is zero. Relabelling along B needs a toroidal
@@ -52,19 +52,19 @@ module kin6d_ideal_free_boundary
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
         ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t, &
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
-    use kin6d_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
-    use kin6d_vacuum_shell_leaves, only: vacuum_energy_density, &
+    use milca_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
+    use milca_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
-    use kin6d_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
+    use milca_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
         fold_barrier_hessian
-    use kin6d_triangle_basis, only: triangle_basis_jet
-    use kin6d_sort_keys, only: sort_key_order
-    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
+    use milca_triangle_basis, only: triangle_basis_jet
+    use milca_sort_keys, only: sort_key_order
+    use milca_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
@@ -81,7 +81,7 @@ module kin6d_ideal_free_boundary
         csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL, &
         FORTSPARSE_SYM_INDEFINITE, sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_energy, &
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_energy, &
         assignment(=)
     implicit none
     private
@@ -2167,7 +2167,7 @@ contains
         !            flux density, master coordinates, reference quadrature),
         ! with the C1 partition of unity phi_l = cos^2(pi/2 (L rho - l)),
         ! l = 0..L, rho = (1 - T)^1/2 and one layer per element layer, as in
-        ! the nested omega gauge of kin6d_ideal_map. Integrating by parts,
+        ! the nested omega gauge of milca_ideal_map. Integrating by parts,
         ! M_l vanishes for every curl-free u (translations, elongation), and
         ! a smooth f restores the moments for any continuum equilibrium: the
         ! gauge selects the labelling only (to discretisation accuracy) and
@@ -4703,4 +4703,4 @@ contains
         det = a(1, 1)*inv(1, 1) + a(1, 2)*inv(2, 1) + a(1, 3)*inv(3, 1)
         if (abs(det) > 0) inv = inv/det
     end subroutine
-end module kin6d_ideal_free_boundary
+end module milca_ideal_free_boundary

@@ -8,11 +8,11 @@ program test_gs_fb_law_tangent
     !! genuine free-boundary equilibrium with an edge jump (interface term)
     !! and the separatrix with a vanishing edge source (the FreeGS setting).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
         gs_fb_setup, gs_fb_evaluate, gs_fb_newton, gs_fb_law_tangent, GS_FB_OK, &
         GS_FB_LIMITER, GS_FB_XPOINT
     use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b

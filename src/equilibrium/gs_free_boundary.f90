@@ -1,4 +1,4 @@
-module kin6d_gs_free_boundary
+module milca_gs_free_boundary
     !! Free-boundary Grad-Shafranov Newton solver on the FEM-BEM coupled
     !! operator (DESIGN sections 1.2 and 2).
     !!
@@ -6,16 +6,16 @@ module kin6d_gs_free_boundary
     !!
     !!     F(psi; I) = A psi - b(psi) - sum_k I_k load_k - extra,
     !!
-    !! A = K + S_h the coupled operator of kin6d_gs_coupling, load_k the coil
+    !! A = K + S_h the coupled operator of milca_gs_coupling, load_k the coil
     !! loads, extra a psi-independent nodal load, and b the plasma source
     !!
     !!     b_i = int f(s, R) 1{plasma} v_i dA,  s = (psi - psi_a)/(psi_b - psi_a),
     !!
-    !! with the normalised profile law of kin6d_gs_profile_law (s = 0 on the
+    !! with the normalised profile law of milca_gs_profile_law (s = 0 on the
     !! axis, s = 1 on the last closed surface, f = mu0 R p' + F F'/R inside
     !! and zero outside). The plasma is the connected set of s < 1 around
     !! the axis. The cut at s = 1 is one more level of the exact cubic
-    !! level-cut quadrature of kin6d_gs_nonlinear.
+    !! level-cut quadrature of milca_gs_nonlinear.
     !!
     !! Flux levels. psi_a is the extremum of the represented flux near the
     !! axis (a maximum when axis_sign = +1). psi_b is a linear functional of
@@ -63,24 +63,24 @@ module kin6d_gs_free_boundary
     use fortnum_roots, only: root_brent
     use fortnum_multiroot, only: argsort
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_gs_separatrix_leaves, only: gs_lcfs_ray_jet
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_gs_separatrix_leaves, only: gs_lcfs_ray_jet
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
                                GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &
                                GS_DIRECT_ORDER_ND
-    use kin6d_sort_keys, only: sort_key_order
-    use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
+    use milca_sort_keys, only: sort_key_order
+    use milca_gs_timers, only: gs_phase_tick, gs_profile_value
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
                                   gs_requested_device
-    use kin6d_gs_coils, only: gs_circuit_set_t
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
+    use milca_gs_coils, only: gs_circuit_set_t
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
                                  gs_coupling_coil_load, GS_COUPLING_OK
-    use kin6d_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
+    use milca_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
                                     cubic_segment_stationary, &
                                     triangle_bernstein_controls
-    use kin6d_curved_triangle, only: triangle_locate, boundary_curve
+    use milca_curved_triangle, only: triangle_locate, boundary_curve
     implicit none
     private
 
@@ -1490,13 +1490,13 @@ contains
         !! Fill-reducing ordering of native analysis. The factor is redone
         !! every Newton iteration and the analysis is serial, so approximate
         !! minimum degree (cheap analysis, fill slightly above nested
-        !! dissection) is faster overall; KIN6D_FB_ORDERING = nd selects nested
+        !! dissection) is faster overall; MILCA_FB_ORDERING = nd selects nested
         !! dissection.
         character(len=8) :: choice
         integer :: length, stat
 
         ordering = GS_DIRECT_ORDER_AMD
-        call get_environment_variable('KIN6D_FB_ORDERING', choice, length, stat)
+        call get_environment_variable('MILCA_FB_ORDERING', choice, length, stat)
         if (stat == 0 .and. length > 0) then
             if (trim(choice) == 'nd') ordering = GS_DIRECT_ORDER_ND
         end if
@@ -1510,7 +1510,7 @@ contains
 
         enabled = gs_direct_available()
         if (.not. enabled) return
-        call get_environment_variable('KIN6D_FB_SOLVER', choice, length, stat)
+        call get_environment_variable('MILCA_FB_SOLVER', choice, length, stat)
         if (stat == 0 .and. length > 0) then
             enabled = trim(choice) /= 'lu' .and. trim(choice) /= 'superlu'
         end if
@@ -2650,4 +2650,4 @@ contains
         call gs_fb_newton(state, sys, currents, status, history)
     end subroutine solve_stage
 
-end module kin6d_gs_free_boundary
+end module milca_gs_free_boundary

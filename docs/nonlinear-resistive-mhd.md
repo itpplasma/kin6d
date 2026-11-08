@@ -158,7 +158,7 @@ laboratory this was the fastest family at matched L1 error for a scalar
 diffusion problem (FortFEM `doc/design/discretisation_laboratory.md`,
 `benchmark/lab/RESULTS.md`); whether that carries over to MHD is tested by
 RM-B9. Requires compatible GLL edge/face bases (U2). Stellarators enter here
-through mapped tensor patches on the curve-following chart that KIN6D already
+through mapped tensor patches on the curve-following chart that MILCA already
 has (`src/equilibrium/equilibrium_chart.f90`: X = Gamma(zeta) + q1 N(zeta) +
 q2 B(zeta) about a closed, non-planar axis curve, as in GVEC's G-Frame). The
 Figure-8 stellarator, which has no usable cylindrical toroidal angle, is the
@@ -369,7 +369,7 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
 ## Later: kinetic coupling (not scheduled)
 
 Target: a closure valid from the core to the wall. The reference is a
-drift-kinetic parallel closure with collisions computed by KIN6D's steady
+drift-kinetic parallel closure with collisions computed by MILCA's steady
 drift-kinetic solver, valid at any collisionality; cheaper closures
 (Braginskii in the scrape-off layer and divertor, flux-limited or Landau-fluid
 closures in the core, gyrofluid closures where k_perp rho_i ~ 1) are used where
@@ -384,14 +384,14 @@ private research project.
 Kinetic effects enter later through the closure interface, after RM7, and are
 not part of RM0-RM8:
 
-- neoclassical resistivity and bootstrap current from KIN6D's steady
+- neoclassical resistivity and bootstrap current from MILCA's steady
   drift-kinetic solver (see [drift-kinetics.md](drift-kinetics.md)), checked
   against published neoclassical limits; the bootstrap current enters as J_s;
 - a kinetic or Landau-fluid parallel heat-flux closure replacing the flux
   limiter;
 - fast ions (beam ions, alphas) through hybrid kinetic-MHD coupling. Whether
-  they are represented by KIN6D's own particle, Eulerian or semi-Lagrangian
+  they are represented by MILCA's own particle, Eulerian or semi-Lagrangian
   carriers ([representations.md](representations.md)) or supplied by an external
   Monte Carlo orbit code such as SIMPLE or GORILLA through a provider interface
-  is decided when the work starts. KIN6D does not add a specialised
+  is decided when the work starts. MILCA does not add a specialised
   guiding-centre orbit-following Monte Carlo solver of its own.

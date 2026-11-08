@@ -4,11 +4,11 @@
 !> arithmetic; the generated oracle leaves are checked against them.
 program test_em_slab
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_em_slab, only: em_slab_config_t, em_slab_result_t, em_slab_run, &
+    use milca_em_slab, only: em_slab_config_t, em_slab_result_t, em_slab_run, &
         em_slab_t, em_slab_init, em_slab_step, em_slab_gauss_residual, &
         em_slab_reflection, em_slab_decay_length, em_slab_mean_amplitude, &
         em_slab_wavenumber
-    use kin6d_em_slab_leaves, only: em_slab_boris, em_slab_boris_jvp, &
+    use milca_em_slab_leaves, only: em_slab_boris, em_slab_boris_jvp, &
         em_slab_boris_vjp, em_slab_fresnel, em_slab_evanescent
     implicit none
     character(len=32) :: mode

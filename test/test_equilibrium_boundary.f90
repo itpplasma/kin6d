@@ -13,11 +13,11 @@ program test_equilibrium_boundary
     !             of the same circle as a 3D polygon (Biot-Savart + DFT) to
     !             the polygon error, and the polygon has no n /= 0 part.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_boundary, only: gamma_c_t, gamma_c_build, &
+    use milca_equilibrium_boundary, only: gamma_c_t, gamma_c_build, &
         gamma_c_exterior, gamma_c_coil_traces, axisymmetric_coils_t, &
         polyline_coils_t, GAMMA_C_SCALAR, GAMMA_C_OK
-    use kin6d_coils_3d, only: coil_set_from_polylines
-    use kin6d_gs_coils, only: gs_coil_filaments
+    use milca_coils_3d, only: coil_set_from_polylines
+    use milca_gs_coils, only: gs_coil_filaments
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     character(16) :: argument

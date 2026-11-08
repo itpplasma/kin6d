@@ -3,7 +3,7 @@ program test_mhd_batch_refinement
     ! For this positive scalar operator the relative solution infinity error
     ! equals the relative residual; the regression gate follows the stop test.
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
-    use kin6d_ideal_xi, only: xi_bilinear_batch
+    use milca_ideal_xi, only: xi_bilinear_batch
     use fortnum_precision, only: precision_policy_t, precision_pair_t, &
             precision_preset, FP64, FP32, FP16, BF16, STAGE_PRECONDITION, STAGE_RESIDUAL
     use fortnum_precision_vector, only: precision_vector_t

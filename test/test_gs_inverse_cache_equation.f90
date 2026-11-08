@@ -1,6 +1,6 @@
 program inverse_cache_parent_polynomial
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_implicit_response, &
+    use milca_grad_shafranov, only: gs_state_t, gs_profile_implicit_response, &
         gs_element_jet
     implicit none
     type(gs_state_t)::s, derivative

@@ -1,9 +1,9 @@
-module kin6d_quantum_reference_gallery
+module milca_quantum_reference_gallery
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, is_empty, mag, iadd, isub, &
         linear_interpolation_remainder
-    use kin6d_quantum_reference_gallery_leaves, only: qgallery_accumulate, &
+    use milca_quantum_reference_gallery_leaves, only: qgallery_accumulate, &
         qgallery_accumulate_interval, &
         qgallery_norm_add_interval, &
         qgallery_error_interval, qgallery_curvature_interval, &
@@ -15,7 +15,7 @@ module kin6d_quantum_reference_gallery
         qgallery_phase, qgallery_phase_interval, &
         qgallery_contract, &
         qgallery_contract_interval
-    use kin6d_quantum_correlations_leaves, only: quantum_cumulant_pair_interval
+    use milca_quantum_correlations_leaves, only: quantum_cumulant_pair_interval
     implicit none
     private
     public :: quantum_observable_packet_t, prepare_quantum_observables
@@ -504,4 +504,4 @@ contains
         if (.not. ieee_is_finite(value%hi)) return
         valid_interval = value%lo <= value%hi
     end function
-end module kin6d_quantum_reference_gallery
+end module milca_quantum_reference_gallery

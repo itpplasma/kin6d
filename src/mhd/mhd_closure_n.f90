@@ -1,4 +1,4 @@
-module kin6d_mhd_closure_n
+module milca_mhd_closure_n
     !! L6: ideal closure of the per-n response at rational surfaces by
     !! inner-outer matching with the Frobenius solutions of the outer
     !! (ideal) region (Glasser, Greene and Johnson, Phys. Fluids 18 (1975)
@@ -6,7 +6,7 @@ module kin6d_mhd_closure_n
     !!
     !! Outer solutions.  Near a rational surface q = m/n at psin_s, with
     !! x = psin - psin_s, the resonant flux harmonic Phi_m of an ideal outer
-    !! solution (kin6d_mhd_response_n; Phi_m = chi' i (n q - m) xi_m in any
+    !! solution (milca_mhd_response_n; Phi_m = chi' i (n q - m) xi_m in any
     !! straight-field-line chart) is, on each side,
     !!     Phi_m = A |x|^(1/2 - mu) (1 + O(x)) + B |x|^(1/2 + mu) (1 + O(x))
     !!             + C x + O(x^2),
@@ -20,9 +20,9 @@ module kin6d_mhd_closure_n
     !! carries the x ln|x| term (D_I = -1/4 exactly when p' = 0).
     !!
     !! Closure.  The layer |x| < delta around each rational carries no volume
-    !! current (kin6d_mhd_ideal_n sample rings inactive); it is replaced by
+    !! current (milca_mhd_ideal_n sample rings inactive); it is replaced by
     !! two resonant sheets on its edge rings, x = -delta and x = +delta
-    !! (kin6d_mhd_response_n layer_closure_t), whose amplitudes are fixed by
+    !! (milca_mhd_response_n layer_closure_t), whose amplitudes are fixed by
     !! the large-solution coefficients a1 of the fits on nfit rings outside
     !! the layer on each side: ideal shielding sets a1 = 0 on both sides;
     !! prescribed a1 gives the Delta' (matching) data.  The two sheets carry
@@ -52,11 +52,11 @@ module kin6d_mhd_closure_n
     !! v2 = d^2V/ds^2, q1 = d|q|/ds, F = |R B_phi|.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
+    use milca_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
         psi_eval, profiles_of_psin
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+    use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         layer_closure_t
-    use kin6d_mhd_ampere_n, only: mu0
+    use milca_mhd_ampere_n, only: mu0
     implicit none
     private
 
@@ -577,4 +577,4 @@ contains
         end do
     end function layer_inside
 
-end module kin6d_mhd_closure_n
+end module milca_mhd_closure_n

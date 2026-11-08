@@ -1,4 +1,4 @@
-# kin6d agent instructions
+# milca agent instructions
 
 ## Read before changing the project
 
@@ -81,7 +81,7 @@ These rules are hard constraints:
 - **SRP/separation:** physics, discretization, solver orchestration, hardware
   schedule, configuration, adapters, I/O, inference and UI have distinct
   reasons to change.
-- **Dependency inversion:** replaceable details depend on KIN6D policy/contracts,
+- **Dependency inversion:** replaceable details depend on MILCA policy/contracts,
   never the reverse. Physics modules do not import PETSc/libneo/FortIO/CUDA/
   web/scheduler internals.
 - **Interface segregation:** use small capability contracts; no god model/field/
@@ -136,7 +136,7 @@ These rules are hard constraints:
   checking and re-solve/certification in that model.
 - Distinct stationary solutions are distinct equilibria. Record their
   provenance/continuation histories; do not add a speculative branch-mixture
-  framework to KIN6D. TIAGO owns any probabilistic mixture over fitted states.
+  framework to MILCA. TIAGO owns any probabilistic mixture over fitted states.
 - Bulk MHD aggregates explicitly owned populations. It is not a per-species
   fluid switch. Prevent double counting of charge/current/pressure/energy.
 - Weakly/partially ionized and industrial plasmas reuse the common species,
@@ -214,7 +214,7 @@ These rules are hard constraints:
 - A numerical enclosure proves the named model, not physical reality. Model
   reduction, physical-data uncertainty and stochastic sampling need separate
   bounds/status. TIAGO reconstruction/measurement/calibration posterior
-  uncertainty is another orthogonal layer and is not folded into a KIN6D
+  uncertainty is another orthogonal layer and is not folded into a MILCA
   deterministic certificate by default.
 - Goal-oriented indicators are not rigorous remainders until the stability,
   lifting and nonlinear remainder hypotheses are checked.
@@ -297,31 +297,31 @@ optimization. Planned scope is not implemented functionality.
 - FortFEM owns generic spatial mathematics; FortNum generic numerics and
   verified arithmetic; FortSparse sparse kernels; FortSym symbolic generation;
   FortAD derivative tooling; FortIO/FortPlot/FortArray their respective generic
-  domains. KIN6D owns plasma-specific mathematics and composition.
+  domains. MILCA owns plasma-specific mathematics and composition.
 - Native CUDA is optional behind ISO_C_BINDING and a thin C ABI. The CPU path
   remains a reference.
 - When an owned upstream dependency has a concrete defect or missing generic
   feature, add a focused independent reproducer there, repair it there, verify
-  it, push the owning main as allowed, pin/recheck KIN6D. Do not keep permanent
+  it, push the owning main as allowed, pin/recheck MILCA. Do not keep permanent
   consumer workarounds.
 - libneo is the preferred shared implementation for mature plasma-code
   interchange/convention and reusable field utilities when it already owns the
-  capability, but KIN6D depends on it only through a narrow adapter/canonical
-  physical-data boundary. No KIN6D physics module may depend directly on
+  capability, but MILCA depends on it only through a narrow adapter/canonical
+  physical-data boundary. No MILCA physics module may depend directly on
   historical libneo internals.
-- **Boy-scout rule for libneo:** as soon as a KIN6D milestone starts depending
+- **Boy-scout rule for libneo:** as soon as a MILCA milestone starts depending
   on a libneo path, inspect the touched path. Generic correctness, convention,
   interpolation, reentrancy/global-state, derivative, performance or reusable
   error-estimation defects found by that use case are fixed and tested in
   libneo first so SIMPLE/MEPHIT/NEO-2/TIAGO and other consumers can benefit.
-  Do not build a cleaner private duplicate in KIN6D.
+  Do not build a cleaner private duplicate in MILCA.
 - Improve only the part that the real consumer exercises. Preserve compatible
   entry points or provide bounded migration shims for existing consumers;
-  KIN6D development is not a license for a wholesale libneo rewrite.
+  MILCA development is not a license for a wholesale libneo rewrite.
 - Generic spatial field derivatives/JVPs, interpolation diagnostics and
   reusable enclosure/error capabilities belong in libneo when they are useful
   to multiple consumers. Physical-model residuals, equilibrium parameter
-  adjoints, validated stationary solves and model-error bounds remain KIN6D
+  adjoints, validated stationary solves and model-error bounds remain MILCA
   responsibilities.
 - Preserve unrelated edits. One controller owns integration/promotion.
 - Never touch protected faepop* or faepcr* hosts without an explicit user
@@ -333,18 +333,18 @@ optimization. Planned scope is not implemented functionality.
 
 ## Build layers and development loop
 
-- Library sources belong to one layer target (`cmake/kin6d_layers.cmake`):
-  L0 `kin6d_core`; L1 `kin6d_fem2d`, `kin6d_pairs`; L2 `kin6d_equilibrium`,
-  `kin6d_mhd`, `kin6d_classical`, `kin6d_quantum`, `kin6d_continuum`; L3
-  applications and `kin6d_io`. A source uses only its own or lower layers; of
+- Library sources belong to one layer target (`cmake/milca_layers.cmake`):
+  L0 `milca_core`; L1 `milca_fem2d`, `milca_pairs`; L2 `milca_equilibrium`,
+  `milca_mhd`, `milca_classical`, `milca_quantum`, `milca_continuum`; L3
+  applications and `milca_io`. A source uses only its own or lower layers; of
   the L2 classes only mhd uses equilibrium. Add a new source with
-  `target_sources(kin6d_<layer> PRIVATE ...)`; the `kin6d_layering` test fails
+  `target_sources(milca_<layer> PRIVATE ...)`; the `milca_layering` test fails
   on an upward or sideways `use`. Fix a violation by assigning the source to
   the right layer, not by bending the physics code.
 - Every test needs a class label and one tier (`fast` or `slow`; `regression`
-  and `performance` are also accepted) in `cmake/kin6d_test_labels.cmake`;
+  and `performance` are also accepted) in `cmake/milca_test_labels.cmake`;
   `slow` means more than 60 s in a full run.
-- Development loop: `cmake --build build --target kin6d_check_<class>`, then
+- Development loop: `cmake --build build --target milca_check_<class>`, then
   `ctest --test-dir build -j 32 -L <class> -LE slow` (or configure the
   `dev-fast` preset and run `ctest --preset <class>`). Run only the tests
   affected by a change; never the full suite.

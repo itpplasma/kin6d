@@ -10,7 +10,7 @@ from the iter_tc24 response ladder (rungs a-c, L5 TC24 array, 2026-10-13).
 
 1. Not a collection of replacements. GPEC/DCON/rdcon, MARS-F, MARS-K, ARES,
    MEPHIT and SLAYER stay external oracles; none is reimplemented. Their
-   physics models are all reachable as settings of one KIN6D formulation.
+   physics models are all reachable as settings of one MILCA formulation.
 2. Same physics models, better numerics. The claim is robustness and accuracy
    per cost at rational surfaces (no fit rings, no delta extrapolation, no
    Mercier-exponent bookkeeping), not new physics.
@@ -53,14 +53,14 @@ freezes the flux into the electron fluid (Omega_e). v1 = -i w xi -
 Omega' (xi.grad psi) R^2 grad phi; for the static drive w = -n Omega the
 Coriolis and centrifugal terms are of the order of rho w^2 and are kept with
 it; the s_2f row needs the ion gyroviscous stress in (R2) [K]. Signs follow
-the per-n convention of `kin6d_coils_3d`. Derived in
+the per-n convention of `milca_coils_3d`. Derived in
 [response-r2-r4.md](../theory/derivations/response-r2-r4.md) (T8), with
 `test/check_response_r2_r4.py`; open points listed there.
 
 Static ideal outer region (rho w^2, nu, eta, s_2f -> 0, fluid P1): (R2)
 reduces to J_pl x B0 + J0 x B1 = grad p1 with B0.grad p1 = -p0' B1.grad psi and
 div J_pl = 0. This is exactly the MEPHIT-form closure already in
-`kin6d_mhd_ideal_n` (MDEs solved in the Fourier basis), so xi need not be
+`milca_mhd_ideal_n` (MDEs solved in the Fourier basis), so xi need not be
 carried there; off rationals p1 = -xi.grad p0 and div xi = 0, so Gamma does
 not enter. The MDE denominators (m - n q) are singular at every rational:
 each rational needs a layer treatment (below), never a raw MDE.
@@ -271,7 +271,7 @@ gate.
   552161a covers only the sheet closure); fit diagnostics (spread over
   `layer_ratio`, |a1/Phi|) reported per rational; three-point delta fit with
   the delta^(2 eps) term as the last change to the fit machinery. Gates: all
-  `mhd_*` ctests unchanged; c1_kin6d parity with GPEC within the c1 gate;
+  `mhd_*` ctests unchanged; c1_milca parity with GPEC within the c1 gate;
   TC24 zero-pressure q = 3 spread < 7 %; full pressure reported, not gated.
 - R-B1: resolved resistive strip in the periodic-cylinder chart. Gates:
   constant-psi Dhat and the L5 numerical layer (non-constant psi, viscous) to
@@ -309,7 +309,7 @@ gate.
   interior map does (same/step 3.9 %, matching (5.247/5)^(4/5)).
 
   nrad ladder, R0/a 40, xd 0.02, GMRES 3e-8, MUMPS (sCluster job 3225264,
-  kin6d 8021456; times 11-29 s on 4 threads):
+  milca 8021456; times 11-29 s on 4 threads):
 
   | nrad | rings | (a) rel | (b) S 1e6 | S 1e7 | S 1e8 |
   |---:|---:|---:|---:|---:|---:|
@@ -368,7 +368,7 @@ k_par damping (it is a layer width without a layer model).
 
 ## Full-pressure strip residual
 
-`kin6d_response_fluid` supplies the non-rotating, single-fluid point residual
+`milca_response_fluid` supplies the non-rotating, single-fluid point residual
 of (R2)-(R4), in Cartesian physical components and SI units. With
 `gamma = -i omega`, the supplied spatial jets give
 
@@ -400,7 +400,7 @@ differenced polynomials, batch linearity, and pressure/force JVP/VJP products.
 These are point-operator checks. No continuous or discrete error certificate
 is available, and no TC24 convergence or Glasser-layer result is claimed.
 
-`kin6d_response_toroidal_strip` adds a candidate mapped-annulus discretisation
+`milca_response_toroidal_strip` adds a candidate mapped-annulus discretisation
 at fixed nonzero toroidal n, in the outer operator's `A_phi = 0` gauge. Its six
 unknowns are `(A_R, A_Z, xi_R, xi_phi, xi_Z, Phi)`. A complete odd-size poloidal
 Fourier grid retains both signs of every represented harmonic; equilibrium and

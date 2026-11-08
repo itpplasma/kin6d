@@ -2,7 +2,7 @@ module hessian_test_case
     ! Circular cross-section on a large-aspect-ratio torus with a smooth
     ! frozen state; the Hessian assembly needs frozen data, not an equilibrium.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     public :: hessian_field_t, boundary_point, r0, a
@@ -30,7 +30,7 @@ contains
 end module hessian_test_case
 
 program test_ideal_map_hessian
-    ! The sum-factorised coefficient Hessian of kin6d_ideal_map against the
+    ! The sum-factorised coefficient Hessian of milca_ideal_map against the
     ! frozen point-loop assembly (test/support/ideal_map_hessian_oracle.f90) on
     ! random 3D states: full Fourier coupling (ntor > 0), P2 through P6, the plain
     ! transversal basis with its axis expansion and gauge form, the nested
@@ -40,9 +40,9 @@ program test_ideal_map_hessian
     ! The Hessian, energy and gradient must not depend on the OpenMP team
     ! size (bitwise), including teams larger than the number of cells.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
         ideal_map_hessian, ideal_map_energy, ideal_map_expand, ideal_map_reduce, &
         IDEAL_MAP_OK
     use fortfem_element_to_csr, only: csr_matrix_t

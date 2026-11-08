@@ -15,14 +15,14 @@
 module ocp_shielding_app
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
+    use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
         ocp_thermostat, ocp_kinetic_temperature, ocp_mode, ocp_radial_histogram, &
         ocp_debye_shell
-    use kin6d_nbody, only: nbody_system_t, nbody_energy
-    use kin6d_ocp_leaves, only: debye_structure
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_animation_export, only: animation_export_t
-    use kin6d_series_statistics, only: series_autocorrelation
+    use milca_nbody, only: nbody_system_t, nbody_energy
+    use milca_ocp_leaves, only: debye_structure
+    use milca_result_io, only: run_t, result_file_t
+    use milca_animation_export, only: animation_export_t
+    use milca_series_statistics, only: series_autocorrelation
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &
         tight_layout, savefig, colorbar
@@ -364,7 +364,7 @@ contains
                 [(real(j, dp), j = 1, samples)]) - 1
         end do
         ! Integrated autocorrelation time of the inner-shell count series
-        ! (kin6d_series_statistics, Sokal window), in time units.
+        ! (milca_series_statistics, Sokal window), in time units.
         call series_autocorrelation(series, mean, err, tau, ess)
         autocorr(r, c) = tau*sample_interval
         call system_clock(c2)

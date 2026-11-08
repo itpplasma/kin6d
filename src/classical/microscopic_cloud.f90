@@ -1,13 +1,13 @@
 !> C2: isolated electron cloud in a fixed neutralizing uniform sphere, with an
 !> optional fixed point impurity at the origin. Electrons, sphere and impurity
-!> are declared through kin6d_species (atomic units: q_e=-1, m_e=1,
-!> 1/(4 pi eps0)=1); dynamics use the shared kin6d_nbody KDK path, any N.
-module kin6d_microscopic_cloud
+!> are declared through milca_species (atomic units: q_e=-1, m_e=1,
+!> 1/(4 pi eps0)=1); dynamics use the shared milca_nbody KDK path, any N.
+module milca_microscopic_cloud
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_species, only: units_t, species_t, atomic_units, electron
-    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_set_sphere, &
+    use milca_species, only: units_t, species_t, atomic_units, electron
+    use milca_nbody, only: nbody_system_t, nbody_isolated, nbody_set_sphere, &
                            nbody_add_source
-    use kin6d_cloud_leaves, only: cloud_initial_position, cloud_initial_velocity
+    use milca_cloud_leaves, only: cloud_initial_position, cloud_initial_velocity
     implicit none
     private
     public :: cloud_model_t, cloud_system, cloud_initialize

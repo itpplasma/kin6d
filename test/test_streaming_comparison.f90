@@ -2,14 +2,14 @@ program test_streaming_comparison
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_finite
     use fortnum_interval, only: interval_t, interval
-    use kin6d_streaming_comparison, only: &
+    use milca_streaming_comparison, only: &
         streaming_state_t, init_streaming, advance_streaming, evaluate_streaming, &
         evaluate_streaming_interval, evaluate_streaming_candidate_interval, &
         streaming_radius, streaming_particles_t, &
         init_streaming_particles, get_streaming_particles, streaming_particle_info, &
         streaming_particles_source_matches, density_streaming, &
         density_coefficients_streaming, density_streaming_chord
-    use kin6d_streaming_leaves, only: &
+    use milca_streaming_leaves, only: &
         streaming_rotation, streaming_rotation_jvp, streaming_rotation_vjp, &
         streaming_rotation_interval, streaming_characteristic, &
         streaming_characteristic_jvp, streaming_characteristic_vjp, &

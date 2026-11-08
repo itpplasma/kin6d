@@ -7,7 +7,7 @@
 ! classical limit eta >> 1 and central finite differences.
 program test_quantum_collision
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
-    use kin6d_quantum_collision_kernel
+    use milca_quantum_collision_kernel
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
     integer :: failures = 0

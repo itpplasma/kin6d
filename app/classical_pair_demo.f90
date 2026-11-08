@@ -1,18 +1,18 @@
 program classical_pair_demo
     use, intrinsic :: iso_fortran_env, only: dp=>real64,int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_classical_pair, only: classical_pair_model_t, initialize_classical_pair, &
+    use milca_classical_pair, only: classical_pair_model_t, initialize_classical_pair, &
         classical_pair_sample, classical_pair_wrap, classical_pair_state, &
         classical_pair_bin_center
-    use kin6d_classical_pair_leaves, only: cp_statistic
-    use kin6d_nbody, only: nbody_step, nbody_energy, nbody_encounter_step
+    use milca_classical_pair_leaves, only: cp_statistic
+    use milca_nbody, only: nbody_step, nbody_energy, nbody_encounter_step
     use fortplot, only: figure,figure_t,get_global_figure,subplot,scatter,plot, &
         errorbar,title,xlabel,ylabel,xlim,ylim,legend,tight_layout,savefig,suptitle
-    use kin6d_demo_style, only: vermillion,black,movie_fps,hold_frames,num
+    use milca_demo_style, only: vermillion,black,movie_fps,hold_frames,num
     use fortplot_animation, only: animation_t,animation_func=>FuncAnimation,save_animation
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t,result_file_t
-    use kin6d_periodic_pair_config, only: periodic_pair_t,read_periodic_pair, &
+    use milca_result_io, only: run_t,result_file_t
+    use milca_periodic_pair_config, only: periodic_pair_t,read_periodic_pair, &
         write_periodic_pair,declared_periodic_pair,periodic_pair_bins
     implicit none
     ! The 61 shared periodic-pair frames are each shown three times at 24 fps

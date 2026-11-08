@@ -1,4 +1,4 @@
-module kin6d_nonnested_residual
+module milca_nonnested_residual
     ! D3 on P_k displacement components times Fourier modes. The Riesz
     ! norm is the sum of scalar cylindrical H1 seminorms, with zero trace.
     ! This is a finite-test-space dual norm, not a continuous majorant.
@@ -6,11 +6,11 @@ module kin6d_nonnested_residual
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use kin6d_mhd_mesh, only: flux_mesh_geometry
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_riesz, nn_fourier_value
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_equilibrium_core_leaves, only: maxwell_stress_delta
-    use kin6d_nonnested_leaves, only: axisymmetric_pressure
+    use milca_mhd_mesh, only: flux_mesh_geometry
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_riesz, nn_fourier_value
+    use milca_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_core_leaves, only: maxwell_stress_delta
+    use milca_nonnested_leaves, only: axisymmetric_pressure
     implicit none
     private
     public :: nn_residual, NN_RESIDUAL_ZERO_SCALE
@@ -167,4 +167,4 @@ contains
             status = 0
         end subroutine
     end subroutine
-end module kin6d_nonnested_residual
+end module milca_nonnested_residual

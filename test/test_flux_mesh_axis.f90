@@ -5,7 +5,7 @@ program test_flux_mesh_axis
     !! map in the fan triangles caps it at a lower order.  The domain area
     !! checks the geometry itself (the circle is exact on the outer ring).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_geometry
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_geometry
     use fortfem_triangle_lagrange_arbitrary_order, only: &
         triangle_lagrange_nodes, evaluate_triangle_lagrange_basis
     implicit none

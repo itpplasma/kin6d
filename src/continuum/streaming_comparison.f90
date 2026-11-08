@@ -1,9 +1,9 @@
-module kin6d_streaming_comparison
+module milca_streaming_comparison
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, intersect, is_empty, &
         linear_interpolation_remainder
-    use kin6d_streaming_leaves, only: streaming_rotation, streaming_rotation_interval, &
+    use milca_streaming_leaves, only: streaming_rotation, streaming_rotation_interval, &
         streaming_cell_curvature_interval, streaming_add_interval, &
         streaming_density_cell, streaming_density_cell_interval, &
         streaming_density_radius_interval, streaming_enlarge_interval, &
@@ -634,4 +634,4 @@ contains
         cell = min(left, size(grid) - 1)
     end function locate
 
-end module kin6d_streaming_comparison
+end module milca_streaming_comparison

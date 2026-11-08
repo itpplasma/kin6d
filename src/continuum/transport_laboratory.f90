@@ -1,8 +1,8 @@
-module kin6d_transport_laboratory
+module milca_transport_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull
-    use kin6d_transport_leaves, only: transport_grid_coordinate, transport_node, &
+    use milca_transport_leaves, only: transport_grid_coordinate, transport_node, &
         transport_node_jvp, transport_node_vjp, transport_scalar_add, &
         transport_interpolate, transport_mode_accumulate, &
         transport_interpolate_interval, transport_mode_accumulate_interval
@@ -331,4 +331,4 @@ contains
         ok = ieee_is_finite(value%lo) .and. ieee_is_finite(value%hi)
     end subroutine sample_transport_coefficients_interval
 
-end module kin6d_transport_laboratory
+end module milca_transport_laboratory

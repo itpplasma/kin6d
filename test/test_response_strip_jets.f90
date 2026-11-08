@@ -1,7 +1,7 @@
 program test_response_strip_jets
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read
-    use kin6d_response_strip_jets, only: strip_equilibrium_jets_t, &
+    use milca_vacuum_surfaces, only: psi_grid_t, eqdsk_read
+    use milca_response_strip_jets, only: strip_equilibrium_jets_t, &
         strip_equilibrium_point, strip_equilibrium_grid
     implicit none
     type(psi_grid_t) :: g
@@ -178,7 +178,7 @@ contains
         end do
     end subroutine
     subroutine products()
-        use kin6d_response_strip_jets_leaves, only: strip_field_jets, &
+        use milca_response_strip_jets_leaves, only: strip_field_jets, &
             strip_field_jets_jvp, strip_field_jets_vjp
         real(dp) :: v(13), d(13), seed(24), y(24), yp(24), ym(24), dy(24), adj(13)
         real(dp) :: step, pairing
@@ -227,7 +227,7 @@ contains
         call check(pairing < 2.0e-12_dp, 'generated field jet VJP pairing')
     end subroutine
     subroutine map_products()
-        use kin6d_response_strip_jets_leaves, only: strip_map_jets, &
+        use milca_response_strip_jets_leaves, only: strip_map_jets, &
             strip_map_jets_jvp, strip_map_jets_vjp
         real(dp) :: v(10), d(10), seed(14), yp(14), ym(14), dy(14), adj(10)
         real(dp) :: step

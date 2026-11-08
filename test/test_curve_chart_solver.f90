@@ -1,7 +1,7 @@
 module curve_solver_cases
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_landreman_benchmark, only: landreman_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_landreman_benchmark, only: landreman_frozen_t
     implicit none
     type, extends(ideal_frozen_t) :: relabelled_landreman_t
     contains
@@ -36,10 +36,10 @@ end module
 program test_curve_chart_solver
     use curve_solver_cases
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_chart, only: curve_chart_t, cylindrical_chart_t
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_landreman_leaves, only: landreman_surface, landreman_axisymmetric
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
+    use milca_equilibrium_chart, only: curve_chart_t, cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_landreman_leaves, only: landreman_surface, landreman_axisymmetric
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
                           ideal_map_energy, ideal_map_solve, ideal_map_solve_report_t, &
                                ideal_map_reduce, ideal_map_expand, ideal_map_hessian, &
                       ideal_map_eliminate_omega, ideal_map_residual, IDEAL_MAP_BAD_INPUT

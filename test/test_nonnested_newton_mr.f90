@@ -72,12 +72,12 @@ program test_nonnested_newton_mr
     !        path factored|mr|assembled nr N
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use newton_mr_fixture
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve
-    use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t, map_metric_t
-    use kin6d_nonnested_newton_mr, only: nn_mr_options_t, nn_mr_report_t, &
+    use milca_nonnested_newton_mr, only: nn_mr_options_t, nn_mr_report_t, &
         nn_mapped_solve_mr, NN_MR_PC_NONE, NN_MR_PC_JACOBI, NN_MR_PC_LUMPED
     use fortnum_newton_mr, only: NEWTON_MR_FORCING_FIXED
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl_curl

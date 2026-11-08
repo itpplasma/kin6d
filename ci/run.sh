@@ -7,7 +7,7 @@ if [ -n "${SLURM_JOB_ID:-}" ]; then
     root=$(dirname "$src")
     tier=$(cat "$root/tier.txt")
     . "$root/task.env"
-    . /home/ert/opt/kin6d-env.sh
+    . /home/ert/opt/milca-env.sh
     export PATH=/home/ert/.local/bin:$PATH
 else
     tier=${1:?usage: ci/run.sh TIER}
@@ -55,14 +55,14 @@ load_job_environment() {
 if [ -n "${SLURM_JOB_ID:-}" ]; then
 mkdir -p "$root/deps"
 for lib in fortplot fortio fortnum fortfem fortsparse; do
-    variable=KIN6D_$(echo "$lib" | tr 'a-z' 'A-Z')_REVISION
+    variable=MILCA_$(echo "$lib" | tr 'a-z' 'A-Z')_REVISION
     revision=$(sed -nE "s/^set\\($variable \"?([0-9a-f]{40})\"?.*/\\1/p" CMakeLists.txt)
     test -n "$revision"
     mkdir -p "$root/deps/$lib"
     git --git-dir="$root/mirrors/lazy-fortran/$lib.git" archive "$revision" | tar -x -C "$root/deps/$lib"
 done
 else
-    kin6d_configure() {
+    milca_configure() {
         local source=$1 build=$2; shift 3
         cmake -S "$source" -B "$build" -G Ninja -DBLA_VENDOR=OpenBLAS "$@"
     }
@@ -95,7 +95,7 @@ ctest --test-dir build-cpu-precision -j 2 -R '^cpu_precision_' --output-on-failu
     export MPLBACKEND="Agg"
     echo Configure
     (
-kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=ON -DKIN6D_CHECK_LEAN=OFF
+milca_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DMILCA_BUILD_EXTRAS=ON -DMILCA_CHECK_LEAN=OFF
 
     )
     load_job_environment
@@ -107,7 +107,7 @@ cmake --build build -j 4 --target test_ideal_mhd_coordinates test_ideal_xi test_
     load_job_environment
     echo 'Run affected native tests'
     (
-ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_mhd_coordinate_analytic_limits|ideal_xi_hessian_and_analytic_limits|equilibrium_nested_.*|ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_external_kink|ideal_fb_landreman_axisymmetric|ideal_fb_landreman_bem3d16_axisymmetric|equilibrium_core_.*|equilibrium_e21_.*|gs_free_boundary_(separatrix_solovev|freegs_public_parity)|gs_k6_mini_regression|grad_shafranov_profile_law_readback|response_qualification_external_adapter|response_toroidal_strip_two_ring_traces|response_cut_total_pressure_balance|response_toroidal_strip_edge_merged_domains|grad_shafranov_p[23]_readback_free|gs_native_adapter_contract|gs_free_boundary_t[37]_.*|grad_shafranov_csr_direct_newton_oracles|grad_shafranov_analytic_and_derivative_oracles|grad_shafranov_affine_picard_cpu|ideal_fb_vertical_newton|mhd_ampere_n_error_status|nonnested_beltrami_(constraints|resonance|pairing|vacuum_p[23]|manufactured_p3|lundquist_p3)|nonnested_mapped_(identity_regression|ellipse_mode_ladder)|nonnested_coupled_solovev_p2|nonnested_transport_equilibrated_n0|kin6d_layering|kin6d_no_executable_stack|ideal_seed_3d_boundary_profiles|s0_.*|equilibrium_d8_(landreman|issan)_3d_(integer|p3)|equilibrium_map_3d_readback|equilibrium_d8_registry_contract)$'
+ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_mhd_coordinate_analytic_limits|ideal_xi_hessian_and_analytic_limits|equilibrium_nested_.*|ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_external_kink|ideal_fb_landreman_axisymmetric|ideal_fb_landreman_bem3d16_axisymmetric|equilibrium_core_.*|equilibrium_e21_.*|gs_free_boundary_(separatrix_solovev|freegs_public_parity)|gs_k6_mini_regression|grad_shafranov_profile_law_readback|response_qualification_external_adapter|response_toroidal_strip_two_ring_traces|response_cut_total_pressure_balance|response_toroidal_strip_edge_merged_domains|grad_shafranov_p[23]_readback_free|gs_native_adapter_contract|gs_free_boundary_t[37]_.*|grad_shafranov_csr_direct_newton_oracles|grad_shafranov_analytic_and_derivative_oracles|grad_shafranov_affine_picard_cpu|ideal_fb_vertical_newton|mhd_ampere_n_error_status|nonnested_beltrami_(constraints|resonance|pairing|vacuum_p[23]|manufactured_p3|lundquist_p3)|nonnested_mapped_(identity_regression|ellipse_mode_ladder)|nonnested_coupled_solovev_p2|nonnested_transport_equilibrated_n0|milca_layering|milca_no_executable_stack|ideal_seed_3d_boundary_profiles|s0_.*|equilibrium_d8_(landreman|issan)_3d_(integer|p3)|equilibrium_map_3d_readback|equilibrium_d8_registry_contract)$'
 
     )
     load_job_environment
@@ -119,7 +119,7 @@ ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_mhd_coordinate_analy
     export MPLBACKEND="Agg"
     echo Configure
     (
-kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+milca_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DMILCA_BUILD_EXTRAS=OFF -DMILCA_CHECK_LEAN=OFF
 
     )
     load_job_environment
@@ -131,7 +131,7 @@ cmake --build build -j 4 --target test_equilibrium_harness test_gs_fb_manufactur
     load_job_environment
     echo 'Check registry and layering'
     (
-ctest --test-dir build -j 4 --output-on-failure -R '^(equilibrium_d8_registry_contract|kin6d_layering)$'
+ctest --test-dir build -j 4 --output-on-failure -R '^(equilibrium_d8_registry_contract|milca_layering)$'
 
     )
     load_job_environment
@@ -161,7 +161,7 @@ ctest --test-dir build -j 4 --output-on-failure -R "^($map)$"
     export OMP_WAIT_POLICY="passive"
     echo Configure
     (
-kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+milca_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DMILCA_BUILD_EXTRAS=OFF -DMILCA_CHECK_LEAN=OFF
 
     )
     load_job_environment
@@ -186,7 +186,7 @@ ctest --test-dir build -j 4 --output-on-failure -R '^ideal_fb_landreman_bem3d_ax
     export OMP_WAIT_POLICY="passive"
     echo Configure
     (
-kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+milca_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DMILCA_BUILD_EXTRAS=OFF -DMILCA_CHECK_LEAN=OFF
 
     )
     load_job_environment

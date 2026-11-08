@@ -2,9 +2,9 @@ program vrmhd_pairing_study
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use vrmhd_spectrum_support, only: spectrum, require, spectrum_result_t, block_dofs
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         VRMHD_EDGE_FIRST, VRMHD_EDGE_SECOND
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     implicit none

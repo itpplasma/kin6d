@@ -1,9 +1,9 @@
-module kin6d_gs_coupling
+module milca_gs_coupling
     !! FEM-BEM coupling of the free-boundary Grad-Shafranov problem on a fixed
     !! artificial curve Gamma_c (DESIGN section 1.1).
     !!
     !! Inside Gamma_c the weak form a(psi, v) = int (1/R) grad psi . grad v is
-    !! discretised by the curved P1/P2/P3 elements of kin6d_grad_shafranov
+    !! discretised by the curved P1/P2/P3 elements of milca_grad_shafranov
     !! (no Dirichlet rows: the nodes flagged `boundary` are ordinary
     !! unknowns). Outside, psi is the coil flux plus an exterior-decaying
     !! harmonic field, and the exterior enters through the symmetric
@@ -27,27 +27,27 @@ module kin6d_gs_coupling
     !! The dense block on the FEM trace dofs is S_trace = R^T S_h R.
     !!
     !! Flux convention. The source of the weak form is f = mu0 j_phi (A/m^2 in,
-    !! Wb/rad out), the coil flux is that of kin6d_gs_coils.
+    !! Wb/rad out), the coil flux is that of milca_gs_coils.
     !!
     !! Core boundary layer. Gamma_c, its panels and restriction, the cached
     !! Steklov-Poincare map and the coil flux come from the D6 layer
-    !! kin6d_equilibrium_boundary (docs/equilibrium-core.md, M4); this module
+    !! milca_equilibrium_boundary (docs/equilibrium-core.md, M4); this module
     !! is its psi-lane (n = 0, kind GAMMA_C_FLUX) adapter and keeps the
     !! interior stiffness, the coupled operator and the loads.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_equilibrium_boundary, only: gamma_c_t, gamma_c_chain, gamma_c_build, &
+    use milca_equilibrium_boundary, only: gamma_c_t, gamma_c_chain, gamma_c_build, &
         gamma_c_edge_weights, gamma_c_edge_point, gamma_c_quadrature, &
         gamma_c_assemble, gamma_c_steklov, gamma_c_steklov_cache_clear, &
         gamma_c_exterior, axisymmetric_coils_t, GAMMA_C_FLUX, GAMMA_C_OK
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
-    use kin6d_sort_keys, only: sort_key_order
-    use kin6d_gs_timers, only: gs_phase_tick
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
-    use kin6d_gs_coils, only: gs_circuit_set_t
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_sort_keys, only: sort_key_order
+    use milca_gs_timers, only: gs_phase_tick
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data
+    use milca_gs_coils, only: gs_circuit_set_t
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_coupling_steklov, gs_coupling_steklov_cache_clear
@@ -455,4 +455,4 @@ contains
         end subroutine preconditioner
     end subroutine gs_coupled_solve
 
-end module kin6d_gs_coupling
+end module milca_gs_coupling

@@ -1,4 +1,4 @@
-module kin6d_geqdsk_adapter
+module milca_geqdsk_adapter
     ! Outer interchange boundary: SI / COCOS 3 inside, libneo CGS outside.
     ! Files and classification are discrete operations, without derivatives or
     ! continuous error enclosures. Imported and extended fields are candidates.
@@ -8,15 +8,15 @@ module kin6d_geqdsk_adapter
                             geqdsk_classify, geqdsk_standardise
     use math_constants, only: length_si_to_cgs, magneticflux_si_to_cgs, &
                           magneticfield_si_to_cgs, current_si_to_cgs, pressure_si_to_cgs
-    use kin6d_real_identity, only: same_real_value
-    use kin6d_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
+    use milca_real_identity, only: same_real_value
+    use milca_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
                                        EQ_PSI, EQ_VALUES
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
-    use kin6d_gs_equilibrium, only: gs_field_t, gs_equilibrium
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_gs_equilibrium, only: gs_field_t, gs_equilibrium
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_grid_init
     implicit none
     private
     public :: geqdsk_data_t, geqdsk_import_t, export_geqdsk, import_geqdsk
@@ -139,7 +139,7 @@ contains
         data%psi_axis = readback%psi_axis; data%psi_edge = eq%psi_bound
         data%ip = ip; data%rcentr = rcentr; data%bcentr = eq%f_vac/rcentr
         data%lcfs = lcfs; data%limiter = limiter
-        data%header = 'KIN6D COCOS 3 SI; candidate equilibrium'
+        data%header = 'MILCA COCOS 3 SI; candidate equilibrium'
         select type (field => eq%field)
         class is (gs_field_t)
             do i = 1, nr

@@ -8,14 +8,14 @@
 !> the omitted orbitals above the spectral cutoff. The alternating power-sum
 !> recursion is supplied only as a binary128 cross-check with its measured
 !> cancellation factor. See docs/fermion-ensemble.md.
-module kin6d_fermion_ensemble
+module milca_fermion_ensemble
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, is_empty, mag, &
         operator(+), operator(-), operator(*), operator(/), log
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_fermi_gas, only: fermi_state_t, occupation_fermi_gas
-    use kin6d_fermion_ensemble_leaves, only: fermion_weight_jet, &
+    use milca_fermi_gas, only: fermi_state_t, occupation_fermi_gas
+    use milca_fermion_ensemble_leaves, only: fermion_weight_jet, &
         fermion_weight_jet_interval, fermion_box_fermi_energy, &
         fermion_box_fermi_energy_interval, fermion_inverse_temperature, &
         fermion_box_eos, fermion_box_eos_interval, fermion_box_tail, &
@@ -932,4 +932,4 @@ contains
         ok = .true.
     end subroutine power_sum_recursion
 
-end module kin6d_fermion_ensemble
+end module milca_fermion_ensemble

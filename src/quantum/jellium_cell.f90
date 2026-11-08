@@ -4,10 +4,10 @@
 !> engine's jellium Galerkin projection (bare Coulomb, q=0 removed by the
 !> neutralizing background). Total momentum K and S_z are exact symmetries:
 !> every solve uses a sector basis and the matrix-free coupled action, which
-!> fails closed on leakage. Atomic units (hbar=m=g=1) come from kin6d_species.
+!> fails closed on leakage. Atomic units (hbar=m=g=1) come from milca_species.
 !> Claims: finite-basis eigen/evolution numbers only; momentum-cutoff,
 !> finite-size and thermodynamic-limit errors are indicators, not bounds.
-module kin6d_jellium_cell
+module milca_jellium_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint, operator(/), operator(-)
@@ -16,19 +16,19 @@ module kin6d_jellium_cell
     use fortnum_ode_cash_karp, only: cash_karp_step
     use fortnum_ode_residual_certificate, only: certify_linear_trajectory
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
-    use kin6d_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
+    use milca_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
         init_fock_sector_basis, prepare_jellium_hamiltonian, &
         prepare_fock_hamiltonian, get_fock_integrals, fock_matvec, &
         fock_matvec_between, fock_matvec_between_interval, fock_pair_indices, &
         fock_rdms, fock_transition_rdms, fock_rdm3_entries, fock_basis_info
-    use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
-    use kin6d_quantum_correlations, only: quantum_cumulant_norms
-    use kin6d_jellium_cell_leaves, only: jc_lindhard_term, jc_rpa, jc_boltzmann, &
+    use milca_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
+    use milca_quantum_correlations, only: quantum_cumulant_norms
+    use milca_jellium_cell_leaves, only: jc_lindhard_term, jc_rpa, jc_boltzmann, &
         jc_fermi, jc_shell_moment, jc_shell_moment_series, jc_shell_average, jc_pair_correlation, jc_susceptibility, &
         jc_half, jc_kick_response, jc_thermal_term, jc_truncation_interval
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     implicit none
     private
     public :: jellium_cell_t, jellium_sector_t, jellium_spectrum_t
@@ -1100,4 +1100,4 @@ contains
         if (.not. ok) return
         gbar = bar_e*de + 2*dot_product(v1 - de*psi, lambda)
     end subroutine
-end module kin6d_jellium_cell
+end module milca_jellium_cell

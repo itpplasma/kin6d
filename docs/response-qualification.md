@@ -6,7 +6,7 @@ Mercier-power transport, Delta-prime fit, limiting intercept or code-agreement
 factor. All scientific outputs are candidates; continuous numerical, model and
 input enclosures remain unavailable.
 
-`kin6d_response_calibration` constructs separate derivative stencils at
+`milca_response_calibration` constructs separate derivative stencils at
 `psi_s +/- spot/(abs(n)*abs(dq/dpsi_N))`. Each stencil must bracket its spot and
 stay on its side of the rational. FortNum supplies the local polynomial
 **derivative weights**. The jump is outer derivative minus inner derivative.
@@ -23,7 +23,7 @@ b = -unit_self_flux * response_jump / (area * unit_jump).
 ```
 
 The minus sign, peak-amplitude convention and area are those of
-`kin6d_mhd_response_n`. Units are T for b, A for equivalent Lambda,
+`milca_mhd_response_n`. Units are T for b, A for equivalent Lambda,
 T m2/rad2 for flux, and m2/rad for ring area. The normalization primal and
 real JVP/VJP come from `gen/gen_response_calibration.f90` and its committed
 FortSym output. Zero/nonfinite unit jumps, zero unit self flux and nonpositive

@@ -1,14 +1,14 @@
-module kin6d_ideal_gll_spike
-    ! Opt-in composition of FortFEM tensor operations and KIN6D physics leaves.
+module milca_ideal_gll_spike
+    ! Opt-in composition of FortFEM tensor operations and MILCA physics leaves.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_tensor_mesh, only: tensor_mesh_t, ogrid_tensor_mesh, build_tensor_mesh
     use fortfem_tensor_operator, only: tensor_operator_t, build_tensor_operator
     use fortfem_element_to_csr, only: build_node_to_element
     use fortfem_tensor_contractions, only: tensor_contract
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_ideal_map_leaves, only: ideal_reference_form
-    use kin6d_ideal_gll_leaves, only: gll_energy, gll_gradient, gll_hessian, &
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map_leaves, only: ideal_reference_form
+    use milca_ideal_gll_leaves, only: gll_energy, gll_gradient, gll_hessian, &
         gll_landreman_map
     implicit none
     private

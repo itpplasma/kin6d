@@ -96,7 +96,7 @@ with expected flux and field orders `d+1` and `d` for element degree `d`.
 | `grad_shafranov_rm0_derivatives` | Finite differences, transpose pairing and implicit equation response |
 | `grad_shafranov_rm0_guards` | Explicit rejection of unsupported axisymmetric features |
 
-With `KIN6D_FORTSYM_BUILD`, `grad_shafranov_rm0_symbolic` also checks exact
+With `MILCA_FORTSYM_BUILD`, `grad_shafranov_rm0_symbolic` also checks exact
 identities and byte-identical regeneration. Run `ctest -L rm0 -j 8` for the new
 gates and `ctest -L equilibrium -LE slow -j 8` for the equilibrium regression.
 
@@ -132,8 +132,8 @@ ctest --preset cpu -R '^grad_shafranov_'
   This algebraic residual and quadrature estimates are not observable error
   bounds or rigorous enclosures.
 - Mesh export: comment, node/triangle counts, `R Z psi boundary` node rows,
-  then one-based triangle connectivity. P1 retains `kin6d-gs-mesh-v1` with
-  three indices. P2 emits `kin6d-gs-mesh-v2`, with vertex indices 1–3 followed
+  then one-based triangle connectivity. P1 retains `milca-gs-mesh-v1` with
+  three indices. P2 emits `milca-gs-mesh-v2`, with vertex indices 1–3 followed
   by edge midpoint indices for edges (1,2), (2,3), (3,1). The default geometry remains
   affine; the explicit curved API below exports mesh-v3. Supplied-profile runs also export
   `mesh_file.profiles.dat` with the executed five-column law.
@@ -208,7 +208,7 @@ the cubic-profile API below provides their fixed-geometry state derivatives.
 Fixed-source integration uses positive degree-five (P2) or degree-six (P3)
 triangle rules. These are ordinary floating numerical results.
 
-The generic maps, connectivity and periodic curve remain in KIN6D. FortFEM
+The generic maps, connectivity and periodic curve remain in MILCA. FortFEM
 supplies the generated P1/P2 basis, cardinal/factor products and scalar-jet
 transform. Its arbitrary-order triangle API lacks Hessians and allocates per
 evaluation, so the P3 wrapper here reuses its generated cardinal products and
@@ -263,7 +263,7 @@ points per coordinate in the Duffy quadrature on the represented mesh. Independe
 quadrature of the analytic field supplies q at psi_n=0.1,0.2,...,0.9, plasma
 volume, toroidal flux, current, perimeter, beta_p and li. Its angular/radial
 budgets double from 256/64 to 512/128; relative differences must be below
-1e-10 with a unit floor. q uses direct level-set quadrature, not KIN6D coarea
+1e-10 with a unit floor. q uses direct level-set quadrature, not MILCA coarea
 or readback. Table I supplies secondary NSTX beta/axis-shift comparisons:
 resolved beta_p=1.0649076 versus the published 1.07 is checked separately at
 1%, while the primary numerical budget stays 1e-3.
@@ -335,11 +335,11 @@ and R,Z pairs, stdout returns psi, BR, BZ and Bphi (NaN outside the mesh).
 mesh; the producer owns and closes that reader. `--q profiles.dat` accepts
 a count and s_tor values and returns the native cubic q interpolation.
 
-`equilibrium/phase1/producers/kin6d.py` implements
+`equilibrium/phase1/producers/milca.py` implements
 `run(case, resolution, workdir) -> Result` and the shared Phase 1 attributes.
 It uses this native executable for both solving and physical field evaluation;
 q(s_tor) calls the native cubic profile reader (`--q profiles.dat`). Set
-`KIN6D_BINARY` for an installed executable. `source.kind` is `solovev`, with
+`MILCA_BINARY` for an installed executable. `source.kind` is `solovev`, with
 SI `pprime` and `ffprime`
 provided directly or under `source.coefficients`. Supported resolution keys
 are `boundary_nodes`, `max_area`, `radial_points`, `angular_points`, `curved`, `degree`.
@@ -376,7 +376,7 @@ must still be checked independently. An inward loop measures enclosed current
 and excludes its edge layer; it is a different observable from total current.
 Do not replace a pre-declared inward-loop gate silently with a boundary loop.
 
-`kin6d_gs_ampere_loop::gs_boundary_current` also returns optional nodal
+`milca_gs_ampere_loop::gs_boundary_current` also returns optional nodal
 weights. At fixed geometry and mu0 they define the linear coefficient JVP
 and Euclidean transpose VJP; shape derivatives are unavailable. It reuses
 the generated GS current-sheet leaf for the signed physical contraction.
@@ -433,7 +433,7 @@ off-equation perturbations and normalized-source derivatives are also checked.
 
 ## Fixed-source error estimator
 
-`kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional
+`milca_gs_majorant::gs_functional_majorant` computes a Repin functional
 majorant for `-div(grad(psi)/R)=mu0*pprime*R+FFprime/R`, with homogeneous
 Dirichlet data. It recovers a continuous vector P2 flux `y` by minimizing
 `D^2+C_F^2*B^2`, where `D=||sqrt(R)*(y-grad(psi)/R)||` and
@@ -450,7 +450,7 @@ limit. It prints the flux and balance contributions separately. Recovery uses
 O(DOF) storage and a separate symmetric positive-definite solve; its cost is
 not included in the reported primal mesh/assembly/solve timing.
 
-`kin6d_gs_equilibrated::gs_equilibrated_majorant` is the production default
+`milca_gs_equilibrated::gs_equilibrated_majorant` is the production default
 through `gs_fixed_certifier_t` and `gs_phase1`, on affine and mapped P1--P3
 meshes. FortFEM solves one small RT_p saddle-point problem per vertex patch;
 there is no global recovery solve. Physical coefficient/flux factors and their
@@ -763,7 +763,7 @@ continuous error claim.
 - `gs_profile_load_jvp` and `gs_profile_load_vjp` act on nodal flux, mu0, profile
   values and profile-knot positions at fixed mesh geometry. Generated GS source
   products and FortNum interpolation products define their local derivatives.
-  KIN6D integrates those products on the same native cut geometry, with separate
+  MILCA integrates those products on the same native cut geometry, with separate
   component estimates; it differentiates the continuous weak source rather
   than the adaptive quadrature's branch decisions.
 - Moving-cut boundary terms cancel because the source law is continuous at

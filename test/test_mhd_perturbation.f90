@@ -10,9 +10,9 @@ program test_mhd_perturbation
     !!  3. SFL chart maps (PEST, Hamada) and the refusal at a rational surface;
     !!  4. the export file hash (SHA-256 vectors, sidecar, tamper detection).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vacuum_surfaces
-    use kin6d_mhd_ideal_n, only: ideal_options_t
-    use kin6d_mhd_perturbation_n
+    use milca_vacuum_surfaces
+    use milca_mhd_ideal_n, only: ideal_options_t
+    use milca_mhd_perturbation_n
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     real(dp), parameter :: r0 = 6.5_dp, c = 0.8_dp, amax = 1.8_dp, fconst = 33.0_dp

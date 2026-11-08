@@ -1,8 +1,8 @@
 # 3D free boundary of the nested map with circuit currents as parameters
 
 Status: first layer, branch `lane/fb3d-nested-map-20261025`. Module
-`kin6d_ideal_fb_circuits` (`src/mhd/ideal_fb_circuits.f90`) on top of the N4
-residual in `kin6d_ideal_free_boundary` ([ideal-free-boundary.md](ideal-free-boundary.md)),
+`milca_ideal_fb_circuits` (`src/mhd/ideal_fb_circuits.f90`) on top of the N4
+residual in `milca_ideal_free_boundary` ([ideal-free-boundary.md](ideal-free-boundary.md)),
 its formulation theory ([free-boundary-theory.md](free-boundary-theory.md)) and the
 R2 coupling surface ([free-boundary-chart-surface.md](free-boundary-chart-surface.md)).
 This note fixes the residual that the forward W7-X case and the coil-current
@@ -37,7 +37,7 @@ are existing code.
 | exterior | operator | E_v exterior term | where |
 |---|---|---|---|
 | per-n (axisymmetric Γ_c) | Galerkin Steklov–Poincaré S_n per harmonic | Σ_m c_m [½⟨S_n u_m, u_m⟩ − ⟨h_m, Φ̃_m⟩] | N4, FortFEM toroidal-mode BEM |
-| R2 (general 3D Γ_c) | full-surface DtN S on P2 panels | [½⟨S u, u⟩ − ⟨h³, Φ̃⟩ + harmonic periods]/nfp | `kin6d_equilibrium_boundary_3d`, FortFEM parametric BEM |
+| R2 (general 3D Γ_c) | full-surface DtN S on P2 panels | [½⟨S u, u⟩ − ⟨h³, Φ̃⟩ + harmonic periods]/nfp | `milca_equilibrium_boundary_3d`, FortFEM parametric BEM |
 | frozen (#88) | any fixed SPD S of R2 shape | as R2 | `ideal_fb_attach_exterior_3d` |
 
 Here c_m = 2π/nfp for n = 0 and π/nfp otherwise. The R2 full-turn pairing
@@ -60,7 +60,7 @@ circuit current, its field is
 b_k = Σ_{c ∈ k} N_c B_c[1 A],
 
 where B_c is the closed-form straight-segment Biot–Savart field of
-`kin6d_coils_3d`. The external field is
+`milca_coils_3d`. The external field is
 
 B_vac(p) = B_0 + Σ_k I_k b_k,  p = (I_1, …, I_K),
 
@@ -155,11 +155,11 @@ of F_k.
 
 | piece | status |
 |---|---|
-| N4 residual, Hessian, Newton/KKT, slide gauge (`kin6d_ideal_free_boundary`) | reused; `ideal_fb_set_drive` now wraps the batched `ideal_fb_drive_traces` |
+| N4 residual, Hessian, Newton/KKT, slide gauge (`milca_ideal_free_boundary`) | reused; `ideal_fb_set_drive` now wraps the batched `ideal_fb_drive_traces` |
 | per-n exterior S_n (FortFEM toroidal-mode BEM) | reused |
-| R2 general 3D Γ_c (`kin6d_equilibrium_boundary_3d`, FortFEM parametric BEM) and its adapter | reused; full-turn mapping factored into `ideal_fb_full_turn_traces` |
+| R2 general 3D Γ_c (`milca_equilibrium_boundary_3d`, FortFEM parametric BEM) and its adapter | reused; full-turn mapping factored into `ideal_fb_full_turn_traces` |
 | frozen exterior (#88) | reused; traces now replaceable after attachment (`ideal_fb_set_traces`) |
-| Biot–Savart segments (`kin6d_coils_3d`) | reused |
+| Biot–Savart segments (`milca_coils_3d`) | reused |
 | field-basis contract `ideal_fb_field_basis_t`, coil circuit basis, circuit traces, currents → traces, JVP/VJP | new |
 | exact ∂/∂F_vac of the shell gradient (existing generated Hessian leaf) | new |
 
@@ -190,7 +190,7 @@ polyline table of `coils_3d` with circuit and turns columns.
 - VMEC/NESTOR and VMEC++ `mgrid` treat the vacuum field as a precomputed
   per-group field that is scaled by EXTCUR and summed (Hirshman, van Rij and
   Merkel, Comput. Phys. Commun. 43 (1986) 143; VMEC++ `mgrid_provider.cc`
-  AccumulateCircuit). KIN6D uses the same linearity in a different form. It
+  AccumulateCircuit). MILCA uses the same linearity in a different form. It
   precomputes the per-circuit Γ_c traces (a_k, h_k, F_k) rather than a
   volume grid, so no grid interpolation enters the residual.
 - FreeGS circuits are groups of coils that share one current with per-coil
@@ -198,7 +198,7 @@ polyline table of `coils_3d` with circuit and turns columns.
   b_k.
 - DESC treats coil currents as differentiable parameters of the external
   field in free-boundary optimisation (DESC repository, PlasmaControl/DESC).
-  This is a hypothesis about its exact interface. KIN6D derives the
+  This is a hypothesis about its exact interface. MILCA derives the
   parameter derivative J_p analytically (section 3) instead of using
   automatic differentiation, and it reuses the symmetric KKT factor for the
   adjoint.
@@ -300,7 +300,7 @@ hypothesis that has not been traced.
    count, and in the runs above whether a run converged or stalled depended
    on that roundoff. Since 8e002bfe the pair blocks are summed in a fixed
    order and the operator is bitwise identical for every thread count. Other
-   OpenMP reductions in KIN6D are not covered by this, and the stall
+   OpenMP reductions in MILCA are not covered by this, and the stall
    statistics above have not been rerun with the deterministic operator.
    With `ideal_fb_t%negative_curvature` (`fb3d_synthetic` globalisation 2,
    set by `ideal_fb_init` together with `trust_region` for ntor >= 2 on a
@@ -389,21 +389,21 @@ hypothesis that has not been traced.
    direct R3 are stable, 12 of them symmetric. At mirrored R3 the kicked
    runs end 0.3 to 0.65 mm from the symmetric plasma map, within 4.4e-5 J of
    it, and the -8 mm kick 3.1e-4 J below it, so that landscape is flat.
-   The phi = 0 oracle error against the discrete coil set is not a KIN6D
+   The phi = 0 oracle error against the discrete coil set is not a MILCA
    error. Field-line tolerance (1e-9 to 1e-13), 240 instead of 60 turns
    and 384 instead of 96 points per coil change the rms by less than
    0.15 mm, and the traced vacuum iota instead of VMEC++'s by 0.03 mm. On
-   the KIN6D side (jobs 3370373 and 3370394) nphi_map, nphi_bem,
+   the MILCA side (jobs 3370373 and 3370394) nphi_map, nphi_bem,
    nphi_surface and nchain change it by at most 0.15 mm and ntor 3 and 4 by
    -0.25 mm. Against the 24 coils the R1 state has 3.3 mm rms, 6.8 mm max
    and a mean signed distance of -2.9 mm, and the coil field carries only
    0.954 phiedge through its phi = 0 section. That deficit is the coil
    ripple. The 24 coils sit at phi = 2 pi (j + 1/2)/24, so phi = 0 lies
    midway between two coils, where B_phi is smallest and the true flux
-   surface bulges outward. The coil flux through the KIN6D section is 0.954,
+   surface bulges outward. The coil flux through the MILCA section is 0.954,
    0.980, 1.013, 0.995 and 0.971 phiedge at phi = 0, pi/48, pi/24, 3 pi/48
    and pi/12, and the mean signed distance to the traced surface in the same
-   planes is -2.9, -1.3, +0.7, -0.3 and -1.8 mm, so the KIN6D boundary lies
+   planes is -2.9, -1.3, +0.7, -0.3 and -1.8 mm, so the MILCA boundary lies
    outside the coil surface in the coil plane. The n = 24 harmonic lies
    above every toroidal mode of the model (n <= nfp ntor = 6 to 12) and of
    VMEC++ (ntor 6). `vacuum_reference.py` therefore traces the same winding
@@ -420,8 +420,8 @@ hypothesis that has not been traced.
    of about 1.2 mm is not traced yet, and the N = 1 states (5.5 to 6.0 mm
    rms and 13 mm max against the 24 coils) have not been rechecked.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
-   [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
-   its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
+   [libneo](https://github.com/itpplasma/libneo) (PR #469). MILCA compiles
+   its two dependency-free modules from the pinned `MILCA_LIBNEO_REVISION`
    (CMakeLists.txt) and `makegrid_circuits_read` turns a file into coils_3d
    polygons with circuit = MAKEGRID group and turns = fourth column (per unit
    EXTCUR). The W7-X sign and EXTCUR convention (A·turn versus A) is still

@@ -1,4 +1,4 @@
-module kin6d_real_identity
+module milca_real_identity
     ! Value identity for cache keys and exact model/representation choices.
     ! Approximate agreement must not reuse a cache for different inputs or
     ! declare a piecewise-linear profile differentiable at a genuine kink.
@@ -22,4 +22,4 @@ contains
         if (iand(ib, huge(0_int64)) == 0_int64) ib = 0_int64
         same = ia == ib
     end function same_real_value
-end module kin6d_real_identity
+end module milca_real_identity

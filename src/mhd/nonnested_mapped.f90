@@ -1,4 +1,4 @@
-module kin6d_nonnested_mapped
+module milca_nonnested_mapped
     ! Mapped NN1 operators (docs/nn1-mapped-3d.md). The same reference FEEC
     ! complex supports the retained phi-preserving R/Z displacement and an
     ! owned full Cartesian chart H(R,Z,phi). Incidence/curl are unchanged;
@@ -13,11 +13,11 @@ module kin6d_nonnested_mapped
         meridian_fourier_curl_curl, meridian_fourier_curl, meridian_fourier_gradient
     use fortfem_tetra_piola_maps, only: map_tetra_nedelec_covariant
     use fortnum_linalg, only: det3
-    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
+    use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_from_triplet, &
         fortsparse_status_t, status_ok
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
     implicit none
     private
@@ -749,4 +749,4 @@ contains
             tr(2*n) = sin(n*phi)
         end do
     end subroutine
-end module kin6d_nonnested_mapped
+end module milca_nonnested_mapped

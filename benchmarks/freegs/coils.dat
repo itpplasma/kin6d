@@ -6,7 +6,7 @@
 # freeBoundary; order=4; domain R=[0.1,2], Z=[-1,1]; rtol=1e-9, atol=1e-12; control gamma=1e-12
 # q: ntheta=1024, ray points=800; li2 uses magnetic-axis R
 # candidate reference; continuous bounds unavailable; refinement differences are indicators
-kin6d-coil-table 1
+milca-coil-table 1
 coil P1L filament 1.03168475729804587e+00 -1.14084237864902294e+00 5.49758718276607619e-02
 coil P1L filament 9.59157621350977041e-01 -1.14084237864902294e+00 5.49758718276607619e-02
 coil P1L filament 9.59157621350977041e-01 -1.06831524270195422e+00 5.49758718276607619e-02

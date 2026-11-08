@@ -9,9 +9,9 @@ module gs_free_3d_support
     ! so the 2D equilibrium itself is a stationary point of the map lane
     ! (X = T^-1) and the seed X = id is displaced from it by T.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, gs_element_jet
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_grad_shafranov, only: gs_state_t, gs_element_jet
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     public :: reference_t, reference_locate_jet, offset_field_t
@@ -96,17 +96,17 @@ program gs_free_3d_main
     ! boundary-3d.dat in the working directory.
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, read_gs_mesh
-    use kin6d_gs_profile_law, only: read_gs_profile_law, gs_law_primitives
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_read_coil_table, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, read_gs_mesh
+    use milca_gs_profile_law, only: read_gs_profile_law, gs_law_primitives
+    use milca_gs_coils, only: gs_circuit_set_t, gs_read_coil_table, &
         gs_circuit_flux_vectors
-    use kin6d_gs_free_boundary, only: gs_fb_trace_lcfs
-    use kin6d_curved_triangle, only: initialize_periodic_curve, periodic_curve_t, &
+    use milca_gs_free_boundary, only: gs_fb_trace_lcfs
+    use milca_curved_triangle, only: initialize_periodic_curve, periodic_curve_t, &
         curve_value
-    use kin6d_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
+    use milca_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
         coil_set_modes
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_report_t, &
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_report_t, &
         ideal_fb_init, ideal_fb_set_drive, ideal_fb_solve_vacuum, ideal_fb_solve, &
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
         ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, ideal_fb_mode_stability, &

@@ -2,7 +2,7 @@
 
 Status: candidate, opt-in. Item 1 of the
 [relaxation comparators](relaxation-comparators.md#algorithms-to-adopt), first
-slice. Source `src/mhd/nonnested_newton_mr.f90` (`kin6d_nonnested_newton_mr`,
+slice. Source `src/mhd/nonnested_newton_mr.f90` (`milca_nonnested_newton_mr`,
 the problem type only); test `test/test_nonnested_newton_mr.f90`. The generic
 MINRES (`real_minres`, `fortnum_krylov`) and the Newton-MR driver
 (`fortnum_newton_mr`) are FortNum's, with their own unit tests there. The
@@ -31,7 +31,7 @@ the same arguments plus `nn_mr_options_t`, returns the same
   `c_(k-1) gamma1_k >= 0` test) and returns `M r`; such a step is
   forward-tracked, a solution step backtracked under the Armijo rule. Inside the
   roundoff band of `W` steps are ranked by the trapezoidal change, as in
-  `kin6d_ideal_map`. The singular `n = 0` block (kernel `grad V0`) needs no
+  `milca_ideal_map`. The singular `n = 0` block (kernel `grad V0`) needs no
   special treatment: the right-hand side is consistent and MINRES stays in the
   range. `B = C A` is unique.
 - **Preconditioners** (`options%preconditioner`): `NN_MR_PC_NONE`,
@@ -154,7 +154,7 @@ OMP_NUM_THREADS=2 build/test_nonnested_newton_mr path mr 16 10
 
 Status: candidate, opt-in. Second slice: the symmetric indefinite Taylor
 closure of [equilibrium-beltrami.md](equilibrium-beltrami.md). Source
-`src/mhd/nonnested_beltrami_mr.f90` (submodule of `kin6d_nonnested_beltrami`),
+`src/mhd/nonnested_beltrami_mr.f90` (submodule of `milca_nonnested_beltrami`),
 tests `test/test_nonnested_beltrami_mr.f90` and the `mr` variants of
 `test_nonnested_beltrami`; the solvers are FortNum's `real_minres` and
 `fortnum_newton_mr` (saddle unit oracle `fortnum_newton_mr`). Passing
@@ -300,7 +300,7 @@ agents and are indicative only.
 Unit checks of the generic solvers live in FortNum: `fortnum_newton_mr` runs
 gradient-merit Newton-MR on a constrained Lagrangian saddle against a
 bisection oracle (no curvature exit taken), `fortnum_minres` covers
-indefinite and singular systems. The kin6d-local unit test of an earlier
+indefinite and singular systems. The milca-local unit test of an earlier
 revision (dense KKT MINRES with the exact block preconditioner in 3
 iterations; a constrained quartic with 4 negative Lagrangian Hessian
 eigenvalues in 9 steps, where the objective merit stalls) was removed with

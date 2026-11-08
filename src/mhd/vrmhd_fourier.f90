@@ -1,11 +1,11 @@
-module kin6d_vrmhd_fourier
+module milca_vrmhd_fourier
     use, intrinsic :: iso_fortran_env, only: dp => real64, wp => real128
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_test
-    use kin6d_vrmhd_section_leaves, only: vrmhd_orbit_grad_rotation, &
+    use milca_vrmhd_section_leaves, only: vrmhd_orbit_grad_rotation, &
         vrmhd_orbit_grad_screw, vrmhd_orbit_velocity_rotation, &
         vrmhd_orbit_velocity_screw, vrmhd_orbit_curl_rotation, &
         vrmhd_orbit_curl_screw
@@ -317,4 +317,4 @@ contains
         call csc_from_triplet(op%ndof, op%ndof, rows, cols, vals, jac, sparse_status)
         if (.not. status_ok(sparse_status)) status = 1
     end subroutine
-end module kin6d_vrmhd_fourier
+end module milca_vrmhd_fourier

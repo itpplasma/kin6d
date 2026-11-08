@@ -14,7 +14,7 @@ nonlinear self-consistent certification remain pending.
 
 ## Result states
 
-A KIN6D result must state exactly what has been established.
+A MILCA result must state exactly what has been established.
 
 | State | Meaning |
 |---|---|
@@ -70,11 +70,11 @@ posterior/reconstruction uncertainty or physical adequacy.
 
 ## Reconstruction and inference uncertainty
 
-KIN6D certification and experimental reconstruction answer different
+MILCA certification and experimental reconstruction answer different
 questions. A TIAGO posterior/covariance describes uncertainty in physical and
 nuisance parameters conditional on a selected forward model and diagnostic
-model. A KIN6D numerical certificate encloses the solution/observable of that
-forward model. A KIN6D model-reduction bound compares physical models. These
+model. A MILCA numerical certificate encloses the solution/observable of that
+forward model. A MILCA model-reduction bound compares physical models. These
 must be reported as separate components.
 
 Do not combine a Gaussian/Laplace posterior standard deviation with a
@@ -82,8 +82,8 @@ deterministic interval radius or a model-reduction enclosure by root-sum-square
 unless an explicit probabilistic dependence model justifies that operation.
 
 If the same measurements support several distinct equilibria, certify each
-KIN6D solution locally and let TIAGO fit each separately. TIAGO may report
-separate fits or a finite mixture of local Laplace approximations. KIN6D does
+MILCA solution locally and let TIAGO fit each separately. TIAGO may report
+separate fits or a finite mixture of local Laplace approximations. MILCA does
 not claim global uniqueness merely because one local radii/Krawczyk argument
 closes, and TIAGO should not average physically/topologically distinct states
 into one equilibrium.

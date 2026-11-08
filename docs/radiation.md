@@ -71,7 +71,7 @@ Detailed line-by-line, angle/frequency-dependent transfer with scattering,
 frequency redistribution and large non-LTE atomic populations is a major
 discipline of its own.
 
-KIN6D should expose a provider interface for such a solver and may internalize
+MILCA should expose a provider interface for such a solver and may internalize
 subsets later, but it does not require this capability to claim general
 classical plasma coverage.
 

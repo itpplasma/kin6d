@@ -29,10 +29,10 @@
 !!                    operator projected on the same basis.
 program test_dk_collop
     use, intrinsic :: iso_fortran_env, only: dp => real64, real128, int64
-    use kin6d_dk_collop
-    use kin6d_dk_collop_leaves, only: collop_tp, collop_tp_series, &
+    use milca_dk_collop
+    use milca_dk_collop_leaves, only: collop_tp, collop_tp_series, &
         collop_fp_lo_moments, collop_fp_hi_moments
-    use kin6d_rosenbluth_reference, only: homma_pair_t, homma_radial_quad, homma_gamma
+    use milca_rosenbluth_reference, only: homma_pair_t, homma_radial_quad, homma_gamma
     implicit none
     character(64) :: check
     character(512) :: path

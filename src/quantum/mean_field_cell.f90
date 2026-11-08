@@ -12,19 +12,19 @@
 !> Claims: finite-basis model quantities. A mean-field solution is a candidate
 !> stationary point; the lowest of several starts is a candidate global
 !> minimum. Temple bounds use a candidate (Lanczos-ordered) gap input.
-module kin6d_mean_field_cell
+module milca_mean_field_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint
     use fortnum_symmetric_eigen, only: symmetric_eigen
-    use kin6d_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
+    use milca_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
         get_fock_integrals, fock_matvec, fock_basis_info, get_fock_states
-    use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
-    use kin6d_jellium_cell, only: jellium_cell_t, jellium_sector_t, &
+    use milca_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
+    use milca_jellium_cell, only: jellium_cell_t, jellium_sector_t, &
         jellium_spectrum_t, jellium_sector, jellium_sector_momenta, &
         jellium_density_model, jellium_lowest
-    use kin6d_jellium_cell_leaves, only: jc_fermi, jc_susceptibility
-    use kin6d_mean_field_cell_leaves, only: mf_entropy, mf_free_energy, &
+    use milca_jellium_cell_leaves, only: jc_fermi, jc_susceptibility
+    use milca_mean_field_cell_leaves, only: mf_entropy, mf_free_energy, &
         mf_temple_interval
     implicit none
     private
@@ -1079,4 +1079,4 @@ contains
         call mf_energy(unit, state, ek, eh, ex)
         de = eh + ex
     end function
-end module kin6d_mean_field_cell
+end module milca_mean_field_cell

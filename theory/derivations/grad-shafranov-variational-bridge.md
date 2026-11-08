@@ -99,7 +99,7 @@ p'(\psi)=\frac{2\pi q}{\Phi_{edge}}\frac{dp}{ds}.
 
 | Lane | Executed structure | Established / still open |
 |---|---|---|
-| KIN6D | `src/equilibrium/grad_shafranov.f90` weighted P1 assembly; generated source/field/primitive leaves | Strong/source algebra and assembly inspected. Weak boundary theorem, quadrature/continuous error and nonlinear implicit derivatives are separate. |
+| MILCA | `src/equilibrium/grad_shafranov.f90` weighted P1 assembly; generated source/field/primitive leaves | Strong/source algebra and assembly inspected. Weak boundary theorem, quadrature/continuous error and nonlinear implicit derivatives are separate. |
 | FreeGS | `gradshafranov.py::GSsparse`, `equilibrium.py::solve`, `jtor.py::ProfilesPprimeFfprime` | Native second-order operator/current law inspected. Curved-LCFS mask is external; signed q and boundary refinement remain open. |
 | Public CHEASE | `setupa/setupb/curent/matrix/surface` | Hermite weak/Picard paths inspected with native normalization. Every source/constraint selector and full SI current correspondence are not proved. |
 | MARS CHEASE | Monolithic `SETUPA/SETUPB/CURENT/SURFACE` | Shared algorithm ancestry with public CHEASE. Native exports/endpoint derivatives differ; no separate independence vote. |
@@ -124,7 +124,7 @@ p'(\psi)=\frac{2\pi q}{\Phi_{edge}}\frac{dp}{ds}.
 
 ## Source and literature anchors
 
-- KIN6D inspected base: `5d75dfc6d9a43b0c3af1f61b44163a08f8c0a2a4`; generated source and exact FortSym pin are hashed in the TC24 closure receipt.
+- MILCA inspected base: `5d75dfc6d9a43b0c3af1f61b44163a08f8c0a2a4`; generated source and exact FortSym pin are hashed in the TC24 closure receipt.
 - [GS source ledger](https://github.com/itpplasma/writeups/blob/main/theory/gs_solver_source_correspondence.md): KIN/FreeGS/public and MARS CHEASE pins, routine paths and weak/source normalizations.
 - [Original VMEC ledger](https://github.com/itpplasma/writeups/blob/main/theory/vmec2000_equilibrium_source_correspondence.md): native magnetic field, shell pressure energy, profile families and flux/current constraints.
 - [DESC ledger](https://github.com/itpplasma/writeups/blob/main/theory/desc_equilibrium_source_correspondence.md): collocation residual, native signed flux, axisymmetric reduction and separate Energy objective.

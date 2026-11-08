@@ -1,5 +1,5 @@
 program test_island_provider
-    ! Closure A+D provider (kin6d_island_provider) on the helical-coil island
+    ! Closure A+D provider (milca_island_provider) on the helical-coil island
     ! case (test/support/island_a_fixture.f90).
     !   tangent k nr: implicit JVP against central differences of converged
     !     solves (independent of the linearisation), adjoint pairing of the
@@ -10,8 +10,8 @@ program test_island_provider
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use island_a_fixture, only: island_a_setup, shell_source, island_a_sample_points
     use nn_vacuum_fixture, only: field, r0
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout
-    use kin6d_island_provider, only: island_provider_t, island_provider_init, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout
+    use milca_island_provider, only: island_provider_t, island_provider_init, &
         island_provider_solve, island_provider_sample, island_provider_jvp, &
         island_provider_vjp, island_provider_provenance, IP_NTHETA, IP_OK, &
         IP_EPSILON

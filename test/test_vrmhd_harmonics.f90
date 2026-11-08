@@ -1,13 +1,13 @@
 program test_vrmhd_harmonics
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, GS_SCREW, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_point, only: vrmhd_point
-    use kin6d_vrmhd_section
-    use kin6d_vrmhd_section_leaves, only: vrmhd_face_screw_coordinates
-    use kin6d_vrmhd_fourier
-    use kin6d_vrmhd_fourier_nonlinear
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_point, only: vrmhd_point
+    use milca_vrmhd_section
+    use milca_vrmhd_section_leaves, only: vrmhd_face_screw_coordinates
+    use milca_vrmhd_fourier
+    use milca_vrmhd_fourier_nonlinear
     use vrmhd_mms_nonlinear_leaves, only: mms_nonlinear_rotation, &
         mms_nonlinear_translation, mms_nonlinear_screw
     use vrmhd_mms_fourier_leaves, only: mms_fourier_rotation, &

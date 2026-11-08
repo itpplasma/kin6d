@@ -1,12 +1,12 @@
-module kin6d_equilibrium_harness
+module milca_equilibrium_harness
     ! D8/M6: one registry and reporting seam for the existing lane drivers.
     ! A driver owns its native state (including frozen labels / coil data).
     ! The harness never changes physics, differentiates a solver iteration,
     ! or promotes an oracle comparison to a certificate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_triangle_basis, only: TRIANGLE_MAX_DEGREE
     implicit none
     private
     public :: equilibrium_case_t, equilibrium_resolution_t, equilibrium_start_t
@@ -253,4 +253,4 @@ contains
                 trim(report%status)
         end if
     end subroutine
-end module kin6d_equilibrium_harness
+end module milca_equilibrium_harness

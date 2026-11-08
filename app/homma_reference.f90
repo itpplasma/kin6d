@@ -2,10 +2,10 @@ program homma_reference_main
     ! Benchmark outputs B01-B03 from the Rosenbluth oracle: Maxwellian A, D (B01),
     ! distortion A^(T), D^(T) (B02), and thermal force F_T (B03).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_rosenbluth_reference, only: homma_pair_t, homma_coeff_t, homma_vt, &
+    use milca_rosenbluth_reference, only: homma_pair_t, homma_coeff_t, homma_vt, &
         homma_point, homma_force_maxwellian, homma_force_shell, homma_force_beam, &
         homma_closure
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     implicit none
     integer, parameter :: n_b01 = 7, n_b02 = 5, n_grad2 = 6, n_shell = 4, n_beam = 2
     integer, parameter :: n_charge = 4, n_mass = 3, n_dens = 3, n_temp = 3, n_grad3 = 4
@@ -234,7 +234,7 @@ contains
     subroutine write_header(u, case_index, deviation, units)
         integer, intent(in) :: u, case_index
         character(len=*), intent(in) :: deviation, units
-        write (u, '(a)') '# code,kin6d homma_reference (numerical Rosenbluth integrals)'
+        write (u, '(a)') '# code,milca homma_reference (numerical Rosenbluth integrals)'
         write (u, '(a)') '# code_revision,'//commit//' ('//tree//')'
         write (u, '(a)') '# case_file,'//trim(case_files(case_index))
         write (u, '(a)') '# case_file_sha256,'//trim(case_sha256(case_index))

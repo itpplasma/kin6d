@@ -1,13 +1,13 @@
 program benchmark_quantum_cutoff_main
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
     use fortnum_interval, only: interval_t, interval, isub
-    use kin6d_quantum_fock, only: assemble_jellium_pair_sector
-    use kin6d_quantum_evolution, only: quantum_evolution_t, &
+    use milca_quantum_fock, only: assemble_jellium_pair_sector
+    use milca_quantum_evolution, only: quantum_evolution_t, &
          initialize_quantum_evolution, solve_quantum_evolution, sample_quantum_evolution
-    use kin6d_quantum_reference_gallery, only: quantum_initial_norm, &
+    use milca_quantum_reference_gallery, only: quantum_initial_norm, &
           quantum_matrix_defect, quantum_physical_radius, quantum_observable_packet_t, &
                                  prepare_quantum_pair_sector, sample_quantum_observables
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     ! Sector sizes are (2 extent + 1)^3, fixed by the cube half-widths 1..3.
     integer, parameter :: sizes(3) = [27, 125, 343]

@@ -1,10 +1,10 @@
 program test_gs_weak_ampere_loop
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
                                     write_gs_mesh, read_gs_mesh
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_gs_ampere_loop, only: gs_weak_boundary_current
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_gs_ampere_loop, only: gs_weak_boundary_current
     implicit none
     real(dp), parameter :: r0 = 3.0_dp, a = 0.7_dp, c = 0.03_dp, mu0 = 1.0_dp
     real(dp), parameter :: exact = -16*c*r0*acos(-1.0_dp)*a*a/mu0

@@ -2,7 +2,7 @@ module gll_benchmark_context
     ! A single benchmark invocation owns this context. Module callbacks avoid
     ! executable-stack trampolines on GNU 12; this is not a solver library.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_gll_spike
+    use milca_ideal_gll_spike
     use fortfem_tensor_solver, only: tensor_multigrid_t, build_tensor_multigrid, &
         tensor_vcycle, free_tensor_multigrid
     use fortfem_tensor_mesh, only: tensor_mesh_t
@@ -62,12 +62,12 @@ end module
 
 program benchmark_gll
     use gll_benchmark_context
-    use kin6d_landreman_benchmark, only: landreman_frozen_t
-    use kin6d_landreman_leaves, only: landreman_surface
-    use kin6d_nested_oracles, only: nested_oracle_t
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
+    use milca_landreman_benchmark, only: landreman_frozen_t
+    use milca_landreman_leaves, only: landreman_surface
+    use milca_nested_oracles, only: nested_oracle_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
         ideal_map_energy
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none

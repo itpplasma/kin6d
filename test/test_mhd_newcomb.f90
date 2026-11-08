@@ -28,13 +28,13 @@ program test_mhd_newcomb
     use fortnum_ode_cash_karp, only: cash_karp_step
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
         surface_t, surface_build
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_curl, mu0
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_curl, mu0
+    use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_flux_harmonic, ring_flux_from_values, ring_points, layer_closure_t
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+    use milca_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     implicit none
 
@@ -218,7 +218,7 @@ contains
         m = real(mabs, dp)
         bt = btheta(r)
         bzz = bz(r)
-        ! F = (B_theta/r)(n |q| - |m|): the helicity of the kin6d harmonic
+        ! F = (B_theta/r)(n |q| - |m|): the helicity of the milca harmonic
         ff = bt/r*(nmode*qloc(r, bt, bzz) - m)
         k02 = k*k + m*m/(r*r)
         f = r*ff**2/k02

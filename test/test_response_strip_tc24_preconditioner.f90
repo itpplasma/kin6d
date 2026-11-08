@@ -1,12 +1,12 @@
 program test_response_strip_tc24_preconditioner
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read
-    use kin6d_response_strip_jets, only: strip_equilibrium_jets_t, &
+    use milca_vacuum_surfaces, only: psi_grid_t, eqdsk_read
+    use milca_response_strip_jets, only: strip_equilibrium_jets_t, &
         strip_equilibrium_grid
-    use kin6d_response_fluid, only: response_fluid_equilibrium_t
-    use kin6d_response_toroidal_strip, only: toroidal_strip_t, &
+    use milca_response_fluid, only: response_fluid_equilibrium_t
+    use milca_response_toroidal_strip, only: toroidal_strip_t, &
         toroidal_strip_work_t, toroidal_strip_status_t, toroidal_strip_init
-    use kin6d_response_strip_preconditioner, only: strip_preconditioner_t, &
+    use milca_response_strip_preconditioner, only: strip_preconditioner_t, &
         strip_preconditioner_init, strip_preconditioned_solve
     implicit none
     integer, parameter :: nr = 7, nt = 25, n = 3

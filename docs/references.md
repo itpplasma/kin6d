@@ -35,7 +35,7 @@ or a certification theorem for its final nonlinear kinetic model.
 - [VlaPy](https://github.com/joglekara/VlaPy) implements 1X1V
   Vlasov–Poisson–Fokker–Planck evolution and analytical regression cases.
   Its periodic transport and particular collision model must overlap a
-  kin6d case before comparison. It is not a certified steady-state oracle.
+  milca case before comparison. It is not a certified steady-state oracle.
 - Braams and Karney,
   [Conductivity of a Relativistic Plasma](https://arxiv.org/abs/plasm-ph/9502001),
   reformulate relativistic collisions in spherical harmonics with five scalar
@@ -69,7 +69,7 @@ or a certification theorem for its final nonlinear kinetic model.
   [GEMPIC](https://arxiv.org/abs/1609.03053),
   develop geometric Vlasov–Maxwell particle-in-cell discretization. The
   compatible field complex is relevant; its particle representation differs
-  from kin6d's deterministic distribution coefficients.
+  from milca's deterministic distribution coefficients.
 - Kraus and Hirvijoki,
   [Metriplectic Integrators for the Landau Collision Operator](https://arxiv.org/abs/1707.01801),
   derive discrete conservation and entropy properties for a collision
@@ -83,7 +83,7 @@ This snapshot records earlier source inspection. Current integration pins and
 executed gates are recorded in [the steady laboratory](steady-laboratory.md).
 GitHub main revisions were checked through the repository API. fortnum,
 fortsym, and fo source were also read locally at matching revisions. This
-is source inspection, not a claim that kin6d integration tests have run.
+is source inspection, not a claim that milca integration tests have run.
 
 | Repository | Checked main revision |
 |---|---|
@@ -126,7 +126,7 @@ certification theorem from them.
 fortplot's [fill-between example](https://github.com/lazy-fortran/fortplot/tree/5daec54649e305fd09bc1ef8345511d5692a1889/example/fortran/fill_between_demo)
 and error-bar example provide plotting facilities for interval displays.
 Their numerical enclosure and interpolation semantics must still be checked
-by the kin6d postprocessor contract; a rendering routine supplies no error
+by the milca postprocessor contract; a rendering routine supplies no error
 theorem.
 
 NEO-2, CQL3D, COGENT, and KAMEL are proposed limiting-case references from the
@@ -147,12 +147,12 @@ derives polarization/magnetization and conservation from a variational
 formulation. It motivates consistent reduced field coupling; arbitrary
 mixed FK/GK/DK collision and field combinations remain project obligations.
 [ORB5's model description](https://arxiv.org/abs/1905.01906) provides an
-existing gyrokinetic/kinetic-electron model precedent, not the full kin6d
+existing gyrokinetic/kinetic-electron model precedent, not the full milca
 per-species feature envelope or continuous certificates.
 
 [The AP semi-Lagrangian Vlasov–Maxwell paper](https://www.sciencedirect.com/science/article/pii/S0021999125001238)
 is a numerical precedent for the quasineutral limit. Its stability and
-conservation results do not establish kin6d's continuous-error bounds or
+conservation results do not establish milca's continuous-error bounds or
 resolve arbitrary fast solutions on coarse time/space representations.
 
 [Device envelope](devices.md#device-envelope) links official experimental
@@ -270,7 +270,7 @@ only.
 [Hindenlang–Plunk–Maj, flexible frame](https://arxiv.org/abs/2410.17595), and
 [Babin et al., invertible mappings](https://arxiv.org/abs/2411.04683) motivate
 the selectable Cartesian embedding. They supply candidate constructions;
-kin6d still needs rigorous map and transformed-operator bounds.
+milca still needs rigorous map and transformed-operator bounds.
 
 [OPEN-ADAS ADF11](https://open.adas.ac.uk/adf11) documents derived coefficient
 classes, while [ADF04](https://open.adas.ac.uk/adf04) documents resolved
@@ -304,7 +304,7 @@ document native measurements, controlled reference evidence and optional
 Python gates. [FortAD vector-JVP](https://github.com/lazy-fortran/fortad/blob/main/docs/design/vector-jvp-benchmark.md)
 and [FortIO performance](https://github.com/lazy-fortran/fortio/blob/main/docs/performance.md)
 are upstream starting points; pin and verify the selected client workflow.
-No mandatory Python gate is imported into kin6d and no kin6d frontier
+No mandatory Python gate is imported into milca and no milca frontier
 measurement is claimed. [Performance policy](performance.md) defines that
 future evidence and promotion contract.
 

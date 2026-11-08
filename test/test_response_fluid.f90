@@ -1,8 +1,8 @@
 program test_response_fluid
     !! Independent analytic waves and symmetry of a curved equilibrium.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_response_fluid
-    use kin6d_response_fluid_leaves, only: fluid_pressure, &
+    use milca_response_fluid
+    use milca_response_fluid_leaves, only: fluid_pressure, &
                                   fluid_pressure_jvp, fluid_pressure_vjp, fluid_force, &
                                            fluid_force_jvp, fluid_force_vjp
     implicit none

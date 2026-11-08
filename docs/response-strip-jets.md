@@ -3,7 +3,7 @@
 These modules extend the isolated, candidate full-pressure strip. They do not
 couple it to the ideal outer response or impose a physical cut boundary.
 
-`kin6d_response_strip_jets` samples the existing `psi_grid_t` representation.
+`milca_response_strip_jets` samples the existing `psi_grid_t` representation.
 Its radial coordinate is `u=sqrt(psin)`; the poloidal coordinate is the geometric
 angle about the imported magnetic axis. The first ray crossing defines the map.
 Its Jacobian and second derivatives follow by implicit differentiation of
@@ -28,7 +28,7 @@ absolute difference in A/m^2; `label_defect` reports the solved level residual.
 These are indicators, with no representation-error or physical-model enclosure.
 They must not be silently promoted to a stationary-equilibrium certificate.
 
-`kin6d_response_strip_preconditioner` changes solver orchestration, retaining the
+`milca_response_strip_preconditioner` changes solver orchestration, retaining the
 same six-field strip action and its prescribed isolated ring rows. Fields and
 interior equations are rotated into local normal/tangent components. Nine radial
 colors recover five-node first-derivative and composed second-derivative bands.
@@ -83,7 +83,7 @@ ladder uses gamma=`2+0.2i` on 9x9, 17x17 and 33x33 grids with a fixed state-erro
 and residual target. The finer grid at gamma=`0.7+0.2i` did not meet that target;
 its failed exploration remains in external evidence, not a qualified limit.
 
-Configure `KIN6D_STRIP_EQDSK_TEST` to register the imported TC24 jet checks. They
+Configure `MILCA_STRIP_EQDSK_TEST` to register the imported TC24 jet checks. They
 compare B/map/pressure jets with independent spatial differences and retain the
 actual pressure. Both columns of the implicit map Hessian and pressure Hessian
 are checked. An additional imported-background inverse oracle sets `A=xi=0`,

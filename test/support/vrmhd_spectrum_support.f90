@@ -1,11 +1,11 @@
 module vrmhd_spectrum_support
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &
         vrmhd_section_mass, VRMHD_EDGE_FIRST, VRMHD_EDGE_SECOND
-    use kin6d_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_build, &
+    use milca_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_build, &
         vrmhd_fourier_data, vrmhd_fourier_jacobian, vrmhd_fourier_wavenumber
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
     use vrmhd_structural_spectrum, only: structural_spectrum, bloch_projection, &

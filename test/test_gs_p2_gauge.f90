@@ -1,8 +1,8 @@
 program test_gs_p2_gauge
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet, &
         gs_classical_current, gs_axis_candidate, gs_axis_safety_factor
-    use kin6d_grad_shafranov_leaves, only: gs_smooth_axis_q_jvp, gs_current_density_jvp
+    use milca_grad_shafranov_leaves, only: gs_smooth_axis_q_jvp, gs_current_density_jvp
     implicit none
     type(gs_state_t) :: state
     real(dp) :: boundary(2,4), point(2), center(2), h(2,2), grad(2), value, current, q

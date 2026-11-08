@@ -1,7 +1,7 @@
 # NN1 on a phi-dependent domain (mapped 3D)
 
 Status: candidate. Source `src/mhd/nonnested_mapped.f90`
-(`kin6d_nonnested_mapped`), tests `test/test_nonnested_mapped.f90`. NN1 itself is
+(`milca_nonnested_mapped`), tests `test/test_nonnested_mapped.f90`. NN1 itself is
 described in [equilibrium-nonnested.md](equilibrium-nonnested.md).
 
 ## Purpose
@@ -87,7 +87,7 @@ expected 2 for P2. The mode ladder at nr=2 falls 1.09 (N=1), 0.105 (N=3), 6.27e-
 flat in `h` and `N` as predicted; `div B` stays at roundoff.
 
 The CTest h ladder runs at N = 10 (`hladder 10 4 8 16`) with the program gate 1.7 on the
-finest pair (`KIN6D_MAPPED_MIN_ORDER` default): measured 1.64 (nr 4->8) and 1.80 (nr 8->16).
+finest pair (`MILCA_MAPPED_MIN_ORDER` default): measured 1.64 (nr 4->8) and 1.80 (nr 8->16).
 The order loss at N = 5-6 was mode truncation (docs/nn1-qa-benchmark.md).
 
 ## Open items

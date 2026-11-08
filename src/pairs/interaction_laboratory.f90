@@ -1,19 +1,19 @@
 !> C0: two-body Coulomb encounter in the relative coordinate r = x1 - x2.
 !> The reduced problem is one particle of the reduced mass mu and charge q1
-!> moving in the field of a fixed charge q2 (kin6d_nbody, isolated, one
-!> source); relative acceleration (g/mu) r/|r|^3 with g from kin6d_species.
+!> moving in the field of a fixed charge q2 (milca_nbody, isolated, one
+!> source); relative acceleration (g/mu) r/|r|^3 with g from milca_species.
 !> The candidate is the shared KDK step; the Picard flow tube below encloses
 !> the exact flow independently of it.
-module kin6d_interaction_laboratory
+module milca_interaction_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint, interval, iadd, ipowi, idiv
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_species, only: units_t, species_t, pair_scales_t, pair_scales
-    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
+    use milca_species, only: units_t, species_t, pair_scales_t, pair_scales
+    use milca_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step
-    use kin6d_coulomb_leaves, only: coulomb_pair_interval
-    use kin6d_interaction_leaves
+    use milca_coulomb_leaves, only: coulomb_pair_interval
+    use milca_interaction_leaves
     implicit none
     private
     public :: interaction_state_t, init_interaction, step_interaction, &
@@ -209,4 +209,4 @@ contains
         valid_box = all(ieee_is_finite(a%lo)) .and. &
                     all(ieee_is_finite(a%hi)) .and. all(a%lo <= a%hi)
     end function
-end module kin6d_interaction_laboratory
+end module milca_interaction_laboratory

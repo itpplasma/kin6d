@@ -1,6 +1,6 @@
 module island_driven_case
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_island_leaves, only: driven_cylinder_data
+    use milca_island_leaves, only: driven_cylinder_data
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 20
     real(dp) :: q0 = 1.2_dp, qc = 1.8_dp
@@ -38,18 +38,18 @@ program test_island_driven
     use island_driven_case, only: pi, r0, q0, qc, amplitude, mapping, &
                                   conductivity, boundary_potential, zero_source
     use island_outer_reference, only: outer_response
-    use kin6d_island_leaves, only: driven_cylinder_data
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_report_t, &
+    use milca_island_leaves, only: driven_cylinder_data
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_report_t, &
                                            nn_vacuum_mode
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
                                        nc_layout, nc_continue
-    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+    use milca_island_diagnostics, only: island_trace_options_t, island_point_t, &
                        island_width_t, island_trace, island_periodic_point, island_width
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
-    use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_nonnested_residual, only: nn_residual
+    use milca_equilibrium_residual, only: equilibrium_residual_t
     implicit none
     type(free_b_field_t) :: field
     type(flux_mesh_t) :: mesh

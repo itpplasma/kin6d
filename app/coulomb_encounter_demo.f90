@@ -3,7 +3,7 @@
 ! head-on and off-axis encounter movies of the relative density (singlet,
 ! triplet, spin-unresolved, classical ensemble) with a turning-point cut, and
 ! the hydrogen Kepler packet. Writes CSV and figures to output/
-! and the evidence file output/coulomb_encounter_demo.nc (kin6d_result_io).
+! and the evidence file output/coulomb_encounter_demo.nc (milca_result_io).
 ! Usage: coulomb_encounter_demo [--config FILE] [--no-movie | --movie-only]
 !        [--export DIR]   (movie data for the lecture scenes, DIR/<slug>/)
 ! Namelist group &coulomb_encounter: etas (four Sommerfeld parameters), nclass
@@ -11,11 +11,11 @@
 ! ensemble), seed/movie_seed (classical ensembles), movie.
 program coulomb_encounter_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use kin6d_coulomb_encounter
-    use kin6d_coulomb_kepler
-    use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_free_width
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_animation_export, only: animation_export_t
+    use milca_coulomb_encounter
+    use milca_coulomb_kepler
+    use milca_coulomb_encounter_leaves, only: ce_mott, ce_free_width
+    use milca_result_io, only: run_t, result_file_t
+    use milca_animation_export, only: animation_export_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, title, &
         xlabel, ylabel, xlim, ylim, legend, savefig, pcolormesh, tight_layout, &
         set_yscale, suptitle, colorbar, text, fill_between

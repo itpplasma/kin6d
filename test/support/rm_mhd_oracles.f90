@@ -2,7 +2,7 @@ module rm_mhd_oracles
     ! Test references only; no dependence on the evolving MHD residual.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_rm_oracle_leaves, only: rm_wave_roots, rm_fkr, rm_internal_kink, &
+    use milca_rm_oracle_leaves, only: rm_wave_roots, rm_fkr, rm_internal_kink, &
         rm_rutherford, rm_symmetric_saturation, rm_cylinder_saturation, &
         rm_wesson_radial, rm_wesson_series, rm_wesson_curvature, &
         rm_outer_rhs, rm_frobenius_fit, &

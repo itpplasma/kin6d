@@ -1,9 +1,9 @@
 program test_gs_error_control
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, &
                                     gs_linear_response, gs_cell_data
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_error_control, only: gs_stability_t, gs_linear_goal_t, &
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_error_control, only: gs_stability_t, gs_linear_goal_t, &
                   gs_fixed_stability, gs_fixed_source_stability, gs_fixed_linear_goal, &
                               gs_state_error_bound, GS_ERROR_OK, GS_ERROR_UNAVAILABLE, &
                                       GS_ERROR_NONCOERCIVE

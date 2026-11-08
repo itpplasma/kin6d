@@ -1,22 +1,22 @@
 program microscopic_cloud_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_microscopic_cloud, only: cloud_model_t, cloud_system, cloud_initialize
-    use kin6d_nbody, only: nbody_system_t, nbody_step, nbody_energy, &
+    use milca_microscopic_cloud, only: cloud_model_t, cloud_system, cloud_initialize
+    use milca_nbody, only: nbody_system_t, nbody_step, nbody_energy, &
                            nbody_encounter_step
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, &
                   plot, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, &
                   suptitle
-    use kin6d_demo_style, only: vermillion, black, grey, hold_frames, num
+    use milca_demo_style, only: vermillion, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: fps = 24
     ! Namelist &microscopic_cloud: electrons, output frames, substeps of dt per
     ! frame, encounter control eta, fixed central impurity charge of run 2 and
-    ! the neutralizing sphere (defaults from kin6d_microscopic_cloud).
+    ! the neutralizing sphere (defaults from milca_microscopic_cloud).
     ! 241 frames of 50 substeps: the same 12000 steps as before, shown in 10 s.
     integer :: particles = 32, frames = 241, substeps = 50
     real(dp) :: dt = 0.001_dp, encounter_eta = 0.05_dp, impurity_charge = -2.0_dp

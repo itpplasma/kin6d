@@ -1,4 +1,4 @@
-# kin6d documentation
+# milca documentation
 
 Pages are grouped by topic. Pages that describe implemented code name the
 modules, applications and tests involved; design and scope pages say so in

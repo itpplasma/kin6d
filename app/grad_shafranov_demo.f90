@@ -1,17 +1,17 @@
 program grad_shafranov_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-   use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+   use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
       solve_gs_profiles, gs_profile_integral, write_gs_mesh, gs_element_jet, &
       gs_classical_current, gs_current_jump, gs_axis_candidate, gs_axis_safety_factor
-   use kin6d_gs_inverse, only: gs_inverse_result_t, solve_gs_constant_q, &
+   use milca_gs_inverse, only: gs_inverse_result_t, solve_gs_constant_q, &
       gs_inverse_profile_law
-   use kin6d_gs_profile_law, only: gs_profile_law_t
-   use kin6d_gs_certificate, only: gs_fixed_certifier_t
-   use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+   use milca_gs_profile_law, only: gs_profile_law_t
+   use milca_gs_certificate, only: gs_fixed_certifier_t
+   use milca_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
       claim_name
-   use kin6d_result_io, only: run_t, result_file_t
-   use kin6d_grad_shafranov_leaves, only: gs_field
+   use milca_result_io, only: run_t, result_file_t
+   use milca_grad_shafranov_leaves, only: gs_field
    use fortplot_system_runtime, only: create_directory_runtime
    implicit none
    type(gs_state_t), target :: state

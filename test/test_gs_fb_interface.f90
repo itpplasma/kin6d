@@ -5,8 +5,8 @@ program test_gs_fb_interface
     !! affine and on a curved cell, for a straight and a circular cut.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_triangle_basis, only: triangle_basis_jet
-    use kin6d_gs_free_boundary, only: gs_fb_interface_mass
+    use milca_triangle_basis, only: triangle_basis_jet
+    use milca_gs_free_boundary, only: gs_fb_interface_mass
     implicit none
 
     real(dp), parameter :: mu0 = 1.2566370614359172e-6_dp

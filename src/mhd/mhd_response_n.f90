@@ -1,10 +1,10 @@
-module kin6d_mhd_response_n
+module milca_mhd_response_n
     !! L4 (first stage): flux harmonics on the rings of a flux-aligned mesh,
     !! resonant sheet currents and ideal shielding of the per-n field.
     !!
     !! Angles.  On a ring (flux surface) with geometric angle theta_g, field
     !! line advance nu(theta_g), straight-field-line angle theta_s(theta_g)
-    !! and safety factor q (conventions of kin6d_vacuum_surfaces), the
+    !! and safety factor q (conventions of milca_vacuum_surfaces), the
     !! straight toroidal angle is zeta = phi - nu + q theta_s and a per-n
     !! field X e^{i n phi} has the harmonics e^{i (n zeta - m theta_s)}.
     !!
@@ -12,7 +12,7 @@ module kin6d_mhd_response_n
     !!
     !!     Phi_m = (2/2 pi) int (B . n) R ds e^{i n (nu - q theta_s)} e^{i m theta_s},
     !!
-    !! the peak-amplitude flux coefficient phi_mn of kin6d_vacuum_surfaces
+    !! the peak-amplitude flux coefficient phi_mn of milca_vacuum_surfaces
     !! (T m^2 per rad^2; (B . n) R ds dphi is the flux element).  It is the
     !! same for every straight-field-line angle when m = n q, so the resonant
     !! Phi_m is the coordinate-independent resonant flux.  On a ring edge,
@@ -28,7 +28,7 @@ module kin6d_mhd_response_n
     !!     Lambda = lambda_s e^{i n (q theta_s - nu)} e^{-i m theta_s}
     !!
     !! (lambda_s in A; the physical stream function is Lambda e^{i n phi} +
-    !! c.c.).  Its load in the gauge a = 0 of kin6d_mhd_ampere_n is
+    !! c.c.).  Its load in the gauge a = 0 of milca_mhd_ampere_n is
     !!
     !!     (A', J) = i n int (A'_pol . t) Lambda dl,
     !!
@@ -50,10 +50,10 @@ module kin6d_mhd_response_n
     use fortfem_meridian_feec_n, only: meridian_feec_t, &
         meridian_point_basis_t, meridian_point_basis
     use fortfem_meridian_magnetic_coupling, only: meridian_edge_point
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_ring_edge, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_ring_edge, &
         flux_mesh_geometry
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
+    use milca_mhd_ampere_n, only: mu0
+    use milca_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
         find_surface_q
     implicit none
     private
@@ -77,9 +77,9 @@ module kin6d_mhd_response_n
     !> sum_s wl(r, s) lambda_s = target(r) for the total field (wl, when
     !> allocated, couples the sheet amplitudes directly).  L4 shielding: one
     !> sheet per rational ring with Phi_m = 0 there (w = identity); L6
-    !> (kin6d_mhd_closure_n): two layer-edge sheets per rational with
+    !> (milca_mhd_closure_n): two layer-edge sheets per rational with
     !> vanishing large-solution coefficients on both sides; L5
-    !> (kin6d_mhd_layer_n): continuous large coefficient and net layer
+    !> (milca_mhd_layer_n): continuous large coefficient and net layer
     !> current = Delta_layer times the reconnected flux.
     type, public :: layer_closure_t
         integer :: ns = 0, nf = 0
@@ -108,7 +108,7 @@ contains
 
     subroutine ring_angles_set(q, theta_s, nu, ra)
         !! From theta_s(theta_g) and nu(theta_g) sampled at theta_g = 2 pi (j -
-        !! 1)/N (as kin6d_vacuum_surfaces surface_build provides them).
+        !! 1)/N (as milca_vacuum_surfaces surface_build provides them).
         real(dp), intent(in) :: q, theta_s(:), nu(:)
         type(ring_angles_t), intent(out) :: ra
         integer :: j, nf
@@ -422,4 +422,4 @@ contains
         area = area/(2.0_dp*pi)
     end function ring_area
 
-end module kin6d_mhd_response_n
+end module milca_mhd_response_n

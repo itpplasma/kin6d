@@ -7,7 +7,7 @@ module fb3d_synthetic_field
     ! in (q1, q2), so the VMEC angle is pi/2 - theta_c):
     !   chi = sgn b3 a^2/2 int_0^s iota ds',  grad chi = sgn b3 iota(s) q.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     type, extends(ideal_frozen_t), public :: iota_field_t
@@ -46,11 +46,11 @@ contains
 end module fb3d_synthetic_field
 
 program fb3d_synthetic
-    ! KIN6D 3D free boundary on the helical-axis curve chart for the public
+    ! MILCA 3D free boundary on the helical-axis curve chart for the public
     ! synthetic nfp = 3 modular-coil case (benchmarks/fb3d-synthetic): coils
     ! from the MAKEGRID file (libneo reader, one circuit, EXTCUR = 1), traces
     ! on the non-axisymmetric Gamma_c, field-period R2 exterior, Newton on the
-    ! one residual of kin6d_ideal_free_boundary. Writes <out>.lcfs (boundary
+    ! one residual of milca_ideal_free_boundary. Writes <out>.lcfs (boundary
     ! points x y z |B| on full-turn phi-hat samples) and <out>.json.
     ! Usage: fb3d_synthetic coils iota.dat phiedge out [nedge nchain ntor
     !        nphi_map nphi_bem nphi_surface sign max_iterations q1c q2c
@@ -82,16 +82,16 @@ program fb3d_synthetic
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     !$ use omp_lib, only: omp_get_max_threads
     use fb3d_synthetic_field, only: iota_field_t
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: curve_chart_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_solve, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: curve_chart_t
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_solve, &
         ideal_fb_report_t, ideal_fb_shell_field, IDEAL_FB_OK, ideal_fb_gradient, &
         ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect, ideal_fb_solve_shell_map
-    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
+    use milca_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents
-    use kin6d_coils_3d, only: coil_set_t, coil_mu0
-    use kin6d_makegrid_circuits, only: makegrid_circuits_read
+    use milca_coils_3d, only: coil_set_t, coil_mu0
+    use milca_makegrid_circuits, only: makegrid_circuits_read
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
     !$ use omp_lib, only: omp_get_max_threads
     implicit none

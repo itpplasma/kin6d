@@ -1,8 +1,8 @@
 program formal_krook_certificate
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_support_datatype
-    use kin6d_poisson_leaves, only: coupled_amplitude
-    use kin6d_result_io, only: run_t, result_file_t, result_directory
+    use milca_poisson_leaves, only: coupled_amplitude
+    use milca_result_io, only: run_t, result_file_t, result_directory
     implicit none
     ! Inputs of the scalar direct solve. They are fixed by the Lean model
     ! (exactAmplitude := 1/2); the namelist records them and rejects changes.
@@ -75,9 +75,9 @@ program formal_krook_certificate
     path = 'output/ComputedKrook.lean'
     if (run%argument_count() > 0) call run%argument(1, path)
     open (newunit=unit, file=trim(path), status='replace')
-    write (unit, '(a)') 'import Kin6d'
+    write (unit, '(a)') 'import Milca'
     write (unit, '(a)') '-- Exact dyadic interpretation of the Fortran candidate bytes.'
-    write (unit, '(a)') 'namespace Kin6d.Computed'
+    write (unit, '(a)') 'namespace Milca.Computed'
     write (unit, '(a)') 'def candidate : Certificate := '
     write (unit, '(a)') '  { exactAmplitude := 1/2, candidateAmplitude := ' // &
         rational // ', residualBound := 0, radius := 0 }'
@@ -89,7 +89,7 @@ program formal_krook_certificate
     write (unit, '(a)') '      profile (candidate.exactAmplitude : Real) v x) ≤'
     write (unit, '(a)') '      (candidate.radius : Real) := candidate.sound accepted'
     write (unit, '(a)') '#print axioms continuous'
-    write (unit, '(a)') 'end Kin6d.Computed'
+    write (unit, '(a)') 'end Milca.Computed'
     close (unit)
     call execute_command_line('mkdir -p '//result_directory, exitstat=ios)
     if (ios /= 0) error stop 'cannot create result directory'

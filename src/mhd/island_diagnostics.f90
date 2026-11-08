@@ -1,13 +1,13 @@
-module kin6d_island_diagnostics
+module milca_island_diagnostics
     ! Poincare diagnostics for any equilibrium_field_t. Angles are radians,
     ! section coordinates (R,Z) are metres. Estimates are tolerance/refinement
     ! indicators, never continuous enclosures. No global field or workspace.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
                                        EQ_BR, EQ_BZ, EQ_BPHI
-    use kin6d_nonnested_leaves, only: fieldline_velocity
-    use kin6d_island_leaves, only: poincare_invariants, helical_phase
+    use milca_nonnested_leaves, only: fieldline_velocity
+    use milca_island_leaves, only: poincare_invariants, helical_phase
     use fortnum_ode, only: ode_problem_t, ode_workspace_t, ode_solution_t, &
                            ode_integrate
     use fortnum_ode_cash_karp, only: cash_karp_step

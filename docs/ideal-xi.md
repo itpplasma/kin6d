@@ -1,11 +1,11 @@
 # Displacement energy: first D5 increment
 
-[V] `kin6d_ideal_xi` evaluates the plasma-volume second variation of the
+[V] `milca_ideal_xi` evaluates the plasma-volume second variation of the
 map lane's existing fixed-pressure (`gamma=0`) frozen-in energy. It accepts
 physical displacement gradients, without constructing a global matrix.
 It does not yet supply a global stability eigenproblem or a continuous bound.
 
-[V] Both map and xi generators use `kin6d_symbolic_ideal:frozen_energy`:
+[V] Both map and xi generators use `milca_symbolic_ideal:frozen_energy`:
 
 \[
 w(F)=\frac{|F B|^2}{2\mu_0\det F}-p\det F,\qquad \det F>0.
@@ -101,8 +101,8 @@ unavailable until their stability and discretization premises are checked.
 [V] The public consumer package
 [GLISS gen/ideal_mhd](https://github.com/itpplasma/GLISS/tree/main/gen/ideal_mhd)
 owns the frozen-in energy and its straight-field-coordinate reduction.
-KIN6D pins that package in `gen/ideal-mhd-revision.txt`; optional codegen fetches
-it (or uses `FETCHCONTENT_SOURCE_DIR_KIN6D_SHARED_MHD`). Its coordinate driver emits `src/generated/ideal_mhd_energy_generated.f90`, also consumed byte for
+MILCA pins that package in `gen/ideal-mhd-revision.txt`; optional codegen fetches
+it (or uses `FETCHCONTENT_SOURCE_DIR_MILCA_SHARED_MHD`). Its coordinate driver emits `src/generated/ideal_mhd_energy_generated.f90`, also consumed byte for
 byte by [GLISS](https://github.com/itpplasma/GLISS). Ordinary builds need no CAS.
 The coordinate input ordering, SI conversion and signed-chart assumptions are
 retained in the generator. Two-component output is twice delta-W times mu0;

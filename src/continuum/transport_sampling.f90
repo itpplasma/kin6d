@@ -1,11 +1,11 @@
-module kin6d_transport_sampling
+module milca_transport_sampling
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, linear_interpolation_remainder
-    use kin6d_transport_laboratory, only: transport_state_t, locate_cell
-    use kin6d_transport_certificate, only: transport_certificate_t, &
+    use milca_transport_laboratory, only: transport_state_t, locate_cell
+    use milca_transport_certificate, only: transport_certificate_t, &
         transport_observable_band
-    use kin6d_transport_leaves, only: transport_basis_interval, &
+    use milca_transport_leaves, only: transport_basis_interval, &
         transport_weighted_mode_accumulate_interval, transport_interpolate_interval, &
         transport_scalar_add_interval, transport_curvature_accumulate_interval
     implicit none
@@ -417,4 +417,4 @@ contains
             count = count + size(work%cell_range, kind=int64)
         bytes = count*int(storage_size(cell)/8, int64)
     end function
-end module kin6d_transport_sampling
+end module milca_transport_sampling

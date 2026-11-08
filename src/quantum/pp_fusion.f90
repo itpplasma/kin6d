@@ -1,11 +1,11 @@
 ! Two-body Reid68 impulse-approximation pp fusion, MeV/fm/seconds.
-module kin6d_pp_fusion
+module milca_pp_fusion
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, &
+    use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, &
         radial_band_hamiltonian, radial_coupled_hamiltonian, &
         radial_band_eigen_window, radial_band_matvec, radial_bound_response
-    use kin6d_pp_fusion_leaves, only: pp_reid, pp_sfactor, &
+    use milca_pp_fusion_leaves, only: pp_reid, pp_sfactor, &
         pp_lambda_integrand, pp_gv, pp_phase_quad, pp_phase_quad_jvp, &
         pp_match, pp_match_jvp, pp_match_norm, pp_match_norm_jvp, &
         pp_effective_range, pp_effective_range_jvp, pp_overlap, pp_overlap_jvp, &

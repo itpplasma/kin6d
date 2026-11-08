@@ -1,4 +1,4 @@
-module kin6d_equilibrium_certificate
+module milca_equilibrium_certificate
     ! One certificate interface for every lane (docs/equilibrium-core.md, D4,
     ! migration M3):
     !     ||U - U_h|| <~ M(U_h) / beta_h.
@@ -15,7 +15,7 @@ module kin6d_equilibrium_certificate
     ! declared scope; the label does not upgrade it.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_state, only: equilibrium_state_t
     implicit none
     private
     public :: equilibrium_certifier_t, equilibrium_certificate_t
@@ -95,4 +95,4 @@ contains
             name = 'candidate'
         end select
     end function
-end module kin6d_equilibrium_certificate
+end module milca_equilibrium_certificate

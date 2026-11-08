@@ -27,13 +27,13 @@ supported; time-dependent or non-Hermitian generators are rejected by scope.
 
 `initialize_quantum_evolution` allocates the trajectory and reusable stage
 buffers once. The untrusted candidate uses FortNum's existing six-stage
-Cash-Karp RK5(4) method. KIN6D supplies generated local `-i H psi / hbar`
+Cash-Karp RK5(4) method. MILCA supplies generated local `-i H psi / hbar`
 contractions; it does not implement another Runge-Kutta method. The embedded
 error estimate is not the certificate. All project-owned scalar action,
 sampling, enclosure, and derivative leaves come from
 `gen/gen_quantum_evolution.f90` and its shared FortSym definitions. The
 generic Hermite enclosure, Bernstein residual bound and radius accumulation
-are FortNum's `fortnum_ode_residual_certificate` (pinned `a431cf2`); KIN6D
+are FortNum's `fortnum_ode_residual_certificate` (pinned `a431cf2`); MILCA
 supplies the action `-i H x/hbar` (and `-i dH x/hbar` as tangent forcing).
 The default `QE_WORKHORSE` uses point matrix actions with proved aggregate
 rounding, coefficient-width and underflow allowances from FortNum.
@@ -138,7 +138,7 @@ and physical RDM representability are not inferred from arbitrary amplitudes.
 
 ## API and result status
 
-The module is `kin6d_quantum_evolution`, with private `quantum_evolution_t`.
+The module is `milca_quantum_evolution`, with private `quantum_evolution_t`.
 
 - Initialize with `(state,Hre,Him,psi_re,psi_im,steps,h,hbar,ok[,budget])`.
 - Solve with `(state,ok[,certify,error_mode])`; candidate-only calls clear bounded status.

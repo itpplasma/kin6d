@@ -3,7 +3,7 @@ program test_coils_3d
     !! the on-axis ring formula, div/curl of the field, toroidal selection rules,
     !! Fourier synthesis against the direct 3D field and thread invariance.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_coils_3d
+    use milca_coils_3d
 !$  use omp_lib
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
