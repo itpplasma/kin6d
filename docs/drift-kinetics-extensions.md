@@ -124,6 +124,61 @@ features, each checked against NEO-2 on the same inputs before it counts as cove
 | quasineutral Phi_1 on the surface from the species responses (planned NEO-2 stack after 240, SFINCS benchmark) | missing; a bordered unknown per angle in the multispecies solve |
 | stellarator transport coefficients (NEO-2-PAR), including ripple trapping in local wells of the full |B| | K1 in [drift-kinetics.md](drift-kinetics.md); bootstrap against rabe (near-omnigenous fields, Lorentz, monoenergetic) and down to the Shaing-Callen limit belongs here |
 
+## Complete scope
+
+The goal is one code for steady neoclassical drift kinetics on closed flux surfaces, tokamaks and
+stellarators, with every effect below as a switch that can be combined with the others and checked
+against its limit. It supersedes the out-of-scope list of [drift-kinetics.md](drift-kinetics.md)
+for sonic rotation, magnetic islands and kinetic-MHD feedback. Each effect counts as available only
+after its check has passed.
+
+| Area | Effect | Stage | Check |
+|---|---|---|---|
+| geometry | axisymmetric tokamak, up-down asymmetric shaping, finite beta from EFIT/VMEC/GVEC via Boozer files | 0 | NEO-2, NEO |
+| geometry | non-axisymmetric perturbation of a tokamak, several n, plasma response from MARS, GPEC or MEPHIT as input | 0, 6 | NEO-2-QL |
+| geometry | 3D stellarator field, ripple wells of the full |B|, tokamak TF ripple | K1 | DKES, MONKES, SFINCS, NEO-2-PAR; ripple-plateau and ripple-trapped nu limits |
+| geometry | magnetic islands with helical flux coordinates: bootstrap and polarisation currents in the island | after 7 | island-width asymptotics (flattening, small-island threshold) |
+| drifts | precession, E x B with E_r, magnetic shear term, tangential magnetic drift in stellarators | 0, K1 | SFINCS and KNOSOS tangential-drift cases |
+| drifts | finite orbit width on the canonical Maxwellian, potato orbits near the axis | 3 | POTATO, PERFECT |
+| drifts | perturbation in the orbits: superbanana regime, resonance islands, overlap | 5-7 | NEO-RT Theta(D), Monte Carlo |
+| rotation | slow rotation (Mach number M << 1, current ordering) | 0 | NEO-2 |
+| rotation | sonic rotation M ~ 1: rotating-frame Maxwellian, centrifugal and Coriolis drifts, centrifugal trapping, poloidal density asymmetry with Phi_1 | new | Hinton-Wong and Catto-Bernstein-Tessarotto theory; NEO (Belli-Candy) sonic option; heavy-impurity asymmetry |
+| potential | prescribed E_r; E_r from force balance; ambipolar E_r with ion and electron roots | 0, K1, K2 | NEO-2 (force balance), SFINCS, DKES-based root finding |
+| potential | Phi_1 on the surface from quasineutrality; misaligned-potential drive and local parallel current; delta Phi_n of the perturbation | parity | NEO-2 pull request 240, KiLCA, SFINCS Phi_1, EUTERPE/KNOSOS |
+| potential | inductive E_par: Ware pinch, parallel conductivity | parity | Sauter fits, NEO-2 |
+| perturbation | |B|-only drive; full delta H with field-line bending kappa.xi and b.delta B | 0, (b) of drift-kinetics.md | NEO-2-QL, MARS-K delta W_k |
+| perturbation | rotating perturbation omega != 0 (rotating modes, locking) | (b) | analytic resonance shift, MARS-K |
+| perturbation | kinetic delta W_k and torque fed back to the MHD response | new | MARS-K, MISK |
+| collisions | Lorentz, momentum correction, full linearised Fokker-Planck, all species and impurities, pair Coulomb logarithms | 0 | NEO-2, NEO, SFINCS |
+| collisions | relativistic Braams-Karney operator | parity | NEO-2-PAR |
+| collisions | classical (gyro-) transport of impurities next to neoclassical | new | Braginskii, Buller-Helander stellarator impurity flux |
+| background | Maxwellian; canonical Maxwellian; slowing-down fast ions and alphas | 0, 3, new | ASCOT, SIMPLE Monte Carlo |
+| regimes | banana, plateau, Pfirsch-Schlueter; 1/nu, sqrt(nu)-nu, nu, superbanana plateau, superbanana, bounce and transit resonances, ripple plateau; nu* down to 1e-6 and up to the Pfirsch-Schlueter limit | 0-7 | analytic limits per regime |
+| outputs | full transport matrix, particle, heat and momentum fluxes per species, non-ambipolar fluxes, NTV torque per species and n, offset rotation, bootstrap current, conductivity, poloidal rotation coefficient, parallel flows and local parallel current, impurity flux, current-drive efficiency (generalised Spitzer function by the adjoint) | 0, parity | NEO-2, NEO, SFINCS, Sauter fits |
+| numerics | derivatives of every output with respect to profiles, geometry and perturbation (tangent and adjoint); certified bands (#274); hp adaptivity | 0, 1-2 | finite differences, interval bounds |
+
+Outside this scope: turbulence and finite-Larmor-radius gyrokinetics, time dependence beyond the
+steady state, open field lines and the scrape-off layer, and stochastic magnetic fields.
+
+## Design: one operator, composed terms
+
+Every effect above is a term of the one equation, not a mode of the code. A run is described by
+the list of terms it contains (streaming, drifts, each drive, each collision part, each closure),
+and the operator is assembled from that list by one kernel. Consequences:
+
+- no Boolean flag per effect inside numerical routines; a term that is absent is not assembled;
+- one solver path for all combinations; a combination needs no new code, only its check;
+- each term owns its coefficients, its source, its output moments and its limit test (removing
+  it reproduces the run without it), so tests compose with the terms;
+- geometry, collisions, velocity mesh and solver are separate interfaces; a new effect touches
+  one of them, never copies a solver;
+- defaults reproduce the validated thin-orbit quasilinear model, and a term requested outside
+  its validity is refused with the indicator that failed.
+
+Sonic rotation, Phi_1 and the misaligned potential share one building block: a background whose
+density and potential vary on the surface (centrifugal force, perturbation, or both), closed by the
+same quasineutrality condition.
+
 ## Working rule
 
 Exploration uses focused tests and resolution ladders. Pre-registered acceptance rules, error
