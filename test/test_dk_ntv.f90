@@ -25,6 +25,7 @@ program test_dk_ntv
     case ('tangents'); ok = tangents()
     case ('line'); ok = line()
     case ('rotation_limit'); ok = rotation_limit()
+    case ('one_over_nu_limit'); ok = one_over_nu_limit()
     case ('ql_dpar'); ok = ql_dpar()
     case ('ql_f10'); ok = ql_f10()
     case ('ql_oracle'); ok = ql_oracle()
@@ -189,6 +190,121 @@ contains
         ok = abs(rel(2)) < 2e-4_dp .and. rel(1)/rel(2) > 3.5_dp .and. rel(1)/rel(2) < 4.5_dp &
             .and. all(abs(r(:, 1)/(10*r(:, 2)) - 1) < 1e-3_dp)
     end function rotation_limit
+
+    !> The 1/nu limit of the NTV torque at omega_E = 0 and pre = 0. With
+    !> F = e^{i n q theta} G and nu -> 0, G = g(lambda) on trapped orbits and
+    !> 0 on passing ones (n q not an integer), and the bounce average of the
+    !> equation gives -2 nu d_lambda(lambda I d_lambda g) = lambda S_b/v with
+    !>   I(lambda) = sum_sigma oint dtheta |xi|/b,
+    !>   S_b(lambda) = sum_sigma oint dtheta e^{-i n q theta} S/|xi|,
+    !> g = 0 at the trapped-passing boundary, so that
+    !>   R nu -> (1/2v) int dlambda |Q|^2/(lambda I),
+    !>   Q(lambda) = int_lambda^{1/b_min} lambda' S_b dlambda'.
+    !> The bounce integrals are done here by Gauss quadrature in
+    !> theta = theta_t sin(u), which removes the turning-point singularities;
+    !> the kernel's R nu at three collisionalities is extrapolated as
+    !> A + C sqrt(nu) + B nu (boundary layer and passing contribution).
+    logical function one_over_nu_limit() result(ok)
+        type(ntv_surface_t) :: sf
+        type(ntv_kernel_t) :: k
+        integer, parameter :: ns = 64
+        real(dp), parameter :: v = 1.0_dp
+        real(dp) :: nu(3), y(3), m(3, 3), lc, lm, xs(ns), ws(ns), xt(ns), wt(ns), &
+            s, lam, lam2, i_xi, outer, limit, fit
+        complex(dp) :: q
+        integer :: i, j, status, piv(3), info
+        interface
+            subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+                integer, intent(out) :: ipiv(*), info
+            end subroutine dgesv
+        end interface
+        sf%eps = 0.05_dp; sf%q = 2.2_dp; sf%k = 1/(sf%q*6.2_dp); sf%offset = 0
+        sf%n = 3; sf%m = [6]; sf%c = [(1e-3_dp, 0.0_dp)]
+        nu = [1e-5_dp, 3e-6_dp, 1e-6_dp]
+        do i = 1, 3
+            call ntv_kernel(sf, v, nu(i), 0.0_dp, 0.0_dp, 65, 300, k, status, &
+                indicators=.false.)
+            if (status /= NTV_OK) error stop 'kernel failed'
+            y(i) = k%r*nu(i)
+            m(i, :) = [1.0_dp, sqrt(nu(i)), nu(i)]
+        end do
+        call dgesv(3, 1, m, 3, piv, y, 3, info)
+        if (info /= 0) error stop 'fit failed'
+        fit = y(1)
+
+        ! lambda = lc + (lm - lc) s^2 clusters nodes at the separatrix, where
+        ! S_b diverges logarithmically.
+        lc = 1/(1 + sf%eps)
+        lm = 1/(1 - sf%eps)
+        call gauss_legendre(ns, xs, ws)
+        xs = (xs + 1)/2
+        ws = ws/2
+        outer = 0
+        do i = 1, ns
+            lam = lc + (lm - lc)*xs(i)**2
+            call gauss_legendre(ns, xt, wt)
+            q = 0
+            do j = 1, ns
+                s = xs(i) + (1 - xs(i))*(xt(j) + 1)/2
+                lam2 = lc + (lm - lc)*s**2
+                q = q + wt(j)*(1 - xs(i))/2*2*(lm - lc)*s*lam2 &
+                    *iu_n_c(sf)*bounce_drive(sf, lam2)
+            end do
+            i_xi = bounce_speed(sf, lam)
+            outer = outer + ws(i)*2*(lm - lc)*xs(i)*abs(q)**2/(lam*i_xi)
+        end do
+        limit = outer/(2*v)
+        print '(a,2es14.6,es10.2)', 'R nu at nu -> 0, kernel and bounce limit:', fit, &
+            limit, fit/limit - 1
+        ok = abs(fit/limit - 1) < 1e-2_dp
+    end function one_over_nu_limit
+
+    complex(dp) function iu_n_c(sf)
+        type(ntv_surface_t), intent(in) :: sf
+        iu_n_c = (0.0_dp, 1.0_dp)*sf%n*sf%c(1)
+    end function iu_n_c
+
+    !> sum_sigma oint dtheta |xi|/b over the well of b = 1 - eps cos(theta).
+    real(dp) function bounce_speed(sf, lam) result(r)
+        type(ntv_surface_t), intent(in) :: sf
+        real(dp), intent(in) :: lam
+        integer, parameter :: nu_ = 64
+        real(dp) :: u(nu_), w(nu_), t0, th, b
+        integer :: j
+        call gauss_legendre(nu_, u, w)
+        t0 = acos(max(-1.0_dp, min(1.0_dp, (1 - 1/lam)/sf%eps)))
+        r = 0
+        do j = 1, nu_
+            th = t0*sin(atan(1.0_dp)*(u(j) + 1))
+            b = 1 - sf%eps*cos(th)
+            r = r + w(j)*atan(1.0_dp)*sqrt(max(0.0_dp, 1 - lam*b))/b*t0 &
+                *cos(atan(1.0_dp)*(u(j) + 1))
+        end do
+        r = 4*r
+    end function bounce_speed
+
+    !> sum_sigma oint dtheta e^{i (m - n q) theta}/|xi| over the well (the
+    !> odd part cancels), per unit i n c.
+    real(dp) function bounce_drive(sf, lam) result(r)
+        type(ntv_surface_t), intent(in) :: sf
+        real(dp), intent(in) :: lam
+        integer, parameter :: nu_ = 64
+        real(dp) :: u(nu_), w(nu_), t0, th, a
+        integer :: j
+        call gauss_legendre(nu_, u, w)
+        t0 = acos(max(-1.0_dp, min(1.0_dp, (1 - 1/lam)/sf%eps)))
+        r = 0
+        do j = 1, nu_
+            a = atan(1.0_dp)*(u(j) + 1)
+            th = t0*sin(a)
+            r = r + w(j)*atan(1.0_dp)*cos((sf%m(1) - sf%n*sf%q)*th) &
+                /sqrt(lam*sf%eps*(cos(th) - cos(t0)))*t0*cos(a)
+        end do
+        r = 4*r
+    end function bounce_drive
 
     logical function line() result(ok)
         real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
