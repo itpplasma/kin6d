@@ -12,7 +12,7 @@
 !!                stage-1 gate driver feeds this mode).
 program test_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_f10, NTV_OK, &
+    use kin6d_dk_ntv, only: ntv_surface_t, ntv_factor_t, ntv_kernel_t, ntv_kernel, ntv_f10, NTV_OK, &
         NTV_WEIGHT_MU, NTV_WEIGHT_FULL, ntv_circular_line_t, NTV_BAD_INPUT
     use fortnum_quadrature, only: gauss_legendre
     implicit none
@@ -32,6 +32,7 @@ program test_dk_ntv
     case ('ql_collisionless'); ok = ql_collisionless()
     case ('assembly'); ok = assembly()
     case ('f10_provider'); ok = f10_provider()
+    case ('reuse'); ok = reuse()
     case ('kernel')
         call get_command_argument(2, path)
         call kernel_table(trim(path))
@@ -319,6 +320,39 @@ contains
             end do
         end do
     end function line
+
+    !> A kernel preconditioned by the factorisation of a neighbouring surface
+    !> and collision frequency reproduces the direct torque and its adjoint
+    !> derivatives.
+    logical function reuse() result(ok)
+        type(ntv_surface_t) :: sf, near
+        type(ntv_kernel_t) :: base, direct, kept
+        type(ntv_factor_t) :: factor
+        real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
+        integer :: status
+        sf = sample()
+        sf%m = [5, 6, 7]
+        sf%c = [(2e-4_dp, -1e-4_dp), (1e-3_dp, 2e-4_dp), (-3e-4_dp, 5e-5_dp)]
+        call ntv_kernel(sf, v, nu, omega, pre, 33, 80, base, status, indicators=.false., &
+            keep=factor)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        near = sf
+        near%eps = sf%eps + 2e-3_dp
+        near%q = sf%q + 0.02_dp
+        call ntv_kernel(near, v, 1.1_dp*nu, 1.05_dp*omega, pre, 33, 80, direct, status, &
+            indicators=.false.)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        call ntv_kernel(near, v, 1.1_dp*nu, 1.05_dp*omega, pre, 33, 80, kept, status, &
+            indicators=.false., precondition=factor)
+        if (status /= NTV_OK) error stop 'preconditioned kernel failed'
+        print '(a,2es14.6,i5)', 'R direct, preconditioned, iterations ', direct%r, kept%r, &
+            kept%iterations
+        ok = abs(kept%r/direct%r - 1) < 1e-9_dp .and. &
+            abs(kept%dr_dnu/direct%dr_dnu - 1) < 1e-8_dp .and. &
+            abs(kept%dr_domega/direct%dr_domega - 1) < 1e-8_dp .and. &
+            maxval(abs(kept%dr_dc - direct%dr_dc)) < 1e-8_dp*maxval(abs(direct%dr_dc)) .and. &
+            kept%iterations > 0 .and. abs(base%r/direct%r - 1) > 1e-3_dp
+    end function reuse
 
     real(dp) function sample_k()
         type(ntv_surface_t) :: sf

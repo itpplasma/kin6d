@@ -74,11 +74,12 @@ module kin6d_dk_ntv
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
+    use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
     use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, MONO_OK
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
-    public :: ntv_f10
+    public :: ntv_f10, ntv_factor_t
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2
     integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1
 
@@ -136,6 +137,9 @@ module kin6d_dk_ntv
         ! Directional two-resolution indicators: theta points 2 n + 1, and
         ! Legendre polynomials 2 L; their sum indicates the error of r.
         real(dp) :: indicator_theta = 0, indicator_leg = 0
+        ! GMRES iterations of the forward and adjoint solves preconditioned
+        ! by a kept factorisation; zero for a direct solve.
+        integer :: iterations = 0
     end type
 
     type :: ntv_system_t
@@ -159,8 +163,18 @@ module kin6d_dk_ntv
         integer, allocatable :: piv(:, :)
     end type
 
+    !> The factorisation of one kernel, kept to precondition kernels of
+    !> nearby surfaces, energies or parameters on the same grid.
+    type :: ntv_factor_t
+        private
+        type(ntv_system_t), allocatable :: sys
+    end type
+
     real(dp), parameter :: pi = 4*atan(1.0_dp)
     complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
+    ! Relative residual of the preconditioned solves, well below the
+    ! discretisation error of the torque.
+    real(dp), parameter :: gmres_tolerance = 1e-11_dp
 
     interface
         subroutine zgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
@@ -250,7 +264,7 @@ contains
     !> and n_leg (even) Legendre polynomials, with the directional
     !> indicators at 2 n_theta + 1 points and at 2 n_leg polynomials.
     subroutine ntv_kernel(sf, v, nu_d, omega_e, pre, n_theta, n_leg, kern, status, &
-            indicators, direction, f10)
+            indicators, direction, f10, keep, precondition)
         type(ntv_surface_t), intent(in) :: sf
         ! Tangent direction: its eps, k, offset and current components.
         type(ntv_surface_t), intent(in), optional :: direction
@@ -264,7 +278,14 @@ contains
         ! The axisymmetric solution for the perturbed-operator source
         ! (source_dlf10): one theta point per row, even degrees above odd.
         real(dp), intent(in), optional, dimension(:, :) :: f10
-        type(ntv_system_t) :: a, da
+        ! keep receives this kernel's factorisation; with precondition the
+        ! kernel is not factorised but solved by GMRES, right-preconditioned
+        ! by that factorisation of a nearby kernel on the same grid.
+        type(ntv_factor_t), intent(out), optional :: keep
+        type(ntv_factor_t), intent(inout), optional :: precondition
+        type(ntv_system_t), allocatable :: a
+        type(ntv_system_t) :: da
+        logical :: krylov
         complex(dp), allocatable :: x(:, :), adj(:, :), rhs(:, :), ds(:), gradient(:), &
             xf(:), xw(:)
         real(dp), allocatable :: prof(:, :)
@@ -280,10 +301,21 @@ contains
             if (.not. present(f10) .or. present(direction)) return
             if (.not. present(indicators) .or. indicators) return
         end if
-        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, f10)
+        krylov = present(precondition)
+        if (krylov) then
+            status = NTV_BAD_INPUT
+            if (.not. allocated(precondition%sys)) return
+            if (precondition%sys%n /= n_theta .or. 2*precondition%sys%nblock /= n_leg) return
+        end if
+        allocate (a)
+        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, f10, krylov)
         if (status /= NTV_OK) return
         call drive(a, v, rhs)
-        call solve(a, rhs, x, status)
+        if (krylov) then
+            call gmres_solve(a, precondition%sys, rhs, x, status, .false., kern%iterations)
+        else
+            call solve(a, rhs, x, status)
+        end if
         if (status /= NTV_OK) return
         kern%r = flux(a, x)
         allocate (kern%spectrum(0:2*a%nblock - 1))
@@ -294,7 +326,12 @@ contains
 
         ! One torque adjoint replaces one tangent solve per parameter.
         call goal(a, rhs)
-        call solve(a, rhs, adj, status, adjoint=.true.)
+        if (krylov) then
+            call gmres_solve(a, precondition%sys, rhs, adj, status, .true., i)
+            kern%iterations = kern%iterations + i
+        else
+            call solve(a, rhs, adj, status, adjoint=.true.)
+        end if
         if (status /= NTV_OK) return
         kern%dr_dnu = -real(sum(conjg(adj)*lorentz(a, x)), dp)/v
         kern%dr_domega = -real(sum(conjg(adj)*a%shift/v*x), dp)
@@ -350,6 +387,7 @@ contains
             kern%dr_dsurface = real(sum(conjg(adj)*rhs), dp) &
                 + 2*pi/a%n*sum(da%measure*real(conjg(a%s)*moment(a, x), dp))
         end if
+        if (present(keep) .and. .not. krylov) call move_alloc(a, keep%sys)
         if (present(indicators)) then
             if (.not. indicators) return
         end if
@@ -378,13 +416,14 @@ contains
         r = flux(a, x)
     end subroutine refined
 
-    subroutine factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, f10)
+    subroutine factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, f10, assemble_only)
         type(ntv_surface_t), intent(in) :: sf
         real(dp), intent(in) :: v, nu_d, omega_e, pre
         integer, intent(in) :: n_theta, n_leg
         type(ntv_system_t), intent(out) :: a
         integer, intent(out) :: status
         real(dp), intent(in), optional, dimension(:, :) :: f10
+        logical, intent(in), optional :: assemble_only
         real(dp), allocatable :: theta(:), b(:), stream_b(:), mirror_b(:), measure_b(:)
         complex(dp), allocatable :: m(:, :), upper(:, :)
         integer :: n, j, i, info
@@ -458,6 +497,12 @@ contains
             end do
             a%f10 = f10
             call f10_foldings(a)
+        end if
+        if (present(assemble_only)) then
+            if (assemble_only) then
+                status = NTV_OK
+                return
+            end if
         end if
 
         ! S_J = Di_J; S_j = Di_j - Up_j Y_{j+1}, Y_j = S_j^-1 Lo_j.
@@ -556,12 +601,11 @@ contains
             ! A = U L for the retained descending block elimination.
             z = rhs
             do j = a%nblock - 2, 0, -1
-                z(:, j) = z(:, j) - matmul(conjg(transpose(a%y(:, :, j + 1))), z(:, j + 1))
+                z(:, j) = z(:, j) - conjg(matmul(conjg(z(:, j + 1)), a%y(:, :, j + 1)))
             end do
             do j = 0, a%nblock - 1
                 x(:, j) = z(:, j)
-                if (j > 0) x(:, j) = x(:, j) &
-                    - matmul(conjg(transpose(block(a, j - 1, j))), x(:, j - 1))
+                if (j > 0) x(:, j) = x(:, j) - block_apply(a, j - 1, j, x(:, j - 1), .true.)
                 call zgetrs('C', nn, 1, a%s_lu(:, :, j), nn, a%piv(:, j), x(:, j), nn, info)
                 if (info /= 0) return
             end do
@@ -570,7 +614,8 @@ contains
         end if
         do j = a%nblock - 1, 0, -1
             z(:, j) = rhs(:, j)
-            if (j < a%nblock - 1) z(:, j) = z(:, j) - matmul(block(a, j, j + 1), z(:, j + 1))
+            if (j < a%nblock - 1) z(:, j) = z(:, j) &
+                - block_apply(a, j, j + 1, z(:, j + 1), .false.)
             call zgetrs('N', nn, 1, a%s_lu(:, :, j), nn, a%piv(:, j), z(:, j), nn, info)
             if (info /= 0) return
         end do
@@ -580,6 +625,62 @@ contains
         end do
         status = NTV_OK
     end subroutine solve
+
+    !> Solve A x = rhs, or A^H x = rhs, by restarted GMRES on A M^-1 with
+    !> M the factorised operator of a nearby kernel (M^-H for the adjoint).
+    subroutine gmres_solve(a, m, rhs, x, status, reverse, iterations)
+        type(ntv_system_t), intent(inout) :: a, m
+        complex(dp), intent(in) :: rhs(:, 0:)
+        complex(dp), allocatable, intent(out) :: x(:, :)
+        integer, intent(out) :: status, iterations
+        logical, intent(in) :: reverse
+        complex(dp), allocatable :: b(:), u(:), w(:)
+        real(dp) :: residual, scale
+        integer :: info, nn, nb
+        nn = 2*a%n
+        nb = a%nblock
+        b = reshape(rhs, [nn*nb])
+        scale = norm2(abs(b))
+        allocate (u(nn*nb), w(nn*nb), x(nn, 0:nb - 1))
+        x = 0
+        iterations = 0
+        status = NTV_OK
+        if (scale == 0) return
+        ! Unit right-hand side: the GMRES target is absolute below norm one.
+        b = b/scale
+        u = 0
+        call complex_gmres_operator(operator, b, u, gmres_tolerance, 400, 100, info, &
+            iterations, residual)
+        if (status /= NTV_OK) return
+        status = NTV_SINGULAR
+        if (info /= KRYLOV_OK) return
+        status = NTV_OK
+        call precondition(u, w)
+        if (status /= NTV_OK) return
+        x = scale*reshape(w, [nn, nb])
+    contains
+        subroutine precondition(input, output)
+            complex(dp), intent(in) :: input(:)
+            complex(dp), intent(out) :: output(:)
+            complex(dp), allocatable :: y(:, :)
+            integer :: st
+            call solve(m, reshape(input, [nn, nb]), y, st, adjoint=reverse)
+            if (st /= NTV_OK) status = st
+            output = reshape(y, [nn*nb])
+        end subroutine precondition
+        subroutine operator(input, output)
+            complex(dp), intent(in) :: input(:)
+            complex(dp), intent(out) :: output(:)
+            complex(dp), allocatable :: t(:)
+            allocate (t(size(input)))
+            call precondition(input, t)
+            if (reverse) then
+                output = reshape(apply_adjoint(a, reshape(t, [nn, nb])), [nn*nb])
+            else
+                output = reshape(apply(a, reshape(t, [nn, nb])), [nn*nb])
+            end if
+        end subroutine operator
+    end subroutine gmres_solve
 
     !> Rows of pair block j, columns of pair block jc: the couplings of
     !> rows l to columns l' with |l - l'| <= 2.
@@ -783,11 +884,62 @@ contains
         complex(dp) :: y(size(x, 1), 0:ubound(x, 2))
         integer :: j
         do j = 0, a%nblock - 1
-            y(:, j) = matmul(block(a, j, j), x(:, j))
-            if (j > 0) y(:, j) = y(:, j) + matmul(block(a, j, j - 1), x(:, j - 1))
-            if (j < a%nblock - 1) y(:, j) = y(:, j) + matmul(block(a, j, j + 1), x(:, j + 1))
+            y(:, j) = block_apply(a, j, j, x(:, j), .false.)
+            if (j > 0) y(:, j) = y(:, j) + block_apply(a, j, j - 1, x(:, j - 1), .false.)
+            if (j < a%nblock - 1) y(:, j) = y(:, j) &
+                + block_apply(a, j, j + 1, x(:, j + 1), .false.)
         end do
     end function apply
+
+    !> y = A^H x.
+    function apply_adjoint(a, x) result(y)
+        type(ntv_system_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:, 0:)
+        complex(dp) :: y(size(x, 1), 0:ubound(x, 2))
+        integer :: j
+        do j = 0, a%nblock - 1
+            y(:, j) = block_apply(a, j, j, x(:, j), .true.)
+            if (j > 0) y(:, j) = y(:, j) + block_apply(a, j - 1, j, x(:, j - 1), .true.)
+            if (j < a%nblock - 1) y(:, j) = y(:, j) &
+                + block_apply(a, j + 1, j, x(:, j + 1), .true.)
+        end do
+    end function apply_adjoint
+
+    !> Block (j, jc) times x, or its adjoint times x (x then in block j and
+    !> the result in block jc), from the couplings without forming the
+    !> block: each quadrant is diag(fd) D + diag(diag).
+    function block_apply(a, j, jc, x, adjoint) result(y)
+        type(ntv_system_t), intent(in) :: a
+        integer, intent(in) :: j, jc
+        complex(dp), intent(in) :: x(:)
+        logical, intent(in) :: adjoint
+        complex(dp) :: y(2*a%n)
+        complex(dp) :: fd(a%n), dg(a%n), xs(a%n)
+        integer :: r, c, l, lc, i, n
+        n = a%n
+        y = 0
+        do c = 0, 1
+            do r = 0, 1
+                l = 2*j + r
+                lc = 2*jc + c
+                if (abs(l - lc) > 2) cycle
+                do i = 1, n
+                    call coupling(a, l, lc, i, fd(i), dg(i))
+                end do
+                if (adjoint) then
+                    xs = x(r*n + 1:(r + 1)*n)
+                    y(c*n + 1:(c + 1)*n) = y(c*n + 1:(c + 1)*n) + conjg(dg)*xs
+                    if (any(fd /= 0)) y(c*n + 1:(c + 1)*n) = y(c*n + 1:(c + 1)*n) &
+                        + matmul(conjg(fd)*xs, a%d)
+                else
+                    xs = x(c*n + 1:(c + 1)*n)
+                    y(r*n + 1:(r + 1)*n) = y(r*n + 1:(r + 1)*n) + dg*xs
+                    if (any(fd /= 0)) y(r*n + 1:(r + 1)*n) = y(r*n + 1:(r + 1)*n) &
+                        + fd*matmul(a%d, xs)
+                end if
+            end do
+        end do
+    end function block_apply
 
     !> R = (2 pi/n) sum (2/b^2) Re(S^* int (1 + wsign xi^2) F dxi), with
     !> int (1 + wsign xi^2) F dxi = (2 + 2 wsign/3) a_0 + (4 wsign/15) a_2.
