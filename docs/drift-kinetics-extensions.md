@@ -153,9 +153,14 @@ after its check has passed.
 | collisions | relativistic Braams-Karney operator | parity | NEO-2-PAR |
 | collisions | classical (gyro-) transport of impurities next to neoclassical | new | Braginskii, Buller-Helander stellarator impurity flux |
 | background | Maxwellian; canonical Maxwellian; slowing-down fast ions and alphas | 0, 3, new | ASCOT, SIMPLE Monte Carlo |
+| ordering | second order in the gyroradius over the scale length: neoclassical momentum flux and intrinsic rotation in up-down symmetric tokamaks, which vanish at first order | new | Parra-Catto higher-order theory; global finite-orbit-width limit of step 3 |
+| sources | neutral friction (charge exchange, ionisation), beam particle, momentum and heat sources, orbit loss through the last closed surface as the outer boundary of the global solve | K2, new | edge E_r and rotation analytics; Monte Carlo orbit loss |
 | regimes | banana, plateau, Pfirsch-Schlueter; 1/nu, sqrt(nu)-nu, nu, superbanana plateau, superbanana, bounce and transit resonances, ripple plateau; nu* down to 1e-6 and up to the Pfirsch-Schlueter limit | 0-7 | analytic limits per regime |
 | outputs | full transport matrix, particle, heat and momentum fluxes per species, non-ambipolar fluxes, NTV torque per species and n, offset rotation, bootstrap current, conductivity, poloidal rotation coefficient, parallel flows and local parallel current, impurity flux, current-drive efficiency (generalised Spitzer function by the adjoint) | 0, parity | NEO-2, NEO, SFINCS, Sauter fits |
 | numerics | derivatives of every output with respect to profiles, geometry and perturbation (tangent and adjoint); certified bands (#274); hp adaptivity | 0, 1-2 | finite differences, interval bounds |
+
+E_r-shear orbit squeezing needs no term of its own: it follows from Phi(psi) in the total energy
+H once orbit width is retained.
 
 Outside this scope: turbulence and finite-Larmor-radius gyrokinetics, time dependence beyond the
 steady state, open field lines and the scrape-off layer, and stochastic magnetic fields.
