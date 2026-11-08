@@ -32,10 +32,6 @@ program test_dk_ntv
     case ('ql_collisionless'); ok = ql_collisionless()
     case ('assembly'); ok = assembly()
     case ('f10_provider'); ok = f10_provider()
-    case ('sparse_assembly'); ok = assembly(2)
-    case ('sparse_jvp'); ok = jvp(6)
-    case ('sparse_tangents'); ok = tangents(6)
-    case ('sparse_refinement'); ok = sparse_refinement()
     case ('kernel')
         call get_command_argument(2, path)
         call kernel_table(trim(path))
@@ -61,49 +57,36 @@ contains
         sf%c = [(1e-3_dp, 2e-4_dp)]
     end function sample
 
-    logical function jvp(theta_order) result(ok)
-        integer, intent(in), optional :: theta_order
-        integer :: order, degree
+    logical function jvp() result(ok)
+        integer, parameter :: degree = 80
         real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
         real(dp) :: h, fd
         type(ntv_kernel_t) :: k0, up, down
         integer :: status
-        order = 0
-        if (present(theta_order)) order = theta_order
-        degree = merge(12,80,order > 0)
-        call ntv_kernel(sample(), v, nu, omega, pre, 33, degree, k0, status, &
-            theta_order=order)
+        call ntv_kernel(sample(), v, nu, omega, pre, 33, degree, k0, status)
         if (status /= NTV_OK) error stop 'kernel failed'
         h = 1e-6_dp*nu
-        call ntv_kernel(sample(), v, nu + h, omega, pre, 33, degree, up, status, &
-            theta_order=order)
-        call ntv_kernel(sample(), v, nu - h, omega, pre, 33, degree, down, status, &
-            theta_order=order)
+        call ntv_kernel(sample(), v, nu + h, omega, pre, 33, degree, up, status)
+        call ntv_kernel(sample(), v, nu - h, omega, pre, 33, degree, down, status)
         fd = (up%r - down%r)/(2*h)
         print '(a,2es14.6,es9.1)', 'dR/dnu      ', k0%dr_dnu, fd, abs(k0%dr_dnu/fd - 1)
         ok = abs(k0%dr_dnu/fd - 1) < 1e-6_dp
         h = 1e-6_dp*omega
-        call ntv_kernel(sample(), v, nu, omega + h, pre, 33, degree, up, status, &
-            theta_order=order)
-        call ntv_kernel(sample(), v, nu, omega - h, pre, 33, degree, down, status, &
-            theta_order=order)
+        call ntv_kernel(sample(), v, nu, omega + h, pre, 33, degree, up, status)
+        call ntv_kernel(sample(), v, nu, omega - h, pre, 33, degree, down, status)
         fd = (up%r - down%r)/(2*h)
         print '(a,2es14.6,es9.1)', 'dR/domega_E ', k0%dr_domega, fd, abs(k0%dr_domega/fd - 1)
         ok = ok .and. abs(k0%dr_domega/fd - 1) < 1e-6_dp
     end function jvp
 
-    logical function tangents(theta_order) result(ok)
-        integer, intent(in), optional :: theta_order
-        integer :: order, degree
+    logical function tangents() result(ok)
+        integer, parameter :: degree = 80
         real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
         type(ntv_surface_t) :: sf, dir, up, down
         type(ntv_kernel_t) :: k0, kp, km
         real(dp) :: h, fd
         complex(dp) :: dc
         integer :: status, j, ib, iw, part
-        order = 0
-        if (present(theta_order)) order = theta_order
-        degree = merge(12,80,order > 0)
         ok = .true.
         dir%eps = 1; dir%k = 0.3_dp*sample_k(); dir%offset = 0.5_dp; dir%current = 0.7_dp
         do ib = 0, 1
@@ -115,8 +98,7 @@ contains
                 sf%weight = merge(NTV_WEIGHT_MU, NTV_WEIGHT_FULL, iw == 1)
                 sf%current = merge(0.0_dp, 0.37_dp, iw == 1)
                 call ntv_kernel(sf, v, nu, omega, pre, 33, degree, k0, status, &
-                    indicators=.false., direction=dir, &
-                    theta_order=order)
+                    indicators=.false., direction=dir)
                 if (status /= NTV_OK) error stop 'kernel failed'
                 do j = 1, size(sf%m)
                     do part = 1, 2
@@ -125,9 +107,9 @@ contains
                         up = sf; up%c(j) = sf%c(j) + h*dc
                         down = sf; down%c(j) = sf%c(j) - h*dc
                         call ntv_kernel(up, v, nu, omega, pre, 33, degree, kp, status, &
-                            indicators=.false., theta_order=order)
+                            indicators=.false.)
                         call ntv_kernel(down, v, nu, omega, pre, 33, degree, km, status, &
-                            indicators=.false., theta_order=order)
+                            indicators=.false.)
                         fd = (kp%r - km%r)/(2*h)
                         ok = ok .and. near(merge(real(k0%dr_dc(j)), aimag(k0%dr_dc(j)), &
                             part == 1), fd, 'dR/dc')
@@ -138,10 +120,8 @@ contains
                 up%offset = sf%offset + h*dir%offset; up%current = sf%current + h*dir%current
                 down = sf; down%eps = sf%eps - h*dir%eps; down%k = sf%k - h*dir%k
                 down%offset = sf%offset - h*dir%offset; down%current = sf%current - h*dir%current
-                call ntv_kernel(up, v, nu, omega, pre, 33, degree, kp, status, indicators=.false., &
-                    theta_order=order)
-                call ntv_kernel(down, v, nu, omega, pre, 33, degree, km, status, indicators=.false., &
-                    theta_order=order)
+                call ntv_kernel(up, v, nu, omega, pre, 33, degree, kp, status, indicators=.false.)
+                call ntv_kernel(down, v, nu, omega, pre, 33, degree, km, status, indicators=.false.)
                 fd = (kp%r - km%r)/(2*h)
                 ok = ok .and. near(k0%dr_dsurface, fd, 'dR/dsurface')
             end do
@@ -340,25 +320,6 @@ contains
         end do
     end function line
 
-    logical function sparse_refinement() result(ok)
-        type(ntv_kernel_t) :: reference, local
-        real(dp) :: errors(3)
-        integer, parameter :: points(3) = [33,65,129]
-        integer :: status, j
-        call ntv_kernel(sample(),1.0_dp,0.02_dp,0.005_dp,0.02_dp,129,12, &
-            reference,status,indicators=.false.)
-        if (status /= NTV_OK) error stop 'reference failed'
-        do j = 1,3
-            call ntv_kernel(sample(),1.0_dp,0.02_dp,0.005_dp,0.02_dp,points(j),12, &
-                local,status,indicators=.false.,theta_order=6)
-            if (status /= NTV_OK) error stop 'local refinement failed'
-            errors(j) = abs(local%r-reference%r)/abs(reference%r)
-        end do
-        print '(a,3es15.6)', 'relative theta errors ',errors
-        ok = errors(2) < errors(1)/16 .and. errors(3) < errors(2)/16 &
-            .and. errors(3) < 0.01_dp
-    end function sparse_refinement
-
     real(dp) function sample_k()
         type(ntv_surface_t) :: sf
         sf = sample()
@@ -375,9 +336,7 @@ contains
     !> recurrences of the kernel), d_theta is the DFT spectral derivative,
     !> and R = (2 pi/n_theta) sum m_s Re(S^* int (1 + w xi^2) F), m_s = 2/b^2
     !> or 2/b^3.
-    logical function assembly(theta_order) result(ok)
-        integer, intent(in), optional :: theta_order
-        integer :: order
+    logical function assembly() result(ok)
         integer, parameter :: nt = 7, nl = 12, nq = 40, nn = nt*nl
         real(dp), parameter :: v = 1.3_dp, nu = 0.3_dp, omega = 0.2_dp, pre = 0.5_dp
         real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -396,8 +355,6 @@ contains
                 integer, intent(out) :: ipiv(*), info
             end subroutine zgesv
         end interface
-        order = 0
-        if (present(theta_order)) order = theta_order
         call gauss_legendre(nq, xq, wq)
         p(:, 1) = 1; p(:, 2) = xq; dp_(:, 1) = 0; dp_(:, 2) = 1
         do j = 3, nl
@@ -413,13 +370,6 @@ contains
                 end do
             end do
         end do
-        if (order == 2) then
-            dft = 0
-            do it = 1, nt
-                dft(it,modulo(it,nt)+1) = nt/(4*pi)
-                dft(it,modulo(it-2,nt)+1) = -nt/(4*pi)
-            end do
-        end if
         ok = .true.
         do ib = 0, 1
             do iw = 1, 2
@@ -436,8 +386,7 @@ contains
                 meas = 2/b**(2 + ib)
                 s = iu*sf%n*sf%c(1)*exp(iu*sf%m(1)*theta)
                 call ntv_kernel(sf, v, nu*v, omega, pre, nt, nl, kern, status, &
-                    indicators=.false., &
-                    theta_order=order)
+                    indicators=.false.)
                 if (status /= NTV_OK) error stop 'kernel failed'
                 a = 0
                 do it = 1, nt
@@ -477,7 +426,7 @@ contains
     end function assembly
 
     !> FILE: eps k q offset n nm [weight boozer_stream(0|1) [c_J]] /
-    !> nm lines m Re(c) Im(c) / n_theta n_leg [indicators 0|1 [theta order]] /
+    !> nm lines m Re(c) Im(c) / n_theta n_leg [indicators 0|1] /
     !> nx / nx lines v nu_d omega_E pre. Prints per node R, the theta and
     !> Legendre indicators, dR/dnu_D and dR/domega_E.
     subroutine kernel_table(file)
@@ -485,7 +434,7 @@ contains
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k
         integer :: u, nm, j, n_theta, n_leg, nx, status, ios, with_indicators, weight, stream, &
-            order, dpar, dlf10
+            dpar, dlf10
         real(dp) :: re, im, v, nu_d, omega, pre
         real(dp), allocatable :: f10(:, :)
         character(256) :: line, spectrum_file
@@ -523,11 +472,7 @@ contains
             sf%c(j) = cmplx(re, im, dp)
         end do
         read (u, '(a)') line
-        read (line, *, iostat=ios) n_theta, n_leg, with_indicators, order
-        if (ios /= 0) then
-            order = 0
-            read (line, *, iostat=ios) n_theta, n_leg, with_indicators
-        end if
+        read (line, *, iostat=ios) n_theta, n_leg, with_indicators
         if (ios /= 0) then
             read (line, *) n_theta, n_leg
             with_indicators = 1
@@ -541,10 +486,10 @@ contains
                 call ntv_f10(sf, v, nu_d, n_theta, n_leg, f10, status)
                 if (status /= NTV_OK) error stop 'f10 provider failed'
                 call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status, &
-                    indicators=with_indicators /= 0, theta_order=order, f10=f10)
+                    indicators=with_indicators /= 0, f10=f10)
             else
                 call ntv_kernel(sf, v, nu_d, omega, pre, n_theta, n_leg, k, status, &
-                    indicators=with_indicators /= 0, theta_order=order)
+                    indicators=with_indicators /= 0)
             end if
             if (status /= NTV_OK) error stop 'kernel failed'
             print '(5es24.15)', k%r, k%indicator_theta, k%indicator_leg, k%dr_dnu, k%dr_domega
