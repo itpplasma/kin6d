@@ -58,8 +58,9 @@
 !! directional surface tangent is unavailable (its geometry tangents of the
 !! f_10 sources are not implemented) and the two-resolution refinement
 !! would need f_10 on the refined grid, so indicators must be passed as
-!! false; source_dpar needs q > 0. The amplitude sensitivities keep the
-!! adjoint form with all sources of the response contracted into it, and
+!! false; source_dpar needs q /= 0 (q = 1/iota keeps its sign). The
+!! amplitude sensitivities keep the adjoint form with all sources of the
+!! response contracted into it, and
 !! the torque functional still pairs only with S.
 !! A general field line enters through an ntv_line_t provider: its sample
 !! returns, at the theta points of the solver, the coefficients the circular
@@ -226,7 +227,7 @@ contains
 
         status = NTV_BAD_INPUT
         if (mod(n_theta, 2) == 0 .or. n_theta < 3 .or. mod(n_leg, 2) /= 0 .or. &
-            n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%q <= 0 .or. &
+            n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%q == 0 .or. &
             sf%weight /= NTV_WEIGHT_FULL) return
         if (.not. allocated(sf%line) .and. .not. sf%boozer_stream) return
         n = n_theta
@@ -433,7 +434,7 @@ contains
             n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%n == 0 .or. &
             .not. allocated(sf%m) .or. &
             (sf%weight /= NTV_WEIGHT_MU .and. sf%weight /= NTV_WEIGHT_FULL) .or. &
-            (sf%source_dpar .and. sf%q <= 0)) return
+            (sf%source_dpar .and. sf%q == 0)) return
         ! Nested: Fortran need not short-circuit, and f10 may be absent.
         if (sf%source_dlf10) then
             if (.not. present(f10)) return

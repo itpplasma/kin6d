@@ -1,0 +1,272 @@
+!> Quasilinear NTV torque density of every species on a set of flux surfaces
+!! of a Boozer equilibrium with one toroidal harmonic n of a Boozer |B|
+!! perturbation, from the monoenergetic kernel of kin6d_dk_ntv with the
+!! NEO-2-QL switch set (weight (1 + xi^2)/b, Boozer streaming, both #192
+!! sources) and pitch-angle scattering on all species.
+!!
+!! The perturbation file holds delta B = Re sum_m (bmnc - i bmns)
+!! e^{i(m theta + n phi)} (NEO-2 convention), passed to the kernel as
+!! c_{-m} = (bmnc + i bmns)/B_00 with its rotation argument -Omega_tE, where
+!! Omega_tE is NEO-2's E x B rotation frequency. Per surface, species a and
+!! speed v = v_a sqrt(x), v_a = sqrt(2 T_a/m_a), the kernel gives R(x), and
+!!   K_1j = (T/(Z e))^2/(4 sqrt(pi) J_0) sum_k w_k x_k^(j-1) R(x_k),
+!! with Gauss-Laguerre nodes and weights of int dx x^(5/2) e^-x and
+!! J_0 = int dtheta (B_00/B)^2. The poloidal-flux particle flux is
+!! Gamma_psi = -n (K_11 A_1 + K_12 A_2), A_1 = n'/n + (Z e/T) Omega_tE
+!! - 3/2 A_2, A_2 = T'/T, ' = d/dpsi_pol with psi_pol = iota psi_tor per
+!! radian, and the torque density on the species, positive along phi, is
+!! Z e Gamma_psi. With r the effective radius of <|grad r|> = 1, NEO-2's
+!! D_1j^NA = K_1j/(dpsi_pol/dr)^2.
+!!
+!! The deflection frequency of species a on all species b is
+!!   nu_D(x) = sum_b nu_ab (erf(y_b) - G(y_b))/x^(3/2), y_b = v/v_b,
+!!   nu_ab = (3 sqrt(pi)/8) v_a kappa_a n_b Z_b^2/(n_a Z_a^2),
+!! with kappa_a = 2/(v_a tau_aa) the NEO-2 collisionality of the species.
+!!
+!! Work units (species, energy node, chunk of consecutive surfaces) run
+!! under OpenMP with dynamic scheduling. Each unit factorises its first
+!! surface and solves the following ones by GMRES preconditioned with that
+!! factorisation, refactorising when the iteration count exceeds a bound.
+module kin6d_ntv_device
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_quadrature, only: gauss_gen_laguerre
+    use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, &
+        boozer_average, BOOZER_OK
+    use kin6d_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
+    use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
+        ntv_f10, NTV_OK, NTV_WEIGHT_FULL
+    implicit none
+    private
+    public :: ntv_species_t, ntv_profile_t, ntv_resolution_t, ntv_species_result_t
+    public :: ntv_device_profile, deflection_frequency
+    integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2
+
+    real(dp), parameter :: pi = 4*atan(1.0_dp), elementary = 1.602176634e-19_dp
+
+    !> Species constants: charge number and mass [kg].
+    type :: ntv_species_t
+        real(dp) :: z = 0, mass = 0
+    end type
+
+    !> Plasma on the surfaces: s, Omega_tE [rad/s], and per species (columns)
+    !> density [m^-3], temperature [J], their s derivatives and the NEO-2
+    !> collisionality kappa = 2/(v_th tau_aa) [1/m].
+    type :: ntv_profile_t
+        real(dp), allocatable :: s(:), omega_te(:)
+        real(dp), allocatable :: density(:, :), temperature(:, :), density_s(:, :), &
+            temperature_s(:, :), kappa(:, :)
+    end type
+
+    type :: ntv_resolution_t
+        integer :: n_theta = 0, n_leg = 0, n_x = 0
+        ! Surfaces per preconditioned sweep and the GMRES iteration count
+        ! above which the next surface is factorised afresh.
+        integer :: chunk = 8, max_iterations = 60
+        logical :: sources = .true.
+    end type
+
+    !> Per surface and species: K_1j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
+    !> Gamma_psi [Wb/(m^3 s)], the torque density [N m/m^3], and the
+    !> factorisations and GMRES iterations spent on it.
+    type :: ntv_species_result_t
+        real(dp) :: k11 = 0, k12 = 0, dpsi_dr = 0, gamma_psi = 0, torque = 0
+        integer :: factorisations = 0, iterations = 0
+    end type
+
+contains
+
+    !> nu_D of species a at x = v^2/v_a^2 [1/s].
+    pure real(dp) function deflection_frequency(species, density, temperature, kappa, &
+            a, x) result(nu)
+        type(ntv_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: density(:), temperature(:), kappa(:), x
+        integer, intent(in) :: a
+        real(dp) :: va, y, g, nu_ab
+        integer :: b
+        va = sqrt(2*temperature(a)/species(a)%mass)
+        nu = 0
+        do b = 1, size(species)
+            y = sqrt(x*temperature(a)*species(b)%mass/(temperature(b)*species(a)%mass))
+            g = (erf(y) - 2*y*exp(-y*y)/sqrt(pi))/(2*y*y)
+            nu_ab = 3*sqrt(pi)/8*va*kappa(a)*density(b)*species(b)%z**2 &
+                /(density(a)*species(a)%z**2)
+            nu = nu + nu_ab*(erf(y) - g)/x**1.5_dp
+        end do
+    end function deflection_frequency
+
+    subroutine ntv_device_profile(eq, pert, n_tor, species, prof, res, result, status)
+        type(boozer_file_t), intent(in) :: eq, pert
+        integer, intent(in) :: n_tor
+        type(ntv_species_t), intent(in) :: species(:)
+        type(ntv_profile_t), intent(in) :: prof
+        type(ntv_resolution_t), intent(in) :: res
+        type(ntv_species_result_t), allocatable, intent(out) :: result(:, :)
+        integer, intent(out) :: status
+        type(ntv_surface_t), allocatable :: sf(:)
+        real(dp), allocatable :: x(:), w(:), r(:, :, :), j0(:), dpsi_dr(:), psi_pol_s(:)
+        integer, allocatable :: units(:, :), nfac(:, :, :), nits(:, :, :), ustat(:)
+        integer :: ns, nsp, nchunk, nunit, i, a, k, c, u
+
+        ns = size(prof%s)
+        nsp = size(species)
+        status = DEVICE_BAD_INPUT
+        if (ns < 1 .or. nsp < 1 .or. res%n_x < 1 .or. res%chunk < 1) return
+        allocate (sf(ns), j0(ns), dpsi_dr(ns), psi_pol_s(ns))
+        do i = 1, ns
+            call surface(eq, pert, n_tor, prof%s(i), res, sf(i), j0(i), dpsi_dr(i), &
+                psi_pol_s(i), status)
+            if (status /= DEVICE_OK) return
+        end do
+        allocate (x(res%n_x), w(res%n_x))
+        call gauss_gen_laguerre(res%n_x, 2.5_dp, x, w)
+
+        ! Units: (species, node, first surface of the chunk).
+        nchunk = (ns + res%chunk - 1)/res%chunk
+        nunit = nsp*res%n_x*nchunk
+        allocate (units(3, nunit), ustat(nunit), r(ns, res%n_x, nsp), &
+            nfac(ns, res%n_x, nsp), nits(ns, res%n_x, nsp))
+        u = 0
+        do a = 1, nsp
+            do k = 1, res%n_x
+                do c = 1, nchunk
+                    u = u + 1
+                    units(:, u) = [a, k, (c - 1)*res%chunk + 1]
+                end do
+            end do
+        end do
+        r = 0
+        nfac = 0
+        nits = 0
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(u)
+        do u = 1, nunit
+            call sweep(units(1, u), units(2, u), units(3, u), &
+                min(units(3, u) + res%chunk - 1, ns), ustat(u))
+        end do
+        !$omp end parallel do
+        status = DEVICE_SOLVE
+        if (any(ustat /= DEVICE_OK)) return
+
+        allocate (result(ns, nsp))
+        do a = 1, nsp
+            do i = 1, ns
+                call assemble(i, a)
+            end do
+        end do
+        status = DEVICE_OK
+
+    contains
+
+        subroutine sweep(a, k, first, last, st)
+            integer, intent(in) :: a, k, first, last
+            integer, intent(out) :: st
+            type(ntv_factor_t) :: factor
+            type(ntv_kernel_t) :: kern
+            real(dp), allocatable :: f10(:, :)
+            real(dp) :: v, nu
+            integer :: i, ks
+            logical :: fresh
+            st = DEVICE_SOLVE
+            fresh = .true.
+            do i = first, last
+                v = sqrt(2*prof%temperature(i, a)/species(a)%mass*x(k))
+                nu = deflection_frequency(species, prof%density(i, :), &
+                    prof%temperature(i, :), prof%kappa(i, :), a, x(k))
+                call ntv_f10(sf(i), v, nu, res%n_theta, res%n_leg, f10, ks)
+                if (ks /= NTV_OK) return
+                if (.not. fresh) then
+                    call ntv_kernel(sf(i), v, nu, -prof%omega_te(i), &
+                        species(a)%mass*v*v/(2*species(a)%z*elementary), res%n_theta, &
+                        res%n_leg, kern, ks, indicators=.false., f10=f10, &
+                        precondition=factor)
+                    fresh = ks /= NTV_OK .or. kern%iterations > res%max_iterations
+                    nits(i, k, a) = kern%iterations
+                end if
+                if (fresh) then
+                    call ntv_kernel(sf(i), v, nu, -prof%omega_te(i), &
+                        species(a)%mass*v*v/(2*species(a)%z*elementary), res%n_theta, &
+                        res%n_leg, kern, ks, indicators=.false., f10=f10, keep=factor)
+                    if (ks /= NTV_OK) return
+                    nfac(i, k, a) = 1
+                    fresh = .false.
+                end if
+                r(i, k, a) = kern%r
+            end do
+            st = DEVICE_OK
+        end subroutine sweep
+
+        subroutine assemble(i, a)
+            integer, intent(in) :: i, a
+            real(dp) :: t, scale, a2, a1
+            t = prof%temperature(i, a)
+            scale = (t/(species(a)%z*elementary))**2/(4*sqrt(pi)*j0(i))
+            result(i, a)%k11 = scale*sum(w*r(i, :, a))
+            result(i, a)%k12 = scale*sum(w*x*r(i, :, a))
+            a2 = prof%temperature_s(i, a)/(t*psi_pol_s(i))
+            a1 = prof%density_s(i, a)/(prof%density(i, a)*psi_pol_s(i)) &
+                + species(a)%z*elementary/t*prof%omega_te(i) - 1.5_dp*a2
+            result(i, a)%dpsi_dr = dpsi_dr(i)
+            result(i, a)%gamma_psi = -prof%density(i, a)*(result(i, a)%k11*a1 &
+                + result(i, a)%k12*a2)
+            result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
+            result(i, a)%factorisations = sum(nfac(i, :, a))
+            result(i, a)%iterations = sum(nits(i, :, a))
+        end subroutine assemble
+
+    end subroutine ntv_device_profile
+
+    !> Kernel surface of label s: the equilibrium line, the perturbation
+    !> harmonics of toroidal number n_tor resolved by the theta grid, and the
+    !> flux-function factors of the torque.
+    subroutine surface(eq, pert, n_tor, s, res, sf, j0, dpsi_dr, psi_pol_s, status)
+        type(boozer_file_t), intent(in) :: eq, pert
+        integer, intent(in) :: n_tor
+        real(dp), intent(in) :: s
+        type(ntv_resolution_t), intent(in) :: res
+        type(ntv_surface_t), intent(out) :: sf
+        real(dp), intent(out) :: j0, dpsi_dr, psi_pol_s
+        integer, intent(out) :: status
+        type(boozer_surface_t) :: es, ps
+        type(ntv_boozer_line_t) :: line
+        real(dp) :: theta, bmod, grad_s, b2
+        logical, allocatable :: keep(:)
+        integer :: st, it, k
+
+        status = DEVICE_BAD_INPUT
+        call boozer_surface(eq, s, es, st)
+        if (st /= BOOZER_OK) return
+        call ntv_boozer_line(es, line, st)
+        if (st /= NTV_LINE_OK) return
+        call boozer_surface(pert, s, ps, st)
+        if (st /= BOOZER_OK) return
+        keep = ps%n == n_tor .and. abs(ps%m) <= (res%n_theta - 1)/2 .and. &
+            (ps%bmn /= 0 .or. ps%bma /= 0)
+        if (.not. any(keep)) return
+        ! The file holds delta B = Re sum_m (bmnc - i bmns) e^{i(m theta + n phi)}
+        ! (NEO-2 convention), the kernel Re sum_m c_m e^{i(m theta - n phi)}.
+        sf%m = -pack(ps%m, keep)
+        sf%c = cmplx(pack(ps%bmn, keep), pack(ps%bma, keep), dp)/line%bref
+        sf%n = n_tor
+        sf%q = 1/es%iota
+        sf%weight = NTV_WEIGHT_FULL
+        sf%boozer_stream = .true.
+        sf%source_dpar = res%sources
+        sf%source_dlf10 = res%sources
+        allocate (sf%line, source=line)
+
+        j0 = 0
+        do it = 0, res%n_theta - 1
+            theta = 2*pi*it/res%n_theta
+            bmod = 0
+            do k = 1, size(es%m)
+                bmod = bmod + es%bmn(k)*cos(es%m(k)*theta) + es%bma(k)*sin(es%m(k)*theta)
+            end do
+            j0 = j0 + (line%bref/bmod)**2
+        end do
+        j0 = 2*pi*j0/res%n_theta
+        psi_pol_s = es%iota*es%psi_prime
+        call boozer_average(es, 2*res%n_theta, 1, grad_s, b2)
+        dpsi_dr = psi_pol_s*grad_s
+        status = DEVICE_OK
+    end subroutine surface
+
+end module kin6d_ntv_device
