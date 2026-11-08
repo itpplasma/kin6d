@@ -1643,8 +1643,17 @@ add_dependencies(kin6d_io kin6d_build_info)
 # NTV field lines from Boozer files: composes the equilibrium reader with the
 # continuum kernel, so it lives in the application layer.
 add_library(kin6d_ntv_geometry src/apps/ntv_boozer_line.f90
-    src/generated/kin6d_ntv_boozer_leaves.f90)
+    src/generated/kin6d_ntv_boozer_leaves.f90 src/apps/ntv_device.f90)
 target_link_libraries(kin6d_ntv_geometry PUBLIC kin6d)
+if(KIN6D_ENABLE_OPENMP)
+    target_link_libraries(kin6d_ntv_geometry PUBLIC OpenMP::OpenMP_Fortran)
+endif()
+add_executable(ntv_profile app/ntv_profile.f90)
+target_link_libraries(ntv_profile PRIVATE kin6d_ntv_geometry)
+add_executable(test_ntv_device test/test_ntv_device.f90)
+target_link_libraries(test_ntv_device PRIVATE kin6d_ntv_geometry)
+add_test(NAME ntv_device COMMAND test_ntv_device)
+kin6d_test_labels(ntv_device fast CLASSES apps TARGETS test_ntv_device)
 add_executable(test_ntv_boozer_line test/test_ntv_boozer_line.f90)
 target_link_libraries(test_ntv_boozer_line PRIVATE kin6d_ntv_geometry)
 add_test(NAME ntv_boozer_line COMMAND test_ntv_boozer_line)
