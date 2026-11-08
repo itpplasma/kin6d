@@ -164,7 +164,7 @@ after its check has passed.
 E_r-shear orbit squeezing needs no term of its own: it follows from Phi(psi) in the total energy
 H once orbit width is retained.
 
-Outside this scope: turbulence (nonlinear fluctuation dynamics), time dependence beyond the
+Outside this scope: computing turbulence itself (it enters as a spectrum, below), time dependence beyond the
 steady state, open field lines and the scrape-off layer, and stochastic magnetic fields.
 
 ## Design: one operator, composed terms
@@ -248,6 +248,36 @@ every item.
     by Newton with the solver's tangents, including penetration bifurcations by continuation;
     (iii) the n = 0 kinetic currents and pressures fed back into the equilibrium. Turbulent
     transport stays an input, not a result.
+
+## Turbulence, time dependence and the edge
+
+Turbulence enters as a given saturated spectrum (from a gyrokinetic code or a quasilinear model
+such as TGLF or QuaLiKiz, with amplitudes, frequencies and cross-phases), not as a computed
+turbulent state. Its term is a phase-space resolved quasilinear operator: diffusion and
+convection in psi and energy with the resonance of each mode with parallel streaming, drifts and
+rotation, gyroaveraged with J0(k_perp rho) and orbit-averaged. Compared with a scalar
+diffusivity, this gives the energy, charge and mass dependence of turbulent impurity and fast-ion
+transport (pinches, screening, FLR reduction for heavy ions) from the same spectrum. Beyond the
+quasilinear limit, resonance broadening (decorrelation by the turbulence itself, the analogue of
+Theta(D) for the superbanana) is the first correction; for trace species, test particles in
+synthetic or imported turbulent fields (GORILLA) are exact for the given fields and serve as the
+reference where the Kubo number is not small.
+
+Time dependence: a perturbation that is periodic in time is a sum of frequencies, each a steady
+solve of the same linear operator. Transients (mode slowing, ELMs, ramps) use implicit time
+stepping of the same operator, (1/dt + L) f = rhs, with the same factorisations.
+
+Edge, scrape-off layer and wall: this solver stops at the last closed surface. Beyond it the flux
+coordinates and periodic angle bases fail at the X point and on open field lines, the
+distributions are far from Maxwellian (sheath, loss cone), the collision operator must be
+nonlinear, neutrals, atomic physics and many impurity charge states dominate, and turbulence is
+intermittent rather than a small correction. There the kinetic part is GORILLA Monte Carlo on its
+unstructured mesh from the axis through islands and the stochastic edge to the wall, with sheath
+and wall events, plasma-wall interaction and neutrals from dedicated codes (for example ERO and
+EIRENE). Both share fields, background, term vocabulary and conservation ledgers, and overlap
+inside the separatrix, where each checks the other. Core impurity transport (all species, full
+operator, Phi_1, rotation, classical and turbulent terms) is done here; the edge is a coupled
+problem, not an extension of this operator.
 
 ## Working rule
 
