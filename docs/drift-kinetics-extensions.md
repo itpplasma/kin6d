@@ -84,15 +84,12 @@ m.Omega = omega, and superbanana and resonance islands are pendulums in (J, reso
 same operator covers NTV (omega = 0), RF heating and Alfven-mode transport (omega != 0). Collisions
 become the non-diagonal part.
 
-The code therefore carries two representations of the same terms: the coordinate form (flux or
-canonical coordinates, all collisionalities, collisional boundary layers, stellarators) and the
-action-angle form (tokamaks and quasi-symmetric fields at low collisionality, all orbit effects).
-Where both are valid they check each other. Separatrix layers, where Omega has its logarithmic
+This code implements the coordinate form only (flux or canonical coordinates, all
+collisionalities, collisional boundary layers, stellarators); NEO-RT and POTATO are the
+action-angle references at low collisionality, and a second implementation here is deferred. Separatrix layers, where Omega has its logarithmic
 singularity and collisions dominate, stay in the coordinate form. Stellarators have no global
 actions; at low collisionality the bounce-averaged second invariant J_par (as in KNOSOS) takes
-their place. The hp mesh of the action-angle form lives in J-space, fitted to the separatrix and
-the resonance curves m.Omega(J) = omega.
-
+their place. 
 ## Velocity-space mesh
 
 The hp mesh (finite elements adapting both element size h and polynomial degree p) places element
@@ -264,21 +261,21 @@ every item.
 11. AUG 30835 and TC24 curves of these effects separately and combined (step 8, first part).
 12. Surface-varying background: Phi_1 from quasineutrality, sonic rotation, strong-E guiding-centre
     equations.
-13. Stellarators (K1): 3D |B| with ripple wells, tangential drift, ambipolar roots, rabe,
-    relativistic operator and current drive.
-14. Overlapping resonances (step 7), second order in the gyroradius, sources and orbit loss in the
-    global solve, fast-ion background.
-15. FLR in the kinetic layer strips with Poisson and Ampere, kinetic delta W feedback, magnetic
-    islands.
-16. Self-consistent steady state, in three levels: (i) linear per n, the kinetic charge and
-    current of this solver closing Poisson and Ampere through the outer operator of
-    [response-unified.md](response-unified.md), a steady driven linear gyrokinetic response;
-    (ii) torque balance for rotation and E_r and quasilinear profile change with given sources,
-    by Newton with the solver's tangents, including penetration bifurcations by continuation;
-    (iii) the n = 0 kinetic currents and pressures fed back into the equilibrium. Turbulent
-    transport stays an input, not a result.
+13. Stellarators (K1): 3D |B| with ripple wells, tangential drift, ambipolar roots, rabe.
+
+Deferred until a concrete case needs them, and then only after the items above: a second
+action-angle implementation (NEO-RT and POTATO remain the action-angle references), overlapping
+resonances in the global solve (Monte Carlo covers them), second order in the gyroradius, edge
+sources and orbit loss, fast-ion backgrounds (ASCOT, SIMPLE), the relativistic operator and
+current drive (NEO-2-PAR), FLR and self-consistent fields (KAMEL, MEPHIT and
+[response-unified.md](response-unified.md)), kinetic delta W feedback (MARS-K), magnetic islands,
+the turbulence-spectrum operator and the edge coupling (GORILLA), and presets other than
+`neo2-ql`, `neo-rt`, `potato` and `sfincs`. hp beyond step 1 continues only if step 1 shows a
+clear gain.
 
 ## Turbulence, time dependence and the edge
+
+Deferred; recorded so that the design does not exclude it.
 
 Turbulence enters as a given saturated spectrum (from a gyrokinetic code or a quasilinear model
 such as TGLF or QuaLiKiz, with amplitudes, frequencies and cross-phases), not as a computed
