@@ -293,17 +293,32 @@ Time dependence: a perturbation that is periodic in time is a sum of frequencies
 solve of the same linear operator. Transients (mode slowing, ELMs, ramps) use implicit time
 stepping of the same operator, (1/dt + L) f = rhs, with the same factorisations.
 
-Edge, scrape-off layer and wall: this solver stops at the last closed surface. Beyond it the flux
-coordinates and periodic angle bases fail at the X point and on open field lines, the
-distributions are far from Maxwellian (sheath, loss cone), the collision operator must be
-nonlinear, neutrals, atomic physics and many impurity charge states dominate, and turbulence is
-intermittent rather than a small correction. There the kinetic part is GORILLA Monte Carlo on its
-unstructured mesh from the axis through islands and the stochastic edge to the wall, with sheath
-and wall events, plasma-wall interaction and neutrals from dedicated codes (for example ERO and
-EIRENE). Both share fields, background, term vocabulary and conservation ledgers, and overlap
-inside the separatrix, where each checks the other. Core impurity transport (all species, full
-operator, Phi_1, rotation, classical and turbulent terms) is done here; the edge is a coupled
-problem, not an extension of this operator.
+Edge, scrape-off layer and wall belong to the same framework (the long-range goal of the
+[roadmap](../ROADMAP.md)): flux coordinates fail at the X point and on open field lines, and the
+physics there needs full-f, a nonlinear collision operator, sheath and wall boundaries, neutrals,
+atomic reactions and turbulence, but none of this needs a second code. The rules that keep it one
+framework:
+
+- An atlas of blocks, each with its own coordinate map and basis: Boozer or canonical coordinates
+  with Fourier and Legendre bases in the core; locally field-aligned mapped blocks for the
+  near-separatrix closed region, the scrape-off layer and the private flux region, matched at the
+  separatrix with the X point as a block corner (as COGENT does); unstructured blocks only next to
+  the wall. Terms are written against a metric and coordinate interface, so each term exists once
+  and every block evaluates it; blocks exchange conservative fluxes at their faces.
+- Full-f is the base operator, and the delta-f operators used now are its linearisation about the
+  Maxwellian or canonical Maxwellian, obtained by differentiation (JVP), not written twice. The
+  same holds for the nonlinear Landau operator and the linearised Fokker-Planck operator.
+- Sheath and wall are boundary terms on block faces, with wall data (recycling, sputtering yields)
+  from external tables or codes; neutrals are species with their own fluid or kinetic equation;
+  atomic and impurity charge-state processes are reaction terms between species.
+- Turbulence is either the spectrum term above or a resolved gyrokinetic region where an
+  adjoint indicator asks for it.
+- Model fidelity is chosen locally (delta-f or full-f, linearised or nonlinear collisions,
+  fluid or kinetic neutrals) by the indicators, as the roadmap's adaptive model hierarchy states.
+- Tests carry model-class labels and run by what a change affects, never as the full suite.
+
+GORILLA Monte Carlo remains the independent kinetic reference across the separatrix and to the
+wall.
 
 ## Working rule
 
