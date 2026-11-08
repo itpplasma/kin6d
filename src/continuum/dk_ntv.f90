@@ -70,6 +70,7 @@ module kin6d_dk_ntv
     use fortnum_polynomial, only: lagrange_deriv_weights
     use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
+    use kin6d_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, MONO_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, sparse_solve_op, csc_z_t, &
         csc_from_triplet, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
@@ -78,6 +79,7 @@ module kin6d_dk_ntv
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
+    public :: ntv_f10
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2
     integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1
 
@@ -193,6 +195,63 @@ module kin6d_dk_ntv
     end interface
 
 contains
+
+    !> The axisymmetric solution f_10 of source_dlf10 on this kernel's grid
+    !> and layout: the n = 0 equation driven by the axisymmetric radial drift
+    !> (1 + xi^2)/(b v q) d_theta b, of which the perturbed drift
+    !> (1 + xi^2)/(b v) (i m/q) c_m e^{i m theta} of the two drives above is
+    !> the first-order part. With b.grad theta = kappa b this is the dk_mono
+    !> radial-drive solution, drive -kappa (d_theta b/b)(1 + xi^2)/2, times
+    !> -2/(v q kappa), so the surface needs Boozer streaming and the weight
+    !> (1 + xi^2)/b; the density null space is fixed by <f_10> = 0, which
+    !> both f_10 sources annihilate.
+    subroutine ntv_f10(sf, v, nu_d, n_theta, n_leg, f10, status)
+        type(ntv_surface_t), intent(in) :: sf
+        real(dp), intent(in) :: v, nu_d
+        integer, intent(in) :: n_theta, n_leg
+        real(dp), allocatable, intent(out) :: f10(:, :)
+        integer, intent(out) :: status
+        type(mono_factor_t) :: f
+        real(dp), allocatable :: theta(:), b(:), stream(:), mirror(:), drift(:), &
+            drift2(:), source(:), measure(:), stream_b(:), mirror_b(:), &
+            measure_b(:), s(:, :, :), g(:, :, :)
+        real(dp) :: kappa, mu(1)
+        integer :: n, i, j
+
+        status = NTV_BAD_INPUT
+        if (mod(n_theta, 2) == 0 .or. n_theta < 3 .or. mod(n_leg, 2) /= 0 .or. &
+            n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%q <= 0 .or. &
+            sf%weight /= NTV_WEIGHT_FULL) return
+        if (.not. allocated(sf%line) .and. .not. sf%boozer_stream) return
+        n = n_theta
+        allocate (theta(n), b(n), stream(n), mirror(n), drift(n), drift2(n), &
+            source(n), measure(n))
+        theta = [(2*pi*(i - 1)/n, i=1, n)]
+        if (allocated(sf%line)) then
+            call sf%line%sample(theta, stream, mirror, drift, drift2, source, measure)
+            b = 2/(3*source)
+        else
+            allocate (stream_b(n), mirror_b(n), measure_b(n))
+            call dk_ntv_point(cos(theta), sin(theta), sf%eps, sf%k, sf%offset, b, &
+                mirror, drift, source, measure, stream_b, mirror_b, measure_b)
+            stream = stream_b
+        end if
+        kappa = stream(1)/b(1)
+        if (any(abs(stream/b - kappa) > 1e-12_dp*abs(kappa))) return
+        status = NTV_SINGULAR
+        call mono_factor(b, kappa, nu_d/v, n_leg, f, i)
+        if (i /= MONO_OK) return
+        s = mono_drives(f)
+        call mono_solve(f, s(:, :, 1:1), [0.0_dp], g, mu, i)
+        if (i /= MONO_OK) return
+        allocate (f10(2*n, 0:n_leg/2 - 1))
+        do j = 0, n_leg/2 - 1
+            f10(1:n, j) = g(:, 2*j, 1)
+            f10(n + 1:, j) = g(:, 2*j + 1, 1)
+        end do
+        f10 = -2/(v*sf%q*kappa)*f10
+        status = NTV_OK
+    end subroutine ntv_f10
 
     !> Kernel R at speed v [m/s], deflection frequency nu_d [1/s], omega_E
     !> [rad/s] and precession prefactor pre [rad/s], on n_theta (odd) points
