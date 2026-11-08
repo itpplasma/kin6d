@@ -310,8 +310,8 @@ contains
             st = DEVICE_OK
         end subroutine adaptive
 
-        !> A kink lies in each run of adjacent panels refined to below a quarter
-        !> of their starting panel; its energy is the run's centre.
+        !> A kink lies in each run of adjacent panels the quadrature bisected at
+        !> least once; its energy is the run's centre.
         subroutine record_kinks(i, a, lo, hi, start)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: lo(:), hi(:), start(:)
@@ -334,7 +334,7 @@ contains
             do k = 1, size(l)
                 j = count(start <= l(k) + 1e-12_dp)
                 w0 = start(min(j + 1, size(start))) - start(max(j, 1))
-                fine(k) = h(k) - l(k) < w0/4
+                fine(k) = h(k) - l(k) < 0.75_dp*w0
             end do
             k = 1
             do while (k <= size(l))
