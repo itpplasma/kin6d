@@ -31,7 +31,16 @@ program ntv_profile
     read (u, *) n_tor, res%n_theta, res%n_leg, res%n_x, res%chunk, res%max_iterations, &
         sources
     res%sources = sources /= 0
-    read (u, *) nsp
+    ! Optional line: collision model (0 monoenergetic, else dk_collop model),
+    ! x_max, elements, order of the speed grid.
+    read (u, '(a)') path
+    read (path, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order
+    if (status == 0) then
+        read (u, *) nsp
+    else
+        res%collisions = 0
+        read (path, *) nsp
+    end if
     allocate (species(nsp))
     do a = 1, nsp
         read (u, *) species(a)%z, species(a)%mass

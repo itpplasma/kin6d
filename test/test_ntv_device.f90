@@ -14,6 +14,7 @@ program test_ntv_device
 
     call lorentz_limit()
     call preconditioned_sweep()
+    call energy_coupled()
     if (failures > 0) error stop 'FAIL'
     print '(a)', 'All tests passed!'
 
@@ -87,6 +88,57 @@ contains
             call close_to('K12 ions', swept(i, 1)%k12, direct(i, 1)%k12, 1e-8_dp)
         end do
     end subroutine preconditioned_sweep
+
+    !> The energy-coupled kernel with Lorentz collisions reproduces the
+    !> monoenergetic coefficients (lumped speed nodes against Gauss-Laguerre
+    !> nodes), and the full operator, whose field-particle part couples the
+    !> species, converges to coefficients that differ from pitch-angle
+    !> scattering alone.
+    subroutine energy_coupled()
+        character(*), parameter :: eq_name = 'ntv_energy_eq.bc', pert_name = 'ntv_energy_pert.bc'
+        type(boozer_file_t) :: eq, pert
+        type(ntv_species_t) :: sp(2)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_species_result_t), allocatable :: mono(:, :), lorentz(:, :), full(:, :)
+        integer :: status, a
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        sp(2) = ntv_species_t(-1.0_dp, 9.1093837e-31_dp)
+        prof%s = [0.45_dp]
+        prof%omega_te = [1e3_dp]
+        allocate (prof%density(1, 2), prof%temperature(1, 2), prof%density_s(1, 2), &
+            prof%temperature_s(1, 2), prof%kappa(1, 2))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -1*kev
+        prof%kappa(1, :) = [3e-4_dp, 6e-4_dp]
+        res%n_theta = 17
+        res%n_leg = 24
+        res%n_x = 16
+        res%sources = .false.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, mono, status)
+        call check('monoenergetic', status == DEVICE_OK)
+        res%collisions = 1
+        res%nelem = 6
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, lorentz, status)
+        call check('energy-coupled Lorentz', status == DEVICE_OK)
+        res%collisions = 3
+        res%sources = .true.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, full, status)
+        call check('energy-coupled full operator', status == DEVICE_OK)
+        if (failures > 0) return
+        do a = 1, 2
+            call close_to('Lorentz K11', lorentz(1, a)%k11, mono(1, a)%k11, 2e-2_dp)
+            call close_to('Lorentz K12', lorentz(1, a)%k12, mono(1, a)%k12, 2e-2_dp)
+        end do
+        call check('field-particle part acts', &
+            abs(full(1, 1)%k11/lorentz(1, 1)%k11 - 1) > 1e-3_dp .and. full(1, 1)%iterations > 0)
+    end subroutine energy_coupled
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.

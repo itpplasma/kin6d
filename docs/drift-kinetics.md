@@ -601,6 +601,23 @@ Newton enters only for the ambipolar E_r root and torque-balance coupling,
 with exact tangents through the same factorisations; adjoints for torque,
 D_ij and bootstrap reuse them (A^dagger = -T + D).
 
+## Energy-coupled NTV kernel
+
+`ntv_energy_coefficients` solves the NTV kernel with the linearised collision
+operator of `dk_collop` instead of monoenergetic pitch-angle scattering. The
+speed direction uses the element basis of `dk_collop` without its x = 0 node
+(h = 0 there, exact for l >= 1 and of zero weight for l = 0). Streaming,
+rotation, precession and pitch-angle scattering are lumped at the nodes, as
+the mass of a spectral-element method, while energy scattering and the
+field-particle part keep their Galerkin matrices, which couple the nodes and,
+through the field-particle part, the species. f_10 comes from the same
+operator at n = 0, with the theta average of each node's degree-0 part
+constrained to zero, and enters through the mirror and collision sources of
+the kernel. The coupled system is solved by GMRES, right-preconditioned with
+one dense factorisation of all nodes and species for the two lowest Legendre
+pair blocks and pair-block factorisations per node and species above them.
+`ntv_profile` selects it with a collision model on its fourth input line.
+
 ## Axisymmetric Boozer oracle adapter
 
 `kin6d_ntv_geometry` adapts an axisymmetric Boozer surface to the existing
