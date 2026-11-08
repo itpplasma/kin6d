@@ -120,7 +120,9 @@ features, each checked against NEO-2 on the same inputs before it counts as cove
 | non-axisymmetric heat flux (`isw_qflux_NA`) | missing; needs the K_2j coefficients next to K_1j |
 | axisymmetric transport matrix with the full operator: bootstrap current, parallel conductivity, Ware pinch | the n = 0 solve exists inside the NTV kernel; not yet an output |
 | relativistic collision operator (Braams-Karney) and the generalised Spitzer function for current drive | missing |
-| stellarator transport coefficients (NEO-2-PAR) | K1 in [drift-kinetics.md](drift-kinetics.md); bootstrap against rabe (near-omnigenous fields, Lorentz, monoenergetic) and down to the Shaing-Callen limit belongs here |
+| misaligned-potential drive: radial E x B drift of the potential harmonic not aligned with the perturbed surfaces, Phi^MA_m = Phi_m + E_0r Delta_m (Delta_m the surface displacement), acting on d f0/dr, with the local parallel current over the surface (NEO-2 pull request 240, draft) | missing; one more right-hand side of the kernel, which already resolves theta. Check: a corrugation without misaligned potential gives zero parallel current at any collisionality with a momentum-conserving operator; collisionless limit against KiLCA |
+| quasineutral Phi_1 on the surface from the species responses (planned NEO-2 stack after 240, SFINCS benchmark) | missing; a bordered unknown per angle in the multispecies solve |
+| stellarator transport coefficients (NEO-2-PAR), including ripple trapping in local wells of the full |B| | K1 in [drift-kinetics.md](drift-kinetics.md); bootstrap against rabe (near-omnigenous fields, Lorentz, monoenergetic) and down to the Shaing-Callen limit belongs here |
 
 ## Working rule
 
