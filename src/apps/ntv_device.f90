@@ -117,6 +117,11 @@ contains
         type(ntv_surface_t), allocatable :: sf(:)
         real(dp), allocatable :: x(:), w(:), r(:, :, :), j0(:), dpsi_dr(:), psi_pol_s(:)
         integer, allocatable :: units(:, :), nfac(:, :, :), nits(:, :, :), ustat(:)
+        ! Energies x of the resonance kinks per surface and species, from the
+        ! panels the adaptive quadrature refined.
+        integer, parameter :: max_kinks = 16
+        real(dp), allocatable :: kink(:, :, :)
+        integer, allocatable :: nkink(:, :)
         integer :: ns, nsp, nchunk, nunit, i, a, k, c, u
 
         ns = size(prof%s)
@@ -129,13 +134,10 @@ contains
                 psi_pol_s(i), status)
             if (status /= DEVICE_OK) return
         end do
-        if (res%collisions /= 0) then
-            call energy_profile(eq, n_tor, species, prof, res, sf, psi_pol_s, dpsi_dr, &
-                result, status)
-            return
-        end if
         if (res%x_tol > 0) then
-            allocate (result(ns, nsp), ustat(ns*nsp))
+            allocate (result(ns, nsp), ustat(ns*nsp), kink(max_kinks, ns, nsp), &
+                nkink(ns, nsp))
+            nkink = 0
             !$omp parallel do schedule(dynamic, 1) default(shared) private(u)
             do u = 1, ns*nsp
                 call adaptive((u - 1)/nsp + 1, mod(u - 1, nsp) + 1, ustat(u))
@@ -144,6 +146,14 @@ contains
             status = DEVICE_SOLVE
             if (any(ustat /= DEVICE_OK)) return
             status = DEVICE_OK
+            ! The full operator puts speed-element edges at the kinks found here.
+            if (res%collisions /= 0) call energy_profile(eq, n_tor, species, prof, res, sf, &
+                psi_pol_s, dpsi_dr, result, status, kink, nkink)
+            return
+        end if
+        if (res%collisions /= 0) then
+            call energy_profile(eq, n_tor, species, prof, res, sf, psi_pol_s, dpsi_dr, &
+                result, status)
             return
         end if
         allocate (x(res%n_x), w(res%n_x))
@@ -296,8 +306,54 @@ contains
             result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
             result(i, a)%factorisations = nev
             result(i, a)%iterations = np
+            call record_kinks(i, a, lo(1:np), hi(1:np), start)
             st = DEVICE_OK
         end subroutine adaptive
+
+        !> A kink lies in each run of adjacent panels refined to below a quarter
+        !> of their starting panel; its energy is the run's centre.
+        subroutine record_kinks(i, a, lo, hi, start)
+            integer, intent(in) :: i, a
+            real(dp), intent(in) :: lo(:), hi(:), start(:)
+            real(dp) :: l(size(lo)), h(size(lo)), w0
+            integer :: order(size(lo)), k, m, j
+            logical :: fine(size(lo))
+            order = [(k, k=1, size(lo))]
+            do k = 2, size(lo)
+                m = order(k)
+                j = k - 1
+                do while (j >= 1)
+                    if (lo(order(j)) <= lo(m)) exit
+                    order(j + 1) = order(j)
+                    j = j - 1
+                end do
+                order(j + 1) = m
+            end do
+            l = lo(order)
+            h = hi(order)
+            do k = 1, size(l)
+                j = count(start <= l(k) + 1e-12_dp)
+                w0 = start(min(j + 1, size(start))) - start(max(j, 1))
+                fine(k) = h(k) - l(k) < w0/4
+            end do
+            k = 1
+            do while (k <= size(l))
+                if (.not. fine(k)) then
+                    k = k + 1
+                    cycle
+                end if
+                m = k
+                do while (m < size(l))
+                    if (.not. fine(m + 1)) exit
+                    m = m + 1
+                end do
+                if (nkink(i, a) < max_kinks) then
+                    nkink(i, a) = nkink(i, a) + 1
+                    kink(nkink(i, a), i, a) = (l(k) + h(m))/2
+                end if
+                k = m + 1
+            end do
+        end subroutine record_kinks
 
         !> 6- and 12-point Gauss-Legendre values of int x^(5/2) e^-x (1, x) R
         !> on [lo, hi] and their difference.
@@ -355,7 +411,7 @@ contains
     !> Gamma_psi of a = -n_a sum_b (K(a, b, 1) A_1 + K(a, b, 2) A_2) of b.
     !> The common Coulomb logarithm follows from kappa of each species.
     subroutine energy_profile(eq, n_tor, species, prof, res, sf, psi_pol_s, dpsi_dr, &
-            result, status)
+            result, status, kink, nkink)
         type(boozer_file_t), intent(in) :: eq
         integer, intent(in) :: n_tor
         type(ntv_species_t), intent(in) :: species(:)
@@ -363,8 +419,10 @@ contains
         type(ntv_resolution_t), intent(in) :: res
         type(ntv_surface_t), intent(in) :: sf(:)
         real(dp), intent(in) :: psi_pol_s(:), dpsi_dr(:)
-        type(ntv_species_result_t), allocatable, intent(out) :: result(:, :)
+        type(ntv_species_result_t), allocatable, intent(inout) :: result(:, :)
         integer, intent(out) :: status
+        real(dp), intent(in), optional :: kink(:, :, :)
+        integer, intent(in), optional :: nkink(:, :)
         type(collop_grid_t) :: grid
         integer, allocatable :: ustat(:)
         integer :: i, ns, nsp
@@ -374,6 +432,7 @@ contains
         if (n_tor == 0 .or. .not. allocated(eq%spline%x)) return
         call collop_make_grid(res%x_max, res%nelem, res%order, grid, i)
         if (i /= COLLOP_OK) return
+        if (allocated(result)) deallocate (result)
         allocate (result(ns, nsp), ustat(ns))
         !$omp parallel do schedule(dynamic, 1) default(shared) private(i)
         do i = 1, ns
@@ -389,6 +448,7 @@ contains
             integer, intent(out) :: st
             type(collop_species_t) :: sp(nsp)
             type(ntv_surface_t) :: local
+            type(collop_grid_t) :: local_grid
             real(dp) :: lnl(nsp, nsp), kk(nsp, nsp, 2), a1(nsp), a2(nsp)
             integer :: a, b, its, ks
             st = DEVICE_SOLVE
@@ -401,7 +461,13 @@ contains
                     /collop_nuhat(sp(a), sp(a), 1.0_dp)
             end do
             local = sf(i)
-            call ntv_energy_coefficients(local, sp, lnl, grid, res%collisions, &
+            if (present(kink)) then
+                call kink_grid(i, local_grid, ks)
+                if (ks /= COLLOP_OK) return
+            else
+                local_grid = grid
+            end if
+            call ntv_energy_coefficients(local, sp, lnl, local_grid, res%collisions, &
                 -prof%omega_te(i), res%n_theta, res%n_leg, kk, its, ks)
             if (ks /= NTV_OK) return
             do a = 1, nsp
@@ -425,6 +491,54 @@ contains
             end do
             st = DEVICE_OK
         end subroutine energy_surface
+
+        !> Uniform speed elements with extra edges at the kink speeds sqrt(x) of
+        !> every species on surface i; uniform edges close to a kink give way.
+        subroutine kink_grid(i, g, st)
+            integer, intent(in) :: i
+            type(collop_grid_t), intent(out) :: g
+            integer, intent(out) :: st
+            real(dp), parameter :: gap = 0.12_dp
+            real(dp) :: y(res%nelem + 1 + 16*nsp), e(res%nelem + 1 + 16*nsp), t
+            integer :: a, k, n, m
+            n = 0
+            do a = 1, nsp
+                do k = 1, nkink(i, a)
+                    t = sqrt(kink(k, i, a))
+                    if (t > gap .and. t < res%x_max - gap) then
+                        n = n + 1
+                        y(n) = t
+                    end if
+                end do
+            end do
+            do k = 0, res%nelem
+                t = res%x_max*k/res%nelem
+                if (k == 0 .or. k == res%nelem .or. all(abs(y(1:n) - t) > gap)) then
+                    n = n + 1
+                    y(n) = t
+                end if
+            end do
+            do k = 2, n
+                t = y(k)
+                m = k - 1
+                do while (m >= 1)
+                    if (y(m) <= t) exit
+                    y(m + 1) = y(m)
+                    m = m - 1
+                end do
+                y(m + 1) = t
+            end do
+            m = 1
+            e(1) = y(1)
+            do k = 2, n
+                if (y(k) - e(m) > gap/2) then
+                    m = m + 1
+                    e(m) = y(k)
+                end if
+            end do
+            e(m) = res%x_max
+            call collop_make_grid(res%x_max, m - 1, res%order, g, st, e(1:m))
+        end subroutine kink_grid
     end subroutine energy_profile
 
     !> Kernel surface of label s: the equilibrium line, the perturbation
