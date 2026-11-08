@@ -7,7 +7,8 @@ module kin6d_nonnested_exterior
     use fortfem_parametric_laplace_bem_3d, only: bem_surface_t, bem_operators_t, &
                                    bem_exterior_dtn_t, build_exterior_dtn, assignment(=)
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
-                                           bem_pair_report_t, assemble_parametric_bem_p2
+        bem_pair_report_t, assemble_parametric_bem_p2_circulant
+    use fortfem_bem_circulant, only: bem_circulant_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_generated_bem_frame, only: bem_frame
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_point_basis
@@ -139,6 +140,7 @@ contains
         integer, intent(out) :: status
         type(coupling_surface_t) :: surface
         type(bem_operators_t) :: op
+        type(bem_circulant_t) :: rotational
         type(csc_t) :: curl, ct
         type(fortsparse_status_t) :: sparse_status
         type(nc_layout_t) :: lay
@@ -158,8 +160,11 @@ contains
         call make_surface(field, nphi, surface, faces, status)
         if (status /= 0) return
         call system_clock(tick0, rate)
-        call assemble_parametric_bem_p2(surface, faces, options, op, td, fd, &
-                                        report, status)
+        ! A swept meridian repeats exactly under toroidal rotations.
+        call assemble_parametric_bem_p2_circulant(surface, faces, nphi, options, &
+            rotational, td, fd, report, status)
+        if (status /= 0) return
+        call rotational%expand(op, status)
         call system_clock(tick1)
         exterior%assembly_seconds = real(tick1 - tick0, dp)/rate
         if (status /= 0) return
