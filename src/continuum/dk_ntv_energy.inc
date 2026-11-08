@@ -21,10 +21,12 @@
 !! Gamma_psi of species a = -n_a sum_b sum_j k(a, b, j) A_j of species b,
 !! k(a, b, j) = T_a/(Z_a e sqrt(pi) 2 J_0) sum_k d4_k R(h_ak) for the drive
 !! of A_j of species b, R the flux functional of dk_ntv and J_0 = int
-!! dtheta b^-2.
+!! dtheta b^-2. The optional heat coefficients q(a, b, j) are the same with
+!! d6_k in place of d4_k, so that the energy flux of species a is
+!! -n_a T_a sum_b sum_j q(a, b, j) A_j of species b.
 
     subroutine ntv_energy_coefficients(sf, species, lnlambda, grid, model, omega_e, &
-            n_theta, n_leg, k, iterations, status)
+            n_theta, n_leg, k, iterations, status, q)
         type(ntv_surface_t), intent(in) :: sf
         type(collop_species_t), intent(in) :: species(:)
         real(dp), intent(in) :: lnlambda(:, :), omega_e
@@ -32,6 +34,7 @@
         integer, intent(in) :: model, n_theta, n_leg
         real(dp), intent(out) :: k(:, :, :)
         integer, intent(out) :: iterations, status
+        real(dp), intent(out), optional :: q(:, :, :)
     type(energy_system_t) :: e, e0
     type(ntv_surface_t) :: base
     type(ntv_system_t) :: g, gf, t
@@ -53,6 +56,9 @@
     e%nx = grid%n - 1
     if (e%ns < 1 .or. size(lnlambda, 1) /= e%ns .or. size(lnlambda, 2) /= e%ns) return
     if (size(k, 1) /= e%ns .or. size(k, 2) /= e%ns .or. size(k, 3) /= 2) return
+    if (present(q)) then
+        if (any(shape(q) /= shape(k))) return
+    end if
     sources10 = sf%source_dlf10
     base = sf
     allocate (zero10(2*n_theta, n_leg/2))
@@ -173,6 +179,13 @@
                     k(a, sb, jf) = k(a, sb, jf) + e%d4(kk)*flux(g, x(:, kk, :, a))
                 end do
                 k(a, sb, jf) = e%tz(a)/(sqrt(pi)*2*j0)*k(a, sb, jf)
+                if (present(q)) then
+                    q(a, sb, jf) = 0
+                    do kk = 1, e%nx
+                        q(a, sb, jf) = q(a, sb, jf) + e%d6(kk)*flux(g, x(:, kk, :, a))
+                    end do
+                    q(a, sb, jf) = e%tz(a)/(sqrt(pi)*2*j0)*q(a, sb, jf)
+                end if
             end do
             deallocate (x)
         end do
