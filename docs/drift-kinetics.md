@@ -97,6 +97,9 @@ lambda, x), same collision interface, same D7 view). It is now the K1
 extension below; the axisymmetric harmonic operator (4) alone is insufficient
 for this two-angle problem.
 
+Extensions (adaptive velocity mesh, finite orbit width, nonlinear resonances), their switches
+and benchmarks: [drift-kinetics-extensions.md](drift-kinetics-extensions.md).
+
 ## Ambipolar transport on 3D equilibria (K1, K2)
 
 Decision, 2026-11-03: extend this steady operator in two stages for the
