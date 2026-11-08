@@ -37,6 +37,25 @@
 !!           instead of the constant k, with the surface measure
 !!           dtheta/(b.grad theta B) ~ 1/b^2 in the flux.
 !!
+!! Two further source terms complete the equation of NEO-2-QL (#192,
+!! Kasilov et al., Phys. Plasmas 21, 092506 (2014), Eqs. (52)-(54); the
+!! circular covariant factors reduce to 1/q at leading order in eps): the
+!! parallel-derivative part of the perturbed radial drift,
+!! (1 + wsign xi^2)/b (i/q) sum_m (m - n q) c_m e^{i m theta}/v, and the
+!! perturbed operator acting on the axisymmetric solution f_10,
+!! stream/b sum_m i m c_m e^{i m theta} (1 - xi^2)/2 d_xi f_10
+!! - sum_m c_m e^{i m theta}/b C[f_10] with C the Lorentz operator of the
+!! equation above. They are switched individually by source_dpar and
+!! source_dlf10; the second needs f_10 on this kernel's grid through the
+!! optional argument of the same name, one theta point per row (rows 1:n
+!! even degrees 2j, rows n+1:2n odd 2j+1, one column per pair block) per
+!! unit speed in the kernel's normalisation. With source_dlf10 on, the
+!! directional surface tangent is unavailable (its geometry tangents of the
+!! f_10 sources are not implemented) and the two-resolution refinement
+!! would need f_10 on the refined grid, so indicators must be passed as
+!! false; source_dpar needs q > 0. The amplitude sensitivities keep the
+!! adjoint form with all sources of the response contracted into it, and
+!! the torque functional still pairs only with S.
 !! A general field line enters through an ntv_line_t provider: its sample
 !! returns, at the theta points of the solver, the coefficients the circular
 !! leaf returns otherwise (b.grad theta, the mirror factor
@@ -47,6 +66,7 @@
 !! surface.
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortnum_polynomial, only: lagrange_deriv_weights
     use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
@@ -96,6 +116,9 @@ module kin6d_dk_ntv
         integer :: weight = NTV_WEIGHT_MU
         real(dp) :: current = 0
         logical :: boozer_stream = .false.
+        ! The two #192 quasilinear source switches of the module header.
+        logical :: source_dpar = .false.
+        logical :: source_dlf10 = .false.
         class(ntv_line_t), allocatable :: line
         integer, allocatable :: m(:)
         complex(dp), allocatable :: c(:)
@@ -124,6 +147,14 @@ module kin6d_dk_ntv
         real(dp), allocatable :: d(:, :), stream(:), mirror(:), drift(:), drift2(:), &
             source(:), measure(:)
         complex(dp), allocatable :: s(:), s_lu(:, :, :), y(:, :, :)
+        ! The parallel-derivative drive sd, the raw perturbation profiles
+        ! sdb = sum i m c_m e^{i m theta} and db = sum c_m e^{i m theta}, and
+        ! the axisymmetric solution f_10 with its two operator foldings:
+        ! f10f = (1 - xi^2)/2 d_xi f_10 per degree, f10c = f_10 scaled by
+        ! nu l(l + 1)/2, the Lorentz rows of the operator.
+        logical :: dpar = .false., dlf10 = .false.
+        complex(dp), allocatable :: sd(:), sdb(:), db(:)
+        real(dp), allocatable :: f10(:, :), f10f(:, :), f10c(:, :)
         integer, allocatable :: piv(:, :)
         ! Local theta derivative of this order (0: Fourier collocation with
         ! dense pair-block elimination): one sparse LU of the whole
@@ -168,7 +199,7 @@ contains
     !> and n_leg (even) Legendre polynomials, with the directional
     !> indicators at 2 n_theta + 1 points and at 2 n_leg polynomials.
     subroutine ntv_kernel(sf, v, nu_d, omega_e, pre, n_theta, n_leg, kern, status, &
-            indicators, direction, theta_order)
+            indicators, direction, theta_order, f10)
         type(ntv_surface_t), intent(in) :: sf
         ! Tangent direction: its eps, k, offset and current components.
         type(ntv_surface_t), intent(in), optional :: direction
@@ -182,9 +213,14 @@ contains
         ! Even order of a local central theta derivative and the sparse
         ! solver; absent or 0 keeps Fourier collocation.
         integer, intent(in), optional :: theta_order
+        ! The axisymmetric solution for the perturbed-operator source
+        ! (source_dlf10): one theta point per row, even degrees above odd.
+        real(dp), intent(in), optional, dimension(:, :) :: f10
         type(ntv_system_t) :: a, da
         integer :: order
-        complex(dp), allocatable :: x(:, :), adj(:, :), rhs(:, :), ds(:), gradient(:)
+        complex(dp), allocatable :: x(:, :), adj(:, :), rhs(:, :), ds(:), gradient(:), &
+            xf(:), xw(:)
+        real(dp), allocatable :: prof(:, :)
         real(dp) :: fine
         integer :: j, i
 
@@ -192,9 +228,14 @@ contains
             status = NTV_BAD_INPUT
             if (allocated(sf%line)) return
         end if
+        if (sf%source_dlf10) then
+            status = NTV_BAD_INPUT
+            if (.not. present(f10) .or. present(direction)) return
+            if (.not. present(indicators) .or. indicators) return
+        end if
         order = 0
         if (present(theta_order)) order = theta_order
-        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order)
+        call factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order, f10)
         if (status /= NTV_OK) return
         call drive(a, v, rhs)
         call solve(a, rhs, x, status)
@@ -216,14 +257,45 @@ contains
         allocate (kern%dr_dc(size(sf%m)), ds(a%n))
         da = coefficients(a)
         da%s = 1
+        ! The unit rhs carries the folding shared by S and the parallel-
+        ! derivative drive; the f_10 sources enter per amplitude below.
+        da%dpar = .false.
+        da%dlf10 = .false.
         call drive(da, v, rhs)
-        gradient = 2*pi/a%n*a%measure*moment(a, x) &
-            + conjg(conjg(adj(1:a%n, 0))*rhs(1:a%n, 0) &
+        ! Only S pairs with F in the torque, every drive with the adjoint.
+        xw = conjg(conjg(adj(1:a%n, 0))*rhs(1:a%n, 0) &
             + conjg(adj(1:a%n, 1))*rhs(1:a%n, 1))
+        gradient = 2*pi/a%n*a%measure*moment(a, x) + xw
         do j = 1, size(sf%m)
-            ds = [(iu*sf%n*exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
-            kern%dr_dc(j) = sum(conjg(ds)*gradient)
+            ds = [(exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
+            kern%dr_dc(j) = sum(conjg(iu*sf%n*ds)*gradient)
+            if (a%dpar) kern%dr_dc(j) = kern%dr_dc(j) &
+                + sum(conjg(iu*(sf%m(j) - sf%n*sf%q)/sf%q*ds)*xw)
         end do
+        if (a%dlf10) then
+            ! dH/dc_j carries e^{i m_j theta} (i m_j stream f10f + f10c)/b;
+            ! contract the adjoint against the two real profiles.
+            allocate (prof(2*a%n, 0:a%nblock - 1))
+            do j = 0, a%nblock - 1
+                do i = 1, a%n
+                    prof(i, j) = 1.5_dp*a%source(i)*a%stream(i)*a%f10f(i, j)
+                    prof(a%n + i, j) = 1.5_dp*a%source(i)*a%stream(i)*a%f10f(a%n + i, j)
+                end do
+            end do
+            xf = f10_collapse(a, adj, prof)
+            do j = 0, a%nblock - 1
+                do i = 1, a%n
+                    prof(i, j) = 1.5_dp*a%source(i)*a%f10c(i, j)
+                    prof(a%n + i, j) = 1.5_dp*a%source(i)*a%f10c(a%n + i, j)
+                end do
+            end do
+            xw = f10_collapse(a, adj, prof)
+            do j = 1, size(sf%m)
+                ds = [(exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
+                kern%dr_dc(j) = kern%dr_dc(j) &
+                    + sum(conjg(iu*sf%m(j)*ds*xf)) + sum(conjg(ds*xw))
+            end do
+        end if
 
         if (present(direction)) then
             call tangent_system(sf, direction, a, da)
@@ -260,12 +332,13 @@ contains
         r = flux(a, x)
     end subroutine refined
 
-    subroutine factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order)
+    subroutine factor(sf, v, nu_d, omega_e, pre, n_theta, n_leg, a, status, order, f10)
         type(ntv_surface_t), intent(in) :: sf
         real(dp), intent(in) :: v, nu_d, omega_e, pre
         integer, intent(in) :: n_theta, n_leg, order
         type(ntv_system_t), intent(out) :: a
         integer, intent(out) :: status
+        real(dp), intent(in), optional, dimension(:, :) :: f10
         real(dp), allocatable :: theta(:), b(:), stream_b(:), mirror_b(:), measure_b(:)
         complex(dp), allocatable :: m(:, :), upper(:, :)
         integer :: n, j, i, info
@@ -275,7 +348,14 @@ contains
             n_leg < 4 .or. v <= 0 .or. nu_d <= 0 .or. sf%n == 0 .or. &
             .not. allocated(sf%m) .or. &
             (sf%weight /= NTV_WEIGHT_MU .and. sf%weight /= NTV_WEIGHT_FULL) .or. &
+            (sf%source_dpar .and. sf%q <= 0) .or. &
             order < 0 .or. mod(order, 2) /= 0 .or. order >= n_theta) return
+        ! Nested: Fortran need not short-circuit, and f10 may be absent.
+        if (sf%source_dlf10) then
+            if (.not. present(f10)) return
+            if (size(f10, 1) /= 2*n_theta .or. size(f10, 2) /= n_leg/2) return
+            if (any(ieee_is_nan(f10))) return
+        end if
         n = n_theta
         a%n = n
         a%nblock = n_leg/2
@@ -317,6 +397,28 @@ contains
         do j = 1, size(sf%m)
             a%s = a%s + iu*sf%n*sf%c(j)*exp(iu*sf%m(j)*theta)
         end do
+        if (sf%source_dpar) then
+            a%dpar = .true.
+            allocate (a%sd(n))
+            a%sd = 0
+            do j = 1, size(sf%m)
+                a%sd = a%sd + iu*(sf%m(j) - sf%n*sf%q)/sf%q*sf%c(j) &
+                    *exp(iu*sf%m(j)*theta)
+            end do
+        end if
+        if (sf%source_dlf10) then
+            a%dlf10 = .true.
+            allocate (a%sdb(n), a%db(n), a%f10(2*n, 0:a%nblock - 1), &
+                a%f10f(2*n, 0:a%nblock - 1), a%f10c(2*n, 0:a%nblock - 1))
+            a%sdb = 0
+            a%db = 0
+            do j = 1, size(sf%m)
+                a%sdb = a%sdb + iu*sf%m(j)*sf%c(j)*exp(iu*sf%m(j)*theta)
+                a%db = a%db + sf%c(j)*exp(iu*sf%m(j)*theta)
+            end do
+            a%f10 = f10
+            call f10_foldings(a)
+        end if
 
         if (order > 0) then
             call sparse_lu(a, status)
@@ -344,6 +446,52 @@ contains
         end do
         status = NTV_OK
     end subroutine factor
+
+    !> The two operator foldings of the axisymmetric solution: f10f is
+    !> (1 - xi^2)/2 d_xi f_10 per Legendre degree from
+    !> (1 - xi^2) P'_l = l(l + 1)/(2l + 1)(P_{l - 1} - P_{l + 1}), f10c is
+    !> f_10 scaled by nu l(l + 1)/2, the Lorentz rows of the operator.
+    subroutine f10_foldings(a)
+        type(ntv_system_t), intent(inout) :: a
+        integer :: n, j, i, l
+        n = a%n
+        a%f10f = 0
+        a%f10c = 0
+        do j = 0, a%nblock - 1
+            l = 2*j
+            do i = 1, n
+                a%f10f(i, j) = (l + 1)*(l + 2)/real(2*(2*l + 3), dp)*a%f10(n + i, j)
+                if (j > 0) a%f10f(i, j) = a%f10f(i, j) &
+                    - (l - 1)*l/real(2*(2*l - 1), dp)*a%f10(n + i, j - 1)
+                if (j < a%nblock - 1) a%f10f(n + i, j) = a%f10f(n + i, j) &
+                    + (l + 2)*(l + 3)/real(2*(2*l + 5), dp)*a%f10(i, j + 1)
+                a%f10f(n + i, j) = a%f10f(n + i, j) &
+                    - l*(l + 1)/real(2*(2*l + 1), dp)*a%f10(i, j)
+                a%f10c(i, j) = a%nu*l*(l + 1)/2.0_dp*a%f10(i, j)
+                a%f10c(n + i, j) = a%nu*(l + 1)*(l + 2)/2.0_dp*a%f10(n + i, j)
+            end do
+        end do
+    end subroutine f10_foldings
+
+    !> Per theta point i, sum_j conjg(adj(rows, j)) profile(rows, j) over
+    !> both parities of every block: the adjoint contraction of a response
+    !> profile that occupies all degrees.
+    function f10_collapse(a, adj, profile) result(x)
+        type(ntv_system_t), intent(in) :: a
+        complex(dp), intent(in) :: adj(:, 0:)
+        real(dp), intent(in) :: profile(:, 0:)
+        complex(dp) :: x(a%n)
+        complex(dp) :: acc
+        integer :: i, j
+        do i = 1, a%n
+            acc = 0
+            do j = 0, a%nblock - 1
+                acc = acc + conjg(adj(i, j))*profile(i, j) &
+                    + conjg(adj(a%n + i, j))*profile(a%n + i, j)
+            end do
+            x(i) = acc
+        end do
+    end function f10_collapse
 
     !> Solve A x = rhs, pair block j holding l = 2j (rows 1:n) and 2j + 1.
     subroutine solve(a, rhs, x, status, adjoint)
@@ -602,6 +750,12 @@ contains
         c%precess = a%precess
         c%d = a%d; c%stream = a%stream; c%mirror = a%mirror; c%drift = a%drift
         c%source = a%source; c%measure = a%measure; c%s = a%s
+        c%dpar = a%dpar; c%dlf10 = a%dlf10
+        if (a%dpar) c%sd = a%sd
+        if (a%dlf10) then
+            c%sdb = a%sdb; c%db = a%db
+            c%f10 = a%f10; c%f10f = a%f10f; c%f10c = a%f10c
+        end if
     end function coefficients
 
     !> y = A x for the pair-block tridiagonal operator.
@@ -631,10 +785,28 @@ contains
         type(ntv_system_t), intent(in) :: a
         real(dp), intent(in) :: v
         complex(dp), allocatable, intent(out) :: rhs(:, :)
+        integer :: i, j
         allocate (rhs(2*a%n, 0:a%nblock - 1))
         rhs = 0
         rhs(1:a%n, 0) = (1.5_dp + a%wsign/2)*a%source*a%s/v
         rhs(1:a%n, 1) = a%wsign*a%source*a%s/v
+        if (a%dpar) then
+            rhs(1:a%n, 0) = rhs(1:a%n, 0) + (1.5_dp + a%wsign/2)*a%source*a%sd/v
+            rhs(1:a%n, 1) = rhs(1:a%n, 1) + a%wsign*a%source*a%sd/v
+        end if
+        if (a%dlf10) then
+            ! 1/b = 3 source/2 by the provider contract of source = 2/(3 b);
+            ! f10c holds -C[f_10], so -db/b C[f_10] enters with a plus.
+            do j = 0, a%nblock - 1
+                do i = 1, a%n
+                    rhs(i, j) = rhs(i, j) + 1.5_dp*a%source(i)*a%stream(i)*a%sdb(i) &
+                        *a%f10f(i, j) + 1.5_dp*a%source(i)*a%db(i)*a%f10c(i, j)
+                    rhs(a%n + i, j) = rhs(a%n + i, j) &
+                        + 1.5_dp*a%source(i)*a%stream(i)*a%sdb(i)*a%f10f(a%n + i, j) &
+                        + 1.5_dp*a%source(i)*a%db(i)*a%f10c(a%n + i, j)
+                end do
+            end do
+        end if
     end subroutine drive
 
     !> Assemble the (theta, l) system in CSC, unknown (l, i) at l n + i, from
