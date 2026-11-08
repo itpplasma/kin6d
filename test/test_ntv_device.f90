@@ -135,6 +135,11 @@ contains
         do a = 1, 2
             call close_to('Lorentz K11', lorentz(1, a)%k11, mono(1, a)%k11, 2e-2_dp)
             call close_to('Lorentz K12', lorentz(1, a)%k12, mono(1, a)%k12, 2e-2_dp)
+            call close_to('Lorentz K22', lorentz(1, a)%k22, mono(1, a)%k22, 2e-2_dp)
+            ! Onsager symmetry: without energy scattering each speed node
+            ! carries both moments, so K_21 = K_12 to the iterative tolerance.
+            call close_to('Lorentz K21 = K12', lorentz(1, a)%k21, lorentz(1, a)%k12, &
+                1e-6_dp)
         end do
         call check('field-particle part acts', &
             abs(full(1, 1)%k11/lorentz(1, 1)%k11 - 1) > 1e-3_dp .and. full(1, 1)%iterations > 0)

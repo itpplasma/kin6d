@@ -77,11 +77,13 @@ module kin6d_ntv_device
         real(dp) :: x_tol = 0
     end type
 
-    !> Per surface and species: K_1j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
-    !> Gamma_psi [Wb/(m^3 s)], the torque density [N m/m^3], and the
+    !> Per surface and species: K_1j and K_2j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
+    !> Gamma_psi [Wb/(m^3 s)], the energy flux -n T (K_21 A_1 + K_22 A_2)
+    !> [J Wb/(m^3 s)], the torque density [N m/m^3], and the
     !> factorisations and GMRES iterations spent on it.
     type :: ntv_species_result_t
-        real(dp) :: k11 = 0, k12 = 0, dpsi_dr = 0, gamma_psi = 0, torque = 0
+        real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
+            heat_flux = 0, torque = 0
         integer :: factorisations = 0, iterations = 0
     end type
 
@@ -262,8 +264,8 @@ contains
             integer, parameter :: max_panels = 400
             real(dp), parameter :: start(11) = [0.0_dp, 0.5_dp, 1.0_dp, 2.0_dp, 3.0_dp, &
                 4.5_dp, 6.5_dp, 9.0_dp, 13.0_dp, 18.0_dp, 25.0_dp]
-            real(dp) :: lo(max_panels), hi(max_panels), val(2, max_panels), err(max_panels)
-            real(dp) :: x6(6), w6(6), x12(12), w12(12), total(2), t, scale, a1, a2
+            real(dp) :: lo(max_panels), hi(max_panels), val(3, max_panels), err(max_panels)
+            real(dp) :: x6(6), w6(6), x12(12), w12(12), total(3), t, scale, a1, a2
             integer :: np, k, ks, nev
             st = DEVICE_SOLVE
             call gauss_legendre(6, x6, w6)
@@ -278,7 +280,7 @@ contains
                 nev = nev + 18
             end do
             do
-                total = [sum(val(1, 1:np)), sum(val(2, 1:np))]
+                total = sum(val(:, 1:np), 2)
                 k = maxloc(err(1:np), 1)
                 if (err(k) <= res%x_tol*maxval(abs(total))) exit
                 if (np + 1 > max_panels) return
@@ -297,12 +299,16 @@ contains
             scale = (t/(species(a)%z*elementary))**2/(4*sqrt(pi)*j0(i))
             result(i, a)%k11 = scale*total(1)
             result(i, a)%k12 = scale*total(2)
+            result(i, a)%k21 = result(i, a)%k12
+            result(i, a)%k22 = scale*total(3)
             a2 = prof%temperature_s(i, a)/(t*psi_pol_s(i))
             a1 = prof%density_s(i, a)/(prof%density(i, a)*psi_pol_s(i)) &
                 + species(a)%z*elementary/t*prof%omega_te(i) - 1.5_dp*a2
             result(i, a)%dpsi_dr = dpsi_dr(i)
             result(i, a)%gamma_psi = -prof%density(i, a)*(result(i, a)%k11*a1 &
                 + result(i, a)%k12*a2)
+            result(i, a)%heat_flux = -prof%density(i, a)*t*(result(i, a)%k21*a1 &
+                + result(i, a)%k22*a2)
             result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
             result(i, a)%factorisations = nev
             result(i, a)%iterations = np
@@ -360,9 +366,9 @@ contains
         subroutine panel_eval(i, a, lo, hi, x6, w6, x12, w12, fine, err, ks)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: lo, hi, x6(:), w6(:), x12(:), w12(:)
-            real(dp), intent(out) :: fine(2), err
+            real(dp), intent(out) :: fine(3), err
             integer, intent(out) :: ks
-            real(dp) :: c, h, xv, rv, coarse(2), g
+            real(dp) :: c, h, xv, rv, coarse(3), g
             integer :: q
             c = (lo + hi)/2
             h = (hi - lo)/2
@@ -374,14 +380,14 @@ contains
                 rv = kernel_r(i, a, xv, ks)
                 if (ks /= NTV_OK) return
                 g = h*w6(q)*xv**2.5_dp*exp(-xv)*rv
-                coarse = coarse + g*[1.0_dp, xv]
+                coarse = coarse + g*[1.0_dp, xv, xv**2]
             end do
             do q = 1, size(x12)
                 xv = c + h*x12(q)
                 rv = kernel_r(i, a, xv, ks)
                 if (ks /= NTV_OK) return
                 g = h*w12(q)*xv**2.5_dp*exp(-xv)*rv
-                fine = fine + g*[1.0_dp, xv]
+                fine = fine + g*[1.0_dp, xv, xv**2]
             end do
             err = maxval(abs(fine - coarse))
         end subroutine panel_eval
@@ -393,12 +399,16 @@ contains
             scale = (t/(species(a)%z*elementary))**2/(4*sqrt(pi)*j0(i))
             result(i, a)%k11 = scale*sum(w*r(i, :, a))
             result(i, a)%k12 = scale*sum(w*x*r(i, :, a))
+            result(i, a)%k21 = result(i, a)%k12
+            result(i, a)%k22 = scale*sum(w*x**2*r(i, :, a))
             a2 = prof%temperature_s(i, a)/(t*psi_pol_s(i))
             a1 = prof%density_s(i, a)/(prof%density(i, a)*psi_pol_s(i)) &
                 + species(a)%z*elementary/t*prof%omega_te(i) - 1.5_dp*a2
             result(i, a)%dpsi_dr = dpsi_dr(i)
             result(i, a)%gamma_psi = -prof%density(i, a)*(result(i, a)%k11*a1 &
                 + result(i, a)%k12*a2)
+            result(i, a)%heat_flux = -prof%density(i, a)*t*(result(i, a)%k21*a1 &
+                + result(i, a)%k22*a2)
             result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
             result(i, a)%factorisations = sum(nfac(i, :, a))
             result(i, a)%iterations = sum(nits(i, :, a))
@@ -449,7 +459,7 @@ contains
             type(collop_species_t) :: sp(nsp)
             type(ntv_surface_t) :: local
             type(collop_grid_t) :: local_grid
-            real(dp) :: lnl(nsp, nsp), kk(nsp, nsp, 2), a1(nsp), a2(nsp)
+            real(dp) :: lnl(nsp, nsp), kk(nsp, nsp, 2), qq(nsp, nsp, 2), a1(nsp), a2(nsp)
             integer :: a, b, its, ks
             st = DEVICE_SOLVE
             do a = 1, nsp
@@ -468,7 +478,7 @@ contains
                 local_grid = grid
             end if
             call ntv_energy_coefficients(local, sp, lnl, local_grid, res%collisions, &
-                -prof%omega_te(i), res%n_theta, res%n_leg, kk, its, ks)
+                -prof%omega_te(i), res%n_theta, res%n_leg, kk, its, ks, qq)
             if (ks /= NTV_OK) return
             do a = 1, nsp
                 a2(a) = prof%temperature_s(i, a)/(prof%temperature(i, a)*psi_pol_s(i))
@@ -479,11 +489,17 @@ contains
             do a = 1, nsp
                 result(i, a)%k11 = kk(a, a, 1)
                 result(i, a)%k12 = kk(a, a, 2)
+                result(i, a)%k21 = qq(a, a, 1)
+                result(i, a)%k22 = qq(a, a, 2)
                 result(i, a)%dpsi_dr = dpsi_dr(i)
                 result(i, a)%gamma_psi = 0
+                result(i, a)%heat_flux = 0
                 do b = 1, nsp
                     result(i, a)%gamma_psi = result(i, a)%gamma_psi &
                         - prof%density(i, a)*(kk(a, b, 1)*a1(b) + kk(a, b, 2)*a2(b))
+                    result(i, a)%heat_flux = result(i, a)%heat_flux &
+                        - prof%density(i, a)*prof%temperature(i, a) &
+                        *(qq(a, b, 1)*a1(b) + qq(a, b, 2)*a2(b))
                 end do
                 result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
                 result(i, a)%factorisations = 1
