@@ -19,9 +19,10 @@
 !! so the rows l = 2j, 2j + 1 form pair blocks of size 2 n_theta, block
 !! tridiagonal in j, factorised once by block elimination from the highest j.
 !! Tangents with respect to nu and omega_E, the perturbation amplitudes c_m
-!! and a direction in (eps, k, offset, c_J) reuse the factorisation: with
-!! A F = H, R = <H, F>_W and the FortSym JVP of the pointwise leaves,
-!! dR = <dH, F>_W + <H, F>_dW + <H, A^-1 (dH - dA F)>_W.
+!! and a direction in (eps, k, offset, c_J) reuse the factorisation. With
+!! A F = H and R = <H, F>_W, one coefficient-space adjoint solves
+!! A^H lambda = W H; state derivatives contract lambda with dH - dA F.
+!! Direct goal derivatives retain the physical weights and FortSym JVPs.
 !!
 !! Three model switches, each with a measurable defect, select the equation of
 !! NEO-2-QL and NEO-RT instead of the stage-1 bounce reference:
@@ -47,11 +48,12 @@
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_polynomial, only: lagrange_deriv_weights
+    use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
-    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, csc_z_t, &
+    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, sparse_solve_op, csc_z_t, &
         csc_from_triplet, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
-        FORTSPARSE_ORDER_ND
+        FORTSPARSE_ORDER_ND, FORTSPARSE_OP_ADJOINT
     use fortsparse_status, only: fortsparse_status_t, status_ok
     implicit none
     private
@@ -136,6 +138,13 @@ module kin6d_dk_ntv
     complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
 
     interface
+        subroutine zgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+            import :: dp
+            character, intent(in) :: transa, transb
+            integer, intent(in) :: m, n, k, lda, ldb, ldc
+            complex(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+            complex(dp), intent(inout) :: c(ldc, *)
+        end subroutine zgemm
         subroutine zgetrf(m, n, a, lda, ipiv, info)
             import :: dp
             integer, intent(in) :: m, n, lda
@@ -175,7 +184,7 @@ contains
         integer, intent(in), optional :: theta_order
         type(ntv_system_t) :: a, da
         integer :: order
-        complex(dp), allocatable :: x(:, :), dx(:, :), rhs(:, :), ds(:)
+        complex(dp), allocatable :: x(:, :), adj(:, :), rhs(:, :), ds(:), gradient(:)
         real(dp) :: fine
         integer :: j, i
 
@@ -197,36 +206,30 @@ contains
             kern%spectrum(2*j + 1) = maxval(abs(x(a%n + 1:, j)))
         end do
 
-        ! A dx = -dA x with dA = diag(l(l + 1)/2) for nu and i n/v for omega_E.
-        rhs = -lorentz(a, x)
-        call solve(a, rhs, dx, status)
+        ! One torque adjoint replaces one tangent solve per parameter.
+        call goal(a, rhs)
+        call solve(a, rhs, adj, status, adjoint=.true.)
         if (status /= NTV_OK) return
-        kern%dr_dnu = flux(a, dx)/v
-        rhs = -a%shift/v*x
-        call solve(a, rhs, dx, status)
-        if (status /= NTV_OK) return
-        kern%dr_domega = flux(a, dx)
+        kern%dr_dnu = -real(sum(conjg(adj)*lorentz(a, x)), dp)/v
+        kern%dr_domega = -real(sum(conjg(adj)*a%shift/v*x), dp)
 
-        ! Amplitudes: s is linear in c_j, ds = i n exp(i m_j theta).
         allocate (kern%dr_dc(size(sf%m)), ds(a%n))
         da = coefficients(a)
+        da%s = 1
+        call drive(da, v, rhs)
+        gradient = 2*pi/a%n*a%measure*moment(a, x) &
+            + conjg(conjg(adj(1:a%n, 0))*rhs(1:a%n, 0) &
+            + conjg(adj(1:a%n, 1))*rhs(1:a%n, 1))
         do j = 1, size(sf%m)
             ds = [(iu*sf%n*exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
-            da%s = ds
-            call drive(da, v, rhs)
-            call solve(a, rhs, dx, status)
-            if (status /= NTV_OK) return
-            kern%dr_dc(j) = cmplx(pair(a, ds, x) + flux(a, dx), &
-                pair(a, iu*ds, x) + flux(a, iu*dx), dp)
+            kern%dr_dc(j) = sum(conjg(ds)*gradient)
         end do
 
         if (present(direction)) then
             call tangent_system(sf, direction, a, da)
             call drive(da, v, rhs)
             rhs = rhs - apply(da, x)
-            call solve(a, rhs, dx, status)
-            if (status /= NTV_OK) return
-            kern%dr_dsurface = flux(a, dx) &
+            kern%dr_dsurface = real(sum(conjg(adj)*rhs), dp) &
                 + 2*pi/a%n*sum(da%measure*real(conjg(a%s)*moment(a, x), dp))
         end if
         if (present(indicators)) then
@@ -264,7 +267,7 @@ contains
         type(ntv_system_t), intent(out) :: a
         integer, intent(out) :: status
         real(dp), allocatable :: theta(:), b(:), stream_b(:), mirror_b(:), measure_b(:)
-        complex(dp), allocatable :: m(:, :)
+        complex(dp), allocatable :: m(:, :), upper(:, :)
         integer :: n, j, i, info
 
         status = NTV_BAD_INPUT
@@ -322,11 +325,15 @@ contains
 
         ! S_J = Di_J; S_j = Di_j - Up_j Y_{j+1}, Y_j = S_j^-1 Lo_j.
         allocate (a%s_lu(2*n, 2*n, 0:a%nblock - 1), a%y(2*n, 2*n, a%nblock - 1), &
-            a%piv(2*n, 0:a%nblock - 1), m(2*n, 2*n))
+            a%piv(2*n, 0:a%nblock - 1), m(2*n, 2*n), upper(2*n, 2*n))
         status = NTV_SINGULAR
         do j = a%nblock - 1, 0, -1
             m = block(a, j, j)
-            if (j < a%nblock - 1) m = m - matmul(block(a, j, j + 1), a%y(:, :, j + 1))
+            if (j < a%nblock - 1) then
+                upper = block(a, j, j + 1)
+                call zgemm('N', 'N', 2*n, 2*n, 2*n, (-1.0_dp, 0.0_dp), upper, 2*n, &
+                    a%y(:, :, j + 1), 2*n, (1.0_dp, 0.0_dp), m, 2*n)
+            end if
             call zgetrf(2*n, 2*n, m, 2*n, a%piv(:, j), info)
             if (info /= 0) return
             a%s_lu(:, :, j) = m
@@ -339,7 +346,7 @@ contains
     end subroutine factor
 
     !> Solve A x = rhs, pair block j holding l = 2j (rows 1:n) and 2j + 1.
-    subroutine solve(a, rhs, x, status)
+    subroutine solve(a, rhs, x, status, adjoint)
         type(ntv_system_t), intent(inout) :: a
         complex(dp), intent(in) :: rhs(:, 0:)
         complex(dp), allocatable, intent(out) :: x(:, :)
@@ -347,20 +354,47 @@ contains
         complex(dp), allocatable :: z(:, :), xs(:), zscaled(:)
         type(fortsparse_status_t) :: sst
         integer :: j, info, nn
+        logical, intent(in), optional :: adjoint
+        logical :: reverse
+        reverse = .false.
+        if (present(adjoint)) reverse = adjoint
         nn = 2*a%n
         allocate (x(nn, 0:a%nblock - 1))
         if (a%order > 0) then
             allocate (xs(nn*a%nblock), zscaled(nn*a%nblock))
             status = NTV_SINGULAR
-            zscaled = a%rscale*reshape(rhs, [nn*a%nblock])
-            call sparse_solve(a%lu, zscaled, xs, sst)
-            if (.not. status_ok(sst)) return
-            x = reshape(xs, [nn, a%nblock])
+            if (reverse) then
+                zscaled = reshape(rhs, [nn*a%nblock])
+                call sparse_solve_op(a%lu, zscaled, xs, FORTSPARSE_OP_ADJOINT, sst)
+                if (.not. status_ok(sst)) return
+                x = reshape(a%rscale*xs, [nn, a%nblock])
+            else
+                zscaled = a%rscale*reshape(rhs, [nn*a%nblock])
+                call sparse_solve(a%lu, zscaled, xs, sst)
+                if (.not. status_ok(sst)) return
+                x = reshape(xs, [nn, a%nblock])
+            end if
             status = NTV_OK
             return
         end if
         allocate (z(nn, 0:a%nblock - 1))
         status = NTV_SINGULAR
+        if (reverse) then
+            ! A = U L for the retained descending block elimination.
+            z = rhs
+            do j = a%nblock - 2, 0, -1
+                z(:, j) = z(:, j) - matmul(conjg(transpose(a%y(:, :, j + 1))), z(:, j + 1))
+            end do
+            do j = 0, a%nblock - 1
+                x(:, j) = z(:, j)
+                if (j > 0) x(:, j) = x(:, j) &
+                    - matmul(conjg(transpose(block(a, j - 1, j))), x(:, j - 1))
+                call zgetrs('C', nn, 1, a%s_lu(:, :, j), nn, a%piv(:, j), x(:, j), nn, info)
+                if (info /= 0) return
+            end do
+            status = NTV_OK
+            return
+        end if
         do j = a%nblock - 1, 0, -1
             z(:, j) = rhs(:, j)
             if (j < a%nblock - 1) z(:, j) = z(:, j) - matmul(block(a, j, j + 1), z(:, j + 1))
@@ -502,14 +536,33 @@ contains
         pair = 2*pi/a%n*sum(a%measure*real(conjg(ds)*moment(a, x), dp))
     end function pair
 
+    pure function moment_weights(a) result(w)
+        type(ntv_system_t), intent(in) :: a
+        real(dp) :: w(2)
+        w = [2 + 2*a%wsign/3, 4*a%wsign/15]
+    end function moment_weights
+
     !> int (1 + wsign xi^2) F dxi per theta point.
     function moment(a, x) result(mom)
         type(ntv_system_t), intent(in) :: a
         complex(dp), intent(in) :: x(:, 0:)
         complex(dp) :: mom(a%n)
-        mom = (2 + 2*a%wsign/3)*x(1:a%n, 0)
-        if (ubound(x, 2) >= 1) mom = mom + 4*a%wsign*x(1:a%n, 1)/15
+        real(dp) :: w(2)
+        w = moment_weights(a)
+        mom = w(1)*x(1:a%n, 0)
+        if (ubound(x, 2) >= 1) mom = mom + w(2)*x(1:a%n, 1)
     end function moment
+
+    subroutine goal(a, rhs)
+        type(ntv_system_t), intent(in) :: a
+        complex(dp), allocatable, intent(out) :: rhs(:, :)
+        real(dp) :: w(2)
+        w = moment_weights(a)
+        allocate (rhs(2*a%n, 0:a%nblock - 1))
+        rhs = 0
+        rhs(1:a%n, 0) = 2*pi/a%n*a%measure*a%s*w(1)
+        rhs(1:a%n, 1) = 2*pi/a%n*a%measure*a%s*w(2)
+    end subroutine goal
 
     !> Tangent of the operator and the pointwise leaves along a direction in
     !> (eps, k, offset, current): da holds dA (no collision or E x B part,
@@ -664,20 +717,5 @@ contains
             d(n-k+1) = -c
         end do
     end subroutine central_derivative
-
-    subroutine fourier_derivative(n, d)
-        integer, intent(in) :: n
-        real(dp), intent(out) :: d(n, n)
-        integer :: i, j
-        do j = 1, n
-            do i = 1, n
-                if (i == j) then
-                    d(i, j) = 0
-                else
-                    d(i, j) = 0.5_dp*(-1)**(i - j)/sin(pi*(i - j)/n)
-                end if
-            end do
-        end do
-    end subroutine fourier_derivative
 
 end module kin6d_dk_ntv

@@ -1,0 +1,22 @@
+[
+  {
+    "theta_order": 0,
+    "relative_changes": {
+      "torque": 4.494876468870483e-15,
+      "collision_rate_derivative": 1.8056516273744538e-14,
+      "rotation_derivative": 4.31105462428186e-14,
+      "surface_direction_derivative": 4.536200077729978e-14,
+      "amplitude_gradient_max_norm": 1.4363249678316662e-14
+    }
+  },
+  {
+    "theta_order": 6,
+    "relative_changes": {
+      "torque": 0.0,
+      "collision_rate_derivative": 1.1882023637409173e-14,
+      "rotation_derivative": 2.989196555824683e-15,
+      "surface_direction_derivative": 6.682912705916929e-14,
+      "amplitude_gradient_max_norm": 5.053451268027528e-15
+    }
+  }
+]

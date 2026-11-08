@@ -29,6 +29,7 @@
 !! one refinement step on the true residual for the algebraic error.
 module kin6d_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_mono_leaves, only: dk_mono_point, dk_mono_point_jvp
     implicit none
     private
@@ -452,21 +453,5 @@ contains
             end do
         end do
     end function trig_resample
-
-    !> Fourier collocation derivative on n (odd) uniform points of [0, 2 pi).
-    subroutine fourier_derivative(n, d)
-        integer, intent(in) :: n
-        real(dp), intent(out) :: d(n, n)
-        integer :: i, j
-        do j = 1, n
-            do i = 1, n
-                if (i == j) then
-                    d(i, j) = 0
-                else
-                    d(i, j) = 0.5_dp*(-1)**(i - j)/sin(pi*(i - j)/n)
-                end if
-            end do
-        end do
-    end subroutine fourier_derivative
 
 end module kin6d_dk_mono
