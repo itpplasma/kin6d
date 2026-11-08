@@ -439,18 +439,18 @@ contains
         end do
     end function diagonal
 
-    !> (row m) kron blk times a dense matrix x: the theta block on every node,
-    !> then the scaled streaming mass across nodes.
-    function couple(sys, blk, x) result(y)
+    !> Materialize the streaming block directly instead of multiplying by
+    !> an identity through two dense matrix products.
+    function couple(sys, blk) result(y)
         type(system_t), intent(in) :: sys
-        real(dp), intent(in) :: blk(:, :), x(:, :)
-        real(dp) :: y(sys%nb, size(x, 2))
-        real(dp) :: t(sys%nth, sys%nx, size(x, 2))
-        integer :: c
-        do c = 1, size(x, 2)
-            t(:, :, c) = matmul(blk, reshape(x(:, c), [sys%nth, sys%nx]))
-            y(:, c) = reshape(matmul(t(:, :, c), transpose(sys%m*spread(sys%row, 2, sys%nx))), &
-                [sys%nb])
+        real(dp), intent(in) :: blk(:, :)
+        real(dp) :: y(sys%nb, sys%nb)
+        integer :: k, j
+        do j = 1, sys%nx
+            do k = 1, sys%nx
+                y((k - 1)*sys%nth + 1:k*sys%nth, (j - 1)*sys%nth + 1:j*sys%nth) = &
+                    (sys%row(k)*sys%m(k, j))*blk
+            end do
         end do
     end function couple
 
@@ -477,9 +477,9 @@ contains
             end if
             do l = 0, sys%lmax
                 call put(start(l), start(l), diagonal(sys, l))
-                if (l > 0) call put(start(l), start(l - 1), couple(sys, sys%lo(:, :, l), identity(nb)))
+                if (l > 0) call put(start(l), start(l - 1), couple(sys, sys%lo(:, :, l)))
                 if (l < sys%lmax) call put(start(l), start(l + 1), &
-                    couple(sys, sys%up(:, :, l), identity(nb)))
+                    couple(sys, sys%up(:, :, l)))
             end do
             allocate (blk(nb, sys%nx))
             blk = 0
@@ -518,16 +518,6 @@ contains
             end do
         end subroutine put
     end subroutine factor
-
-    pure function identity(n) result(m)
-        integer, intent(in) :: n
-        real(dp) :: m(n, n)
-        integer :: i
-        m = 0
-        do i = 1, n
-            m(i, i) = 1
-        end do
-    end function identity
 
     !> Solve for the right-hand sides rhs(theta, l, node, :); mu are the
     !> source amplitudes of the border.
