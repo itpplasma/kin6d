@@ -29,7 +29,12 @@
 !! outside a band of about two decades in collisionality (energy scattering
 !! dominates where that preconditioner omits it), and block elimination in
 !! l without pivoting across degrees left backward errors up to 1e-2 at low
-!! collisionality.
+!! collisionality; re-measured against the current band it is 1.7 times
+!! faster per solve on 33 theta points, 33 energy nodes and 48 degrees, but
+!! its componentwise backward error is 2.2e-2 at n_D = 1e18 m^-3 and 2.1e-3
+!! at 1e19, with D32 off by 2.9 % on the first, and refinement through the
+!! same blocks cannot correct it; at 1e20 and 1e21 it matches the band to
+!! 1e-6 and 1e-7.
 !!
 !! The theta-constant degree-0 component of each node is bordered by a
 !! source and the constraint that its flux-surface average vanishes, as in
