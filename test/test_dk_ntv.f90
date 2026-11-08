@@ -24,6 +24,7 @@ program test_dk_ntv
     case ('jvp'); ok = jvp()
     case ('tangents'); ok = tangents()
     case ('line'); ok = line()
+    case ('rotation_limit'); ok = rotation_limit()
     case ('ql_dpar'); ok = ql_dpar()
     case ('ql_f10'); ok = ql_f10()
     case ('assembly'); ok = assembly()
@@ -150,6 +151,42 @@ contains
         print '(a,2es14.6,es9.1)', label//' ', got, want, abs(got/want - 1)
         near = abs(got/want - 1) < 1e-6_dp
     end function near
+
+    !> The rapid-rotation (nu) regime of the NTV torque: for n omega_E/v
+    !> large against the streaming k (m - n q) and pre = 0, the response is
+    !> F = H/(i n omega_E/v) + (v/(n omega_E))^2 (L H) + ..., and only the
+    !> Lorentz part of L pairs with the drive H = lambda S/v (streaming and
+    !> mirror map its P_0, P_2 components to odd degrees). With the P_2
+    !> eigenvalue 3 and lambda = (1 - xi^2)/b this gives
+    !>   R -> (16/15) nu_d v |c|^2/omega_E^2 int_0^2pi dtheta/b^3,
+    !>   int_0^2pi dtheta/(1 - eps cos theta)^3 = pi (2 + eps^2)/(1 - eps^2)^(5/2),
+    !> approached as omega_E^-2 and exactly linear in nu_d.
+    logical function rotation_limit() result(ok)
+        type(ntv_surface_t) :: sf
+        type(ntv_kernel_t) :: k
+        real(dp), parameter :: v = 1.0_dp, pi_ = 4*atan(1.0_dp)
+        real(dp) :: omega(2), nu(2), r(2, 2), rel(2), limit
+        integer :: i, j, status
+        sf%eps = 0.01_dp; sf%q = 2.2_dp; sf%k = 1/(sf%q*6.2_dp); sf%offset = 0
+        sf%n = 3; sf%m = [6]; sf%c = [(1e-3_dp, 0.0_dp)]
+        omega = [0.5_dp, 1.0_dp]
+        nu = [1e-3_dp, 1e-4_dp]
+        do i = 1, 2
+            do j = 1, 2
+                call ntv_kernel(sf, v, nu(j), omega(i), 0.0_dp, 33, 64, k, status, &
+                    indicators=.false.)
+                if (status /= NTV_OK) error stop 'kernel failed'
+                r(i, j) = k%r
+            end do
+            limit = 16/15.0_dp*nu(1)*v*abs(sf%c(1))**2/omega(i)**2 &
+                *pi_*(2 + sf%eps**2)/(1 - sf%eps**2)**2.5_dp
+            rel(i) = r(i, 1)/limit - 1
+            print '(a,f5.2,a,es10.2,a,es10.2)', 'omega_E', omega(i), ': R/limit - 1 =', &
+                rel(i), ', R(nu)/R(nu/10)/10 - 1 =', r(i, 1)/(10*r(i, 2)) - 1
+        end do
+        ok = abs(rel(2)) < 2e-4_dp .and. rel(1)/rel(2) > 3.5_dp .and. rel(1)/rel(2) < 4.5_dp &
+            .and. all(abs(r(:, 1)/(10*r(:, 2)) - 1) < 1e-3_dp)
+    end function rotation_limit
 
     logical function line() result(ok)
         real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
