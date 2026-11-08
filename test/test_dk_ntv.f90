@@ -24,6 +24,8 @@ program test_dk_ntv
     case ('jvp'); ok = jvp()
     case ('tangents'); ok = tangents()
     case ('line'); ok = line()
+    case ('ql_dpar'); ok = ql_dpar()
+    case ('ql_f10'); ok = ql_f10()
     case ('assembly'); ok = assembly()
     case ('sparse_assembly'); ok = assembly(2)
     case ('sparse_jvp'); ok = jvp(6)
@@ -375,5 +377,122 @@ contains
         close (u)
         if (len_trim(spectrum_file) > 0) close (us)
     end subroutine kernel_table
+
+    !> The parallel-derivative quasilinear drive (#192): the two pieces of
+    !> the perturbed radial drift together form the i m/q drive, it
+    !> vanishes on the resonant m = n q, and the amplitude sensitivities
+    !> keep their adjoint form with the switch on.
+    logical function ql_dpar() result(ok)
+        type(ntv_surface_t) :: sf, up, down
+        type(ntv_kernel_t) :: k0, kp, km
+        integer :: status, part
+        real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
+        real(dp) :: h, fd
+        complex(dp) :: dc
+
+        sf = sample()
+        ! With i n + i (m - n q)/q = i m/q the switch scales the drive, and
+        ! so the response, by m/(n q), while the torque still pairs with S.
+        call ntv_kernel(sf, v, nu, omega, pre, 33, 48, k0, status, indicators=.false.)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        up = sf
+        up%source_dpar = .true.
+        call ntv_kernel(up, v, nu, omega, pre, 33, 48, kp, status, indicators=.false.)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        fd = real(sf%m(1), dp)/(sf%n*sf%q)
+        print '(a,es9.1)', 'dpar on the i m/q identity: ', abs(kp%r/(fd*k0%r) - 1)
+        ok = abs(kp%r/(fd*k0%r) - 1) < 1e-12_dp
+
+        ! On the resonant m = n q the parallel derivative of the
+        ! perturbation along the line vanishes.
+        up = sample()
+        up%q = 2.0_dp
+        up%k = 1/(up%q*6.2_dp)
+        call ntv_kernel(up, v, nu, omega, pre, 33, 48, k0, status, indicators=.false.)
+        up%source_dpar = .true.
+        call ntv_kernel(up, v, nu, omega, pre, 33, 48, kp, status, indicators=.false.)
+        print '(a,es9.1)', 'dpar on the resonant m = n q: ', abs(kp%r - k0%r)
+        ok = ok .and. abs(kp%r - k0%r) <= 1e-13_dp*abs(k0%r)
+
+        ! Amplitude sensitivity with the switch on against differences.
+        sf = sample()
+        sf%source_dpar = .true.
+        call ntv_kernel(sf, v, nu, omega, pre, 33, 48, k0, status, indicators=.false.)
+        do part = 1, 2
+            dc = merge((1.0_dp, 0.0_dp), (0.0_dp, 1.0_dp), part == 1)
+            h = 1e-4_dp*abs(sf%c(1))
+            up = sf
+            up%c(1) = sf%c(1) + h*dc
+            down = sf
+            down%c(1) = sf%c(1) - h*dc
+            call ntv_kernel(up, v, nu, omega, pre, 33, 48, kp, status, indicators=.false.)
+            call ntv_kernel(down, v, nu, omega, pre, 33, 48, km, status, indicators=.false.)
+            fd = (kp%r - km%r)/(2*h)
+            ok = ok .and. near(merge(real(k0%dr_dc(1)), aimag(k0%dr_dc(1)), &
+                part == 1), fd, 'dR/dc dpar')
+        end do
+    end function ql_dpar
+
+    !> The perturbed-operator sources on the axisymmetric solution f_10
+    !> (#192): a pitch- and theta-constant f_10 is annihilated by both
+    !> foldings, and with a nontrivial f_10 the response and its amplitude
+    !> sensitivities with both source switches on agree with differences.
+    logical function ql_f10() result(ok)
+        type(ntv_surface_t) :: sf, up, down
+        type(ntv_kernel_t) :: k0, kp, km
+        integer :: status, i, j, part
+        integer, parameter :: nth = 33, nleg = 48, nb = nleg/2
+        real(dp), parameter :: v = 1.0_dp, nu = 2e-3_dp, omega = 5e-3_dp, pre = 2e-2_dp
+        real(dp) :: f10(2*nth, 0:nb - 1), h, fd, theta
+        real(dp), parameter :: pi = 4*atan(1.0_dp)
+        complex(dp) :: dc
+
+        ! Lorentz and mirror foldings annihilate the constant.
+        sf = sample()
+        sf%source_dlf10 = .true.
+        f10 = 0
+        f10(1:nth, 0) = 1.0_dp
+        call ntv_kernel(sf, v, nu, omega, pre, nth, nleg, k0, status, &
+            indicators=.false., f10=f10)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        up = sf
+        up%source_dlf10 = .false.
+        call ntv_kernel(up, v, nu, omega, pre, nth, nleg, kp, status, indicators=.false.)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        print '(a,es9.1)', 'dlf10 annihilates the constant f_10: ', abs(k0%r - kp%r)
+        ok = abs(k0%r - kp%r) <= 1e-14_dp*abs(kp%r)
+
+        ! A smooth nontrivial f_10 changes the response; both switches on.
+        f10 = 0
+        do i = 1, nth
+            theta = 2*pi*(i - 1)/nth
+            f10(i, 0) = 1 + 0.5_dp*cos(theta)
+            f10(i, 1) = 0.3_dp*cos(theta)
+            f10(nth + i, 0) = 0.2_dp*sin(theta)
+        end do
+        sf%source_dpar = .true.
+        call ntv_kernel(sf, v, nu, omega, pre, nth, nleg, k0, status, &
+            indicators=.false., f10=f10)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        up = sf
+        up%source_dlf10 = .false.
+        call ntv_kernel(up, v, nu, omega, pre, nth, nleg, kp, status, indicators=.false.)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        print '(a,es9.1)', 'response change from the f_10 sources: ', abs(k0%r/kp%r - 1)
+        ok = ok .and. abs(k0%r/kp%r - 1) > 1e-6_dp
+        do part = 1, 2
+            dc = merge((1.0_dp, 0.0_dp), (0.0_dp, 1.0_dp), part == 1)
+            h = 1e-4_dp*abs(sf%c(1))
+            up = sf; up%c(1) = sf%c(1) + h*dc
+            down = sf; down%c(1) = sf%c(1) - h*dc
+            call ntv_kernel(up, v, nu, omega, pre, nth, nleg, kp, status, &
+                indicators=.false., f10=f10)
+            call ntv_kernel(down, v, nu, omega, pre, nth, nleg, km, status, &
+                indicators=.false., f10=f10)
+            fd = (kp%r - km%r)/(2*h)
+            ok = ok .and. near(merge(real(k0%dr_dc(1)), aimag(k0%dr_dc(1)), &
+                part == 1), fd, 'dR/dc f10')
+        end do
+    end function ql_f10
 
 end program test_dk_ntv
