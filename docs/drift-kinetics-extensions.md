@@ -72,6 +72,27 @@ the orbit-weighted moment map. The limits are the magnetic axis, where orbit cla
 orbits that cross the last closed surface, which leave this solver and are handed to the edge
 treatment.
 
+## Two representations of one term list
+
+For axisymmetric fields with perturbations, the full particle motion is integrable with the
+actions H, p_phi and the gyro-action J_g = m mu/(Z e) (adiabatic), and the angles advance at the
+canonical frequencies Omega(J) of real orbits (as in NEO-RT and POTATO). In these action-angle
+variables the unperturbed operator is diagonal in the angle harmonics, i m.Omega(J); finite orbit
+width is exact, finite Larmor radius enters through the gyro-action (Bessel factors of k_perp rho),
+a perturbation H_m(J) e^{i(m.theta - omega t)} couples harmonics only through resonances
+m.Omega = omega, and superbanana and resonance islands are pendulums in (J, resonant angle). The
+same operator covers NTV (omega = 0), RF heating and Alfven-mode transport (omega != 0). Collisions
+become the non-diagonal part.
+
+The code therefore carries two representations of the same terms: the coordinate form (flux or
+canonical coordinates, all collisionalities, collisional boundary layers, stellarators) and the
+action-angle form (tokamaks and quasi-symmetric fields at low collisionality, all orbit effects).
+Where both are valid they check each other. Separatrix layers, where Omega has its logarithmic
+singularity and collisions dominate, stay in the coordinate form. Stellarators have no global
+actions; at low collisionality the bounce-averaged second invariant J_par (as in KNOSOS) takes
+their place. The hp mesh of the action-angle form lives in J-space, fitted to the separatrix and
+the resonance curves m.Omega(J) = omega.
+
 ## Velocity-space mesh
 
 The hp mesh (finite elements adapting both element size h and polynomial degree p) places element
