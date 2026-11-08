@@ -312,6 +312,9 @@ contains
         call mono_solve(f, s, [0.0_dp, 0.0_dp], x, mu, status)
         if (status /= MONO_OK) error stop 'mono_solve failed'
         err = 0
+        ! Explicit 0:lmax bounds: allocation from the binary expression's
+        ! shape need not keep the expression's lower bounds.
+        allocate (r(f%n, 0:f%lmax))
         do k = 1, 2
             r = mono_apply(f, 1e-2_dp, x(:, :, k)) - s(:, :, k)
             r(:, 0) = r(:, 0) + mu(k)
