@@ -21,13 +21,26 @@ v_par = sigma sqrt(2 (H - Z e Phi - mu |B|)/m) and the drift v_d (E x B, grad B,
 taken in the full field; v_d0 and v_d1 are its parts from B0 and delta B. C_L is the linearised
 Fokker-Planck operator of all species, x = v/v_th the normalised speed and xi = v_par/v the pitch.
 The equation is linear in f1 and contains delta B to all orders. The torque density is
-<int d^3v p_phi_dot f1>, with <.> the flux-surface average and p_phi = m R v_phi - Z e psi the
-canonical toroidal momentum; for thin orbits it reduces to Z e Gamma_psi with the radial particle
+<int d^3v p_phi_dot f1>, with <.> the flux-surface average and p_phi = m v_par B_phi/|B| + Z e psi the
+canonical toroidal momentum (B_phi the covariant toroidal component, psi = A_phi); for thin orbits it reduces to Z e Gamma_psi with the radial particle
 flux Gamma_psi. Expanding about F_M(psi, H) assumes the orbit width is small against the gradient
-lengths; where it is not (pedestal), F_M is replaced by a function of the invariants
-(p_phi, H, mu) or by a full-f formulation.
+lengths.
 
-The modes are subsets of its terms:
+With `orbit_width` the background is the canonical Maxwellian F_c(psi*, H), F_M with psi
+replaced by psi* = p_phi/(Z e), which is constant along unperturbed orbits (NEO-RT and POTATO use the same background). It solves the collisionless
+unperturbed equation exactly, so the equation becomes
+
+    (v_par b + v_d) . grad f1 |_(H, mu)  -  C_L[f1]  =  C[F_c]  -  p_phi_dot d_p_phi F_c
+
+with p_phi_dot = -d_phi H from delta B alone. The orbit-width ordering then no longer enters the
+background, and the drive pairs with the torque <int d^3v p_phi_dot f1>. Expanded to first order in
+the poloidal gyroradius over the gradient length it reproduces the drive of the thin-orbit
+model, which is a test of step 3. Two caveats: the profiles n(psi*), T(psi*), Phi(psi*) are not the
+measured profiles n(psi), T(psi), which follow from moments of F_c, so device inputs need this map;
+and where F_c is not close to a local Maxwellian (pedestal), C is evaluated on F_c itself rather
+than linearised about F_M.
+
+The modes are subsets of the terms of the first equation:
 
 | Mode | Terms kept | Structure |
 |---|---|---|
@@ -88,11 +101,11 @@ scenario TC24; their data stay outside the repository.
 | 0 | thin-orbit quasilinear model with the full operator, device profiles | passed: torque profiles within 5% of NEO-2 with 10 Laguerre energy basis functions on both devices. Open: energy convergence of the AUG ion full operator at resonances |
 | 1 | hp prototype: axisymmetric, monoenergetic, (theta, xi) mesh fitted to lambda | spectral convergence down to nu* ~ 1e-6; banana, plateau and Pfirsch-Schlueter limits of D11, D31, D33; bootstrap coefficient against rabe; faster or leaner than the Legendre solver at the same accuracy |
 | 2 | hp for the thin-orbit quasilinear model with all energies (after a passed step 1) | agrees with the spectral full-operator kernel; 1/nu, sqrt(nu)-nu, superbanana-plateau and rapid-rotation limits; converges the AUG ion resonances where uniform speed elements did not |
-| 3 | `orbit_width`: radial elements in psi, GMRES with surface factors, radial buffer boundaries, axis region excluded | orbit width -> 0 reproduces step 0 with the expected scaling; manufactured solution; particle and p_phi conservation; GMRES iterations bounded under psi refinement; POTATO in its thin-orbit limit and at finite orbit width; PERFECT pedestal case |
+| 3 | `orbit_width` on the canonical Maxwellian: radial elements in psi, GMRES with surface factors, radial buffer boundaries, axis region excluded | orbit width -> 0 reproduces step 0 with the expected scaling; first-order expansion of F_c reproduces the thin-orbit drive; moments map n(psi*) to n(psi); manufactured solution; particle and p_phi conservation; GMRES iterations bounded under psi refinement; POTATO in its thin-orbit limit and at finite orbit width; PERFECT pedestal case |
 | 4 | validity indicators per surface, species and energy: D; island width over resonance spacing; d(resonant frequency)/d p_phi, which sets the island width; orbit width over gradient length | D against NEO-RT and canonical frequencies against POTATO on shared cases |
 | 5 | `nonlinear_orbits` for one isolated resonance, thin orbit | delta B -> 0 reproduces step 0 with torque proportional to delta B^2; attenuation against NEO-RT Theta(D) over D; Theta -> 1 in the quasilinear limit |
 | 6 | `nonlinear_orbits` with `orbit_width` for isolated resonances | each switch off reproduces steps 3 and 5; resonance shifts against POTATO canonical frequencies |
-| 7 | coupled harmonics, overlapping resonances | isolated limits reproduce steps 5 and 6; Monte Carlo with finite orbits and the perturbation in the orbits; cost below Monte Carlo at the same accuracy. Overlap is expected in the pedestal (sheared E_r, large delta B), where the expansion about F_M is replaced as stated above |
+| 7 | coupled harmonics, overlapping resonances | isolated limits reproduce steps 5 and 6; Monte Carlo with finite orbits and the perturbation in the orbits; cost below Monte Carlo at the same accuracy. Overlap is expected in the pedestal (sheared E_r, large delta B), on the canonical Maxwellian background |
 | 8 | device curves | AUG 30835 and ITER TC24 with each switch alone and combined, against NEO-2, NEO-RT, POTATO and Monte Carlo where they apply, with the indicators of step 4 |
 
 ## Working rule
