@@ -259,6 +259,7 @@ target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
     src/generated/kin6d_dk_pitch_leaves.f90 src/continuum/dk_pitch.f90
     src/generated/kin6d_dk_mono_leaves.f90 src/continuum/dk_mono.f90
+    src/generated/kin6d_dk_hp_leaves.f90 src/continuum/dk_hp.f90
     src/generated/kin6d_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
     src/generated/kin6d_dk_collop_leaves.f90 src/continuum/dk_collop.f90
     src/generated/kin6d_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
@@ -377,6 +378,7 @@ set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
     src/generated/kin6d_boozer_file_leaves.f90
     src/generated/kin6d_dk_pitch_leaves.f90
     src/generated/kin6d_dk_mono_leaves.f90
+    src/generated/kin6d_dk_hp_leaves.f90
     src/generated/kin6d_dk_ntv_leaves.f90
     src/generated/kin6d_dk_collop_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -1077,6 +1079,12 @@ add_test(NAME dk_mono_neo2_tok02 COMMAND test_dk_mono neo2_tok02
     ${libneo_SOURCE_DIR}/python/tests/circ.bc)
 kin6d_test_labels(dk_mono_neo2_tok02 fast CLASSES continuum equilibrium
     TARGETS test_dk_mono)
+add_executable(test_dk_hp test/test_dk_hp.f90)
+target_link_libraries(test_dk_hp PRIVATE kin6d)
+foreach(check reference onsager collisionless banana pfirsch_schlueter estimate)
+    add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
+    kin6d_test_labels(dk_hp_${check} fast CLASSES continuum TARGETS test_dk_hp)
+endforeach()
 add_executable(test_dk_pitch test/test_dk_pitch.f90)
 target_link_libraries(test_dk_pitch PRIVATE kin6d)
 add_test(NAME dk_pitch_lorentz_operator COMMAND test_dk_pitch)
@@ -1373,7 +1381,7 @@ if(KIN6D_FORTSYM_BUILD)
             landreman nested_oracles
             response_strip_jets
             response_fluid
-            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_ntv dk_collop ntv_boozer
+            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_hp dk_ntv dk_collop ntv_boozer
             gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
@@ -1400,6 +1408,14 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_mono_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_mono)
+    add_test(NAME dk_hp_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_dk_hp>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_hp_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/dk-hp-regeneration
+        -DLEAF=kin6d_dk_hp_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    kin6d_test_labels(dk_hp_leaf_regeneration fast CLASSES continuum
+        TARGETS gen_dk_hp)
     add_test(NAME ntv_boozer_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ntv_boozer>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ntv_boozer_leaves.f90

@@ -330,6 +330,48 @@ independent block systems of the same shape, solved as one batch. A port
 waits for a profile of the full operator and must beat the CPU at matched
 accuracy.
 
+Orbit-class spectral elements (`src/continuum/dk_hp.f90`) solve the same
+axisymmetric n = 0 equation on a mesh of the (theta, xi) cylinder whose rows
+follow the conserved pitch lambda = (1 - xi^2)/b: passing rows are levels of
+lambda, trapped rows are scaled separatrices zeta xi_c(theta), and the
+separatrix lambda_c = 1/b_max itself is a mesh line. Columns start and end at
+the X point theta_x of b_max, where the trapped elements collapse and their
+nodes form one unknown. Rows are graded geometrically towards the separatrix,
+columns towards theta_x. Elements carry tensor Lagrange polynomials of degree
+p on Gauss-Lobatto nodes, continuous across elements; reflection points need
+no treatment in (theta, xi). In the measure dtheta dxi/(b b.grad theta)
+streaming is the bracket with the stream function -lambda/2; with its nodal
+interpolant the bracket form is polynomial and integrated exactly, so it is
+skew and constants are exact left and right null vectors. The system is
+factorised by FortSparse's supernodal LU; the density null space is removed
+by pinning one unknown and projecting, since a dense border row defeats the
+fill-reducing ordering. A dual-weighted-residual indicator of a coefficient
+weights the residual of the solution in degree p + 1 with the adjoint of that
+degree (an indicator, not a bound) and drives bisection of rows and columns.
+
+Checks (tests `dk_hp_*`): against `dk_mono` at nu = 1e-3 to 1e-1 the four
+coefficients agree to 4e-9 with p = 6 and convergence is exponential in p;
+D31 + D13 vanishes to 1e-10 of sqrt(D11 D33) from nu = 1e-6 to 1e2. From
+nu = 1e-6 and 2.5e-7, outside the reach of the Legendre reference, Richardson
+extrapolation reproduces the collisionless fractions f_c and 1 - f_c to
+1.1e-6 and the banana D11/nu to 1.1e-6; the Pfirsch-Schlueter D11/nu at
+nu = 1e3 agrees to 2e-8 (at nu = 1e4 rounding, amplified by the conditioning
+of the collision-dominated system, limits it to 1e-6). On a coarse mesh at nu = 1e-4 the indicator has
+effectivity 1.6, and one marking step reduces the D31 error twentyfold. After
+refinement the effectivity fell to 0.05 in that check: the enrichment by one
+degree misses error in layers that neither degree resolves.
+
+Time to accuracy for D31 (eps = 0.1, eight cores of one AMD EPYC node per run;
+reference: the mean of p = 7 and p = 8 element runs, which differ by at most
+5e-8 relative): at nu = 1e-4 the Legendre reference is faster, 3e-10 in 0.5 s
+against 8e-9 in 1.7 s. At nu = 1e-5 the elements give 1e-8 in 0.5 s, the
+reference 4e-9 in 14 s and 4 GB. At nu = 1e-6 the elements give 2e-8 in 0.6 s
+and 0.2 GB; the reference at 513 theta points and 3200 polynomials, 72 s and
+13 GB, is 7e-5 off. At nu = 1e-7 the elements give 3e-8 in 1.2 s, while the
+reference is 8e-4 off at its largest resolution. The adaptive loop, which
+repeats the degree p + 1 solve at every step, is slower than an a priori
+graded mesh of the same accuracy.
+
 DK1 step 2 with the same reference discretisation (`src/continuum/dk_ntv.f90`,
 #183): one toroidal harmonic n of the local Lorentz equation with the
 streaming shift -i n q, the grad-B precession Omega = omega_E +
