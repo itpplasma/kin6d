@@ -45,9 +45,11 @@
 !! its parallel-derivative part and the change -2 (dB/B) d_theta ln B of the
 !! drift factor. And the perturbed operator acting on the axisymmetric
 !! solution f_10,
-!! stream/b sum_m (i m - d_theta ln b) c_m e^{i m theta} (1 - xi^2)/2 d_xi f_10
-!! - sum_m c_m e^{i m theta}/b C[f_10], the mirror force of b d_theta(dB/B)
-!! and the collision term, with C the Lorentz operator of the
+!! stream/b sum_m (i (m - n q) - d_theta ln b) c_m e^{i m theta}
+!! (1 - xi^2)/2 d_xi f_10 - sum_m c_m e^{i m theta}/b C[f_10]: the mirror
+!! force of the parallel gradient b (d_theta - i n q)(dB/B), along the line
+!! in this frame as in Eq. (61) at fixed field-line label, and the collision
+!! term, with C the Lorentz operator of the
 !! equation above. They are switched individually by source_dpar and
 !! source_dlf10; the second needs f_10 on this kernel's grid through the
 !! optional argument of the same name, one theta point per row (rows 1:n
@@ -335,7 +337,7 @@ contains
                 + sum(conjg((iu*(sf%m(j) - sf%n*sf%q) - 2*log_b_slope(a))/sf%q*ds)*xw)
         end do
         if (a%dlf10) then
-            ! dH/dc_j carries e^{i m_j theta} ((i m_j - d_theta ln b) stream
+            ! dH/dc_j carries e^{i m_j theta} ((i (m_j - n q) - d_theta ln b) stream
             ! f10f + f10c)/b; contract the adjoint against the two profiles.
             allocate (prof(2*a%n, 0:a%nblock - 1))
             do j = 0, a%nblock - 1
@@ -355,7 +357,8 @@ contains
             do j = 1, size(sf%m)
                 ds = [(exp(iu*sf%m(j)*2*pi*(i - 1)/a%n), i=1, a%n)]
                 kern%dr_dc(j) = kern%dr_dc(j) &
-                    + sum(conjg((iu*sf%m(j) - log_b_slope(a))*ds*xf)) + sum(conjg(ds*xw))
+                    + sum(conjg((iu*(sf%m(j) - sf%n*sf%q) - log_b_slope(a))*ds*xf)) &
+                    + sum(conjg(ds*xw))
             end do
         end if
 
@@ -475,7 +478,7 @@ contains
             a%sdb = 0
             a%db = 0
             do j = 1, size(sf%m)
-                a%sdb = a%sdb + (iu*sf%m(j) - log_b_slope(a))*sf%c(j) &
+                a%sdb = a%sdb + (iu*(sf%m(j) - sf%n*sf%q) - log_b_slope(a))*sf%c(j) &
                     *exp(iu*sf%m(j)*theta)
                 a%db = a%db + sf%c(j)*exp(iu*sf%m(j)*theta)
             end do

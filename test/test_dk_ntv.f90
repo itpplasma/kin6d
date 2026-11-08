@@ -28,6 +28,7 @@ program test_dk_ntv
     case ('ql_dpar'); ok = ql_dpar()
     case ('ql_f10'); ok = ql_f10()
     case ('ql_oracle'); ok = ql_oracle()
+    case ('ql_collisionless'); ok = ql_collisionless()
     case ('assembly'); ok = assembly()
     case ('f10_provider'); ok = f10_provider()
     case ('sparse_assembly'); ok = assembly(2)
@@ -437,6 +438,56 @@ contains
         if (len_trim(spectrum_file) > 0) close (us)
     end subroutine kernel_table
 
+    !> The 1/nu limit of the quasilinear sources (#192): on a passing
+    !> orbit the collisionless axisymmetric solution is f_10 = -2 xi/(b v q k)
+    !> (the radial drift is xi b.grad(xi/b) up to that factor), and with it
+    !> the drift and f_10 sources beyond S form a parallel derivative, whose
+    !> torque vanishes linearly in nu at omega_E = 0 while each source alone
+    !> changes the torque at order one.
+    logical function ql_collisionless() result(ok)
+        type(ntv_surface_t) :: sf
+        real(dp), allocatable :: f10(:, :)
+        real(dp), parameter :: pi_ = 4*atan(1.0_dp)
+        integer, parameter :: nt = 33, nl = 96
+        real(dp) :: nu(2), defect(2), alone, r0, theta(nt)
+        integer :: i
+        sf%eps = 0.05_dp; sf%q = 2.2_dp; sf%k = 1/(sf%q*6.2_dp); sf%offset = 0.01_dp
+        sf%n = 3; sf%m = [6]; sf%c = [(1e-3_dp, 2e-4_dp)]
+        sf%boozer_stream = .true.; sf%weight = NTV_WEIGHT_FULL
+        theta = [(2*pi_*(i - 1)/nt, i=1, nt)]
+        allocate (f10(2*nt, 0:nl/2 - 1))
+        f10 = 0
+        f10(nt + 1:, 0) = -2/(sf%q*sf%k*(1 - sf%eps*cos(theta)))
+        nu = [2e-3_dp, 5e-4_dp]
+        do i = 1, 2
+            r0 = switched_r(sf, .false., .false., f10, nu(i))
+            defect(i) = switched_r(sf, .true., .true., f10, nu(i))/r0 - 1
+            if (i == 2) alone = switched_r(sf, .true., .false., f10, nu(i))/r0 - 1
+            print '(a,es9.1,a,es10.2)', 'collisionless sources, nu', nu(i), ': ', defect(i)
+        end do
+        print '(a,es10.2)', 'drift source alone at the lower nu: ', alone
+        ok = abs(defect(2)) < abs(defect(1))/3 .and. abs(defect(2)) < abs(alone)/10
+    end function ql_collisionless
+
+    real(dp) function switched_r(sf, d1, d2, f, nu) result(r)
+        type(ntv_surface_t), intent(in) :: sf
+        logical, intent(in) :: d1, d2
+        real(dp), intent(in) :: f(:, :), nu
+        type(ntv_surface_t) :: t
+        type(ntv_kernel_t) :: k
+        integer :: st
+        t = sf; t%source_dpar = d1; t%source_dlf10 = d2
+        if (d2) then
+            call ntv_kernel(t, 1.0_dp, nu, 0.0_dp, 0.0_dp, size(f, 1)/2, 2*size(f, 2), k, st, &
+                indicators=.false., f10=f)
+        else
+            call ntv_kernel(t, 1.0_dp, nu, 0.0_dp, 0.0_dp, size(f, 1)/2, 2*size(f, 2), k, st, &
+                indicators=.false.)
+        end if
+        if (st /= 0) error stop 'kernel'
+        r = k%r
+    end function switched_r
+
     !> The f_10 provider against an independent n = 0 oracle: the equation
     !>   k b xi d_theta f - (1 - xi^2)/2 k b d_theta(ln b) d_xi f
     !>   - (nu/2) d_xi((1 - xi^2) d_xi f) = (1 + xi^2) d_theta b/(b v q),
@@ -520,7 +571,8 @@ contains
     !> units (Boozer streaming k_s = k b, weight (1 + xi^2)/b):
     !>   (1 + xi^2)/(b v) sum_m (i n + (i (m - n q) - 2 d_theta ln b)/q)
     !>     c_m e^{i m theta}
-    !>   + k_s/b sum_m (i m - d_theta ln b) c_m e^{i m theta} (1 - xi^2)/2 d_xi f_10
+    !>   + k_s/b sum_m (i (m - n q) - d_theta ln b) c_m e^{i m theta}
+    !>     (1 - xi^2)/2 d_xi f_10
     !>   + sum_m c_m e^{i m theta}/b (nu/2) l(l + 1) f_10,l,
     !> projected on P_i by Gauss quadrature with the DFT derivative, with f_10
     !> from the same projection of the n = 0 equation driven by
@@ -584,7 +636,7 @@ contains
         do j = 1, size(sf%m)
             s = s + iu*sf%n*sf%c(j)*exp(iu*sf%m(j)*theta)
             sd = sd + (iu*(sf%m(j) - sf%n*sf%q) - 2*dlnb)/sf%q*sf%c(j)*exp(iu*sf%m(j)*theta)
-            sm = sm + (iu*sf%m(j) - dlnb)*sf%c(j)*exp(iu*sf%m(j)*theta)
+            sm = sm + (iu*(sf%m(j) - sf%n*sf%q) - dlnb)*sf%c(j)*exp(iu*sf%m(j)*theta)
             db = db + sf%c(j)*exp(iu*sf%m(j)*theta)
         end do
 
