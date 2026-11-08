@@ -79,11 +79,15 @@ module kin6d_ntv_device
 
     !> Per surface and species: K_1j and K_2j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
     !> Gamma_psi [Wb/(m^3 s)], the energy flux -n T (K_21 A_1 + K_22 A_2)
-    !> [J Wb/(m^3 s)], the torque density [N m/m^3], and the
-    !> factorisations and GMRES iterations spent on it.
+    !> [J Wb/(m^3 s)], the torque density [N m/m^3], the offset rotation
+    !> [rad/s], and the factorisations and GMRES iterations spent on it. The
+    !> offset rotation is the Omega_tE at which Gamma_psi of the species
+    !> vanishes with the coefficients held at their values for the given
+    !> Omega_tE; in the 1/nu regime, where they do not depend on Omega_tE, it is
+    !> the rotation the torque relaxes to.
     type :: ntv_species_result_t
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
-            heat_flux = 0, torque = 0
+            heat_flux = 0, torque = 0, offset_rotation = 0
         integer :: factorisations = 0, iterations = 0
     end type
 
@@ -310,6 +314,8 @@ contains
             result(i, a)%heat_flux = -prof%density(i, a)*t*(result(i, a)%k21*a1 &
                 + result(i, a)%k22*a2)
             result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
+            result(i, a)%offset_rotation = prof%omega_te(i) + result(i, a)%gamma_psi &
+                /(prof%density(i, a)*result(i, a)%k11*species(a)%z*elementary/t)
             result(i, a)%factorisations = nev
             result(i, a)%iterations = np
             call record_kinks(i, a, lo(1:np), hi(1:np), start)
@@ -410,6 +416,8 @@ contains
             result(i, a)%heat_flux = -prof%density(i, a)*t*(result(i, a)%k21*a1 &
                 + result(i, a)%k22*a2)
             result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
+            result(i, a)%offset_rotation = prof%omega_te(i) + result(i, a)%gamma_psi &
+                /(prof%density(i, a)*result(i, a)%k11*species(a)%z*elementary/t)
             result(i, a)%factorisations = sum(nfac(i, :, a))
             result(i, a)%iterations = sum(nits(i, :, a))
         end subroutine assemble
@@ -502,6 +510,9 @@ contains
                         *(qq(a, b, 1)*a1(b) + qq(a, b, 2)*a2(b))
                 end do
                 result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
+                result(i, a)%offset_rotation = prof%omega_te(i) + result(i, a)%gamma_psi &
+                    /(prof%density(i, a)*sum(kk(a, :, 1)*species%z*elementary &
+                    /prof%temperature(i, :)))
                 result(i, a)%factorisations = 1
                 result(i, a)%iterations = its
             end do

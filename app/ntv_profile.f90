@@ -8,7 +8,7 @@
 !!   species: density[m^-3] T[J] dn/ds dT/ds kappa[1/m]
 !! Prints per surface and species: s, species, K_11, K_12, dpsi_pol/dr,
 !! Gamma_psi, torque density [N m/m^3], factorisations, GMRES iterations,
-!! K_21, K_22 and the energy flux [J Wb/(m^3 s)].
+!! K_21, K_22, the energy flux [J Wb/(m^3 s)] and the offset rotation [rad/s].
 program ntv_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use kin6d_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -74,10 +74,11 @@ program ntv_profile
     end if
     do i = 1, ns
         do a = 1, nsp
-            print '(f12.8,i3,5es18.9,2i8,3es18.9)', prof%s(i), a, result(i, a)%k11, &
+            print '(f12.8,i3,5es18.9,2i8,4es18.9)', prof%s(i), a, result(i, a)%k11, &
                 result(i, a)%k12, result(i, a)%dpsi_dr, result(i, a)%gamma_psi, &
                 result(i, a)%torque, result(i, a)%factorisations, result(i, a)%iterations, &
-                result(i, a)%k21, result(i, a)%k22, result(i, a)%heat_flux
+                result(i, a)%k21, result(i, a)%k22, result(i, a)%heat_flux, &
+                result(i, a)%offset_rotation
         end do
     end do
     write (error_unit, '(a,f10.2)') 'wall s ', real(c1 - c0, dp)/rate
