@@ -29,7 +29,7 @@
 !! factorisation, refactorising when the iteration count exceeds a bound.
 module kin6d_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortnum_quadrature, only: gauss_gen_laguerre
+    use fortnum_quadrature, only: gauss_gen_laguerre, gauss_legendre
     use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, &
         boozer_average, BOOZER_OK
     use kin6d_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
@@ -70,6 +70,11 @@ module kin6d_ntv_device
         ! elements of the given order on [0, x_max] (energy-coupled kernel).
         integer :: collisions = 0, nelem = 4, order = 4
         real(dp) :: x_max = 5
+        ! Monoenergetic energy integral: relative tolerance of adaptive
+        ! composite Gauss-Legendre panels in x = v^2/v_th^2 on [0, 25]
+        ! (0: n_x Gauss-Laguerre nodes). The E x B and precession resonance
+        ! puts kinks into the integrand that fixed rules do not resolve.
+        real(dp) :: x_tol = 0
     end type
 
     !> Per surface and species: K_1j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
@@ -127,6 +132,18 @@ contains
         if (res%collisions /= 0) then
             call energy_profile(eq, n_tor, species, prof, res, sf, psi_pol_s, dpsi_dr, &
                 result, status)
+            return
+        end if
+        if (res%x_tol > 0) then
+            allocate (result(ns, nsp), ustat(ns*nsp))
+            !$omp parallel do schedule(dynamic, 1) default(shared) private(u)
+            do u = 1, ns*nsp
+                call adaptive((u - 1)/nsp + 1, mod(u - 1, nsp) + 1, ustat(u))
+            end do
+            !$omp end parallel do
+            status = DEVICE_SOLVE
+            if (any(ustat /= DEVICE_OK)) return
+            status = DEVICE_OK
             return
         end if
         allocate (x(res%n_x), w(res%n_x))
@@ -205,6 +222,113 @@ contains
             end do
             st = DEVICE_OK
         end subroutine sweep
+
+        !> R of species a on surface i at x = v^2/v_th^2.
+        real(dp) function kernel_r(i, a, xv, st) result(rv)
+            integer, intent(in) :: i, a
+            real(dp), intent(in) :: xv
+            integer, intent(out) :: st
+            type(ntv_kernel_t) :: kern
+            real(dp), allocatable :: f10(:, :)
+            real(dp) :: v, nu
+            rv = 0
+            v = sqrt(2*prof%temperature(i, a)/species(a)%mass*xv)
+            nu = deflection_frequency(species, prof%density(i, :), prof%temperature(i, :), &
+                prof%kappa(i, :), a, xv)
+            call ntv_f10(sf(i), v, nu, res%n_theta, res%n_leg, f10, st)
+            if (st /= NTV_OK) return
+            call ntv_kernel(sf(i), v, nu, -prof%omega_te(i), &
+                species(a)%mass*v*v/(2*species(a)%z*elementary), res%n_theta, res%n_leg, &
+                kern, st, indicators=.false., f10=f10)
+            rv = kern%r
+        end function kernel_r
+
+        !> int x^(5/2) e^-x (1, x) R dx by adaptive composite Gauss-Legendre
+        !> panels: a panel is bisected while its 6- and 12-point rules differ
+        !> by more than x_tol of the running total.
+        subroutine adaptive(i, a, st)
+            integer, intent(in) :: i, a
+            integer, intent(out) :: st
+            integer, parameter :: max_panels = 400
+            real(dp), parameter :: start(11) = [0.0_dp, 0.5_dp, 1.0_dp, 2.0_dp, 3.0_dp, &
+                4.5_dp, 6.5_dp, 9.0_dp, 13.0_dp, 18.0_dp, 25.0_dp]
+            real(dp) :: lo(max_panels), hi(max_panels), val(2, max_panels), err(max_panels)
+            real(dp) :: x6(6), w6(6), x12(12), w12(12), total(2), t, scale, a1, a2
+            integer :: np, k, ks, nev
+            st = DEVICE_SOLVE
+            call gauss_legendre(6, x6, w6)
+            call gauss_legendre(12, x12, w12)
+            np = size(start) - 1
+            lo(1:np) = start(1:np)
+            hi(1:np) = start(2:)
+            nev = 0
+            do k = 1, np
+                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks)
+                if (ks /= NTV_OK) return
+                nev = nev + 18
+            end do
+            do
+                total = [sum(val(1, 1:np)), sum(val(2, 1:np))]
+                k = maxloc(err(1:np), 1)
+                if (err(k) <= res%x_tol*maxval(abs(total))) exit
+                if (np + 1 > max_panels) return
+                np = np + 1
+                lo(np) = (lo(k) + hi(k))/2
+                hi(np) = hi(k)
+                hi(k) = lo(np)
+                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks)
+                if (ks /= NTV_OK) return
+                call panel_eval(i, a, lo(np), hi(np), x6, w6, x12, w12, val(:, np), err(np), &
+                    ks)
+                if (ks /= NTV_OK) return
+                nev = nev + 36
+            end do
+            t = prof%temperature(i, a)
+            scale = (t/(species(a)%z*elementary))**2/(4*sqrt(pi)*j0(i))
+            result(i, a)%k11 = scale*total(1)
+            result(i, a)%k12 = scale*total(2)
+            a2 = prof%temperature_s(i, a)/(t*psi_pol_s(i))
+            a1 = prof%density_s(i, a)/(prof%density(i, a)*psi_pol_s(i)) &
+                + species(a)%z*elementary/t*prof%omega_te(i) - 1.5_dp*a2
+            result(i, a)%dpsi_dr = dpsi_dr(i)
+            result(i, a)%gamma_psi = -prof%density(i, a)*(result(i, a)%k11*a1 &
+                + result(i, a)%k12*a2)
+            result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
+            result(i, a)%factorisations = nev
+            result(i, a)%iterations = np
+            st = DEVICE_OK
+        end subroutine adaptive
+
+        !> 6- and 12-point Gauss-Legendre values of int x^(5/2) e^-x (1, x) R
+        !> on [lo, hi] and their difference.
+        subroutine panel_eval(i, a, lo, hi, x6, w6, x12, w12, fine, err, ks)
+            integer, intent(in) :: i, a
+            real(dp), intent(in) :: lo, hi, x6(:), w6(:), x12(:), w12(:)
+            real(dp), intent(out) :: fine(2), err
+            integer, intent(out) :: ks
+            real(dp) :: c, h, xv, rv, coarse(2), g
+            integer :: q
+            c = (lo + hi)/2
+            h = (hi - lo)/2
+            coarse = 0
+            fine = 0
+            err = 0
+            do q = 1, size(x6)
+                xv = c + h*x6(q)
+                rv = kernel_r(i, a, xv, ks)
+                if (ks /= NTV_OK) return
+                g = h*w6(q)*xv**2.5_dp*exp(-xv)*rv
+                coarse = coarse + g*[1.0_dp, xv]
+            end do
+            do q = 1, size(x12)
+                xv = c + h*x12(q)
+                rv = kernel_r(i, a, xv, ks)
+                if (ks /= NTV_OK) return
+                g = h*w12(q)*xv**2.5_dp*exp(-xv)*rv
+                fine = fine + g*[1.0_dp, xv]
+            end do
+            err = maxval(abs(fine - coarse))
+        end subroutine panel_eval
 
         subroutine assemble(i, a)
             integer, intent(in) :: i, a

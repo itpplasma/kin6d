@@ -34,7 +34,9 @@ program ntv_profile
     ! Optional line: collision model (0 monoenergetic, else dk_collop model),
     ! x_max, elements, order of the speed grid.
     read (u, '(a)') path
-    read (path, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order
+    read (path, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order, res%x_tol
+    if (status /= 0) read (path, *, iostat=status) res%collisions, res%x_max, res%nelem, &
+        res%order
     if (status == 0) then
         read (u, *) nsp
     else
