@@ -212,6 +212,36 @@ that were used before, so that the model error of each established approach is s
 the difference to the complete model. A preset reproduces its code only after the code benchmark
 of its stage has passed; until then the difference is labelled as numerical plus model error.
 
+## Implementation order
+
+Each item lands with its checks before the next starts; derivatives and cost records accompany
+every item.
+
+1. Close step 0: energy convergence of the AUG ion full operator at resonances.
+2. Step 1: hp prototype and its go/no-go.
+3. Rename to MILCA.
+4. Composed-term architecture: the current kernel expressed as a term list with the `neo2-ql`
+   preset, results unchanged within solver tolerance. All later terms are added to this.
+5. Local tokamak parity on the existing kernel: axisymmetric transport matrix (bootstrap,
+   conductivity, Ware pinch), heat flux K_2j, local parallel current, poloidal rotation coefficient,
+   E_r from force balance.
+6. Full perturbation drive in the local kernel: field-line bending and b.delta B, delta Phi_n, the
+   misaligned potential with its zero-current test, rotating perturbations.
+7. Step 2 (hp with all energies), if step 1 passed.
+8. Validity indicators (step 4), needed to decide where the complete model must run.
+9. Finite orbit width on the canonical Maxwellian (step 3).
+10. Perturbation in the orbits, isolated resonances, thin orbit and with finite orbit width
+    (steps 5 and 6).
+11. AUG 30835 and TC24 curves of these effects separately and combined (step 8, first part).
+12. Surface-varying background: Phi_1 from quasineutrality, sonic rotation, strong-E guiding-centre
+    equations.
+13. Stellarators (K1): 3D |B| with ripple wells, tangential drift, ambipolar roots, rabe,
+    relativistic operator and current drive.
+14. Overlapping resonances (step 7), second order in the gyroradius, sources and orbit loss in the
+    global solve, fast-ion background.
+15. FLR in the kinetic layer strips with Poisson and Ampere, kinetic delta W feedback, magnetic
+    islands.
+
 ## Working rule
 
 Exploration uses focused tests and resolution ladders. Pre-registered acceptance rules, error
