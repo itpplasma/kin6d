@@ -66,6 +66,7 @@
 !! surface.
 module kin6d_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortnum_polynomial, only: lagrange_deriv_weights
     use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
@@ -353,7 +354,7 @@ contains
         if (sf%source_dlf10) then
             if (.not. present(f10)) return
             if (size(f10, 1) /= 2*n_theta .or. size(f10, 2) /= n_leg/2) return
-            if (any(f10 /= f10)) return
+            if (any(ieee_is_nan(f10))) return
         end if
         n = n_theta
         a%n = n
