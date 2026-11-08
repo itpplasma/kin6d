@@ -1065,7 +1065,7 @@ add_test(NAME dk_collop_neo2_matrix COMMAND test_dk_collop neo2_matrix
 kin6d_test_labels(dk_collop_neo2_matrix fast CLASSES continuum TARGETS test_dk_collop)
 add_executable(test_dk_energy test/test_dk_energy.f90)
 target_link_libraries(test_dk_energy PRIVATE kin6d)
-foreach(check rigid_shift jvp operator_cache batch pfirsch_schluter estimate)
+foreach(check rigid_shift jvp operator_cache batch batch_estimate pfirsch_schluter estimate)
     add_test(NAME dk_energy_${check} COMMAND test_dk_energy ${check})
 endforeach()
 add_executable(test_dk_force_balance test/test_dk_force_balance.f90)

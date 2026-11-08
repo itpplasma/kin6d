@@ -1010,7 +1010,7 @@ kin6d_test_labels(vrmhd_island_decimal_steps fast CLASSES mhd
 kin6d_test_labels(vrmhd_island_graded_input fast CLASSES mhd
     TARGETS test_vrmhd_island)
 
-foreach(check rigid_shift jvp operator_cache batch pfirsch_schluter estimate)
+foreach(check rigid_shift jvp operator_cache batch batch_estimate pfirsch_schluter estimate)
     kin6d_test_labels(dk_energy_${check} fast CLASSES continuum TARGETS test_dk_energy)
 endforeach()
 foreach(check physics derivatives refusals)

@@ -2,7 +2,7 @@
 module kin6d_dk_energy_profile_io
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_finite
-    use kin6d_dk_energy, only: energy_axi_t, ENERGY_OK, ENERGY_BAD_INPUT
+    use kin6d_dk_energy, only: energy_axi_t, energy_estimate_t, ENERGY_OK, ENERGY_BAD_INPUT
     use kin6d_dk_force_balance, only: energy_balance_input_t, energy_balance_t, &
         energy_force_balance_cgs
     use kin6d_result_io, only: run_t, result_file_t, result_directory
@@ -16,33 +16,39 @@ contains
     !> p%r is increasing effective radius [cm]; p%k is replaced by response%k.
     !> Failed rows remain in NetCDF with their status and NaN outputs. Legacy
     !> files are withheld after a failed row; I/O errors have a separate status.
-    subroutine energy_profile_write_cgs(run, p, response, solver_status, status)
+    subroutine energy_profile_write_cgs(run, p, response, solver_status, status, estimate)
         type(run_t), intent(in) :: run
         type(energy_balance_input_t), intent(in) :: p(:)
         type(energy_axi_t), intent(in) :: response(:)
         integer, intent(in) :: solver_status(:)
         integer, intent(out) :: status
-        type(energy_balance_input_t) :: input
-        type(energy_balance_t) :: balance
+        type(energy_estimate_t), intent(in), optional :: estimate(:)
+        type(energy_balance_input_t) :: input, direction
+        type(energy_balance_t) :: balance, delta_balance
         type(result_file_t) :: file
         real(dp), allocatable :: er(:), vth(:), k(:), d31(:), d32(:), ds(:), &
-            d31s(:), d32s(:), backward(:, :)
-        integer, allocatable :: balance_status(:)
+            d31s(:), d32s(:), backward(:, :), delta(:, :)
+        integer, allocatable :: balance_status(:), refinement_status(:)
         real(dp) :: nan
-        integer :: n, j, ue, uv, ios, ios2
+        integer :: n, j, ue, uv, ios, ios2, delta_status
         logical :: erased_er, erased_vth
         character(16) :: export_state
         status = PROFILE_BAD_INPUT
         n = size(p)
         if (n < 1 .or. size(response) /= n .or. size(solver_status) /= n) return
+        if (present(estimate)) then
+            if (size(estimate) /= n) return
+        end if
         if (.not. all(ieee_is_finite(p%r)) .or. any(p%r < 0)) return
         if (any(p(2:)%r <= p(:n - 1)%r)) return
         nan = ieee_value(0.0_dp, ieee_quiet_nan)
         allocate (er(n), vth(n), k(n), d31(n), d32(n), ds(n), d31s(n), d32s(n), &
-            backward(2, n), balance_status(n))
+            backward(2, n), balance_status(n), delta(5, n), refinement_status(n))
         er = nan; vth = nan; k = nan; d31 = nan; d32 = nan; ds = nan
         d31s = nan; d32s = nan; backward = nan
+        delta = nan
         balance_status = ENERGY_BAD_INPUT
+        refinement_status = ENERGY_BAD_INPUT
         do j = 1, n
             if (solver_status(j) /= ENERGY_OK) cycle
             associate (v => response(j))
@@ -56,6 +62,14 @@ contains
             call energy_force_balance_cgs(input, balance, balance_status(j))
             if (balance_status(j) /= ENERGY_OK) cycle
             er(j) = balance%er; vth(j) = balance%vth
+            if (.not. present(estimate)) cycle
+            if (.not. all(ieee_is_finite([estimate(j)%k, estimate(j)%d31, estimate(j)%d32]))) cycle
+            direction = energy_balance_input_t(k=estimate(j)%k)
+            call energy_force_balance_cgs(input, delta_balance, delta_status, direction)
+            if (delta_status /= ENERGY_OK) cycle
+            delta(:, j) = [estimate(j)%k, estimate(j)%d31, estimate(j)%d32, &
+                delta_balance%der, delta_balance%dvth]
+            refinement_status(j) = ENERGY_OK
         end do
         status = PROFILE_INCOMPLETE
         export_state = 'incomplete'
@@ -98,6 +112,11 @@ contains
         call file%attribute('collision_scope', 'single-ion energy-flow response')
         call file%attribute('kamel_export', trim(export_state))
         call file%attribute('radial_derivative', 'increasing effective radius in cm')
+        if (present(estimate)) then
+            call file%attribute('refinement_indicator', 'signed refined-minus-coarse; not a bound')
+        else
+            call file%attribute('refinement_indicator', 'unavailable')
+        end if
         call file%write('r_eff', p%r, 'cm', 'effective minor radius', dims='surface')
         call file%write('n', p%n, 'cm^-3', 'ion number density', dims='surface')
         call file%write('T', p%t, 'erg', 'ion temperature', dims='surface')
@@ -119,10 +138,22 @@ contains
             'drive,surface', 'not a continuous error bound')
         call file%write('Er', er, 'statV/cm', 'radial electric field', 'surface', 'unavailable')
         call file%write('Vth', vth, 'cm/s', 'poloidal velocity', 'surface', 'unavailable')
+        call file%write('k_refinement_delta', delta(1, :), '1', 'refined-minus-coarse k', &
+            'surface', 'empirical refinement difference')
+        call file%write('D31_refinement_delta', delta(2, :), '1', 'refined-minus-coarse D31', &
+            'surface', 'empirical refinement difference')
+        call file%write('D32_refinement_delta', delta(3, :), '1', 'refined-minus-coarse D32', &
+            'surface', 'empirical refinement difference')
+        call file%write('Er_refinement_delta', delta(4, :), 'statV/cm', 'refined-minus-coarse Er', &
+            'surface', 'empirical refinement difference')
+        call file%write('Vth_refinement_delta', delta(5, :), 'cm/s', 'refined-minus-coarse poloidal velocity', &
+            'surface', 'empirical refinement difference')
         call file%write('solver_status', real(solver_status, dp), '1', &
             'ENERGY_OK=0; other codes indicate failed energy solve', 'surface')
         call file%write('force_balance_status', real(balance_status, dp), '1', &
             'ENERGY_OK=0; other codes indicate unavailable force balance', 'surface')
+        call file%write('refinement_status', real(refinement_status, dp), '1', &
+            '0=empirical difference available; 1=unavailable', 'surface')
         call file%close()
     end subroutine energy_profile_write_cgs
 

@@ -49,7 +49,7 @@ module kin6d_dk_energy
         MONO_OK, trig_resample
     use kin6d_dk_collop, only: collop_t, collop_species_t, collop_grid_t, collop_build, &
         collop_vth, collop_nuhat, collop_moments, collop_make_grid, COLLOP_OK, COLLOP_LORENTZ, &
-        COLLOP_TEST_PARTICLE, COLLOP_FULL
+        COLLOP_TEST_PARTICLE, COLLOP_FULL, COLLOP_BAD_INPUT
     implicit none
     private
     public :: energy_axi_t, energy_axi_coefficients, energy_axi_batch
@@ -123,20 +123,11 @@ contains
         integer, intent(out) :: status
         type(collop_grid_t) :: refined_grid
         type(energy_axi_t) :: refined
-        real(dp), allocatable :: edges(:)
-        integer :: e, st
+        integer :: st
 
         call energy_axi_coefficients(b, kappa, species, lnlambda, grid, n_leg, model, res, status)
         if (status /= ENERGY_OK) return
-        allocate (edges(0:2*grid%nelem))
-        do e = 0, grid%nelem
-            edges(2*e) = grid%edges(e)
-        end do
-        do e = 1, grid%nelem
-            edges(2*e - 1) = (grid%edges(e - 1) + grid%edges(e))/2
-        end do
-        call collop_make_grid(edges(2*grid%nelem), 2*grid%nelem, grid%order, &
-            refined_grid, st, edges)
+        call refinement_grid(grid, refined_grid, st)
         status = ENERGY_BAD_INPUT
         if (st /= COLLOP_OK) return
         call energy_axi_coefficients(trig_resample(b, 2*size(b) + 1), kappa, species, &
@@ -147,23 +138,53 @@ contains
         estimate%k = refined%k - res%k
     end subroutine energy_axi_estimate
 
+    subroutine refinement_grid(grid, refined, status)
+        type(collop_grid_t), intent(in) :: grid
+        type(collop_grid_t), intent(out) :: refined
+        integer, intent(out) :: status
+        real(dp), allocatable :: edges(:)
+        integer :: e
+        status = COLLOP_BAD_INPUT
+        if (.not. same_grid(grid, grid)) return
+        allocate (edges(0:2*grid%nelem))
+        do e = 0, grid%nelem
+            edges(2*e) = grid%edges(e)
+        end do
+        do e = 1, grid%nelem
+            edges(2*e - 1) = (grid%edges(e - 1) + grid%edges(e))/2
+        end do
+        call collop_make_grid(edges(2*grid%nelem), 2*grid%nelem, grid%order, &
+            refined, status, edges)
+    end subroutine refinement_grid
+
     !> Shared energy grid and collision model; one status per surface so a
-    !> rejected input does not discard the remaining profile.
-    subroutine energy_axi_batch(b, kappa, species, lnlambda, grid, n_leg, model, res, status)
+    !> rejected input does not discard the remaining profile. Optional
+    !> estimates use the same refinement as energy_axi_estimate.
+    recursive subroutine energy_axi_batch(b, kappa, species, lnlambda, grid, n_leg, model, &
+            res, status, estimate)
         real(dp), intent(in) :: b(:, :), kappa(:), lnlambda(:)
         type(collop_species_t), intent(in) :: species(:)
         type(collop_grid_t), intent(in) :: grid
         integer, intent(in) :: n_leg, model
         type(energy_axi_t), intent(out) :: res(:)
         integer, intent(out) :: status(:)
+        type(energy_estimate_t), intent(out), optional :: estimate(:)
         type(collop_t) :: op
+        type(collop_grid_t) :: refined_grid
+        type(energy_axi_t), allocatable :: refined(:)
+        real(dp), allocatable :: fine_b(:, :)
+        integer, allocatable :: fine_status(:)
         real(dp) :: lnl(1, 1)
         integer :: j, st, ns
 
         res = energy_axi_t()
         status = ENERGY_BAD_INPUT
+        if (present(estimate)) estimate = energy_estimate_t()
         ns = size(species)
         if (any([size(b, 2), size(kappa), size(lnlambda), size(res), size(status)] /= ns)) return
+        if (present(estimate)) then
+            if (size(estimate) /= ns) return
+        end if
         if (n_leg < 4 .or. .not. same_grid(grid, grid)) return
         do j = 1, ns
             if (.not. all(ieee_is_finite([species(j)%m, species(j)%z, species(j)%n, &
@@ -178,6 +199,28 @@ contains
         do j = 1, ns
             call energy_axi_coefficients(b(:, j), kappa(j), species(j), lnlambda(j), &
                 grid, n_leg, model, res(j), status(j), operator=op)
+        end do
+        if (.not. present(estimate)) return
+        call refinement_grid(grid, refined_grid, st)
+        if (st /= COLLOP_OK) then
+            where (status == ENERGY_OK) status = ENERGY_BAD_INPUT
+            return
+        end if
+        allocate (fine_b(2*size(b, 1) + 1, ns), refined(ns), fine_status(ns))
+        fine_b = 0
+        do j = 1, ns
+            if (status(j) /= ENERGY_OK) cycle
+            fine_b(:, j) = trig_resample(b(:, j), size(fine_b, 1))
+        end do
+        call energy_axi_batch(fine_b, kappa, species, lnlambda, refined_grid, &
+            2*n_leg, model, refined, fine_status)
+        do j = 1, ns
+            if (status(j) /= ENERGY_OK) cycle
+            status(j) = fine_status(j)
+            if (status(j) /= ENERGY_OK) cycle
+            estimate(j)%d31 = refined(j)%d31 - res(j)%d31
+            estimate(j)%d32 = refined(j)%d32 - res(j)%d32
+            estimate(j)%k = refined(j)%k - res(j)%k
         end do
     end subroutine energy_axi_batch
 

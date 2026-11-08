@@ -33,6 +33,10 @@ field harmonics or assess the error from polynomial continuation beyond the
 last speed element. The coarse response retains its backward errors and
 `unavailable` certification status; both solves
 must succeed (`status = ENERGY_OK`) before the differences are usable.
+The optional `estimate` output of `energy_axi_batch` applies the same
+refinement to each surface, reusing one collision operator per grid.
+Each surface must pass both solves; a failed refinement does not stop the
+remaining profile.
 
 `kin6d_dk_force_balance` exposes `energy_force_balance_cgs` for the single-ion
 force balance used by [KAMEL](https://github.com/itpplasma/KAMEL). Its inputs use
@@ -59,6 +63,14 @@ and resolved configuration, including geometry, collision model and grid.
 The exporter writes `output/<run name>.nc` through the common result contract,
 retaining the inputs, flow coefficients, density/temperature scaling tangents,
 backward errors, force balance and separate per-surface statuses.
+The optional `estimate` input writes signed refinement differences for `k`,
+`D31`, `D32`, `Er` and `Vth`. The force-balance differences use the generated
+directional derivative with only `k` varying; the force balance is linear in
+`k`, so these are also its refined-minus-coarse differences. They exclude
+geometry and physical-input errors and remain empirical indicators rather
+than bounds. Missing or failed indicators have NaN values and a per-surface
+`refinement_status` of 1; 0 means a difference is available. Certification
+remains `unavailable`.
 
 If every surface succeeds, `output/Er.dat` and `output/Vth.dat` contain
 KAMEL's two headerless columns: effective radius in cm, then electric field

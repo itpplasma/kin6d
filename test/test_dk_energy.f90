@@ -17,6 +17,7 @@ program test_dk_energy
     case ('jvp'); ok = jvp()
     case ('operator_cache'); ok = operator_cache()
     case ('batch'); ok = batch()
+    case ('batch_estimate'); ok = batch_estimate()
     case ('pfirsch_schluter'); ok = pfirsch_schluter()
     case ('estimate'); ok = estimate()
     case ('profile'); ok = profile()
@@ -26,6 +27,47 @@ program test_dk_energy
     end select
     if (.not. ok) error stop 1
 contains
+    logical function batch_estimate() result(ok)
+        type(collop_grid_t) :: grid, fine_grid
+        type(collop_species_t) :: species(3)
+        type(energy_axi_t) :: coarse(3), fine
+        type(energy_estimate_t) :: delta(3)
+        real(dp) :: b(5, 3), fine_b(11), bad_b(3, 3)
+        integer :: status(3), st, j
+        call collop_make_grid(6.0_dp, 2, 3, grid, st, [0.0_dp, 1.0_dp, 6.0_dp])
+        call collop_make_grid(6.0_dp, 4, 3, fine_grid, st, &
+            [0.0_dp, 0.5_dp, 1.0_dp, 3.5_dp, 6.0_dp])
+        species = [deuterons(-1.0_dp), deuterons(1e20_dp), deuterons(1e22_dp)]
+        fine_b = [(1 + 0.1_dp*cos(2*pi*(j - 1)/11), j=1, 11)]
+        do j = 1, 3
+            b(:, j) = [(1 + 0.1_dp*cos(2*pi*(st - 1)/5), st=1, 5)]
+        end do
+        call energy_axi_batch(b, [1.0_dp, 1.0_dp, 1.0_dp], species, &
+            [17.0_dp, 17.0_dp, 17.0_dp], grid, 8, COLLOP_FULL, coarse, status, delta)
+        if (any(status /= [ENERGY_BAD_INPUT, ENERGY_OK, ENERGY_OK])) &
+            error stop 'batch indicator discarded valid surfaces'
+        ok = .true.
+        do j = 2, 3
+            call energy_axi_coefficients(fine_b, 1.0_dp, species(j), 17.0_dp, &
+                fine_grid, 16, COLLOP_FULL, fine, st)
+            if (st /= ENERGY_OK) error stop 'batch indicator reference failed'
+            ok = ok .and. maxval(abs([delta(j)%k - (fine%k - coarse(j)%k), &
+                delta(j)%d31 - (fine%d31 - coarse(j)%d31), &
+                delta(j)%d32 - (fine%d32 - coarse(j)%d32)])) < 1e-9_dp
+        end do
+        species(1) = species(2)
+        do j = 1, 3
+            bad_b(:, j) = [1.1_dp, 0.95_dp, 0.95_dp]
+        end do
+        bad_b(:, 2) = [0.01_dp, 0.01_dp, 1.0_dp]
+        call energy_axi_batch(bad_b, [1.0_dp, 1.0_dp, 1.0_dp], species, &
+            [17.0_dp, 17.0_dp, 17.0_dp], grid, 8, COLLOP_FULL, coarse, status, delta)
+        ok = ok .and. all(status == [ENERGY_OK, ENERGY_BAD_INPUT, ENERGY_OK])
+        call energy_axi_batch(b, [1.0_dp, 1.0_dp, 1.0_dp], species, &
+            [17.0_dp, 17.0_dp, 17.0_dp], grid, 8, COLLOP_FULL, coarse, status, delta(:2))
+        ok = ok .and. all(status == ENERGY_BAD_INPUT)
+    end function batch_estimate
+
     logical function estimate() result(ok)
         type(collop_grid_t) :: grid, reference_grid
         type(energy_axi_t) :: coarse, reference

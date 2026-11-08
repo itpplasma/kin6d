@@ -2,7 +2,7 @@ program test_dk_energy_profile_io
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortio, only: fortio_file_t, fortio_status_t, hdf5_attribute_t
-    use kin6d_dk_energy, only: energy_axi_t, ENERGY_OK, ENERGY_BAD_INPUT
+    use kin6d_dk_energy, only: energy_axi_t, energy_estimate_t, ENERGY_OK, ENERGY_BAD_INPUT
     use kin6d_dk_force_balance, only: energy_balance_input_t, energy_balance_t, &
         energy_force_balance_cgs
     use kin6d_dk_energy_profile_io
@@ -10,6 +10,7 @@ program test_dk_energy_profile_io
     implicit none
     type(energy_balance_input_t) :: p(2), input
     type(energy_axi_t) :: response(2)
+    type(energy_estimate_t) :: estimate(2)
     type(energy_balance_t) :: expected(2)
     type(run_t) :: run
     type(fortio_file_t) :: file
@@ -65,10 +66,38 @@ program test_dk_energy_profile_io
     call expect('kin6d_config_literal', run%literal)
     call expect('kin6d_config_resolved', run%resolved)
     call expect('kamel_export', 'complete')
+    call expect('refinement_indicator', 'unavailable')
+    call file%read('k_refinement_delta', back, read_status); call require('missing indicator')
+    if (.not. all(ieee_is_nan(back))) error stop 'missing indicator replaced by zero'
+    call file%read('refinement_status', back, read_status); call require('missing indicator status')
+    if (any(back /= 1)) error stop 'missing indicator status lost'
     call file%close(read_status); call require('close')
 
+    estimate(1) = energy_estimate_t(d31=0.001_dp, d32=-0.002_dp, k=0.03_dp)
+    estimate(2) = energy_estimate_t(d31=-0.004_dp, d32=0.005_dp, k=-0.06_dp)
+    call energy_profile_write_cgs(run, p, response, solver_status, status, estimate)
+    if (status /= PROFILE_OK) error stop 'profile indicator export failed'
+    call file%open('output/test_dk_energy_profile_io.nc', read_status); call require('indicator file')
+    call file%read('k_refinement_delta', back, read_status); call require('k indicator')
+    if (any(back /= estimate%k)) error stop 'indicator sign lost'
+    call file%read('D31_refinement_delta', back, read_status); call require('D31 indicator')
+    if (any(back /= estimate%d31)) error stop 'D31 indicator lost'
+    call file%read('D32_refinement_delta', back, read_status); call require('D32 indicator')
+    if (any(back /= estimate%d32)) error stop 'D32 indicator lost'
+    call file%read('Er_refinement_delta', back, read_status); call require('Er indicator')
+    if (any(abs(back + p%tr/p%charge*estimate%k) > 1e-15_dp)) error stop 'Er indicator units'
+    call file%read('Vth_refinement_delta', back, read_status); call require('Vth indicator')
+    if (any(abs(back - 2.99792458e10_dp*p%bz*p%tr/(p%charge*p%b**2)*estimate%k) &
+        > 1e-12_dp)) error stop 'Vth indicator units'
+    call file%read('refinement_status', back, read_status); call require('indicator statuses')
+    if (any(back /= 0)) error stop 'available indicator status lost'
+    call file%get_attributes('/', attributes, read_status); call require('indicator semantics')
+    call expect('refinement_indicator', 'signed refined-minus-coarse; not a bound')
+    call expect('certification', 'unavailable')
+    call file%close(read_status); call require('indicator close')
+
     solver_status(1) = ENERGY_BAD_INPUT
-    call energy_profile_write_cgs(run, p, response, solver_status, status)
+    call energy_profile_write_cgs(run, p, response, solver_status, status, estimate)
     if (status /= PROFILE_INCOMPLETE) error stop 'failed solver row accepted'
     inquire (file='output/Er.dat', exist=exists)
     if (exists) error stop 'stale Er profile survived failed row'
@@ -80,6 +109,10 @@ program test_dk_energy_profile_io
         error stop 'failed row discarded valid row'
     call file%read('solver_status', back, read_status); call require('solver statuses')
     if (any(back /= real(solver_status, dp))) error stop 'solver statuses lost'
+    call file%read('refinement_status', back, read_status); call require('failed indicator status')
+    if (any(back /= [1.0_dp, 0.0_dp])) error stop 'failed indicator discarded valid row'
+    call file%read('k_refinement_delta', back, read_status); call require('failed indicator')
+    if (.not. ieee_is_nan(back(1)) .or. back(2) /= estimate(2)%k) error stop 'failed indicator row'
     call file%get_attributes('/', attributes, read_status); call require('failed provenance')
     call expect('kamel_export', 'incomplete')
     call file%close(read_status); call require('failed close')
@@ -94,6 +127,8 @@ program test_dk_energy_profile_io
     call file%close(read_status); call require('balance close')
     call energy_profile_write_cgs(run, p, response(:1), solver_status, status)
     if (status /= PROFILE_BAD_INPUT) error stop 'shape mismatch accepted'
+    call energy_profile_write_cgs(run, p, response, solver_status, status, estimate(:1))
+    if (status /= PROFILE_BAD_INPUT) error stop 'indicator shape mismatch accepted'
     p(2)%r = p(1)%r
     call energy_profile_write_cgs(run, p, response, solver_status, status)
     if (status /= PROFILE_BAD_INPUT) error stop 'duplicate radius accepted'
