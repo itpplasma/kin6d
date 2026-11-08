@@ -27,6 +27,7 @@ program test_dk_ntv
     case ('rotation_limit'); ok = rotation_limit()
     case ('ql_dpar'); ok = ql_dpar()
     case ('ql_f10'); ok = ql_f10()
+    case ('ql_oracle'); ok = ql_oracle()
     case ('assembly'); ok = assembly()
     case ('f10_provider'); ok = f10_provider()
     case ('sparse_assembly'); ok = assembly(2)
@@ -514,10 +515,153 @@ contains
         ok = ok .and. abs(k1%r/k0%r - 1) > 1e-6_dp
     end function f10_provider
 
-    !> The parallel-derivative quasilinear drive (#192): the two pieces of
-    !> the perturbed radial drift together form the i m/q drive, it
-    !> vanishes on the resonant m = n q, and the amplitude sensitivities
-    !> keep their adjoint form with the switch on.
+    !> Both quasilinear sources against an independent transcription of the
+    !> right-hand side of Kasilov et al. (2014), Eq. (61), in this kernel's
+    !> units (Boozer streaming k_s = k b, weight (1 + xi^2)/b):
+    !>   (1 + xi^2)/(b v) sum_m (i n + (i (m - n q) - 2 d_theta ln b)/q)
+    !>     c_m e^{i m theta}
+    !>   + k_s/b sum_m (i m - d_theta ln b) c_m e^{i m theta} (1 - xi^2)/2 d_xi f_10
+    !>   + sum_m c_m e^{i m theta}/b (nu/2) l(l + 1) f_10,l,
+    !> projected on P_i by Gauss quadrature with the DFT derivative, with f_10
+    !> from the same projection of the n = 0 equation driven by
+    !> (1 + xi^2) d_theta b/(b v q) (a theta-constant density offset, which
+    !> both sources annihilate, is left free).
+    logical function ql_oracle() result(ok)
+        integer, parameter :: nt = 7, nl = 12, nq = 40, nn = nt*nl
+        real(dp), parameter :: v = 1.3_dp, nu = 0.3_dp, omega = 0.2_dp, pre = 0.5_dp
+        real(dp), parameter :: pi = 4*atan(1.0_dp)
+        complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
+        type(ntv_surface_t) :: sf
+        type(ntv_kernel_t) :: kern
+        real(dp), allocatable :: f10(:, :)
+        real(dp) :: xq(nq), wq(nq), p(nq, nl), dp_(nq, nl), theta(nt), b(nt), d(nt), &
+            ks(nt), dlnb(nt), meas(nt), wgt(nq), dft(nt, nt), a0(nn + 1, nn + 1), &
+            r0(nn + 1), g(nl, nt), r, mirror_ij, coll_ij, stream_ij
+        complex(dp) :: a(nn, nn), rhs(nn), s(nt), sd(nt), sm(nt), db(nt), moment
+        integer :: it, jt, i, j, mode, row, col, status, info, piv(nn + 1)
+        interface
+            subroutine zgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                complex(dp), intent(inout) :: a(lda, *), b(ldb, *)
+                integer, intent(out) :: ipiv(*), info
+            end subroutine zgesv
+            subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+                integer, intent(out) :: ipiv(*), info
+            end subroutine dgesv
+        end interface
+
+        sf = sample()
+        sf%m = [5, 6, 7]
+        sf%c = [(2e-4_dp, -1e-4_dp), (1e-3_dp, 2e-4_dp), (-3e-4_dp, 5e-5_dp)]
+        sf%boozer_stream = .true.
+        sf%weight = NTV_WEIGHT_FULL
+        call gauss_legendre(nq, xq, wq)
+        p(:, 1) = 1; p(:, 2) = xq; dp_(:, 1) = 0; dp_(:, 2) = 1
+        do j = 3, nl
+            p(:, j) = ((2*j - 3)*xq*p(:, j - 1) - (j - 2)*p(:, j - 2))/(j - 1)
+            dp_(:, j) = dp_(:, j - 2) + (2*j - 3)*p(:, j - 1)
+        end do
+        theta = [(2*pi*(it - 1)/nt, it=1, nt)]
+        dft = 0
+        do jt = 1, nt
+            do it = 1, nt
+                do mode = 1, (nt - 1)/2
+                    dft(it, jt) = dft(it, jt) - 2*mode*sin(mode*(theta(it) - theta(jt)))/nt
+                end do
+            end do
+        end do
+        wgt = 1 + xq**2
+        b = 1 - sf%eps*cos(theta)
+        d = (cos(theta) - sf%offset)/b
+        dlnb = sf%eps*sin(theta)/b
+        ks = sf%k*b
+        meas = 2/b**3
+        s = 0; sd = 0; sm = 0; db = 0
+        do j = 1, size(sf%m)
+            s = s + iu*sf%n*sf%c(j)*exp(iu*sf%m(j)*theta)
+            sd = sd + (iu*(sf%m(j) - sf%n*sf%q) - 2*dlnb)/sf%q*sf%c(j)*exp(iu*sf%m(j)*theta)
+            sm = sm + (iu*sf%m(j) - dlnb)*sf%c(j)*exp(iu*sf%m(j)*theta)
+            db = db + sf%c(j)*exp(iu*sf%m(j)*theta)
+        end do
+
+        ! f_10: the n = 0 projection, bordered by a P_0 density source and
+        ! the constraint that the P_0 component vanishes at theta = 0.
+        a0 = 0
+        do it = 1, nt
+            do i = 1, nl
+                row = (i - 1)*nt + it
+                r0(row) = sum(wq*p(:, i)*wgt)*sf%eps*sin(theta(it))/(b(it)*v*sf%q)
+                if (i == 1) a0(row, nn + 1) = 2
+                do j = 1, nl
+                    a0(row, (j - 1)*nt + it) = sum(wq*(nu/2*(1 - xq**2)*dp_(:, i)*dp_(:, j) &
+                        - ks(it)*dlnb(it)/2*(1 - xq**2)*p(:, i)*dp_(:, j)))
+                    do jt = 1, nt
+                        a0(row, (j - 1)*nt + jt) = a0(row, (j - 1)*nt + jt) &
+                            + ks(it)*dft(it, jt)*sum(wq*xq*p(:, i)*p(:, j))
+                    end do
+                end do
+            end do
+        end do
+        a0(nn + 1, 1) = 1
+        r0(nn + 1) = 0
+        call dgesv(nn + 1, 1, a0, nn + 1, piv, r0, nn + 1, info)
+        if (info /= 0) error stop 'oracle f_10 solve failed'
+        do j = 1, nl
+            g(j, :) = r0((j - 1)*nt + 1:j*nt)
+        end do
+
+        a = 0
+        do it = 1, nt
+            do i = 1, nl
+                row = (i - 1)*nt + it
+                rhs(row) = sum(wq*p(:, i)*wgt)*(s(it) + sd(it))/(b(it)*v)
+                do j = 1, nl
+                    col = (j - 1)*nt + it
+                    mirror_ij = sum(wq*p(:, i)*(1 - xq**2)/2*dp_(:, j))
+                    coll_ij = sum(wq*nu/2*(1 - xq**2)*dp_(:, i)*dp_(:, j))
+                    stream_ij = sum(wq*xq*p(:, i)*p(:, j))
+                    rhs(row) = rhs(row) + ks(it)/b(it)*sm(it)*mirror_ij*g(j, it) &
+                        + db(it)/b(it)*coll_ij*g(j, it)
+                    a(row, col) = coll_ij - ks(it)*dlnb(it)*mirror_ij &
+                        + sum(wq*iu*sf%n/v*(omega + pre*d(it)*wgt)*p(:, i)*p(:, j)) &
+                        - ks(it)*iu*sf%n*sf%q*stream_ij
+                    do jt = 1, nt
+                        a(row, (j - 1)*nt + jt) = a(row, (j - 1)*nt + jt) &
+                            + ks(it)*dft(it, jt)*stream_ij
+                    end do
+                end do
+            end do
+        end do
+        call zgesv(nn, 1, a, nn, piv, rhs, nn, info)
+        if (info /= 0) error stop 'oracle solve failed'
+        r = 0
+        do it = 1, nt
+            moment = 0
+            do j = 1, nl
+                moment = moment + rhs((j - 1)*nt + it)*sum(wq*wgt*p(:, j))
+            end do
+            r = r + meas(it)*real(conjg(s(it))*moment, dp)
+        end do
+        r = 2*pi/nt*r
+
+        call ntv_f10(sf, v, nu*v, nt, nl, f10, status)
+        if (status /= NTV_OK) error stop 'f10 provider failed'
+        sf%source_dpar = .true.
+        sf%source_dlf10 = .true.
+        call ntv_kernel(sf, v, nu*v, omega, pre, nt, nl, kern, status, &
+            indicators=.false., f10=f10)
+        if (status /= NTV_OK) error stop 'kernel failed'
+        print '(a,2es22.14,es9.1)', 'Eq. (61) sources against the oracle', kern%r, r, &
+            abs(kern%r/r - 1)
+        ok = abs(kern%r/r - 1) < 1e-10_dp
+    end function ql_oracle
+
+    !> The amplitude sensitivities keep their adjoint form with the
+    !> drift source of Eq. (61) switched on (#192).
     logical function ql_dpar() result(ok)
         type(ntv_surface_t) :: sf, up, down
         type(ntv_kernel_t) :: k0, kp, km
@@ -526,34 +670,12 @@ contains
         real(dp) :: h, fd
         complex(dp) :: dc
 
-        sf = sample()
-        ! With i n + i (m - n q)/q = i m/q the switch scales the drive, and
-        ! so the response, by m/(n q), while the torque still pairs with S.
-        call ntv_kernel(sf, v, nu, omega, pre, 33, 48, k0, status, indicators=.false.)
-        if (status /= NTV_OK) error stop 'kernel failed'
-        up = sf
-        up%source_dpar = .true.
-        call ntv_kernel(up, v, nu, omega, pre, 33, 48, kp, status, indicators=.false.)
-        if (status /= NTV_OK) error stop 'kernel failed'
-        fd = real(sf%m(1), dp)/(sf%n*sf%q)
-        print '(a,es9.1)', 'dpar on the i m/q identity: ', abs(kp%r/(fd*k0%r) - 1)
-        ok = abs(kp%r/(fd*k0%r) - 1) < 1e-12_dp
-
-        ! On the resonant m = n q the parallel derivative of the
-        ! perturbation along the line vanishes.
-        up = sample()
-        up%q = 2.0_dp
-        up%k = 1/(up%q*6.2_dp)
-        call ntv_kernel(up, v, nu, omega, pre, 33, 48, k0, status, indicators=.false.)
-        up%source_dpar = .true.
-        call ntv_kernel(up, v, nu, omega, pre, 33, 48, kp, status, indicators=.false.)
-        print '(a,es9.1)', 'dpar on the resonant m = n q: ', abs(kp%r - k0%r)
-        ok = ok .and. abs(kp%r - k0%r) <= 1e-13_dp*abs(k0%r)
-
+        ok = .true.
         ! Amplitude sensitivity with the switch on against differences.
         sf = sample()
         sf%source_dpar = .true.
         call ntv_kernel(sf, v, nu, omega, pre, 33, 48, k0, status, indicators=.false.)
+        if (status /= NTV_OK) error stop 'kernel failed'
         do part = 1, 2
             dc = merge((1.0_dp, 0.0_dp), (0.0_dp, 1.0_dp), part == 1)
             h = 1e-4_dp*abs(sf%c(1))
