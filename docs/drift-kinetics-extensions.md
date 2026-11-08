@@ -241,6 +241,13 @@ every item.
     global solve, fast-ion background.
 15. FLR in the kinetic layer strips with Poisson and Ampere, kinetic delta W feedback, magnetic
     islands.
+16. Self-consistent steady state, in three levels: (i) linear per n, the kinetic charge and
+    current of this solver closing Poisson and Ampere through the outer operator of
+    [response-unified.md](response-unified.md), a steady driven linear gyrokinetic response;
+    (ii) torque balance for rotation and E_r and quasilinear profile change with given sources,
+    by Newton with the solver's tangents, including penetration bifurcations by continuation;
+    (iii) the n = 0 kinetic currents and pressures fed back into the equilibrium. Turbulent
+    transport stays an input, not a result.
 
 ## Working rule
 
