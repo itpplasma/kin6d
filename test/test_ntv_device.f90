@@ -91,6 +91,8 @@ contains
         res%n_leg = 60
         res%n_x = 6
         res%chunk = 1
+        ! The preconditioned sweep belongs to the Legendre kernel.
+        res%thin_legendre = .true.
         call ntv_device_profile(eq, pert, 3, sp, prof, res, direct, status)
         call check('direct profile', status == DEVICE_OK)
         res%chunk = ns
@@ -383,6 +385,19 @@ contains
         if (failures > 0) return
         call close_to('hp thin K11', hp(1, 1)%k11, legendre(1, 1)%k11, 2e-3_dp)
         call close_to('hp thin K12', hp(1, 1)%k12, legendre(1, 1)%k12, 2e-3_dp)
+        ! With the two NEO-2-QL sources, which move K11 by 1.2 % here.
+        res%sources = .true.
+        res%n_leg = 800
+        res%n_theta = 129
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, legendre, status)
+        call check('Legendre thin kernel with sources', status == DEVICE_OK)
+        res%thin_legendre = .false.
+        res%n_theta = 33
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, hp, status)
+        call check('hp thin kernel with sources', status == DEVICE_OK)
+        if (failures > 0) return
+        call close_to('hp thin K11, sources', hp(1, 1)%k11, legendre(1, 1)%k11, 5e-4_dp)
+        call close_to('hp thin K12, sources', hp(1, 1)%k12, legendre(1, 1)%k12, 5e-4_dp)
     end subroutine hp_thin_matches_legendre
 
     !> Circular surfaces with a toroidal current and shear; the perturbation

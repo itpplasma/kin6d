@@ -99,8 +99,7 @@ module milca_ntv_device
         ! relative width of the layer at the separatrix.
         logical :: orbit_width = .false.
         ! Thin orbits: the spectral-element kernel on the Boozer line, on the
-        ! mesh below (default), or the Legendre kernel of milca_dk_ntv, which
-        ! alone carries the two further NEO-2-QL sources.
+        ! mesh below (default), or the Legendre kernel of milca_dk_ntv.
         logical :: thin_legendre = .false.
         integer :: hp_order = 4, hp_columns = 24, hp_rows = 8
         real(dp) :: hp_delta = 1e-3_dp
@@ -180,11 +179,10 @@ contains
         end do
     end function deflection_frequency
 
-    !> Whether the thin-orbit kernel is the Legendre one: on request, or for
-    !> the two NEO-2-QL sources, which the spectral elements do not carry.
+    !> Whether the thin-orbit kernel is the Legendre one (on request).
     pure logical function thin_legendre(res)
         type(ntv_resolution_t), intent(in) :: res
-        thin_legendre = res%thin_legendre .or. res%sources
+        thin_legendre = res%thin_legendre
     end function thin_legendre
 
     subroutine ntv_device_profile(eq, pert, n_tor, species, prof, res, result, status)
@@ -389,6 +387,8 @@ contains
             op%pre = species(a)%mass*v*v/(2*species(a)%z*elementary)
             op%nu = deflection_frequency(species, prof%density(i, :), &
                 prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
+            op%source_dpar = res%sources
+            op%source_dlf10 = res%sources
             call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
                 res%hp_delta, 0.3_dp, mesh)
             call hp_ntv_kernel(g, mesh, op, rv, st)
@@ -635,8 +635,8 @@ contains
     !> n_tor n_theta n_leg n_x chunk max_iterations sources(0|1), an optional
     !> line 'orbit_width [order columns rows delta]' for the finite-width
     !> kernel, 'hp [order columns rows delta]' for the mesh of the thin kernel
-    !> (the default without sources) or 'legendre' for the Legendre thin
-    !> kernel (always used with sources; n_leg applies to it only), an optional
+    !> (the default) or 'legendre' for the Legendre thin kernel (n_leg applies
+    !> to it only), an optional
     !> line collision model x_max elements order [x_tol], the species (Z,
     !> mass [kg]) and per surface s Omega_tE [rad/s] with one line per
     !> species: density [m^-3] T [J] dn/ds dT/ds kappa [1/m].
