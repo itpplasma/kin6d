@@ -42,7 +42,8 @@ module milca_ntv_device
     private
     public :: ntv_species_t, ntv_profile_t, ntv_resolution_t, ntv_species_result_t
     public :: ntv_device_profile, deflection_frequency, ntv_read_input, &
-        ntv_device_axisymmetric, ntv_axisymmetric_result_t, ntv_omega_te_from_rotation
+        ntv_device_axisymmetric, ntv_axisymmetric_result_t, ntv_omega_te_from_rotation, &
+        ntv_indicator_t, ntv_device_indicators
     integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2, &
         DEVICE_NO_CONVERGENCE = 3
 
@@ -113,6 +114,20 @@ module milca_ntv_device
         real(dp), allocatable :: d(:, :, :, :), flow(:), omega(:), k_pol(:)
         real(dp) :: kappa = 0, q = 0, dpsi_dr = 0, psi_pol_s = 0, g_cov = 0, g_phi = 0, &
             b2 = 0, bootstrap = 0
+        integer :: status = DEVICE_OK
+    end type
+
+    !> Validity indicators of the thin-orbit model on one surface, per species
+    !> at the thermal speed v_a = sqrt(2 T_a/m_a): the inverse aspect ratio
+    !> eps = (B_max - B_min)/(B_max + B_min), the gradient length
+    !> L = min(n/|dn/dr|, T/|dT/dr|) [m], the radial excursion of a passing
+    !> orbit with v_par = v_a, dr = m v_a |G|/(Z e sqrt(<B^2>) |dpsi_pol/dr|) [m]
+    !> (rho_L B/B_theta in the circular limit), and the banana width
+    !> 2 sqrt(2 eps) dr of a deeply trapped orbit. The thin-orbit expansion
+    !> needs dr/L << 1; the excursion grows like the speed.
+    type :: ntv_indicator_t
+        real(dp) :: eps = 0
+        real(dp), allocatable :: gradient_length(:), excursion(:), banana(:)
         integer :: status = DEVICE_OK
     end type
 
@@ -594,6 +609,40 @@ contains
         end subroutine flows
     end subroutine ntv_device_axisymmetric
 
+    !> Orbit-width indicators (ntv_indicator_t) on every surface of the profile.
+    subroutine ntv_device_indicators(eq, pert, n_tor, species, prof, res, ind, status)
+        type(boozer_file_t), intent(in) :: eq, pert
+        integer, intent(in) :: n_tor
+        type(ntv_species_t), intent(in) :: species(:)
+        type(ntv_profile_t), intent(in) :: prof
+        type(ntv_resolution_t), intent(in) :: res
+        type(ntv_indicator_t), allocatable, intent(out) :: ind(:)
+        integer, intent(out) :: status
+        type(ntv_surface_t) :: sf
+        real(dp) :: j0, dpsi_dr, psi_pol_s, g_cov, b2, ds_dr, ln, lt, va
+        integer :: i, a, nsp
+        nsp = size(species)
+        allocate (ind(size(prof%s)))
+        do i = 1, size(prof%s)
+            call surface(eq, pert, n_tor, prof%s(i), res, sf, j0, dpsi_dr, psi_pol_s, status, &
+                g_cov=g_cov, b2_avg=b2, eps=ind(i)%eps)
+            if (status /= DEVICE_OK) return
+            ds_dr = dpsi_dr/psi_pol_s
+            allocate (ind(i)%gradient_length(nsp), ind(i)%excursion(nsp), ind(i)%banana(nsp))
+            do a = 1, nsp
+                ln = prof%density(i, a)/max(abs(prof%density_s(i, a)*ds_dr), tiny(1.0_dp))
+                lt = prof%temperature(i, a)/max(abs(prof%temperature_s(i, a)*ds_dr), &
+                    tiny(1.0_dp))
+                ind(i)%gradient_length(a) = min(ln, lt)
+                va = sqrt(2*prof%temperature(i, a)/species(a)%mass)
+                ind(i)%excursion(a) = species(a)%mass*va*abs(g_cov) &
+                    /(abs(species(a)%z)*elementary*sqrt(b2)*abs(dpsi_dr))
+                ind(i)%banana(a) = 2*sqrt(2*ind(i)%eps)*ind(i)%excursion(a)
+            end do
+        end do
+        status = DEVICE_OK
+    end subroutine ntv_device_indicators
+
     !> E x B rotation Omega_tE [rad/s] of surface i from the radial force
     !> balance, given the toroidal rotation V_phi/R [rad/s] of species a at
     !> major radius r_major [m] (NEO-2 isw_calc_er = 1). V_phi/R is linear in
@@ -778,7 +827,7 @@ contains
     !> harmonics of toroidal number n_tor resolved by the theta grid, and the
     !> flux-function factors of the torque.
     subroutine surface(eq, pert, n_tor, s, res, sf, j0, dpsi_dr, psi_pol_s, status, g_cov, &
-            b2_avg, g_phi)
+            b2_avg, g_phi, eps)
         type(boozer_file_t), intent(in) :: eq, pert
         integer, intent(in) :: n_tor
         real(dp), intent(in) :: s
@@ -786,10 +835,10 @@ contains
         type(ntv_surface_t), intent(out) :: sf
         real(dp), intent(out) :: j0, dpsi_dr, psi_pol_s
         integer, intent(out) :: status
-        real(dp), intent(out), optional :: g_cov, b2_avg, g_phi
+        real(dp), intent(out), optional :: g_cov, b2_avg, g_phi, eps
         type(boozer_surface_t) :: es, ps
         type(ntv_boozer_line_t) :: line
-        real(dp) :: theta, bmod, grad_s, b2
+        real(dp) :: theta, bmod, grad_s, b2, bmin, bmax
         logical, allocatable :: keep(:)
         integer :: st, it, k
 
@@ -817,6 +866,8 @@ contains
         allocate (sf%line, source=line)
 
         j0 = 0
+        bmin = huge(1.0_dp)
+        bmax = 0
         do it = 0, res%n_theta - 1
             theta = 2*pi*it/res%n_theta
             bmod = 0
@@ -825,6 +876,18 @@ contains
             end do
             j0 = j0 + (line%bref/bmod)**2
         end do
+        if (present(eps)) then
+            do it = 0, 16*res%n_theta - 1
+                theta = 2*pi*it/(16*res%n_theta)
+                bmod = 0
+                do k = 1, size(es%m)
+                    bmod = bmod + es%bmn(k)*cos(es%m(k)*theta) + es%bma(k)*sin(es%m(k)*theta)
+                end do
+                bmin = min(bmin, abs(bmod))
+                bmax = max(bmax, abs(bmod))
+            end do
+            eps = (bmax - bmin)/(bmax + bmin)
+        end if
         j0 = 2*pi*j0/res%n_theta
         psi_pol_s = es%iota*es%psi_prime
         call boozer_average(es, 2*res%n_theta, 1, grad_s, b2)
