@@ -7,13 +7,19 @@
 !!   plateau        D11 -> pi kappa eps^2/16 for b = 1/(1 + eps cos theta), eps -> 0,
 !!   Onsager        D31 = -D13, and the density-source multipliers vanish,
 !! with f_c = (3/4) <b^2> int_0^{1/b_max} lam dlam/<sqrt(1 - lam b)>.
+!!   quasisymmetric_3d  a 3D surface with b = b(theta - N zeta) and a
+!!     tokamak with the same b(theta): b.grad = kappa b (1 - q N) d_chi and the
+!!     radial drift kappa (1 + N I/G) d_chi b, so D31 and D11 equal the tokamak
+!!     values at kappa (iota - N)/iota times (1 + N I/G) iota/(iota - N) and
+!!     its square, and D33 is unchanged; an axisymmetric b on the 3D grid
+!!     reproduces the tokamak coefficients.
 !! The finite-collisionality corrections of the first two limits scale like
 !! sqrt(nu); two collisionalities eliminate them (Richardson).
 program test_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK, &
         mono_coefficients_jvp, mono_estimate_t, mono_estimate, mono_factor_t, mono_factor, &
-        mono_solve, mono_apply, mono_drives, mono_coupling
+        mono_solve, mono_apply, mono_drives, mono_coupling, mono_coefficients_3d
     use fortnum_quadrature, only: gauss_legendre_ab
     use milca_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
         boozer_surface, BOOZER_OK
@@ -34,6 +40,7 @@ program test_dk_mono
     case ('estimate'); ok = estimate()
     case ('factor_api'); ok = factor_api()
     case ('coupling'); ok = coupling()
+    case ('quasisymmetric_3d'); ok = quasisymmetric_3d()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -345,5 +352,32 @@ contains
         print '(a,es10.2)', 'coupling blocks vs mono_apply:', err
         ok = err < 1e-12_dp
     end function coupling
+
+    logical function quasisymmetric_3d() result(ok)
+        real(dp), parameter :: iota = 1.2_dp, kappa = 0.3_dp, ig = 0.05_dp, nu = 1e-2_dp
+        integer, parameter :: nper = 4, nt = 17, nz = 17
+        type(mono_coefficients_t) :: c1, c3, ca
+        real(dp) :: b(nt, nz), fac, th, ze
+        integer :: i, j, st
+        do j = 1, nz
+            do i = 1, nt
+                th = 2*pi*(i - 1)/nt
+                ze = 2*pi*(j - 1)/(nz*nper)
+                b(i, j) = 1 - 0.1_dp*cos(th - nper*ze)
+            end do
+        end do
+        call mono_coefficients_3d(b, nper, 1/iota, ig, kappa, nu, 40, c3, st)
+        ok = st == MONO_OK
+        call mono_coefficients(b(:, 1), kappa*(iota - nper)/iota, nu, 40, c1, st)
+        ok = ok .and. st == MONO_OK
+        fac = (1 + nper*ig)*iota/(iota - nper)
+        ok = close_to('QH D31', c3%d31, c1%d31*fac, 1e-10_dp) .and. ok
+        ok = close_to('QH D11', c3%d11, c1%d11*fac**2, 1e-10_dp) .and. ok
+        ok = close_to('QH D33', c3%d33, c1%d33, 1e-10_dp) .and. ok
+        call mono_coefficients_3d(spread(b(:, 1), 2, 3), nper, 1/iota, ig, kappa, nu, 40, &
+            ca, st)
+        call mono_coefficients(b(:, 1), kappa, nu, 40, c1, st)
+        ok = close_to('axisymmetric D31', ca%d31, c1%d31, 1e-12_dp) .and. ok
+    end function quasisymmetric_3d
 
 end program test_dk_mono

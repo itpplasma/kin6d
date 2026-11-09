@@ -38,7 +38,7 @@ module milca_dk_mono
     ! Per-speed building blocks for solvers that couple speeds through
     ! collisions: factorisation, bordered solve, operator action, drives.
     public :: mono_point_t, mono_factor_t, mono_factor, mono_solve, mono_apply, mono_drives
-    public :: mono_coupling
+    public :: mono_coupling, mono_coefficients_3d
     integer, parameter, public :: MONO_OK = 0, MONO_BAD_INPUT = 1, &
         MONO_SINGULAR = 2
 
@@ -212,8 +212,8 @@ contains
         integer, intent(in) :: n_leg
         type(mono_factor_t), intent(out) :: f
         integer, intent(out) :: status
-        integer :: n, l, j, info
-        real(dp), allocatable :: s(:, :), up(:, :), weight(:)
+        integer :: n
+        real(dp), allocatable :: weight(:)
 
         n = size(b)
         status = MONO_BAD_INPUT
@@ -230,6 +230,19 @@ contains
         f%p%weight_sum = sum(weight)
         f%p%weight = weight/f%p%weight_sum
 
+        call factor_blocks(f, nu, status)
+    end subroutine mono_factor
+
+    !> Block elimination of the operator from the highest Legendre degree
+    !> down and the bordered l = 0 system, for the points and derivative of f.
+    subroutine factor_blocks(f, nu, status)
+        type(mono_factor_t), intent(inout) :: f
+        real(dp), intent(in) :: nu
+        integer, intent(out) :: status
+        integer :: n, l, j, info
+        real(dp), allocatable :: s(:, :), up(:, :)
+
+        n = f%n
         ! S_lmax = nu lmax (lmax + 1)/2, S_l = Di_l - Up_l Y_{l+1}.
         allocate (f%s_lu(n, n, f%lmax), f%s_piv(n, f%lmax), f%y(n, n, f%lmax), &
             s(n, n), up(n, n))
@@ -259,7 +272,75 @@ contains
         call dgetrf(n + 1, n + 1, f%border_lu, n + 1, f%border_piv, info)
         if (info /= 0) return
         status = MONO_OK
-    end subroutine mono_factor
+    end subroutine factor_blocks
+
+    !> Monoenergetic coefficients on a 3D surface in Boozer angles: b(i, j) =
+    !! B/B0 on n_theta x n_zeta (both odd) uniform points of theta in
+    !! [0, 2 pi) and zeta in one field period [0, 2 pi/nper). The parallel
+    !! derivative is b.grad = kappa b (d_theta + q d_zeta), q = 1/iota, and the
+    !! radial drift is that of the axisymmetric case with d_theta b replaced by
+    !! d_theta b - (I/G) d_zeta b, from (B x grad B).grad psi ~ I d_zeta B -
+    !! G d_theta B. The flux-surface weight is 1/b^2.
+    subroutine mono_coefficients_3d(b, nper, q, i_over_g, kappa, nu, n_leg, c, status)
+        real(dp), intent(in) :: b(:, :), q, i_over_g, kappa, nu
+        integer, intent(in) :: nper, n_leg
+        type(mono_coefficients_t), intent(out) :: c
+        integer, intent(out) :: status
+        type(mono_factor_t) :: f
+        real(dp), allocatable :: g(:, :, :), dt(:, :), dz(:, :), bv(:), b_par(:), &
+            b_drift(:), weight(:), scratch(:, :)
+        integer :: nt, nz, n, i, j
+
+        nt = size(b, 1)
+        nz = size(b, 2)
+        n = nt*nz
+        status = MONO_BAD_INPUT
+        if (mod(nt, 2) == 0 .or. mod(nz, 2) == 0 .or. nt < 3 .or. nz < 1 .or. &
+            n_leg < 3 .or. nu <= 0 .or. nper < 1 .or. any(b <= 0)) return
+        f%n = n
+        f%lmax = n_leg - 1
+        f%nu = nu
+        allocate (dt(nt, nt), f%d(n, n), bv(n), weight(n), scratch(5, n))
+        call fourier_derivative(nt, dt)
+        allocate (dz(nz, nz))
+        dz = 0
+        if (nz > 1) then
+            call fourier_derivative(nz, dz)
+            dz = nper*dz
+        end if
+        ! Point index i + nt (j - 1): theta fastest.
+        f%d = 0
+        do j = 1, nz
+            f%d((j - 1)*nt + 1:j*nt, (j - 1)*nt + 1:j*nt) = dt
+        end do
+        do j = 1, nz
+            do i = 1, nt
+                f%d((j - 1)*nt + i, i:n:nt) = f%d((j - 1)*nt + i, i:n:nt) + q*dz(j, :)
+            end do
+        end do
+        bv = reshape(b, [n])
+        b_par = matmul(f%d, bv)
+        allocate (b_drift(n))
+        b_drift = 0
+        do j = 1, nz
+            b_drift((j - 1)*nt + 1:j*nt) = matmul(dt, b(:, j))
+        end do
+        do i = 1, nt
+            b_drift(i:n:nt) = b_drift(i:n:nt) - i_over_g*matmul(dz, b(i, :))
+        end do
+        call allocate_point(f%p, n)
+        call dk_mono_point(bv, b_par, kappa, f%p%stream, f%p%mirror, scratch(1, :), &
+            scratch(2, :), f%p%drive_e, weight)
+        call dk_mono_point(bv, b_drift, kappa, scratch(3, :), scratch(4, :), f%p%drift0, &
+            f%p%drift2, scratch(5, :), weight)
+        f%p%weight_sum = sum(weight)
+        f%p%weight = weight/f%p%weight_sum
+        call factor_blocks(f, nu, status)
+        if (status /= MONO_OK) return
+        call drive_solutions(f, g, c%border, status)
+        if (status /= MONO_OK) return
+        c = functionals(f%p, g, c%border)
+    end subroutine mono_coefficients_3d
 
     !> Solve A x + mu e_0 = rhs, <w x_0> = constraint for each right-hand side.
     subroutine mono_solve(f, rhs, constraint, x, mu, status)
