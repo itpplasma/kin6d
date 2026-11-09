@@ -107,6 +107,11 @@ contains
         dir = sigma*sign(1.0_dp, leg_sign())
         lo = s_star
         f_lo = residual(lo)
+        ! At a turning point f_lo vanishes; rounding must not make it a miss.
+        if (f_lo > 0 .and. f_lo <= 1e-12_dp*abs(p%energy)) then
+            call evaluate(s_star, pt, status)
+            return
+        end if
         if (f_lo > 0) then
             ! The orbit does not reach this theta.
             status = ORBIT_NO_ROOT
@@ -174,23 +179,34 @@ contains
             real(dp), intent(in) :: s
             type(orbit_point_t), intent(out) :: q
             integer, intent(out) :: st
-            real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, h_psi, h_rho, d, rho
-            call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
-            if (st /= ORBIT_OK) return
-            rho = orbit_flux_p(bf, s_star, s)/g
-            q%s = s
-            q%rho = rho
-            q%b = b
-            q%v_par = p%charge*rho*b/p%mass
-            ! Derivatives per unit psi (toroidal flux per radian) and per volt.
-            h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime &
-                - p%omega_e*iota
-            h_rho = p%charge*rho*b**2/p%mass
-            d = g + iota*i + rho*(g*i_s - i*g_s)/psi_prime
-            q%theta_dot = (h_psi*g - h_rho*(rho*g_s/psi_prime - iota))/d
-            q%zeta_dot = (h_rho*(1 + rho*i_s/psi_prime) - h_psi*i)/d
+            call orbit_evaluate(bf, p, s_star, s, theta, q, st)
         end subroutine evaluate
     end subroutine orbit_point
+
+    !> The orbit of surface s_star at (s, theta): rho from P_zeta, v_par, B and
+    !> Hamilton's theta_dot, zeta_dot (module header) with the moment of p.
+    subroutine orbit_evaluate(bf, p, s_star, s, theta, q, st)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, s, theta
+        type(orbit_point_t), intent(out) :: q
+        integer, intent(out) :: st
+        real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, h_psi, h_rho, d, rho
+        call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+        if (st /= ORBIT_OK) return
+        rho = orbit_flux_p(bf, s_star, s)/g
+        q%s = s
+        q%rho = rho
+        q%b = b
+        q%v_par = p%charge*rho*b/p%mass
+        q%mu = p%mu
+        ! Derivatives per unit psi (toroidal flux per radian) and per volt.
+        h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime - p%omega_e*iota
+        h_rho = p%charge*rho*b**2/p%mass
+        d = g + iota*i + rho*(g*i_s - i*g_s)/psi_prime
+        q%theta_dot = (h_psi*g - h_rho*(rho*g_s/psi_prime - iota))/d
+        q%zeta_dot = (h_rho*(1 + rho*i_s/psi_prime) - h_psi*i)/d
+    end subroutine orbit_evaluate
 
     !> The point at theta with local pitch xi = v_par/v of the orbit family
     !> with surface s_star and total energy p%energy (p%mu is ignored): s is
@@ -215,9 +231,35 @@ contains
         if (status /= ORBIT_OK) return
         lo = s_star
         f_lo = residual(lo)
+        ! Secant from s* towards s* + rho G/(iota psi'), the first-order root;
+        ! bracketing bisection below is the fallback.
+        if (f_lo /= 0) then
+            hi = s_star + f_lo/(iota*psi_prime)
+            if (hi > bf%d%s(1) .and. hi < bf%d%s(size(bf%d%s))) then
+                f_hi = residual(hi)
+                mid = lo
+                f_mid = f_lo
+                do it = 1, 30
+                    if (f_hi == f_mid) exit
+                    step = f_hi*(hi - mid)/(f_hi - f_mid)
+                    mid = hi
+                    f_mid = f_hi
+                    hi = hi - step
+                    if (hi <= bf%d%s(1) .or. hi >= bf%d%s(size(bf%d%s))) exit
+                    f_hi = residual(hi)
+                    if (abs(step) < 1e-14_dp*max(1.0_dp, abs(hi))) then
+                        lo = hi
+                        f_lo = 0
+                        exit
+                    end if
+                end do
+            end if
+        end if
         if (f_lo == 0) then
             hi = lo
         else
+            lo = s_star
+            f_lo = residual(lo)
             dir = sign(1.0_dp, f_lo*iota*psi_prime)
             step = 1e-4_dp
             do it = 1, 60
@@ -252,8 +294,9 @@ contains
         v = speed(mid)
         q = p
         q%mu = p%mass*v**2*(1 - xi**2)/(2*b)
-        call orbit_point(bf, q, s_star, theta, sign(1.0_dp, xi), pt, status)
-        pt%mu = q%mu
+        ! Evaluated at the root itself: near a turning point the leg may pass
+        ! theta at s /= s* where s* itself is out of reach.
+        call orbit_evaluate(bf, q, s_star, mid, theta, pt, status)
     contains
         real(dp) function speed(s)
             real(dp), intent(in) :: s
