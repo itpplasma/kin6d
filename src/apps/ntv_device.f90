@@ -39,6 +39,7 @@
 !! factorisation, refactorising when the iteration count exceeds a bound.
 module milca_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    !$ use omp_lib, only: omp_get_max_threads
     use fortnum_quadrature, only: gauss_gen_laguerre, gauss_legendre
     use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, &
         boozer_average, BOOZER_OK
@@ -238,9 +239,11 @@ contains
             allocate (result(ns, nsp), ustat(ns*nsp), kink(max_kinks, ns, nsp), &
                 nkink(ns, nsp))
             nkink = 0
-            ! The finite-width kernel parallelises inside; the units then run in turn.
+            ! Surfaces and species fill the threads when there are enough of
+            ! them; otherwise they run in turn and the energies of each panel
+            ! take the threads (panel_eval).
             !$omp parallel do schedule(dynamic, 1) default(shared) private(u) &
-            !$omp if(.not. res%orbit_width)
+            !$omp if(ns*nsp >= omp_get_max_threads())
             do u = 1, ns*nsp
                 call adaptive((u - 1)/nsp + 1, mod(u - 1, nsp) + 1, ustat(u))
             end do
@@ -283,8 +286,10 @@ contains
         r = 0
         nfac = 0
         nits = 0
-        !$omp parallel do schedule(dynamic, 1) default(shared) private(u) &
-        !$omp if(.not. res%orbit_width)
+        ! Units are independent energies; the kernels' own threading is then
+        ! nested and serial, which uses the cores far better than one
+        ! factorisation at a time.
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(u)
         do u = 1, nunit
             call sweep(units(1, u), units(2, u), units(3, u), &
                 min(units(3, u) + res%chunk - 1, ns), ustat(u))
@@ -604,33 +609,39 @@ contains
             integer, intent(out) :: ks
             ! K_11 weight of the panel and its part on lost orbits.
             real(dp), intent(out) :: weight(2)
-            real(dp) :: c, h, xv, rv, coarse(3), g
-            integer :: q
+            real(dp) :: c, h, coarse(3), g, xs(size(x6) + size(x12)), rs(size(xs))
+            integer :: q, n6, sts(size(xs))
             c = (lo + hi)/2
             h = (hi - lo)/2
+            n6 = size(x6)
+            xs = c + h*[x6, x12]
+            ! The energies are independent; with orbit width the units run in
+            ! turn, so the nodes of a panel take the threads.
+            !$omp parallel do schedule(dynamic, 1) default(shared) private(q)
+            do q = 1, size(xs)
+                rs(q) = kernel_r(i, a, xs(q), sts(q))
+            end do
+            !$omp end parallel do
             coarse = 0
             fine = 0
             err = 0
             weight = 0
-            do q = 1, size(x6)
-                xv = c + h*x6(q)
-                rv = kernel_r(i, a, xv, ks)
+            do q = 1, size(xs)
+                ks = sts(q)
+                if (q > n6) then
+                    weight(1) = weight(1) + h*w12(q - n6)*xs(q)**2.5_dp*exp(-xs(q))
+                    if (ks == DEVICE_ORBIT_LOST) weight(2) = weight(2) &
+                        + h*w12(q - n6)*xs(q)**2.5_dp*exp(-xs(q))
+                end if
                 if (ks == DEVICE_ORBIT_LOST) ks = NTV_OK
                 if (ks /= NTV_OK) return
-                g = h*w6(q)*xv**2.5_dp*exp(-xv)*rv
-                coarse = coarse + g*[1.0_dp, xv, xv**2]
-            end do
-            do q = 1, size(x12)
-                xv = c + h*x12(q)
-                rv = kernel_r(i, a, xv, ks)
-                weight(1) = weight(1) + h*w12(q)*xv**2.5_dp*exp(-xv)
-                if (ks == DEVICE_ORBIT_LOST) then
-                    weight(2) = weight(2) + h*w12(q)*xv**2.5_dp*exp(-xv)
-                    ks = NTV_OK
+                if (q <= n6) then
+                    g = h*w6(q)*xs(q)**2.5_dp*exp(-xs(q))*rs(q)
+                    coarse = coarse + g*[1.0_dp, xs(q), xs(q)**2]
+                else
+                    g = h*w12(q - n6)*xs(q)**2.5_dp*exp(-xs(q))*rs(q)
+                    fine = fine + g*[1.0_dp, xs(q), xs(q)**2]
                 end if
-                if (ks /= NTV_OK) return
-                g = h*w12(q)*xv**2.5_dp*exp(-xv)*rv
-                fine = fine + g*[1.0_dp, xv, xv**2]
             end do
             err = maxval(abs(fine - coarse))
         end subroutine panel_eval
