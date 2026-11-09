@@ -87,6 +87,7 @@ contains
         prof%temperature_s = -1*kev
         prof%kappa(:, 1) = 3e-4_dp
         prof%kappa(:, 2) = 6e-4_dp
+        res%x_tol = 0
         res%n_theta = 33
         res%n_leg = 60
         res%n_x = 6
@@ -138,6 +139,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -1*kev
         prof%kappa(1, :) = [3e-4_dp, 6e-4_dp]
+        res%x_tol = 0
         res%n_theta = 17
         res%n_leg = 24
         res%n_x = 16
@@ -195,6 +197,7 @@ contains
         prof%density_s = -1e16_dp
         prof%temperature_s = -1e-3_dp*kev
         prof%kappa = 3e-3_dp
+        res%x_tol = 0
         res%n_theta = 17
         res%n_leg = 24
         res%n_x = 16
@@ -238,6 +241,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -1*kev
         prof%kappa = 3e-4_dp
+        res%x_tol = 0
         res%n_theta = 17
         res%n_leg = 24
         res%n_x = 16
@@ -290,6 +294,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -1*kev
         prof%kappa(1, :) = [3e-4_dp, 6e-4_dp]
+        res%x_tol = 0
         res%n_theta = 17
         res%n_leg = 24
         res%collisions = 3
@@ -330,6 +335,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -4*kev
         prof%kappa = 3e-4_dp
+        res%x_tol = 0
         res%n_theta = 33
         call ntv_device_indicators(eq, pert, 3, sp, prof, res, ind, status)
         call check('indicators: status', status == DEVICE_OK)
@@ -373,6 +379,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -1*kev
         prof%kappa = 3e-4_dp
+        res%x_tol = 0
         res%n_theta = 33
         res%n_leg = 400
         res%n_x = 1
@@ -432,6 +439,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -1*kev*factor
         prof%kappa = 3e-4_dp
+        res%x_tol = 0
         res%n_theta = 65
         res%n_leg = 300
         res%n_x = 2
@@ -476,6 +484,7 @@ contains
         prof%density_s = -1e19_dp
         prof%temperature_s = -1*kev
         prof%kappa = 3e-4_dp
+        res%x_tol = 0
         res%n_theta = 33
         res%n_leg = 80
         res%n_x = 2
@@ -484,6 +493,14 @@ contains
         call ntv_device_profile(eq, pert, 3, sp, prof, res, wide, status)
         call check('lost energies keep the profile', status == DEVICE_OK)
         call check('lost energies are counted', wide(1, 1)%lost_weight > 0 .and. &
+            wide(1, 1)%lost_weight <= 1)
+        ! The adaptive energy panels count them the same way.
+        res%x_tol = 0.3_dp
+        res%hp_columns = 8
+        res%hp_rows = 4
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, wide, status)
+        call check('lost energies keep the adaptive profile', status == DEVICE_OK)
+        call check('adaptive panels count lost energies', wide(1, 1)%lost_weight > 0 .and. &
             wide(1, 1)%lost_weight <= 1)
         ! The drive at points whose orbits leave the file is zero, not read
         ! from outside it, and the geometry reports the loss.

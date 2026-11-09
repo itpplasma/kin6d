@@ -47,7 +47,8 @@ module milca_ntv_device
         ntv_f10, ntv_energy_coefficients, ntv_axisymmetric_coefficients, NTV_OK, &
             NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
     use milca_boozer_orbit, only: orbit_particle_t, orbit_set_potential, orbit_flux_p
-    use milca_dk_hp, only: hp_operator_t, hp_mesh_t, hp_default_mesh, hp_ntv_kernel, HP_OK
+    use milca_dk_hp, only: hp_operator_t, hp_mesh_t, hp_default_mesh, hp_ntv_kernel, HP_OK, &
+        HP_SINGULAR
     use milca_ntv_hp_line, only: hp_line_field_t, hp_line_field
     use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
         hp_orbit_perturbation, hp_orbit_confined
@@ -92,8 +93,9 @@ module milca_ntv_device
         ! Monoenergetic energy integral: relative tolerance of adaptive
         ! composite Gauss-Legendre panels in x = v^2/v_th^2 on [0, 25]
         ! (0: n_x Gauss-Laguerre nodes). The E x B and precession resonance
-        ! puts kinks into the integrand that fixed rules do not resolve.
-        real(dp) :: x_tol = 0
+        ! puts kinks into the integrand that fixed rules do not resolve: on
+        ! AUG 30835 at T/10 the 24-node rule was off by a factor of 2.
+        real(dp) :: x_tol = 1e-3_dp
         ! Finite orbit width (monoenergetic paths only) on the hp
         ! mesh of hp_default_mesh: element order, columns, bulk rows and the
         ! relative width of the layer at the separatrix.
@@ -178,6 +180,15 @@ contains
             nu = nu + nu_ab*(erf(y) - g)/x**1.5_dp
         end do
     end function deflection_frequency
+
+    !> Orbits outside the model: they leave the files, or the orbit-class
+    !> mesh cannot be fitted to them (potato and stagnation orbits near the
+    !> axis at high energy, where the system is singular). They carry no NTV;
+    !> lost_weight reports their share.
+    pure logical function orbit_outside(st)
+        integer, intent(in) :: st
+        orbit_outside = st == DEVICE_ORBIT_LOST .or. st == HP_SINGULAR
+    end function orbit_outside
 
     !> Whether the thin-orbit kernel is the Legendre one (on request).
     pure logical function thin_legendre(res)
@@ -316,8 +327,11 @@ contains
                         cycle
                     end if
                     r(i, k, a) = orbit_r(i, a, x(k), ks)
-                    lost(i, k, a) = ks == DEVICE_ORBIT_LOST
-                    if (lost(i, k, a)) cycle
+                    lost(i, k, a) = orbit_outside(ks)
+                    if (lost(i, k, a)) then
+                        r(i, k, a) = 0
+                        cycle
+                    end if
                     if (ks /= HP_OK) return
                     nfac(i, k, a) = 1
                 end do
@@ -446,6 +460,10 @@ contains
             real(dp) :: v, nu
             if (res%orbit_width) then
                 rv = orbit_r(i, a, xv, st)
+                if (orbit_outside(st)) then
+                    rv = 0
+                    st = DEVICE_ORBIT_LOST
+                end if
                 return
             end if
             if (.not. thin_legendre(res)) then
@@ -474,7 +492,8 @@ contains
             integer, parameter :: max_panels = 400
             real(dp), parameter :: start(11) = [0.0_dp, 0.5_dp, 1.0_dp, 2.0_dp, 3.0_dp, &
                 4.5_dp, 6.5_dp, 9.0_dp, 13.0_dp, 18.0_dp, 25.0_dp]
-            real(dp) :: lo(max_panels), hi(max_panels), val(3, max_panels), err(max_panels)
+            real(dp) :: lo(max_panels), hi(max_panels), val(3, max_panels), err(max_panels), &
+                wt(2, max_panels)
             real(dp) :: x6(6), w6(6), x12(12), w12(12), total(3), t, scale, a1, a2
             integer :: np, k, ks, nev
             st = DEVICE_SOLVE
@@ -485,7 +504,8 @@ contains
             hi(1:np) = start(2:)
             nev = 0
             do k = 1, np
-                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks)
+                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks, &
+                    wt(:, k))
                 if (ks /= NTV_OK) return
                 nev = nev + 18
             end do
@@ -498,10 +518,11 @@ contains
                 lo(np) = (lo(k) + hi(k))/2
                 hi(np) = hi(k)
                 hi(k) = lo(np)
-                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks)
+                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks, &
+                    wt(:, k))
                 if (ks /= NTV_OK) return
                 call panel_eval(i, a, lo(np), hi(np), x6, w6, x12, w12, val(:, np), err(np), &
-                    ks)
+                    ks, wt(:, np))
                 if (ks /= NTV_OK) return
                 nev = nev + 36
             end do
@@ -524,6 +545,7 @@ contains
                 /(prof%density(i, a)*result(i, a)%k11*species(a)%z*elementary/t)
             result(i, a)%factorisations = nev
             result(i, a)%iterations = np
+            result(i, a)%lost_weight = sum(wt(2, 1:np))/sum(wt(1, 1:np))
             call record_kinks(i, a, lo(1:np), hi(1:np), start)
             st = DEVICE_OK
         end subroutine adaptive
@@ -575,11 +597,13 @@ contains
 
         !> 6- and 12-point Gauss-Legendre values of int x^(5/2) e^-x (1, x) R
         !> on [lo, hi] and their difference.
-        subroutine panel_eval(i, a, lo, hi, x6, w6, x12, w12, fine, err, ks)
+        subroutine panel_eval(i, a, lo, hi, x6, w6, x12, w12, fine, err, ks, weight)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: lo, hi, x6(:), w6(:), x12(:), w12(:)
             real(dp), intent(out) :: fine(3), err
             integer, intent(out) :: ks
+            ! K_11 weight of the panel and its part on lost orbits.
+            real(dp), intent(out) :: weight(2)
             real(dp) :: c, h, xv, rv, coarse(3), g
             integer :: q
             c = (lo + hi)/2
@@ -587,9 +611,11 @@ contains
             coarse = 0
             fine = 0
             err = 0
+            weight = 0
             do q = 1, size(x6)
                 xv = c + h*x6(q)
                 rv = kernel_r(i, a, xv, ks)
+                if (ks == DEVICE_ORBIT_LOST) ks = NTV_OK
                 if (ks /= NTV_OK) return
                 g = h*w6(q)*xv**2.5_dp*exp(-xv)*rv
                 coarse = coarse + g*[1.0_dp, xv, xv**2]
@@ -597,6 +623,11 @@ contains
             do q = 1, size(x12)
                 xv = c + h*x12(q)
                 rv = kernel_r(i, a, xv, ks)
+                weight(1) = weight(1) + h*w12(q)*xv**2.5_dp*exp(-xv)
+                if (ks == DEVICE_ORBIT_LOST) then
+                    weight(2) = weight(2) + h*w12(q)*xv**2.5_dp*exp(-xv)
+                    ks = NTV_OK
+                end if
                 if (ks /= NTV_OK) return
                 g = h*w12(q)*xv**2.5_dp*exp(-xv)*rv
                 fine = fine + g*[1.0_dp, xv, xv**2]
