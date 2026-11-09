@@ -187,21 +187,65 @@ Checks of the formulation (in addition to the gate of step 3):
   limit (energy and E_r scaled down) on the shared AUG equilibria;
 - the moments of F_c over the orbits give n(psi) from n(psi*) and back.
 
-## NEO-2 feature parity
+## Parity with our existing codes
 
-The steps above extend the physics beyond NEO-2. Replacing NEO-2 also needs its remaining
-features, each checked against NEO-2 on the same inputs before it counts as covered:
+MILCA replaces a code once it computes the same physics on the same inputs and the results agree within
+the stated tolerance; nothing beyond that physics is needed for parity. Each row names its check.
 
-| NEO-2 feature | Status |
+NEO-2-QL (tokamak, quasilinear NTV and neoclassical transport):
+
+| Feature | Status |
 |---|---|
-| quasilinear NTV torque, all species, full linearised operator, both quasilinear sources (NEO-2-QL) | covered (step 0) |
-| E_r from the radial force balance of one species with prescribed toroidal rotation (`isw_calc_er = 1`) | covered: Omega_tE from V_phi/R of one species; on ITER TC24 it returns NEO-2's Omega_tE from NEO-2's rotation profile within 1.4 %, and the V_phi/R profiles agree within 1.1 % |
-| non-axisymmetric heat flux (`isw_qflux_NA`) | covered: K_21, K_22 and the energy flux; within 2 % of NEO-2 on ITER TC24 (4 % worst case) |
-| axisymmetric transport matrix with the full operator: bootstrap current, parallel conductivity, Ware pinch | covered: D_31 and D_32 species matrices within 1.7 %, parallel flows within 1 % and <j_par B> within 1.8 % of NEO-2 on ITER TC24; D_33 and D_13 within 3.5 % in unit-free combinations; AUG 30835 at s = 0.50: deuteron flow within 0.5 %, <j_par B> within 0.1 % |
-| relativistic collision operator (Braams-Karney) and the generalised Spitzer function for current drive | missing |
-| misaligned-potential drive: radial E x B drift of the potential harmonic not aligned with the perturbed surfaces, Phi^MA_m = Phi_m + E_0r Delta_m (Delta_m the surface displacement), acting on d f0/dr, with the local parallel current over the surface (NEO-2 pull request 240, draft) | missing; one more right-hand side of the kernel, which already resolves theta. Check: a corrugation without misaligned potential gives zero parallel current at any collisionality with a momentum-conserving operator; collisionless limit against KiLCA |
-| quasineutral Phi_1 on the surface from the species responses (planned NEO-2 stack after 240, SFINCS benchmark) | missing; a bordered unknown per angle in the multispecies solve |
-| stellarator transport coefficients (NEO-2-PAR), including ripple trapping in local wells of the full |B| | K1 in [drift-kinetics.md](drift-kinetics.md); bootstrap against rabe (near-omnigenous fields, Lorentz, monoenergetic) and down to the Shaing-Callen limit belongs here |
+| quasilinear NTV torque, all species, full linearised operator, both quasilinear sources | covered (step 0): within 5 % of NEO-2 on ITER TC24 and AUG 30835 |
+| non-axisymmetric heat flux (`isw_qflux_NA`) | covered: within 2 % on ITER TC24 (4 % worst case) |
+| offset rotation | covered (output of the NTV fluxes) |
+| axisymmetric transport matrix with the full operator: bootstrap current, conductivity, Ware pinch, flows | covered: D_31 and D_32 within 1.7 %, flows within 1 %, <j_par B> within 2.8 % (median 0.35 %) on 245 ITER TC24 surfaces; D_33 and D_13 within 3.5 %; AUG 30835 at s = 0.50 within 0.5 % |
+| E_r from the radial force balance (`isw_calc_er = 1`) and the rotation profile | covered: Omega_tE within 1.4 %, V_phi/R within 1.1 % on ITER TC24 |
+| local parallel flow and current over the surface | covered for the axisymmetric response (exact u_par B = omega G + K B^2 check) |
+| collision models: full operator, test particle, pitch-angle scattering | covered; AUG 30835 profile against NEO-2 lag 10 with both, and lag 14 as basis check |
+| misaligned-potential drive with local current (NEO-2 pull request 240, draft) | open: waits for the NEO-2 implementation to pass its own acceptance; then one more right-hand side and the local current of the non-axisymmetric solve |
+| quasineutral Phi_1 on the surface | open: a bordered unknown per angle in the multispecies solve, after 240 |
+
+NEO-2-PAR (stellarator transport, relativistic operator):
+
+| Feature | Status |
+|---|---|
+| monoenergetic and energy-coupled transport coefficients of a 3D surface, ripple trapping | open: K1 (3D surface) in [drift-kinetics.md](drift-kinetics.md) |
+| bootstrap coefficient of stellarators, against rabe and the Shaing-Callen limit | open, with K1 |
+| relativistic Braams-Karney operator and the generalised Spitzer function (current drive) | open |
+
+NEO-RT (thin-orbit resonant transport in action-angle variables):
+
+| Feature | Status |
+|---|---|
+| bounce and precession frequencies, resonances | covered by the orbit module in the thin limit (exact precession with shear and E x B) |
+| collisionless resonant torque: transit, bounce and superbanana-plateau resonances | covered in principle by the kernel at nu -> 0 (superbanana-plateau limit checked); profile comparison on AUG 30835 open |
+| nonlinear attenuation Theta(D) of an isolated resonance | open: the indicator D per resonance, then Theta(D) as NEO-RT applies it, as the parity model; the direct nonlinear solve is beyond parity |
+
+POTATO (collisionless resonant torque with finite orbit width):
+
+| Feature | Status |
+|---|---|
+| exact guiding-centre orbits, canonical frequencies | covered: Boozer orbit module; thin limit within 1 % of POTATO, trapped orbits at physical width within 4 to 9 % on AUG 30835 with a Boozer file whose geometry and field disagree by up to 10 %; a self-consistent Boozer file (libneo EQDSK converter) decides the rest |
+| canonical Maxwellian drive, E_r profile in the orbits | covered: the orbit geometry of the hp solver (finite-width kernel equals the thin kernel to 1e-7 for thin orbits), potential profile Phi(s), perturbation at the orbit point |
+| finite-width resonant torque profile on psi* | open: energy integral of the finite-width kernel per psi*, tabulated orbit map for speed, then AUG 30835 against POTATO (physical width and thin-orbit scaling) |
+
+rabe (stellarator bootstrap coefficients): with NEO-2-PAR above.
+
+## Beyond parity
+
+In this order, each against its limits before it counts:
+
+1. Finite orbit width with collisions: the counterpart of the f_10 source (the perturbed operator on the
+   axisymmetric response to C[F_c]) and the radial collisional coupling of neighbouring psi* (step 3, second
+   stage); PERFECT-type Eulerian form in psi as the independent check.
+2. Nonlinear orbits for isolated resonances (step 5), thin and with finite width (step 6), against
+   NEO-RT's Theta(D) and the quasilinear limit.
+3. Overlapping resonances (step 7) and the device curves of every effect alone and combined with the
+   attribution of effects (step 8).
+4. The composed-term architecture with continuous amplitudes, so every effect is one switch and its
+   share of an output follows from one adjoint solve.
+5. The complete scope below: rotation to sonic Mach number with Phi_1, strong E_r, FLR, sources, the edge.
 
 ## Complete scope
 
