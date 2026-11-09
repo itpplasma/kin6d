@@ -221,7 +221,7 @@ nu = 1e-3 to 1. A rational iota (5/11) is a poor benchmark: both codes'
 D11 then converge only once the resonant harmonic is resolved.
 
 Published fields (evidence runs; the field files stay outside the
-repository, scripts and numbers in the PR):
+repository, the recipes are in [benchmarks/mono3d](../benchmarks/mono3d/README.md)):
 
 - W7-X standard configuration (EIM), s = 0.2, the Boozer file and MONKES
   database distributed with MONKES (30 x 60 points per period, 160 Legendre):
