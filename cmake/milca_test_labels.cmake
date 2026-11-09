@@ -106,6 +106,8 @@ milca_test_labels(ideal_fb_derivatives fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 milca_test_labels(ideal_fb_vertical_newton fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
+milca_test_labels(field_shell_locate_exact fast CLASSES field
+    TARGETS test_field_shell)
 milca_test_labels(ideal_fb_vacuum_exact_n0_p2 fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 milca_test_labels(ideal_fb_vacuum_exact_n0_p3 fast CLASSES mhd
