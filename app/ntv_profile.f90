@@ -8,9 +8,11 @@
 !!   species: density[m^-3] T[J] dn/ds dT/ds kappa[1/m]
 !! Prints per surface and species: s, species, K_11, K_12, dpsi_pol/dr,
 !! Gamma_psi, torque density [N m/m^3], factorisations, GMRES iterations,
-!! K_21, K_22, the energy flux [J Wb/(m^3 s)], the offset rotation [rad/s] and
-!! the status (0 solved, 2 solve failed, 3 GMRES did not converge; the row is
-!! then zero). The program ends with an error when any status is not 0.
+!! K_21, K_22, the energy flux [J Wb/(m^3 s)], the offset rotation [rad/s], the
+!! share of the K_11 weight on energies whose finite-width orbits leave the file
+!! (zero without orbit_width) and the status (0 solved, 2 solve failed, 3 GMRES
+!! did not converge, 4 orbits leave the file with adaptive energy panels; the
+!! row is then zero). The program ends with an error when any status is not 0.
 program ntv_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -45,11 +47,11 @@ program ntv_profile
     end if
     do i = 1, ns
         do a = 1, nsp
-            print '(f12.8,i3,5es18.9,2i8,4es18.9,i3)', prof%s(i), a, result(i, a)%k11, &
+            print '(f12.8,i3,5es18.9,2i8,5es18.9,i3)', prof%s(i), a, result(i, a)%k11, &
                 result(i, a)%k12, result(i, a)%dpsi_dr, result(i, a)%gamma_psi, &
                 result(i, a)%torque, result(i, a)%factorisations, result(i, a)%iterations, &
                 result(i, a)%k21, result(i, a)%k22, result(i, a)%heat_flux, &
-                result(i, a)%offset_rotation, result(i, a)%status
+                result(i, a)%offset_rotation, result(i, a)%lost_weight, result(i, a)%status
         end do
     end do
     write (error_unit, '(a,f10.2)') 'wall s ', real(c1 - c0, dp)/rate
