@@ -13,6 +13,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
 - [Software engineering policy](software-engineering.md),
   [tooling and development workflow](tooling.md),
   [figure style](figure-style.md), [literature policy](literature-policy.md)
+- [Lessons learned](lessons/README.md) from earlier campaigns, per physics area
 - [Configuration, I/O and reproducibility](interface-reproducibility.md)
 
 ## Kinetic laboratory (1D–1V)
