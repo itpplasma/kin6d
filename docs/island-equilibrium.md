@@ -922,17 +922,15 @@ optional charts nor a DOF reduction establishes either gate.
 [V] Status: I1, I2 (single volume), I3 and I5a are on main. The I6
 island width/phase diagnostics are on main (#63). For I7, the frozen exterior
 composition is merged (#349); the full BEM attachment `nn_attach_exterior`
-compiles, but its coil-driven pilot ([draft #350](https://github.com/itpplasma/milca/pull/350))
-misses the 1e-3 Biot-Savart field gate at 5.1e-3, independent of resolution.
-I4, I5b, I8-I11 are open.
+passes its coil-driven vacuum pilot (#350) against direct Biot-Savart (4.2e-4
+at 6 toroidal modes, 2.6e-4 at 10). I4, I5b, I8-I11 are open.
 
 [H] Work proceeds in this order. Each step is one or more bounded PRs with the
 gate named in the table above; a failed gate is reported, not relaxed.
 
-1. **I7 qualification.** Locate the systematic 5.1e-3 field error of #350
-   (BEM quadrature/degree, trace moments, volume coil load or harmonic
-   reference), then add G8: virtual-casing comparison, interface defect, and a
-   geometrically displaced seed.
+1. **I7 qualification (G8).** Add the virtual-casing comparison and a
+   geometrically displaced seed to the coil-driven pilot; its field,
+   interface and coefficient-seed checks pass.
 2. **Classical-stellarator benchmark** of [S11] Sec. X.B: N_p = 3, analytic
    boundary (S11 eq. 10.1), <beta> about 1e-4, no net current, islands at
    iota = 1/2 (m = 6) and 3/5 (m = 5). Fixed boundary, so it does not wait
