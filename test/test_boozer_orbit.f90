@@ -9,6 +9,12 @@
 !!                   to zero at fixed speed; the correction is quadratic in the
 !!                   mass (orbit width) because the field is up-down symmetric;
 !!   invariants      every orbit point carries the energy of the orbit;
+!!   shear           the precession of a trapped orbit with magnetic shear is the
+!!                   thin bounce average of the binormal drift with the
+!!                   current and shear term of NEO-2-QL,
+!!                   (m v^2/(2 e)) [(1 + xi^2) d + xi^2 d2], d = -(1/iota)
+!!                   (dB/ds)/(psi' B), d2 = 2 (I' + (q G)')/(psi' (G + iota I));
+!!                   without d2 it misses the shear contribution;
 !!   pitch_map       the pitch map returns the magnetic moment of the orbit at
 !!                   every point of it (mu is the stream function of the
 !!                   orbits at fixed s* and H), and mu B(s*, theta)/E tends to
@@ -39,6 +45,7 @@ program test_boozer_orbit
     case ('thin_bounce'); ok = thin_bounce()
     case ('invariants'); ok = invariants()
     case ('pitch_map'); ok = pitch_map()
+    case ('shear'); ok = shear()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -152,6 +159,52 @@ contains
         ok = worst < 1e-10_dp
         print '(a,es10.2)', 'energy error', worst
     end function invariants
+
+    logical function shear() result(ok)
+        real(dp), parameter :: lams(3) = [0.999_dp, 0.98_dp, 0.95_dp]
+        type(orbit_particle_t) :: p
+        real(dp) :: x(96), w(96), ob, oz, b, b_s, g, i, g_s, i_s, iota, psi_prime, iota_s, &
+            tmax, lo, hi, th, v_par, dt, tau, num, d, d2, xi2, jac
+        type(boozer_surface_t) :: surf
+        logical :: trapped
+        integer :: st, k, j, it
+        call gauss_legendre(96, x, w)
+        call boozer_surface(bf, s_star, surf, st)
+        iota_s = surf%diota_ds
+        ok = .true.
+        do j = 1, 3
+            p = particle(1e-3_dp, 1.0_dp, 0.0_dp)
+            p%mu = lams(j)*p%energy/2.3_dp
+            call orbit_frequencies(bf, p, s_star, 1.0_dp, 96, ob, oz, trapped, st)
+            lo = 0
+            hi = pi
+            do it = 1, 200
+                tmax = 0.5_dp*(lo + hi)
+                call orbit_state(bf, s_star, tmax, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+                if (p%mu*b > p%energy) then
+                    hi = tmax
+                else
+                    lo = tmax
+                end if
+            end do
+            tau = 0
+            num = 0
+            do k = 1, 96
+                th = tmax*sin(0.5_dp*pi*x(k))
+                jac = tmax*cos(0.5_dp*pi*x(k))*0.5_dp*pi
+                call orbit_state(bf, s_star, th, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+                v_par = sqrt(2*(p%energy - p%mu*b)/p%mass)
+                xi2 = p%mass*v_par**2/(2*p%energy)
+                dt = w(k)*jac*abs((g + iota*i)/(iota*b))/v_par
+                d = -(b_s/(psi_prime*b))/iota
+                d2 = 2*(i_s + g_s/iota - g*iota_s/(iota*iota))/(psi_prime*(g + iota*i))
+                tau = tau + dt
+                num = num + dt*(p%energy/p%charge)*((1 + xi2)*d + xi2*d2)
+            end do
+            ok = ok .and. st == ORBIT_OK .and. trapped .and. &
+                close('precession with shear', oz, num/tau, 1e-4_dp)
+        end do
+    end function shear
 
     logical function pitch_map() result(ok)
         type(orbit_particle_t) :: p, thin

@@ -1050,7 +1050,7 @@ add_executable(boozer_orbit_scan app/boozer_orbit_scan.f90)
 target_link_libraries(boozer_orbit_scan PRIVATE milca)
 add_executable(test_boozer_orbit test/test_boozer_orbit.f90)
 target_link_libraries(test_boozer_orbit PRIVATE milca)
-foreach(check deeply_trapped thin_bounce invariants pitch_map)
+foreach(check deeply_trapped thin_bounce invariants pitch_map shear)
     add_test(NAME boozer_orbit_${check} COMMAND test_boozer_orbit ${check})
     milca_test_labels(boozer_orbit_${check} fast CLASSES equilibrium
         TARGETS test_boozer_orbit)
@@ -1675,7 +1675,7 @@ add_library(milca_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
 add_dependencies(milca_io milca_build_info)
 # NTV field lines from Boozer files: composes the equilibrium reader with the
 # continuum kernel, so it lives in the application layer.
-add_library(milca_ntv_geometry src/apps/ntv_boozer_line.f90
+add_library(milca_ntv_geometry src/apps/ntv_boozer_line.f90 src/apps/ntv_orbit_geometry.f90
     src/generated/milca_ntv_boozer_leaves.f90 src/apps/ntv_device.f90)
 target_link_libraries(milca_ntv_geometry PUBLIC milca)
 if(MILCA_ENABLE_OPENMP)
@@ -1687,6 +1687,10 @@ add_executable(ntv_axisymmetric_profile app/ntv_axisymmetric_profile.f90)
 target_link_libraries(ntv_axisymmetric_profile PRIVATE milca_ntv_geometry)
 add_executable(ntv_indicator_profile app/ntv_indicator_profile.f90)
 target_link_libraries(ntv_indicator_profile PRIVATE milca_ntv_geometry)
+add_executable(test_ntv_orbit_geometry test/test_ntv_orbit_geometry.f90)
+target_link_libraries(test_ntv_orbit_geometry PRIVATE milca_ntv_geometry)
+add_test(NAME ntv_orbit_geometry_thin COMMAND test_ntv_orbit_geometry)
+milca_test_labels(ntv_orbit_geometry_thin fast CLASSES apps TARGETS test_ntv_orbit_geometry)
 add_executable(test_ntv_device test/test_ntv_device.f90)
 target_link_libraries(test_ntv_device PRIVATE milca_ntv_geometry)
 add_test(NAME ntv_device COMMAND test_ntv_device)
