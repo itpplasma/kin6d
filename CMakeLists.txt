@@ -1046,6 +1046,8 @@ foreach(check onsager momentum local collisionless)
     milca_test_labels(ntv_axisymmetric_${check} fast CLASSES continuum
         TARGETS test_ntv_axisymmetric)
 endforeach()
+add_executable(boozer_orbit_scan app/boozer_orbit_scan.f90)
+target_link_libraries(boozer_orbit_scan PRIVATE milca)
 add_executable(test_boozer_orbit test/test_boozer_orbit.f90)
 target_link_libraries(test_boozer_orbit PRIVATE milca)
 foreach(check deeply_trapped thin_bounce invariants)
