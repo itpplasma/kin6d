@@ -1701,6 +1701,7 @@ add_dependencies(milca_io milca_build_info)
 # NTV field lines from Boozer files: composes the equilibrium reader with the
 # continuum kernel, so it lives in the application layer.
 add_library(milca_ntv_geometry src/apps/ntv_boozer_line.f90 src/apps/ntv_orbit_geometry.f90
+    src/apps/ntv_hp_line.f90
     src/generated/milca_ntv_boozer_leaves.f90 src/apps/ntv_device.f90)
 target_link_libraries(milca_ntv_geometry PUBLIC milca)
 if(MILCA_ENABLE_OPENMP)

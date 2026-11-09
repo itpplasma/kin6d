@@ -48,6 +48,7 @@ module milca_ntv_device
             NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
     use milca_boozer_orbit, only: orbit_particle_t, orbit_set_potential, orbit_flux_p
     use milca_dk_hp, only: hp_operator_t, hp_mesh_t, hp_default_mesh, hp_ntv_kernel, HP_OK
+    use milca_ntv_hp_line, only: hp_line_field_t, hp_line_field
     use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
         hp_orbit_perturbation, hp_orbit_confined
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
@@ -97,6 +98,10 @@ module milca_ntv_device
         ! mesh of hp_default_mesh: element order, columns, bulk rows and the
         ! relative width of the layer at the separatrix.
         logical :: orbit_width = .false.
+        ! Thin orbits: the spectral-element kernel on the Boozer line, on the
+        ! mesh below (default), or the Legendre kernel of milca_dk_ntv, which
+        ! alone carries the two further NEO-2-QL sources.
+        logical :: thin_legendre = .false.
         integer :: hp_order = 4, hp_columns = 24, hp_rows = 8
         real(dp) :: hp_delta = 1e-3_dp
     end type
@@ -174,6 +179,13 @@ contains
             nu = nu + nu_ab*(erf(y) - g)/x**1.5_dp
         end do
     end function deflection_frequency
+
+    !> Whether the thin-orbit kernel is the Legendre one: on request, or for
+    !> the two NEO-2-QL sources, which the spectral elements do not carry.
+    pure logical function thin_legendre(res)
+        type(ntv_resolution_t), intent(in) :: res
+        thin_legendre = res%thin_legendre .or. res%sources
+    end function thin_legendre
 
     subroutine ntv_device_profile(eq, pert, n_tor, species, prof, res, result, status)
         type(boozer_file_t), target, intent(in) :: eq, pert
@@ -314,6 +326,15 @@ contains
                 st = DEVICE_OK
                 return
             end if
+            if (.not. thin_legendre(res)) then
+                do i = first, last
+                    r(i, k, a) = thin_r(i, a, x(k), ks)
+                    if (ks /= HP_OK) return
+                    nfac(i, k, a) = 1
+                end do
+                st = DEVICE_OK
+                return
+            end if
             fresh = .true.
             do i = first, last
                 v = sqrt(2*prof%temperature(i, a)/species(a)%mass*x(k))
@@ -341,6 +362,37 @@ contains
             end do
             st = DEVICE_OK
         end subroutine sweep
+
+        !> R of species a on surface i at x = v^2/v_th^2, thin orbits, on the
+        !> spectral elements of the Boozer line.
+        real(dp) function thin_r(i, a, xv, st) result(rv)
+            integer, intent(in) :: i, a
+            real(dp), intent(in) :: xv
+            integer, intent(out) :: st
+            type(hp_line_field_t) :: g
+            type(hp_operator_t) :: op
+            type(hp_mesh_t) :: mesh
+            real(dp) :: v, kappa
+            rv = 0
+            v = sqrt(2*prof%temperature(i, a)/species(a)%mass*xv)
+            call hp_line_field(sf(i)%line, 4*res%n_theta + 1, g, kappa, st)
+            if (st /= HP_OK) return
+            op%k = kappa
+            op%k_power = 1
+            op%q = sf(i)%q
+            op%n = n_tor
+            op%m = sf(i)%m
+            op%c = sf(i)%c
+            op%v = v
+            op%wsign = 1
+            op%omega_e = -prof%omega_te(i)
+            op%pre = species(a)%mass*v*v/(2*species(a)%z*elementary)
+            op%nu = deflection_frequency(species, prof%density(i, :), &
+                prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
+            call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
+                res%hp_delta, 0.3_dp, mesh)
+            call hp_ntv_kernel(g, mesh, op, rv, st)
+        end function thin_r
 
         !> R of species a on surface i at x = v^2/v_th^2 with finite orbit width.
         real(dp) function orbit_r(i, a, xv, st) result(rv)
@@ -394,6 +446,11 @@ contains
             real(dp) :: v, nu
             if (res%orbit_width) then
                 rv = orbit_r(i, a, xv, st)
+                return
+            end if
+            if (.not. thin_legendre(res)) then
+                rv = thin_r(i, a, xv, st)
+                if (st == HP_OK) st = NTV_OK
                 return
             end if
             rv = 0
@@ -577,7 +634,9 @@ contains
     !> Reads the ntv_profile input: equilibrium and perturbation paths, then
     !> n_tor n_theta n_leg n_x chunk max_iterations sources(0|1), an optional
     !> line 'orbit_width [order columns rows delta]' for the finite-width
-    !> kernel, an optional
+    !> kernel, 'hp [order columns rows delta]' for the mesh of the thin kernel
+    !> (the default without sources) or 'legendre' for the Legendre thin
+    !> kernel (always used with sources; n_leg applies to it only), an optional
     !> line collision model x_max elements order [x_tol], the species (Z,
     !> mass [kg]) and per surface s Omega_tE [rad/s] with one line per
     !> species: density [m^-3] T [J] dn/ds dT/ds kappa [1/m].
@@ -601,6 +660,13 @@ contains
             res%orbit_width = .true.
             read (line(index(line, 'orbit_width') + 11:), *, iostat=status) res%hp_order, &
                 res%hp_columns, res%hp_rows, res%hp_delta
+            read (u, '(a)') line
+        else if (index(adjustl(line), 'hp') == 1) then
+            read (line(index(line, 'hp') + 2:), *, iostat=status) res%hp_order, &
+                res%hp_columns, res%hp_rows, res%hp_delta
+            read (u, '(a)') line
+        else if (index(adjustl(line), 'legendre') == 1) then
+            res%thin_legendre = .true.
             read (u, '(a)') line
         end if
         read (line, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order, &

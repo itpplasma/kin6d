@@ -31,6 +31,7 @@ program test_ntv_device
     call failed_surface()
     call force_balance()
     call indicators()
+    call hp_thin_matches_legendre()
     call orbit_width_thin()
     call orbit_width_lost()
     if (failures > 0) error stop 'FAIL'
@@ -139,6 +140,10 @@ contains
         res%n_leg = 24
         res%n_x = 16
         res%sources = .false.
+        ! The energy-coupled operator is Legendre in pitch; the same pitch
+        ! basis isolates the speed treatment (24 degrees are far from
+        ! converged here).
+        res%thin_legendre = .true.
         call ntv_device_profile(eq, pert, 3, sp, prof, res, mono, status)
         call check('monoenergetic', status == DEVICE_OK)
         res%collisions = 1
@@ -341,6 +346,44 @@ contains
             *sqrt(1 + (eps*sqrt(s))**2/2 - eps*sqrt(s)*r/r0))
         call close_to('indicators: orbit excursion', ind(1)%excursion(1), want, 1e-3_dp)
     end subroutine indicators
+
+    !> The default thin kernel, spectral elements on the Boozer line, against
+    !> the Legendre kernel at a pitch resolution where it has converged.
+    subroutine hp_thin_matches_legendre()
+        character(*), parameter :: eq_name = 'ntv_hpthin_eq.bc', pert_name = 'ntv_hpthin_pert.bc'
+        type(boozer_file_t) :: eq, pert
+        type(ntv_species_t) :: sp(1)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_species_result_t), allocatable :: hp(:, :), legendre(:, :)
+        integer :: status
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        prof%s = [0.45_dp]
+        prof%omega_te = [1e3_dp]
+        allocate (prof%density(1, 1), prof%temperature(1, 1), prof%density_s(1, 1), &
+            prof%temperature_s(1, 1), prof%kappa(1, 1))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -1*kev
+        prof%kappa = 3e-4_dp
+        res%n_theta = 33
+        res%n_leg = 400
+        res%n_x = 1
+        res%sources = .false.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, hp, status)
+        call check('hp thin kernel', status == DEVICE_OK)
+        res%thin_legendre = .true.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, legendre, status)
+        call check('Legendre thin kernel', status == DEVICE_OK)
+        if (failures > 0) return
+        call close_to('hp thin K11', hp(1, 1)%k11, legendre(1, 1)%k11, 2e-3_dp)
+        call close_to('hp thin K12', hp(1, 1)%k12, legendre(1, 1)%k12, 2e-3_dp)
+    end subroutine hp_thin_matches_legendre
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.
