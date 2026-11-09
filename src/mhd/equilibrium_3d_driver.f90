@@ -1,4 +1,4 @@
-module kin6d_equilibrium_3d_driver
+module milca_equilibrium_3d_driver
     ! D8 consumer of the boundary/profile initializer and native map Newton.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_equilibrium_harness, only: equilibrium_case_t, equilibrium_resolution_t, &

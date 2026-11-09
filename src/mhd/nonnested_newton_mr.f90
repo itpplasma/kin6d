@@ -43,7 +43,7 @@ module kin6d_nonnested_newton_mr
         csc_from_triplet, fortsparse_status_t, status_ok
     use fortnum_newton_mr, only: newton_mr_problem_t, newton_mr_options_t, &
         newton_mr_report_t, newton_mr_solve, NEWTON_MR_OK
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, nn_harmonic_forms, &
         nn_mapped_report_t

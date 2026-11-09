@@ -17,7 +17,7 @@ module milca_screening_moments
     use milca_fp_relaxation_leaves, only: fp_rel_w3, fp_rel_face_lo, fp_rel_face_hi, &
         fp_rel_sink, fp_rel_mom_u, fp_rel_trap_c, fp_rel_bdf2_a0, fp_rel_bdf2_a1, &
         fp_rel_bdf2_a2
-    use kin6d_thermal_screening_leaves, only: scr_friction_dt, scr_diff_par_dt, &
+    use milca_thermal_screening_leaves, only: scr_friction_dt, scr_diff_par_dt, &
         scr_diff_perp_dt, scr_cross_dt, scr_vfm_shell, scr_cq_shell
     implicit none
     private

@@ -5,7 +5,7 @@ program test_vrmhd_harmonics
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_point, only: vrmhd_point
     use kin6d_vrmhd_section
-    use kin6d_vrmhd_section_leaves, only: vrmhd_face_screw_coordinates
+    use milca_vrmhd_section_leaves, only: vrmhd_face_screw_coordinates
     use kin6d_vrmhd_fourier
     use kin6d_vrmhd_fourier_nonlinear
     use vrmhd_mms_nonlinear_leaves, only: mms_nonlinear_rotation, &

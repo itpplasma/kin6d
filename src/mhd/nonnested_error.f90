@@ -26,7 +26,7 @@ module kin6d_nonnested_error
     ! for the planar model with the phi-sampled mean coefficient (scope string).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_nonnested, only: free_b_field_t
+    use milca_equilibrium_nonnested, only: free_b_field_t
     use kin6d_triangle_basis, only: triangle_bernstein_controls
     use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
         gs_error_friedrichs

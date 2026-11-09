@@ -22,7 +22,7 @@ program test_island_seed
     !   leaves : generated leaf identities, JVP vs differences, JVP/VJP.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_report_t, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_report_t, &
         nn_solve, nn_linear_solve, nn_velocity
     use kin6d_nonnested_relax, only: relax_system_t, relax_state_t, relax_options_t, &
         relax_report_t, relax_prepare, relax_state, relax_pack_modes, relax_run, &

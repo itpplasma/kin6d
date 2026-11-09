@@ -110,7 +110,7 @@ program nn1_spec_case
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve, nn_vacuum_mode, nn_point
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     implicit none

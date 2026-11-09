@@ -1538,7 +1538,7 @@
       "initial_boundary_data": "stationary source; f=0 at velocity endpoints; exact neutral charge; mean phi=0",
       "parameter_validity_range": "integer k>0; nu,beta>=0; theta>0; nu+3*beta*theta>0; abs(drive/(nu+3*beta*theta))<1",
       "reference_definition": "B=3*(1-v^2)/4; f=B*(1+a*cos(k*x)); a=drive/(nu+3*beta*theta); phi=a*cos(k*x)/k^2",
-      "reference_implementation": "gen/gen_poisson.f90; src/generated/kin6d_poisson_leaves.f90; independent rational source/collision fixtures in test/test_poisson.f90",
+      "reference_implementation": "gen/gen_poisson.f90; src/generated/milca_poisson_leaves.f90; independent rational source/collision fixtures in test/test_poisson.f90",
       "certificate_method": "exact manufactured existence, interval amplitude and field coefficients, uniform pointwise coefficient-error bound",
       "expected_convergence_order": "exact finite ansatz; arithmetic enclosure only; no mesh-order claim",
       "source_version_and_section": "docs/steady-laboratory.md: Source-balanced self-consistent 1X1V case; retained generator provenance",

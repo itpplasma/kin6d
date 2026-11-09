@@ -4,7 +4,7 @@ module kin6d_response_fluid
     !! gamma = -i omega; eta is electrical resistivity in Ohm m (SI).
     !! This kernel does not discretise or solve a strip or an outer interface.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_response_fluid_leaves, only: fluid_pressure, fluid_force, &
+    use milca_response_fluid_leaves, only: fluid_pressure, fluid_force, &
         fluid_pressure_vjp, fluid_force_vjp, fluid_stress, fluid_stress_vjp, &
         fluid_cut_balance, fluid_cut_balance_vjp
     use kin6d_mhd_ampere_n, only: mu0

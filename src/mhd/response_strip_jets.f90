@@ -11,7 +11,7 @@ module kin6d_response_strip_jets
     use kin6d_mhd_ideal_n, only: equilibrium_point, ideal_options_t
     use kin6d_mhd_ampere_n, only: mu0
     use kin6d_response_fluid, only: response_fluid_equilibrium_t
-    use kin6d_response_strip_jets_leaves, only: strip_field_jets, strip_map_jets
+    use milca_response_strip_jets_leaves, only: strip_field_jets, strip_map_jets
     implicit none
     private
     type, public :: strip_equilibrium_jets_t

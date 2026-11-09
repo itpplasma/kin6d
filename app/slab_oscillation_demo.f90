@@ -5,7 +5,7 @@ program slab_oscillation_demo
                                  initialize_slab_oscillation, sample_slab_oscillation, &
                   sample_slab_oscillation_candidate_interval, slab_oscillation_radius, &
                                       slab_oscillation_chord
-    use kin6d_slab_oscillation_leaves
+    use milca_slab_oscillation_leaves
     use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
                         plot, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
                         tight_layout, savefig, suptitle

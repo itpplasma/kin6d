@@ -5,7 +5,7 @@ module kin6d_vrmhd_fourier
     use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_test
-    use kin6d_vrmhd_section_leaves, only: vrmhd_orbit_grad_rotation, &
+    use milca_vrmhd_section_leaves, only: vrmhd_orbit_grad_rotation, &
         vrmhd_orbit_grad_screw, vrmhd_orbit_velocity_rotation, &
         vrmhd_orbit_velocity_screw, vrmhd_orbit_curl_rotation, &
         vrmhd_orbit_curl_screw

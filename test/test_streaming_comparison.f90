@@ -9,7 +9,7 @@ program test_streaming_comparison
         init_streaming_particles, get_streaming_particles, streaming_particle_info, &
         streaming_particles_source_matches, density_streaming, &
         density_coefficients_streaming, density_streaming_chord
-    use kin6d_streaming_leaves, only: &
+    use milca_streaming_leaves, only: &
         streaming_rotation, streaming_rotation_jvp, streaming_rotation_vjp, &
         streaming_rotation_interval, streaming_characteristic, &
         streaming_characteristic_jvp, streaming_characteristic_vjp, &

@@ -1,4 +1,4 @@
-module kin6d_ideal_free_boundary
+module milca_ideal_free_boundary
     ! 3D free boundary of the nested map lane (DESIGN 7.3, core note D6, N4).
     ! One reference mesh of the region inside a fixed axisymmetric coupling
     ! curve Gamma_c, with the plasma boundary Gamma_p as an internal chain:
@@ -58,7 +58,7 @@ module kin6d_ideal_free_boundary
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
     use milca_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
-    use kin6d_vacuum_shell_leaves, only: vacuum_energy_density, &
+    use milca_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
     use milca_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
         fold_barrier_hessian
@@ -4703,4 +4703,4 @@ contains
         det = a(1, 1)*inv(1, 1) + a(1, 2)*inv(2, 1) + a(1, 3)*inv(3, 1)
         if (abs(det) > 0) inv = inv/det
     end subroutine
-end module kin6d_ideal_free_boundary
+end module milca_ideal_free_boundary

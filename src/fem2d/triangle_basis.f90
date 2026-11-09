@@ -8,7 +8,7 @@ module kin6d_triangle_basis
         generated_factor_product_jet2_order1
     use fortfem_generated_factor_product_jet3_order2, only: &
         generated_factor_product_jet3_order2
-    use kin6d_segment_leaves, only: gs_segment_cubic_value, gs_segment_cubic_slopes
+    use milca_segment_leaves, only: gs_segment_cubic_value, gs_segment_cubic_slopes
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     implicit none

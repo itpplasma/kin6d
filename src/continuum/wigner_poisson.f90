@@ -1,6 +1,6 @@
 !> Q7 part 2: 1X1V electron Wigner-Poisson (hbar > 0) and Vlasov-Poisson
 !> (hbar = 0) on one periodic Fourier(x) x Fourier(v) grid with neutralizing
-!> background (units in kin6d_wigner_leaves). Strang splitting: exact free
+!> background (units in milca_wigner_leaves). Strang splitting: exact free
 !> streaming in (k, v) by the shared streaming_rotation leaf, exact nonlocal
 !> Wigner kick in (x, eta) as the phase s_k(eta) Vhat_k, Poisson at the half
 !> step. The forward tangent d/dhbar propagates through every substep.
@@ -8,8 +8,8 @@
 module milca_wigner_poisson
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
-    use kin6d_streaming_leaves, only: streaming_rotation
-    use kin6d_wigner_leaves, only: wigner_shift_symbol, wigner_shift_symbol_jvp, &
+    use milca_streaming_leaves, only: streaming_rotation
+    use milca_wigner_leaves, only: wigner_shift_symbol, wigner_shift_symbol_jvp, &
         vlasov_shift_symbol, wigner_potential_mode, wigner_field_mode, &
         wigner_phase_coefficient, wigner_phase_coefficient_jvp, wigner_kick, &
         wigner_kick_tangent, wigner_field_energy_mode, wigner_maxwellian

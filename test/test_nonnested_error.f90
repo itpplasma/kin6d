@@ -7,7 +7,7 @@ program test_nonnested_error
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, coordinates, exact
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qgrad
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve
     use kin6d_nonnested_error, only: nn_error_t, nn_axisymmetric_error, NN_ERROR_OK
     implicit none

@@ -5,7 +5,7 @@ program test_streaming_moments
     use milca_streaming_moments, only: streaming_moments_t, &
         initialize_streaming_moments, advance_streaming_moments, &
         sample_streaming_moments, sample_streaming_moments_box
-    use kin6d_streaming_moments_leaves, only: streaming_moments_current_cell, &
+    use milca_streaming_moments_leaves, only: streaming_moments_current_cell, &
         streaming_moments_current_cell_interval, streaming_moments_current_cell_jvp, &
         streaming_moments_current_cell_vjp
     implicit none

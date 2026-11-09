@@ -34,7 +34,7 @@ module kin6d_quantum_collision_kernel
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
     use kin6d_coulomb_encounter_leaves, only: ce_mott
-    use kin6d_quantum_collision_leaves
+    use milca_quantum_collision_leaves
     implicit none
     private
     public :: SPIN_DISTINGUISHABLE, SPIN_SINGLET, SPIN_TRIPLET, SPIN_UNPOLARIZED

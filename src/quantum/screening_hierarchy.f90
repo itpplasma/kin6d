@@ -12,7 +12,7 @@ module kin6d_screening_hierarchy
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si
     use milca_fermi_gas_leaves, only: fermi_argument, fermi_positive, fermi_negative
-    use kin6d_screening_leaves, only: screening_lindhard_inner, &
+    use milca_screening_leaves, only: screening_lindhard_inner, &
         screening_lindhard_outer, screening_lindhard_small, screening_lindhard_large, &
         screening_momentum_below, screening_momentum_above, screening_maldague_weight, &
         screening_maldague_term, screening_potential_term, screening_potential_term_jvp, &

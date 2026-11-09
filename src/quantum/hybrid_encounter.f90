@@ -39,7 +39,7 @@ module kin6d_hybrid_encounter
     use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step, nbody_encounter_step
     use kin6d_quantum_collision_kernel, only: quantum_cut_log, classical_cut_log
-    use kin6d_quantum_collision_leaves
+    use milca_quantum_collision_leaves
     implicit none
     private
     public :: hybrid_config_t, hybrid_model_t, encounter_record_t

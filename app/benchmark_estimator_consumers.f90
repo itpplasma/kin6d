@@ -55,7 +55,7 @@ program benchmark_estimator_consumers
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
         nn_build, nn_solve
     use kin6d_nonnested_error, only: nn_error_t, nn_axisymmetric_error, &
         nt_axisymmetric_error

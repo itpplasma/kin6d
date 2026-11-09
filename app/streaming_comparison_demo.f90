@@ -10,7 +10,7 @@ program streaming_comparison_demo
         particle_density_workspace_t, prepare_particle_density_workspace, &
         project_particle_density, certify_particle_density, &
         sample_particle_density_band, particle_density_chord
-    use kin6d_streaming_leaves, only: streaming_plot_x, streaming_velocity_coordinate, &
+    use milca_streaming_leaves, only: streaming_plot_x, streaming_velocity_coordinate, &
         streaming_frame_time, streaming_characteristic, streaming_display_shift, &
         streaming_particle_midpoint, streaming_particle_glyph_size, &
         streaming_mode_accumulate, streaming_enlarge_interval

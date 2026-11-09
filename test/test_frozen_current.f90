@@ -1,5 +1,5 @@
 program test_frozen_current
-    ! Oracles of the frozen-current field (kin6d_frozen_current).
+    ! Oracles of the frozen-current field (milca_frozen_current).
     !   ring k nr      smooth axisymmetric toroidal + poloidal current in a
     !                  disk; B_pol against the exact ring field integrated
     !                  over the cross-section (AGM elliptic integrals, polar
@@ -24,9 +24,9 @@ program test_frozen_current
     ! ncore = 16 keeps the polar core cells close to isotropic.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_point
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_point
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
-    use kin6d_frozen_current, only: fc_exterior_t, fc_report_t, fc_exterior, &
+    use milca_frozen_current, only: fc_exterior_t, fc_report_t, fc_exterior, &
         fc_solve, fc_source_t, fc_casing
     use fortfem_meridian_feec_n, only: meridian_boundary_trace_points
     implicit none

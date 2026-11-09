@@ -65,7 +65,7 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     use fortnum_newton_mr, only: newton_mr_problem_t, newton_mr_report_t, &
         newton_mr_options_t, newton_mr_solve, NEWTON_MR_OK
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_equilibrium_nonnested, only: nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free
     use kin6d_nonnested_newton_mr, only: lumped_metric_t, mode_curl, mode_mass
     implicit none

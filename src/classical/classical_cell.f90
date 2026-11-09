@@ -27,7 +27,7 @@ module milca_classical_cell
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use milca_coulomb_leaves, only: ewald_background
     use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
-    use kin6d_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
+    use milca_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
     use kin6d_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
         pair_law_exchange_sum, pair_coulomb, pair_kelbg, pair_kelbg_pauli
     use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces

@@ -4,7 +4,7 @@ module kin6d_vrmhd_section
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix, &
         VRMHD_POINT_MATRIX_CALLS
-    use kin6d_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
+    use milca_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
         vrmhd_curl_rotation, vrmhd_curl_screw, vrmhd_curl_screw_coordinates
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t

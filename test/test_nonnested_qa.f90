@@ -169,7 +169,7 @@ program test_nonnested_qa
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_qa_oracle
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t
     implicit none

@@ -7,7 +7,7 @@ program test_poisson
                                   solve_coupled_steady, coupled_sample, &
                                   coupled_reference, coupled_certificate_radius, &
                                   coupled_certificate_accepts
-    use kin6d_poisson_leaves, only: poisson_coefficients_jvp, &
+    use milca_poisson_leaves, only: poisson_coefficients_jvp, &
                                    poisson_coefficients_vjp, &
                                    poisson_reconstruct_interval, &
                                    coupled_distribution_interval, &

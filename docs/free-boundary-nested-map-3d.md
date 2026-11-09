@@ -1,8 +1,8 @@
 # 3D free boundary of the nested map with circuit currents as parameters
 
 Status: first layer, branch `lane/fb3d-nested-map-20261025`. Module
-`kin6d_ideal_fb_circuits` (`src/mhd/ideal_fb_circuits.f90`) on top of the N4
-residual in `kin6d_ideal_free_boundary` ([ideal-free-boundary.md](ideal-free-boundary.md)),
+`milca_ideal_fb_circuits` (`src/mhd/ideal_fb_circuits.f90`) on top of the N4
+residual in `milca_ideal_free_boundary` ([ideal-free-boundary.md](ideal-free-boundary.md)),
 its formulation theory ([free-boundary-theory.md](free-boundary-theory.md)) and the
 R2 coupling surface ([free-boundary-chart-surface.md](free-boundary-chart-surface.md)).
 This note fixes the residual that the forward W7-X case and the coil-current
@@ -155,7 +155,7 @@ of F_k.
 
 | piece | status |
 |---|---|
-| N4 residual, Hessian, Newton/KKT, slide gauge (`kin6d_ideal_free_boundary`) | reused; `ideal_fb_set_drive` now wraps the batched `ideal_fb_drive_traces` |
+| N4 residual, Hessian, Newton/KKT, slide gauge (`milca_ideal_free_boundary`) | reused; `ideal_fb_set_drive` now wraps the batched `ideal_fb_drive_traces` |
 | per-n exterior S_n (FortFEM toroidal-mode BEM) | reused |
 | R2 general 3D Γ_c (`milca_equilibrium_boundary_3d`, FortFEM parametric BEM) and its adapter | reused; full-turn mapping factored into `ideal_fb_full_turn_traces` |
 | frozen exterior (#88) | reused; traces now replaceable after attachment (`ideal_fb_set_traces`) |

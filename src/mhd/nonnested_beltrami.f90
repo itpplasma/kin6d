@@ -21,7 +21,7 @@ module kin6d_nonnested_beltrami
         FORTSPARSE_SINGULAR
     use fortnum_eigen, only: lanczos, eigen_options_t, eigen_stats_t, &
         EIGEN_NEAREST, EIGEN_OK
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, &
         METRIC_IDENTITY, nn_harmonic_forms
     use fortfem_meridian_fourier_apply, only: meridian_fourier_op_t

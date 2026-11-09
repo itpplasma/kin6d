@@ -23,7 +23,7 @@ module kin6d_near_encounter
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK, FORTNUM_DOMAIN_ERROR, &
                               status_set
     use milca_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp
-    use kin6d_ocp_leaves, only: near_switch_pair, near_switch_pair_jvp
+    use milca_ocp_leaves, only: near_switch_pair, near_switch_pair_jvp
     implicit none
     private
     public :: near_split_t, near_t, near_radii, near_pair, near_pair_jvp

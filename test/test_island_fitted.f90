@@ -52,7 +52,7 @@ program test_island_fitted
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_profile, only: nn_fit_source
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_validate, nc_source_data, nc_fixed, nc_reduce, nc_residual, &

@@ -17,7 +17,7 @@ program test_current_sheet_oracles
     ! conditions the oracles are solved from, so they hold by construction
     ! and only guard the implementation against regressions.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_current_sheet_oracles, only: slab_sheet_t, pinch_sheet_t, &
+    use milca_current_sheet_oracles, only: slab_sheet_t, pinch_sheet_t, &
         modified_bessel_ik
     implicit none
     character(32) :: arg

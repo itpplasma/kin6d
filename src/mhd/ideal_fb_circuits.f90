@@ -1,11 +1,11 @@
-module kin6d_ideal_fb_circuits
+module milca_ideal_fb_circuits
     !! Circuit currents as parameters of the nested-map free-boundary residual
     !! (docs/free-boundary-nested-map-3d.md). The vacuum source is linear in
     !! the circuit currents p = (I_1..I_K):
     !!     B_vac = B_0 + sum_k I_k b_k,
     !! b_k the field of circuit k at unit current (coils with winding counts),
     !! B_0 a fixed part (the unit-circulation filament times c). The residual
-    !! R(x; p) of kin6d_ideal_free_boundary sees B_vac only through the Gamma_c
+    !! R(x; p) of milca_ideal_free_boundary sees B_vac only through the Gamma_c
     !! traces (drive a, load h) and the toroidal period F_vac, all linear in
     !! B_vac, so they are precomputed once per circuit:
     !!     a(p) = a_0 + sum_k I_k a_k,  h(p) = h_0 + sum_k I_k h_k,
@@ -15,7 +15,7 @@ module kin6d_ideal_fb_circuits
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_coils_3d, only: coil_set_t, segment_b
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_field_basis_t, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_field_basis_t, &
         ideal_fb_sampler, ideal_fb_drive_traces, ideal_fb_set_traces, &
         ideal_fb_traces_jvp, ideal_fb_traces_vjp, ideal_fb_set_drive, &
         ideal_fb_drive_traces_3d, ideal_fb_set_drive_3d, &
@@ -298,4 +298,4 @@ contains
         end do
         !$omp end parallel do
     end subroutine
-end module kin6d_ideal_fb_circuits
+end module milca_ideal_fb_circuits

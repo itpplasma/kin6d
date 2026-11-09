@@ -1,6 +1,6 @@
 program test_s0_gs_space
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_s0_gs_space_leaves, only: s0_polar_jet, s0_polar_jet_jvp, &
+    use milca_s0_gs_space_leaves, only: s0_polar_jet, s0_polar_jet_jvp, &
         s0_polar_jet_vjp, s0_polar_geometry, s0_polar_geometry_jvp, &
         s0_polar_geometry_vjp
     implicit none

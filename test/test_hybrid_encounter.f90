@@ -8,7 +8,7 @@ program test_hybrid_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use milca_species, only: atomic_units, electron
     use kin6d_hybrid_encounter
-    use kin6d_quantum_collision_leaves, only: qc_chandrasekhar, qc_slowing_rate
+    use milca_quantum_collision_leaves, only: qc_chandrasekhar, qc_slowing_rate
     implicit none
     integer :: failures = 0
     real(dp), parameter :: pi = acos(-1.0_dp)

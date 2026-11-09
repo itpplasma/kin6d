@@ -18,7 +18,7 @@ program test_quantum_classical
     use milca_coulomb_leaves, only: ewald_background
     use milca_classical_cell
     use kin6d_quantum_pair_cell
-    use kin6d_quantum_classical_leaves
+    use milca_quantum_classical_leaves
     use kin6d_jellium_cell
     use kin6d_quantum_classical_map
     use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, &

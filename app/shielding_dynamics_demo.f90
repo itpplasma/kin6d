@@ -3,7 +3,7 @@ program shielding_dynamics_demo
     use fortnum_interval, only: interval_t, interval, linear_interpolation_remainder
     use milca_shielding_dynamics, only: shielding_state_t, init_shielding, &
                              advance_shielding, sample_shielding, shielding_plot_padding
-    use kin6d_shielding_dynamics_leaves, only: shielding_coordinate, shielding_time, &
+    use milca_shielding_dynamics_leaves, only: shielding_coordinate, shielding_time, &
                        shielding_mode, shielding_equilibrium, shielding_band_interval, &
         shielding_time_curvature_interval, shielding_radius_width_interval, &
         shielding_interval_length_interval

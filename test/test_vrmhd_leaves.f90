@@ -1,6 +1,6 @@
 program test_vrmhd_leaves
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vrmhd_leaves
+    use milca_vrmhd_leaves
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use vrmhd_leaf_dispatch, only: nleaf, maxargs, nargs, names, evaluate, derivative
     implicit none

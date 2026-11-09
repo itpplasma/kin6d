@@ -12,7 +12,7 @@ program test_vrmhd_gs
     use vrmhd_wall_oracle, only: current_wall_dofs
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
-    use kin6d_vrmhd_gs_leaves, only: gs_lift_rotation, gs_lift_screw, &
+    use milca_vrmhd_gs_leaves, only: gs_lift_rotation, gs_lift_screw, &
         vrmhd_gs_flux_rotation, vrmhd_gs_flux_screw, &
         vrmhd_gs_heat_rotation, vrmhd_gs_heat_screw
     use fortfem_mesh_2d, only: mesh_2d_t

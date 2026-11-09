@@ -1,4 +1,4 @@
-module kin6d_equilibrium_nonnested
+module milca_equilibrium_nonnested
     ! NN1: closed FEEC magnetic states and the quadratic vacuum / N=0
     ! pressure restriction. Generic spaces and sparse solves stay upstream.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -730,4 +730,4 @@ contains
         end if
         factor%ready = .false.
     end subroutine
-end module kin6d_equilibrium_nonnested
+end module milca_equilibrium_nonnested

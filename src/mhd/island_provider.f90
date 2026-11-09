@@ -29,7 +29,7 @@ module kin6d_island_provider
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, &
         fortsparse_status_t, status_ok
     use kin6d_mhd_mesh, only: flux_mesh_locate
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_point
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_point
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_report_t, nc_solve, nc_continue, nc_residual, nc_store, nc_fixed, &

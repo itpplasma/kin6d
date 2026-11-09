@@ -1,6 +1,6 @@
 # Independent response readback/qualification; separate from coupled solver.
 target_sources(kin6d_mhd PRIVATE src/mhd/response_calibration.f90
-    src/generated/kin6d_response_calibration_leaves.f90)
+    src/generated/milca_response_calibration_leaves.f90)
 add_executable(test_response_calibration test/test_response_calibration.f90)
 target_link_libraries(test_response_calibration PRIVATE kin6d)
 add_test(NAME response_spot_calibration_algebra COMMAND test_response_calibration)

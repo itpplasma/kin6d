@@ -38,7 +38,7 @@ program test_nonnested_actions
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, fortsparse_status_t, &
         status_ok
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_fixed, nc_reduce, nc_residual, nc_jacobian, nc_jvp, nc_vjp
     use kin6d_island_closure, only: ISLAND_INVALID, ISLAND_UNSUPPORTED, &

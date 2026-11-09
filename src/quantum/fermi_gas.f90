@@ -21,7 +21,7 @@ module kin6d_fermi_gas
         fermi_tail_interval, fermi_theta_derivative, &
         fermi_theta_derivative_interval, fermi_weighted_add, &
         fermi_relativity_indicator, fermi_relativity_indicator_interval
-    use kin6d_relativistic_fermi_leaves, only: fermi_rel_root, fermi_rel_root_interval, &
+    use milca_relativistic_fermi_leaves, only: fermi_rel_root, fermi_rel_root_interval, &
         fermi_rel_argument, fermi_rel_argument_interval, fermi_rel_integrands, &
         fermi_rel_integrands_interval, fermi_rel_density_integrand, &
         fermi_rel_density_integrand_interval, fermi_rel_density_curvature_interval, &

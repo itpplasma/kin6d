@@ -5,7 +5,7 @@ module beltrami_mr_fixture
     ! the external SPEC samples, and a peak-memory probe.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i8 => int64
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6.0_dp

@@ -5,7 +5,7 @@ program test_s0
     use kin6d_ideal_xi, only: xi_gradient_n, XI_OK
     use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
-    use kin6d_s0_leaves, only: s0_mass_dp, s0_mass_jvp_dp, s0_mass_vjp_dp, &
+    use milca_s0_leaves, only: s0_mass_dp, s0_mass_jvp_dp, s0_mass_vjp_dp, &
         s0_mass_sp, s0_alfven_dp, s0_alfven_sp, s0_kink_dp
     use fortsparse, only: csc_z_t, fortsparse_status_t, FORTSPARSE_OK, &
         FORTSPARSE_INERTIA_RELIABLE, FORTSPARSE_INERTIA_UNAVAILABLE, &
