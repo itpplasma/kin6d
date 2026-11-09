@@ -150,7 +150,7 @@ def write_data(out, solutions, boundary="freeBoundary"):
     # Export the actual quadrature filaments, including their turn weights:
     # ShapedCoil uses polygon quadrature, not a MultiCoil rectangular grid.
     lines = [f"# {line}" for line in header.splitlines()]
-    lines.append("kin6d-coil-table 1")
+    lines.append("milca-coil-table 1")
     for name, coil in eq.tokamak.coils:
         points = getattr(coil, "_points", [(coil.R, coil.Z, 1.0)])
         for r, z, weight in points:
@@ -160,7 +160,7 @@ def write_data(out, solutions, boundary="freeBoundary"):
         lines.append(f"circuit {name} -1e7 1e7 {name}")
     (out / "coils.dat").write_text("\n".join(lines) + "\n")
     # Small branch-selection seed on a regular grid, NOT boundary conditions.
-    # KIN6D must remove its interpolation/offset error by solving its equations.
+    # MILCA must remove its interpolation/offset error by solving its equations.
     r = np.linspace(0.2, 1.65, 25)
     z = np.linspace(-0.95, 0.95, 33)
     values = eq.psiRZ(r[:, None], z[None, :])

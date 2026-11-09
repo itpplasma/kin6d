@@ -10,9 +10,9 @@
 # and D3 ladders on the NN1 helical-coil annulus.
 # The landreman mode runs the exact 3D family-1 ladders (per degree K, ratios 1/1e3/1e6,
 # N = 4/6 on nr 4/8/16, continuation in the ratio).
-# Usage: sbatch scripts/study_nonnested_nn2_scluster.sbatch KIN6D [all|coupled|island|landreman [K...]]
+# Usage: sbatch scripts/study_nonnested_nn2_scluster.sbatch MILCA [all|coupled|island|landreman [K...]]
 set -euo pipefail
-cd "${1:?kin6d checkout}/build"
+cd "${1:?milca checkout}/build"
 E=$HOME/fs1/env
 export LD_LIBRARY_PATH="$E/lib:$HOME/fsym-env/lib:${LD_LIBRARY_PATH:-}"
 export OMP_NUM_THREADS=16

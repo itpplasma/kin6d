@@ -257,7 +257,7 @@ program test_nonnested_mapped
             end if
         end do
         if (size(errs) > 1) then
-            call get_environment_variable('KIN6D_MAPPED_MIN_ORDER', env, status=st)
+            call get_environment_variable('MILCA_MAPPED_MIN_ORDER', env, status=st)
             if (st == 0) read (env, *) min_order
             if (log(errs(size(errs) - 1)/errs(size(errs))) &
                 /log(real(list(size(list)), dp)/list(size(list) - 1)) < min_order) &

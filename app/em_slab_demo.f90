@@ -5,7 +5,7 @@
 !> lock-in reflection/transmission, skin depth and transmitted wavelength
 !> with the linear cold-plasma theory (independent oracle leaves), writes
 !> output/em_slab_demo.nc and, with --export DIR, the lecture-scene data
-!> DIR/em-wave-plasma-reflection/ (kin6d animation export).
+!> DIR/em-wave-plasma-reflection/ (milca animation export).
 program em_slab_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_em_slab, only: em_slab_config_t, em_slab_result_t, em_slab_frames_t, &

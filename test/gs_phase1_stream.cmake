@@ -1,5 +1,5 @@
 file(MAKE_DIRECTORY "${WORK}")
-file(WRITE "${WORK}/mesh.dat" "# kin6d-gs-mesh-v2: P2 SI R Z psi boundary
+file(WRITE "${WORK}/mesh.dat" "# milca-gs-mesh-v2: P2 SI R Z psi boundary
 6 1
 1 0 1 1
 2 0 4 1

@@ -97,7 +97,7 @@ The second equality uses ∂_{n_V}Φ = 0 on Γ_p, and n_V = −n is the shell no
 - The map unknowns are q, with ξ = dH(q)δq. Stationarity in q is equivalent to stationarity in ξ wherever dH is invertible: on the whole image for the cylindrical chart away from R = 0, and within the injectivity radius for a curve frame (**hypothesis** per case, checked by det dH > 0).
 - N4 varies only (q1, q2) on plasma nodes (position gauge, ξ·∇q3 = 0). Stationarity on that set implies stationarity for all ξ, because the remaining component λB is a relabelling with ⟨∇L, λB⟩ = 0 ([gauge file](free-boundary-gauge-vertical.md), section 1, "Position-gauged stationarity is full stationarity"; **verified**, repair 2026-10-19).
 - The tangential field may jump on Γ_p (a surface current) while 4 holds. The vacuum circulation c is fixed data, and the interior circulation follows from X, so a mismatch is an admitted surface current rather than an inconsistency.
-- Literature: frozen-in energy principle, [Kruskal and Kulsrud 1958](https://doi.org/10.1063/1.1705884) (**cited**); free-boundary energy with vacuum, [Bernstein, Frieman, Kruskal and Kulsrud 1958](https://doi.org/10.1098/rspa.1958.0023) (**cited**). The argument above is reproduced in KIN6D notation and does not rely on them.
+- Literature: frozen-in energy principle, [Kruskal and Kulsrud 1958](https://doi.org/10.1063/1.1705884) (**cited**); free-boundary energy with vacuum, [Bernstein, Frieman, Kruskal and Kulsrud 1958](https://doi.org/10.1098/rspa.1958.0023) (**cited**). The argument above is reproduced in MILCA notation and does not rely on them.
 
 ## 7. Fixed flux versus fixed current (hypothesis)
 

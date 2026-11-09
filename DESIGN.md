@@ -1,4 +1,4 @@
-# kin6d design
+# milca design
 
 Status: canonical architecture, 2026-10-05.
 
@@ -44,7 +44,7 @@ to strengthen it later.
    independent of replaceable solver, file-format, hardware, scheduler and UI
    details. New scope composes with the same contracts instead of spawning a
    second numerical universe.
-9. **Every useful model, best-of-breed numerics, symbolic derivation.** kin6d
+9. **Every useful model, best-of-breed numerics, symbolic derivation.** milca
    aims to support every plasma model that is useful for a question, each with
    the best available structure-preserving discretization and solver for that
    model. Model equations, weak forms and their derivatives are derived
@@ -58,7 +58,7 @@ scope.
 
 ## Mission
 
-KIN6D is not one 6D solver and not a collection of compatibility modes. It is a
+MILCA is not one 6D solver and not a collection of compatibility modes. It is a
 **general plasma multiphysics engine** in which plasma, neutral,
 radiation, surface and transport models plus their numerical representations
 can coexist, be compared one approximation at a time, differentiated,
@@ -87,7 +87,7 @@ defects quickly.
 
 ## Clean dependency rule
 
-KIN6D freezes scientific policies and contracts earlier than implementation
+MILCA freezes scientific policies and contracts earlier than implementation
 details. Clean Architecture here is a dependency rule, not a prescribed folder
 tree.
 
@@ -108,7 +108,7 @@ in [software-engineering.md](docs/software-engineering.md).
 
 ## Microscopic classical parent
 
-The continuum kinetic hierarchy is itself a reduction. Beneath it, KIN6D
+The continuum kinetic hierarchy is itself a reduction. Beneath it, MILCA
 recognizes the exact finite-\(N\) classical microscopic state: individual
 relativistic charged particles coupled to the full Maxwell field.
 
@@ -183,7 +183,7 @@ and collisionality separately in the declared Debye-volume scan.
 
 ## Quantum fundamentals boundary
 
-The classical hierarchy is not asserted beyond its domain. KIN6D also admits a
+The classical hierarchy is not asserted beyond its domain. MILCA also admits a
 quantum-plasma branch that exposes the transition from classical ideal plasma
 to degenerate/correlated quantum plasma.
 
@@ -259,9 +259,9 @@ R(U;\theta)=0,
 \]
 
 not a special file type and not necessarily a unique mapping
-\(\theta\mapsto U\). If two distinct stationary solutions exist, KIN6D stores
+\(\theta\mapsto U\). If two distinct stationary solutions exist, MILCA stores
 and treats them as two equilibria. Their initial states, continuation histories,
-external inputs and solution identifiers are provenance; KIN6D does not need a
+external inputs and solution identifiers are provenance; MILCA does not need a
 general probabilistic branch framework.
 
 Axisymmetric MHD must acquire a native Grad--Shafranov path for fixed and free
@@ -298,7 +298,7 @@ See [equilibria and inference](docs/equilibria-inference.md).
 
 ## Orthogonal configuration axes
 
-KIN6D configuration is intentionally factored.
+MILCA configuration is intentionally factored.
 
 ### Physical model per species
 
@@ -433,7 +433,7 @@ Radiation is a state/closure axis:
 \text{external high-fidelity non-LTE spectral provider}.
 \]
 
-Reduced radiation transport is native KIN6D physics; implementing the entire
+Reduced radiation transport is native MILCA physics; implementing the entire
 line-by-line non-LTE transfer discipline is not a prerequisite for the common
 plasma engine. See [radiation](docs/radiation.md).
 
@@ -482,7 +482,7 @@ microphysics sampling and fully coupled global evolution. Spatial locality and
 timescale separation are independent assumptions.
 
 Traditional equilibrium--transport splitting is an important cheap
-configuration, not a legacy workaround. KIN6D should reproduce QL-Balance/
+configuration, not a legacy workaround. MILCA should reproduce QL-Balance/
 ASTRA-like integrated modelling early and then relax its approximations toward
 2D/3D nonlocal and fully coupled evolution.
 
@@ -688,19 +688,19 @@ methods are optional tools and carry statistical uncertainty.
 
 ## Inference boundary
 
-KIN6D owns forward physics, stationary/evolution solves, observables,
+MILCA owns forward physics, stationary/evolution solves, observables,
 JVP/VJP/implicit-adjoint actions, numerical certificates and model-reduction
 error estimates. TIAGO owns reconstruction/inference from experimental data:
 likelihoods, diagnostic/calibration nuisance parameters, priors and posterior
 uncertainty.
 
-For a KIN6D state defined by \(R(U,\theta)=0\), TIAGO should be able to
+For a MILCA state defined by \(R(U,\theta)=0\), TIAGO should be able to
 consume matrix-free actions for the composed diagnostic map without knowing
 Newton/Krylov details or the internal state layout. The VMEC++ reconstruction
-already implemented in TIAGO is a retained provider/reference path; KIN6D is a
+already implemented in TIAGO is a retained provider/reference path; MILCA is a
 planned provider, not a reverse dependency.
 
-If several KIN6D equilibria are compatible with the same measurements, TIAGO
+If several MILCA equilibria are compatible with the same measurements, TIAGO
 may fit each separately and, when useful, report a finite mixture of local
 Laplace approximations. The equilibria remain distinct physical solutions; do
 not average topologically or physically distinct states into a fictitious
@@ -815,7 +815,7 @@ layers must not redefine model compatibility or numerical defaults.
 
 Scientific result files use a NetCDF-4-compatible HDF5 subset through FortIO.
 Every result embeds the original and resolved input plus source/dependency,
-compiler/flags, hardware and external-input provenance. A KIN6D result from
+compiler/flags, hardware and external-input provenance. A MILCA result from
 which its effective input cannot be recovered is invalid. Large external inputs
 may be referenced by normalized metadata and content hashes instead of copied
 verbatim.
@@ -842,7 +842,7 @@ cycle choose the vertical slice with the strongest combination of scientific
 value, cross-domain reuse, dependency unlock, validation strength,
 performance/certification leverage and acceptable cost/risk.
 
-Do not split KIN6D into continuum/PIC/PIF/gyrofluid/industrial/space
+Do not split MILCA into continuum/PIC/PIF/gyrofluid/industrial/space
 repositories. If a generic particle engine, reaction runtime, radiation
 transport primitive or indexed-kernel scheduler acquires multiple independent
 consumers, extract the stable generic layer upstream only after the abstraction

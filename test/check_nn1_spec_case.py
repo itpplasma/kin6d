@@ -1,4 +1,4 @@
-"""Smoke check of nn1_spec_case output: KIN6D NN1 field vs the direct Biot-Savart sum of the same
+"""Smoke check of nn1_spec_case output: MILCA NN1 field vs the direct Biot-Savart sum of the same
 filaments (columns 7-9 of the output), relative to the RMS non-toroidal-field deviation.
 usage: check_nn1_spec_case.py out.B.txt [tolerance]"""
 import math

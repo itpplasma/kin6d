@@ -1,8 +1,8 @@
-# kin6d
+# MILCA
 
 <a href="https://cloud.tugraz.at/index.php/s/cMDgzfagwJnEyiq/download?path=%2F&amp;files=milca.png"><img src="https://cloud.tugraz.at/index.php/s/cMDgzfagwJnEyiq/download?path=%2F&amp;files=milca_small.png" alt="MILCA" width="420"></a>
 
-kin6d is a Fortran research code for plasma equilibrium, stability and kinetic
+MILCA is a Fortran research code for plasma equilibrium, stability and kinetic
 models. Current work centres on axisymmetric and three-dimensional
 magnetohydrodynamic (MHD) equilibria, with small kinetic, classical-particle
 and quantum reference problems alongside them.
@@ -52,7 +52,7 @@ configuration and provenance. For the first kinetic laboratory, including
 free streaming with a continuous error band:
 
 ```sh
-./build/kin6d_demo --snapshot
+./build/milca_demo --snapshot
 ```
 
 ## Models and documentation

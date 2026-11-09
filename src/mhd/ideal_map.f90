@@ -490,7 +490,7 @@ contains
 
     subroutine ideal_map_init(map, mesh, chart, nfp, ntor, status, nphi, &
                               quadrature_order, mu0, axis_degree)
-        ! Reference mesh, element order and boundary flags from a KIN6D GS mesh.
+        ! Reference mesh, element order and boundary flags from a MILCA GS mesh.
         ! The reference chart coordinates of the nodes are mesh%points.
         type(ideal_map_t), intent(out) :: map
         type(gs_state_t), intent(in) :: mesh

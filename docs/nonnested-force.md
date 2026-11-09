@@ -15,12 +15,12 @@ trace, all Fourier blocks) with div u = 0. P removes every gradient, so
 P(J x B - grad p) = P(J x B): the pressure is the multiplier and need not be
 supplied. It is the force measure of the MRX relaxation (arXiv:2510.26986,
 Leray projection with an incompressible multiplier pressure) applied to a
-kin6d state. Two discrete forms of the same projection are provided:
+milca state. Two discrete forms of the same projection are provided:
 
 - Leray (mixed): [M2 D^T 0; D 0 l; 0 l^T 0] (u, phi, mu) = (F, 0, 0), with
   F = <V2, J x B>, D the metric-free coefficient divergence V2 -> V3 and l
   the n = 0 integral functional that removes the constant from ker D^T on
-  V2_0. kin6d had no Leray projection in any lane; this is the comparison
+  V2_0. milca had no Leray projection in any lane; this is the comparison
   path.
 - Potential velocity: u = C psi + sum_j <F, h_j> h_j with K psi = C^T F on
   V1_0, K = C^T M2 C, i.e. curl (curl curl)^-1 curl (J x B) + <J x B, h> h.

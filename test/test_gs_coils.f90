@@ -271,15 +271,15 @@ contains
         call write_text(path, [character(len=80) :: 'coil A rect 1 0 1 1 1'])
         call gs_read_coil_table(path, set, stat, msg)
         call require(stat /= 0, 'missing header rejected')
-        call write_text(path, [character(len=80) :: 'kin6d-coil-table 1', &
+        call write_text(path, [character(len=80) :: 'milca-coil-table 1', &
             'coil A rect 1 0 1 1 1', 'circuit C -1 1 B'])
         call gs_read_coil_table(path, set, stat, msg)
         call require(stat /= 0, 'unknown circuit member rejected')
-        call write_text(path, [character(len=80) :: 'kin6d-coil-table 1', &
+        call write_text(path, [character(len=80) :: 'milca-coil-table 1', &
             'coil A rect 1 0 x 1 1'])
         call gs_read_coil_table(path, set, stat, msg)
         call require(stat /= 0, 'bad number rejected')
-        call write_text(path, [character(len=80) :: 'kin6d-coil-table 1', &
+        call write_text(path, [character(len=80) :: 'milca-coil-table 1', &
             '# comment line', 'coil A rect 1 0 1 1 1  # trailing', &
             'circuit C -2 3 A*-1'])
         call gs_read_coil_table(path, set, stat, msg)

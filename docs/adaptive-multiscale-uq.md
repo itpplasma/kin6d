@@ -8,7 +8,7 @@ controller before concrete vertical slices exist.
 
 ## Objective
 
-KIN6D should eventually solve only as much physics, correlation, quantum
+MILCA should eventually solve only as much physics, correlation, quantum
 mechanics, numerical resolution and stochastic detail as the requested
 observable actually requires.
 

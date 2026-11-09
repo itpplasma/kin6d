@@ -28,7 +28,7 @@ explicit congruence `T = [Z G; -GᵀHZ, σI - ½GᵀHG]` with `MG = I`, for whic
 (`posIndex_eq_of_split`).
 -/
 
-namespace Kin6d.Bordered
+namespace Milca.Bordered
 
 open Matrix
 
@@ -583,4 +583,4 @@ theorem lemma_B2 {H : Matrix n n ℝ} {M : Matrix m n ℝ} {Z : Matrix n k ℝ}
 
 end B2
 
-end Kin6d.Bordered
+end Milca.Bordered

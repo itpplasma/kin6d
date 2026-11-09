@@ -367,7 +367,7 @@ contains
     end subroutine
 
     ! FortNum's Hermite/Bernstein residual and radius accumulation on the
-    ! kin6d interval action -i H x/hbar. The generator is skew-adjoint in the
+    ! milca interval action -i H x/hbar. The generator is skew-adjoint in the
     ! packed real/imag Hilbert pairing, so the logarithmic norm is zero. The
     ! tangent residual adds the forcing -i dH y_h/hbar and the discrepancy
     ! ||dH||_F/hbar * radius(cell) of the primal reconstruction.

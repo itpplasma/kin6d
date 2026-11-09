@@ -10,7 +10,7 @@ certification programme below includes capabilities still to be developed.
 
 ## One stationary-state concept
 
-KIN6D defines an equilibrium or stationary state through the selected physical
+MILCA defines an equilibrium or stationary state through the selected physical
 equations,
 
 \[
@@ -26,7 +26,7 @@ architecture.
 The map from inputs to stationary state need not be unique. If two valid
 stationary solutions are found, they are two equilibria. Keep them separate.
 Each result records its initial state, external data, continuation/evolution
-history and solution identifier when those facts matter. KIN6D does not need a
+history and solution identifier when those facts matter. MILCA does not need a
 general probabilistic branch object.
 
 ## Imported equilibria are candidates
@@ -36,22 +36,22 @@ guess for a native stationary solve, an independent cross-code comparator, and
 a source whose residual/interpolation/convention uncertainty can be checked.
 
 Import must never silently promote the source code's coordinate assumptions into
-KIN6D's physical model. Normalize physical units, orientation, flux/toroidal
+MILCA's physical model. Normalize physical units, orientation, flux/toroidal
 angle conventions, field periods and vector-component conventions at the
 adapter boundary. Prefer libneo when it already owns a mature reader/converter.
 
 The libneo boundary is intentionally replaceable, but its generic implementation
-is improved on demand. When a KIN6D use case exposes a reusable defect or
+is improved on demand. When a MILCA use case exposes a reusable defect or
 missing capability in parsing, convention normalization, interpolation, field
 evaluation, spatial derivatives or representation-level error diagnostics, fix
-and test it in libneo rather than creating a KIN6D fork. If an old evaluator is
+and test it in libneo rather than creating a MILCA fork. If an old evaluator is
 too entangled to make differentiable/certifiable economically, use libneo only
-to normalize the source data and construct a native KIN6D representation for
+to normalize the source data and construct a native MILCA representation for
 the differentiable/certified computation.
 
 ## Axisymmetric MHD
 
-KIN6D should own a native Grad--Shafranov path for fixed and free boundary
+MILCA should own a native Grad--Shafranov path for fixed and free boundary
 problems. For an imported EQDSK/gEQDSK: read and normalize it, reconstruct the
 physical field/profile data, evaluate divergence/Ampere/Grad--Shafranov and
 boundary residuals, recover the represented inputs, re-solve natively, and
@@ -66,7 +66,7 @@ specification are additional physical inputs.
 Nested surfaces remain useful when they exist. A VMEC/DESC/GVEC-like state may
 be the cheapest representation of a smooth nested equilibrium and can be used
 directly, as an initializer, or as a preconditioner. It is not the general
-KIN6D equilibrium definition.
+MILCA equilibrium definition.
 
 The general physical-space formulation must remain valid through islands,
 stochastic/ergodic regions, separatrices and wall contact. Reference families
@@ -172,7 +172,7 @@ solution rather than a collisionless equilibrium.
 
 ## TIAGO owns reconstruction and inference
 
-KIN6D provides the differentiable forward model: stationary/evolution solve,
+MILCA provides the differentiable forward model: stationary/evolution solve,
 physical state and observables, JVP/VJP and implicit tangent/adjoint actions,
 numerical certification, and model-reduction/error information.
 
@@ -202,7 +202,7 @@ within-solution posterior requires it.
 
 Keep separate: measurement/calibration uncertainty; posterior/reconstruction
 uncertainty conditional on a model/equilibrium; diagnostic-model uncertainty;
-KIN6D numerical error; KIN6D physical model/reduction error; stochastic
+MILCA numerical error; MILCA physical model/reduction error; stochastic
 sampling uncertainty; and the existence of several distinct stationary
 solutions. Do not combine deterministic intervals, posterior standard
 deviations and model-error bounds by root-sum-square without a justified joint

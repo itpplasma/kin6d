@@ -1,4 +1,4 @@
-import Kin6d.ManufacturedKrook
+import Milca.ManufacturedKrook
 import Mathlib.Analysis.SpecialFunctions.Integrals.Basic
 
 /-!
@@ -11,7 +11,7 @@ and mean-potential gauge. It supplies no nonlinear coupled solution-error bound.
 
 set_option autoImplicit false
 
-namespace Kin6d
+namespace Milca
 
 open Real intervalIntegral
 
@@ -72,4 +72,4 @@ theorem electric_energy (a : ℝ) :
     sub_zero]
   ring
 
-end Kin6d
+end Milca

@@ -5,7 +5,7 @@ program test_ideal_map_axisymmetric
     ! pulled back through a smooth interior shift Y (Y = id on the boundary), so
     ! the seed X0 = id is not an equilibrium; the exact minimiser is X = Y up to
     ! relabelling. Oracles: (i) the exact flux, through the gauge-invariant
-    ! surface defect psi_exact(X(y)) - chi(y); (ii) KIN6D's 2D GS solution on the
+    ! surface defect psi_exact(X(y)) - chi(y); (ii) MILCA's 2D GS solution on the
     ! same mesh, psi_2D(X(y)) - chi(y). Modes:
     !   derivatives      FD gradient/Hessian, rigid-rotation null, N=1 path
     !   leakage          N=1, nfp=3, n=3 interior seed: n/=0 content decays

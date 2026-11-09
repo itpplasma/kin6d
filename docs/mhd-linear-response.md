@@ -1,6 +1,6 @@
 # Linear per-n MHD response (L4)
 
-Status: first stages of L4 of the 3D design (`kin6d_3d_tc24/DESIGN.md`, §2, §8.2).
+Status: first stages of L4 of the 3D design (`milca_3d_tc24/DESIGN.md`, §2, §8.2).
 The ideal response is computed in the FEEC form of Albert, Lainer and Biro,
 Comput. Phys. Commun. 277 (2022) 108401, as used by MEPHIT, not in the
 ξ-form of the design: the plasma current is obtained from linear force balance
@@ -332,7 +332,7 @@ returns `dB_L = dB_E + (xi.grad) B0`, `|B|_L = b.dB_E + xi.grad|B|`,
 `gs_response_3d` writes it for `export_psin(:)`, `export_np`, `export_mmax` to
 `prefix_l7_ph<k>.dat` (spectrum quantity `phi_n` = flux-density harmonics of the normal
 Eulerian field in T m^2 per rad^2, one-sided: the peak-amplitude `phi_mn` of
-`surface_harmonics`, `res.dat` and GPEC/MARS is twice it) (format `kin6d-l7-v1`: header with n, n-sign, declared
+`surface_harmonics`, `res.dat` and GPEC/MARS is twice it) (format `milca-l7-v1`: header with n, n-sign, declared
 COCOS 3, `sgn_dpsi`, `s_pol`, `ip` sign, chart definitions; point table; PEST and
 Hamada spectra) with a `sha256sum`-compatible sidecar `.sha256`.
 

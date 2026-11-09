@@ -386,7 +386,7 @@ the actual numerical status. Review inputs are frozen by base commit and
 patch digest. Release and checked Debug CTest evidence is retained. Cost
 reports separate solve-only time, error-estimation time, derivatives,
 preparation/reuse, sampling and rendering, and compare models at matched
-observable accuracy. No published particle count becomes a KIN6D
+observable accuracy. No published particle count becomes a MILCA
 performance claim.
 
 ## Primary references

@@ -83,7 +83,7 @@ ladder uses gamma=`2+0.2i` on 9x9, 17x17 and 33x33 grids with a fixed state-erro
 and residual target. The finer grid at gamma=`0.7+0.2i` did not meet that target;
 its failed exploration remains in external evidence, not a qualified limit.
 
-Configure `KIN6D_STRIP_EQDSK_TEST` to register the imported TC24 jet checks. They
+Configure `MILCA_STRIP_EQDSK_TEST` to register the imported TC24 jet checks. They
 compare B/map/pressure jets with independent spatial differences and retain the
 actual pressure. Both columns of the implicit map Hessian and pressure Hessian
 are checked. An additional imported-background inverse oracle sets `A=xi=0`,

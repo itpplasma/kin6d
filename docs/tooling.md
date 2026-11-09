@@ -15,7 +15,7 @@ candidate passes that fixture and 73 backend assertions.
 The verified task driver is `/var/tmp/fo-cmake-profile-driver-20261005/fo`, SHA256
 `6bb8bb26cf7374d8206f506ac36e36009ae8b26e195357648771938c435c9d02`.
 Native FPM was used for diagnostic bootstrap after an incomplete duplicate
-cold Fo build. The original kin6d transport gates pass 2/2 and its cached
+cold Fo build. The original milca transport gates pass 2/2 and its cached
 benchmark executes through this driver in Debug. Returning to native Release
 passes 5/5, retains empty global flags and reproduces the exact final benchmark
 executable digest. Final performance measurements use that clean Release.
@@ -26,23 +26,23 @@ Fo `17db6d81e0cf86b2325da159aa62964755eb92e6` additionally repairs public
 execution from the selected external CMake build root. The quantum slice uses
 `/var/tmp/fo-cmake-exec-root-20261005/build/gfortran_B54CC5252B24789C/app/fo`,
 SHA256 `23f14fb2e36f0e999d4e6db9a421f57743fe477921c786f882be945d4a6c7aa6`.
-Its independent stale-binary fixture, old/new profile fixture, and kin6d
+Its independent stale-binary fixture, old/new profile fixture, and milca
 Release/Debug evolution gates pass. Existing resident lanes are preserved.
 
 ## Focused development workflow
 
 Fo main `5bdc786` supports focused CMake target builds, label/layer selection and
-resident capture of KIN6D's populated dependency sources. On KIN6D `a93e74b`,
+resident capture of MILCA's populated dependency sources. On MILCA `a93e74b`,
 the verified driver SHA256 is
 `2e6392ba836aabf9489c85dec6971f77247429536521121e9b69b47532e37333`.
 The named `real_value_identity_edge_cases` case passes through both ordinary
-Fo and a resident lane. Its ordinary plan selects `kin6d_core`, `kin6d_fft`,
-`kin6d_intervals`, `kin6d_ode` and `test_real_identity`, without widening.
+Fo and a resident lane. Its ordinary plan selects `milca_core`, `milca_fft`,
+`milca_intervals`, `milca_ode` and `test_real_identity`, without widening.
 
 ```sh
-fo test real_value_identity_edge_cases -L '^core$' --layer kin6d_core
+fo test real_value_identity_edge_cases -L '^core$' --layer milca_core
 fo gremlin start --lane development --target real_value_identity_edge_cases \
-    --random 0 -L '^core$' --layer kin6d_core
+    --random 0 -L '^core$' --layer milca_core
 ```
 
 The pre-move edit to `src/real_identity.f90` (now
@@ -58,7 +58,7 @@ Run only the affected named cases. Never run the full test suite.
 
 | Responsibility | Owner |
 |---|---|
-| Plasma application/model composition | KIN6D, modern Fortran |
+| Plasma application/model composition | MILCA, modern Fortran |
 | Symbolic local mathematics | FortSym |
 | Spatial FE/FEEC/IGA/DG/FCI/BEM mathematics | FortFEM |
 | Generic shock/front FV/AMR, rarefied/DSMC/MD or radiation-transport primitives | Existing generic owner where suitable; otherwise establish an upstream owner only when a concrete reusable implementation is required |
@@ -188,18 +188,18 @@ only when the forced-FP certificate provides its concrete consumer.
 ## FortFEM boundary
 
 FortFEM owns generic mapped spaces, tensor B-splines/NURBS, FEEC, DG/HDG,
-traces, mortars, FCI and boundary operators. KIN6D supplies plasma constitutive
+traces, mortars, FCI and boundary operators. MILCA supplies plasma constitutive
 laws and model composition.
 
 For production hot paths, add generic matrix-free/sum-factorized/many-RHS
 actions upstream when needed. Retain assembled sparse paths as small reference,
 coarse-solver and debugging/certification tools.
 
-Do not fork or copy a generic FortFEM kernel into KIN6D.
+Do not fork or copy a generic FortFEM kernel into MILCA.
 
 ## Particle-runtime boundary
 
-PIC/PIF/blobs initially live as KIN6D representation implementations so the
+PIC/PIF/blobs initially live as MILCA representation implementations so the
 correct abstraction is discovered from real physics cases.
 
 Generic reusable primitives may later move upstream, for example:
@@ -243,7 +243,7 @@ implementation tools, not architectural requirements.
 
 ## PETSc boundary
 
-PETSc may initially own SNES/KSP/PC/TS orchestration. KIN6D owns
+PETSc may initially own SNES/KSP/PC/TS orchestration. MILCA owns
 
 \[
 R(U),\qquad Jv,\qquad J^\dagger v,\qquad P^{-1}v,\qquad U.
@@ -335,19 +335,19 @@ dependency:
 3. add the generic upstream test;
 4. implement the smallest complete fix upstream;
 5. verify and promote it according to that repository's policy;
-6. pin/recheck KIN6D.
+6. pin/recheck MILCA.
 
 Do not accumulate permanent downstream workarounds or duplicate optimized
 kernels.
 
 ### libneo: replaceable boundary, actively improved implementation
 
-KIN6D uses libneo behind a narrow adapter/canonical-data boundary so historical
+MILCA uses libneo behind a narrow adapter/canonical-data boundary so historical
 module structure, global state and compiler-specific implementation details do
-not become KIN6D architecture. That boundary is for replaceability and
+not become MILCA architecture. That boundary is for replaceability and
 containment, not to freeze libneo in its current form.
 
-The first production use of each libneo capability by KIN6D is an upstream
+The first production use of each libneo capability by MILCA is an upstream
 hardening gate. Audit the exercised path and, when the issue is generic, leave
 libneo better than it was:
 
@@ -368,15 +368,15 @@ only when concrete consumers need them.
 
 If making an old evaluator differentiable or rigorous would be disproportionate,
 use libneo to parse/normalize the external data and reconstruct a canonical
-KIN6D basis/FEM/spline representation. KIN6D then differentiates/certifies that
-representation. This is preferred to copying the old evaluator into KIN6D.
+MILCA basis/FEM/spline representation. MILCA then differentiates/certifies that
+representation. This is preferred to copying the old evaluator into MILCA.
 
 The ownership split is:
 
 - libneo: generic file/convention transforms, reusable field/geometry
   evaluation, generic spatial derivatives and representation-level error
   diagnostics/enclosures;
-- KIN6D: physical-model residuals, implicit equilibrium/steady-state tangents
+- MILCA: physical-model residuals, implicit equilibrium/steady-state tangents
   and adjoints, validated solution existence/error, and physical model error;
 - TIAGO: diagnostic likelihood/posterior UQ.
 
@@ -410,13 +410,13 @@ unreadable to NetCDF tooling. Named dimensions, coordinate variables, units and
 descriptive attributes are preferred.
 
 Every result embeds the literal input namelist, the fully resolved namelist,
-KIN6D/dependency revisions and build configuration, compiler
+MILCA/dependency revisions and build configuration, compiler
 identity/version/flags and strict-vs-fast mode, material hardware/runtime
 information, and normalized metadata/hashes for external inputs.
 
 Large external equilibria/databases need not be copied into every result when a
 content hash and sufficient convention/provenance metadata identify them. The
-invariant is that the effective KIN6D configuration can always be recovered
+invariant is that the effective MILCA configuration can always be recovered
 from the result.
 
 ## Compiler portability

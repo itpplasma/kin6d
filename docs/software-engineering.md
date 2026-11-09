@@ -3,7 +3,7 @@
 Status: canonical repository policy, 2026-10-05.
 
 This document applies ordinary software-engineering discipline to an unusually
-broad research programme. The breadth of KIN6D is a reason to defer detail, not
+broad research programme. The breadth of MILCA is a reason to defer detail, not
 a reason to build speculative infrastructure.
 
 Clean Architecture here means **dependency direction, separation of policy from
@@ -66,7 +66,7 @@ Project-owned primal/JVP/VJP/enclosure/performance specializations should be
 generated from one retained mathematical source wherever practical.
 
 Do not copy a generic implementation from FortFEM/FortNum/FortSym/FortAD/
-FortIO/libneo into KIN6D to modify it privately; improve the owning dependency
+FortIO/libneo into MILCA to modify it privately; improve the owning dependency
 when the capability is generic.
 
 ### Deliberate DRY exceptions
@@ -121,8 +121,8 @@ Conceptually the dependency direction is:
 
 This is a direction rule, not a required directory layout.
 
-KIN6D physics must not import PETSc, libneo, FortIO, CUDA, web or scheduler
-internals. Outer adapters may depend on KIN6D-owned contracts.
+MILCA physics must not import PETSc, libneo, FortIO, CUDA, web or scheduler
+internals. Outer adapters may depend on MILCA-owned contracts.
 
 Not every replaceable detail requires an abstract interface on day one. A seam
 is extracted when a real second implementation/consumer, testing boundary or
@@ -219,7 +219,7 @@ expose transformations; certificates state precisely what is and is not proven.
 
 ## API evolution
 
-KIN6D is young. Internal APIs may change aggressively when that reduces
+MILCA is young. Internal APIs may change aggressively when that reduces
 complexity or reveals a better abstraction.
 
 Backward compatibility becomes a constraint only for a real external consumer

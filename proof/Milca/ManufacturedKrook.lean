@@ -1,4 +1,4 @@
-import Kin6d.PeriodicTransport
+import Milca.PeriodicTransport
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Deriv
 
 /-!
@@ -13,7 +13,7 @@ not the nonlinear self-consistent Vlasov–Poisson or an FP certificate.
 
 set_option autoImplicit false
 
-namespace Kin6d
+namespace Milca
 
 open Function Set Real
 
@@ -94,4 +94,4 @@ theorem manufactured_krook_enclosure (a b R r : ℝ)
     (fun y => by simpa using (profile_residual_bound a b y hv).trans hR)
   simpa using (he x).trans (by simpa using hr)
 
-end Kin6d
+end Milca

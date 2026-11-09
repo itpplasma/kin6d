@@ -215,13 +215,13 @@ The P13 stall had three causes, all fixed on `gs-free-parallel`:
   now cached per curve (`gs_coupling_steklov`, keyed on the bitwise BEM trace nodes;
   a refit that enters the same curve at another panel is relabelled, not
   reassembled) and shared with the majorant estimator.
-- `kin6d_spatial`, which holds the upstream BEM assembly, was compiled without
+- `milca_spatial`, which holds the upstream BEM assembly, was compiled without
   OpenMP, so its panel-pair colouring ran serially. It now links OpenMP.
 - The indefinite J0 = A - M (symmetric, checked at run time) uses native
   FortSparse pivoted LDL^T with AMD ordering. An asymmetric J0 uses native
-  general LU. `KIN6D_FB_SOLVER=lu` selects general LU for diagnostic comparisons;
+  general LU. `MILCA_FB_SOLVER=lu` selects general LU for diagnostic comparisons;
   the old value `superlu` remains an alias for this native path.
-  `KIN6D_FB_ORDERING=nd` selects nested dissection. Circuit sensitivities use
+  `MILCA_FB_ORDERING=nd` selects nested dissection. Circuit sensitivities use
   one retained block solve, including on the LU path: a factor owns mutable
   solve/refinement workspaces and cannot be shared by concurrent calls.
 - `gs_fb_law_tangent` gives the implicit tangent of a converged state along
@@ -234,7 +234,7 @@ The P13 stall had three causes, all fixed on `gs-free-parallel`:
 The majorant estimator factors its reference energy operator with native
 Cholesky, uses independent local RT recovery solves and threads the Friedrichs
 mass assembly. The timing baselines below predate the RT recovery replacement. The axis and X-point cell
-scans and the CSC pattern build are threaded. `KIN6D_PROFILE=1` prints per-phase
+scans and the CSC pattern build are threaded. `MILCA_PROFILE=1` prints per-phase
 wall times (`PROF label seconds`) on stderr.
 
 `gs_free` wall time on the same fixture and node, seconds, before / after
@@ -341,7 +341,7 @@ commit 8b838c1df162ca770a6937ac79d8c73e8f10a53b (LGPL-3.0-or-later).
 Its public TestTokamak has two shaped coils and two point coils, 200 kA,
 1 kPa axis pressure, vacuum F = 2 T m, and ConstrainPaxisIp with
 alpha_m = 1, alpha_n = 2 and Raxis = 1 m. The retained coil table exports the
-shaped coils' actual weighted polygon-quadrature filaments. KIN6D fixes the
+shaped coils' actual weighted polygon-quadrature filaments. MILCA fixes the
 finest FreeGS coil currents and solves both profile amplitudes for the same
 pressure/current constraints through FortNum's multiroot driver, with the
 exact two-by-two Jacobian assembled from `gs_fb_law_tangent`. The existing
@@ -368,14 +368,14 @@ the same spline measures the fixed `Bp^2 < 1e-6` stopping floor in
 `freegs/critical.py:121`; the raw 257-grid lower X-point is about 2.3 mm
 from its polished location. These are measured numerical indicators.
 
-KIN6D uses curved P3 meshes with 96/192 outer edges (5,437/21,592 DOF), a
+MILCA uses curved P3 meshes with 96/192 outer edges (5,437/21,592 DOF), a
 FEM-BEM vacuum interface enclosing the plasma and excluding all coils, and
 native LU. A small reference grid selects the branch and seeds Newton;
 its flux is never a boundary condition. Each compared value comes from the
 native solve. Both cases use the lower X-point boundary, with limiter checks
 disabled as in the published example. Psi is Wb/rad with zero flux on the
 symmetry axis in both codes.
-FreeGS's positive q is compared with minus KIN6D's signed COCOS-3 q. The
+FreeGS's positive q is compared with minus MILCA's signed COCOS-3 q. The
 integral definitions match FreeGS `poloidalBeta` and `internalInductance2`:
 beta_p = 2 mu0 integral(p dV)/integral(Bp^2 dV), and
 li2 = 2 integral(Bp^2 dV)/(mu0^2 R_axis Ip^2).

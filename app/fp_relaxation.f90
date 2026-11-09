@@ -57,7 +57,7 @@ program fp_relaxation_main
     call execute_command_line('mkdir -p output/homma')
     call runtime_git(commit, tree, 'fp_relaxation')
     open (newunit=unit, file='output/homma/B04.csv', status='replace', action='write')
-    write (unit, '(a)') '# code: kin6d (fp_relaxation, Eulerian Legendre-mode FP)'
+    write (unit, '(a)') '# code: milca (fp_relaxation, Eulerian Legendre-mode FP)'
     write (unit, '(a)') '# code_revision: '//commit
     write (unit, '(a)') '# case_file: '//trim(case_file)
     write (unit, '(a)') '# case_sha256: '//trim(case_sha256)

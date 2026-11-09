@@ -257,7 +257,7 @@ and agreement with a freshly solved Reid68 result inside the EFT estimate.
 The previous pp tests remain unchanged. No full ctest suite is run.
 
 ```sh
-cmake --build build --target kin6d_check_quantum -j 8
+cmake --build build --target milca_check_quantum -j 8
 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg \
   ctest --test-dir build -j 32 -L quantum -LE slow --output-on-failure
 # Focused development gates:

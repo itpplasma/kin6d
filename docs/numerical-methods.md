@@ -5,7 +5,7 @@ approaches, not a requirement to implement all methods before science work.
 
 ## Principle
 
-KIN6D chooses numerics to preserve the structure and asymptotics of the selected
+MILCA chooses numerics to preserve the structure and asymptotics of the selected
 physical model at the lowest time/memory cost for the requested observable.
 No single discretization is optimal for every plasma regime.
 
@@ -224,7 +224,7 @@ total time and memory without changing the target residual.
 
 ## Optimization, inverse and uncertainty numerics
 
-KIN6D supplies differentiable forward models and numerical/model uncertainty.
+MILCA supplies differentiable forward models and numerical/model uncertainty.
 The wider workflow may use:
 
 - tangent and adjoint optimization;

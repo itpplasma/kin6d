@@ -11,7 +11,7 @@ The FEEC map is the corresponding affine deformation of each reference
 section. The magnetic 2-form is pushed forward with its contravariant Piola
 map. No nested magnetic surfaces are assumed in the solve.
 
-From the KIN6D worktree, with `out` on a storage filesystem:
+From the MILCA worktree, with `out` on a storage filesystem:
 
 ```sh
 out=/mnt/storage/kin6d-v2beltrami
@@ -20,8 +20,8 @@ cmake -S ~/code/SPEC -B "$out/spec-build" -G Ninja \
 cmake --build "$out/spec-build" --target xspec -j 2
 python3 benchmarks/beltrami/run_spec.py \
   "$out/spec-build/build/bin/xspec" "$out/spec-ladder"
-cmake --preset cpu -B "$out/build" -DKIN6D_BUILD_EXTRAS=OFF \
-  -DKIN6D_BELTRAMI_SPEC_SAMPLES="$out/spec-ladder"
+cmake --preset cpu -B "$out/build" -DMILCA_BUILD_EXTRAS=OFF \
+  -DMILCA_BELTRAMI_SPEC_SAMPLES="$out/spec-ladder"
 cmake --build "$out/build" --target test_nonnested_beltrami_spec \
   test_nonnested_beltrami test_nonnested_beltrami_pairing -j 4
 ctest --test-dir "$out/build" -j 4 --output-on-failure \

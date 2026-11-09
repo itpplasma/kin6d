@@ -9,7 +9,7 @@ program pp_fusion_eft_export
         pp_vector_coupling, pp_hc, pp_mp, pp_mn, pp_alpha, axial, ft0
     use milca_result_io, only: run_t, result_file_t, runtime_git
     implicit none
-    include 'kin6d_build_info.inc'
+    include 'milca_build_info.inc'
     type(pp_eft_config_t) :: cfg, zero
     type(pp_eft_result_t) :: answer(2)
     type(pp_fusion_config_t) :: reid_cfg
@@ -104,7 +104,7 @@ program pp_fusion_eft_export
     open (newunit=json_unit, file=trim(json_path), status='replace', iostat=ios)
     if (ios /= 0) error stop 'cannot open JSON path; create its directory first'
     write (json_unit, '(a)') '{'
-    call string('schema', 'kin6d-pp-fusion-eft-v1')
+    call string('schema', 'milca-pp-fusion-eft-v1')
     call string('claim_status', 'candidate')
     call string('rate_expansion', &
         'Lambda is the truncated amplitude; Lambda2 is the consistently expanded rate')
@@ -138,8 +138,8 @@ program pp_fusion_eft_export
     call string('rate_doi', '10.1016/j.physletb.2013.02.019 Eq (12)')
     call string('git_commit', commit)
     call string('git_tree', tree)
-    call string('fortnum_revision', kin6d_fortnum_revision)
-    call string('fortsym_revision', kin6d_fortsym_revision)
+    call string('fortnum_revision', milca_fortnum_revision)
+    call string('fortsym_revision', milca_fortsym_revision)
     call string('compiler', compiler_version())
     call string('compiler_options', compiler_options())
     call string('command', run%command_line)

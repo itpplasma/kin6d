@@ -36,7 +36,7 @@ entries=(
     'slab_oscillation_demo|plasma-oscillation|Numerically integrated cold electron slab against fixed positive ions|Independent residual certificate for the FortNum Cash-Karp oscillator trajectory; analytic cos/sin overlay is an oracle; no thermal, collisional or kinetic damping claim|yes'
     'microscopic_cloud_demo|microscopic-cloud|Isolated three-dimensional 32-electron Coulomb cloud in a fixed positive sphere, with and without a central impurity|Exploratory candidate trajectories and empirical profiles; no trajectory, thermodynamic Debye shielding or finite-N fluctuation certificate|yes'
     'streaming_comparison_demo|particles-vlasov|Periodic prescribed-field-free 1X1V streaming, weighted characteristics and Eulerian reconstruction|Continuous finite Fourier/P1 distribution and normalized density enclosures; deterministic particle Fourier quadrature bound; no weak sensitivity certificate|yes'
-    'kin6d_demo|free-streaming|Prescribed-field 1X1V reference and free streaming|Continuous pointwise reference enclosure; renderer does not rerun a formal proof|yes'
+    'milca_demo|free-streaming|Prescribed-field 1X1V reference and free streaming|Continuous pointwise reference enclosure; renderer does not rerun a formal proof|yes'
     'quantum_reference_demo|quantum-correlations|Interacting opposite-spin electron pair in a periodic 3D neutralized Coulomb box, finite plane-wave basis|Continuous-time finite-basis Hilbert residual and observable/interpolation bounds; continuum projection error unavailable|yes'
     'classical_pair_demo|classical-coulomb-pair|Classical ensemble of true 3D two-electron trajectories in the same periodic neutralized Coulomb box|Simultaneous sampling confidence intervals for numerical bin probabilities; force/time-step errors are convergence diagnostics, not deterministic trajectory bounds|yes'
     'steady_laboratory_demo||Bounded OU/FP and manufactured coupled VPFP reference laboratory|Reviewed continuous reference-profile interval bounds; no general nonlinear uniqueness or coupled formal theorem|no'
@@ -135,7 +135,7 @@ finalize() {
         --arg source "$(cat "$gallery_dir/evidence/source-base-commit.txt")" \
         --arg build "$build_dir" --argjson exitcode "$result" \
         --slurpfile artifacts "$records" --slurpfile runs "$runs" \
-        '{schema:"kin6d-render-gallery-v1",started_utc:$started,completed_utc:$completed,
+        '{schema:"milca-render-gallery-v1",started_utc:$started,completed_utc:$completed,
           source_snapshot_at_render:$source,build_directory:$build,exitcode:$exitcode,
           numerical_verification:"No tests run by renderer; see supplied receipt if present",
           display_scope:"Encoded pixels are a visualization; NetCDF-4 results (kind netcdf_result, with embedded configuration/provenance) and CSV/interval data retain the numerical bounds",

@@ -1,6 +1,6 @@
-"""Compare a KIN6D Gamma_p (<prefix>.lcfs, <prefix>.json) with the VMEC++ LCFS.
+"""Compare a MILCA Gamma_p (<prefix>.lcfs, <prefix>.json) with the VMEC++ LCFS.
 
-For every KIN6D boundary point X the distance to the VMEC++ LCFS surface is
+For every MILCA boundary point X the distance to the VMEC++ LCFS surface is
 the minimum over a fine (theta, phi) sample refined by Newton on the squared
 distance; |B| is compared at the foot point (VMEC++ bmnc on the outermost half
 grid surface, extrapolated half a cell to s = 1). Prints one JSON line.
@@ -14,7 +14,7 @@ from scipy.optimize import minimize
 from scipy.spatial import cKDTree
 
 ap = argparse.ArgumentParser()
-ap.add_argument("kin6d_prefix")
+ap.add_argument("milca_prefix")
 ap.add_argument("wout")
 a = ap.parse_args()
 
@@ -42,7 +42,7 @@ th, ph = np.meshgrid(np.linspace(0, 2 * np.pi, 361)[:-1],
                      np.linspace(0, 2 * np.pi, 721)[:-1], indexing="ij")
 pts = surface(th, ph).reshape(-1, 3)
 tree = cKDTree(pts)
-k = np.loadtxt(a.kin6d_prefix + ".lcfs")
+k = np.loadtxt(a.milca_prefix + ".lcfs")
 x, bk = k[:, 1:4], k[:, 4]
 _, idx = tree.query(x)
 dist, berr = [], []
@@ -56,9 +56,9 @@ for p, i in zip(x, idx):
 dist = np.array(dist)
 bv = np.array(berr)
 rel_b = np.abs(bk - bv) / np.abs(bv)
-info = json.load(open(a.kin6d_prefix + ".json"))
+info = json.load(open(a.milca_prefix + ".json"))
 out = dict(points=len(dist), max_distance_m=float(dist.max()),
            rms_distance_m=float(np.sqrt(np.mean(dist ** 2))),
            max_rel_modB=float(rel_b.max()), rms_rel_modB=float(np.sqrt(np.mean(rel_b ** 2))),
-           aminor_vmec=float(w["Aminor_p"][:]), kin6d=info)
+           aminor_vmec=float(w["Aminor_p"][:]), milca=info)
 print(json.dumps(out))

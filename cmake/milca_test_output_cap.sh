@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: kin6d_test_output_cap.sh LIMIT_BYTES COMMAND [ARGS...]
+# Usage: milca_test_output_cap.sh LIMIT_BYTES COMMAND [ARGS...]
 #
 # CTest test launcher. CTest stores the complete output of every test in
 # Testing/Temporary/LastTest.log, and its CTEST_CUSTOM_MAXIMUM_*_OUTPUT_SIZE
@@ -25,6 +25,6 @@ exec "$@" > >(LC_ALL=C awk -v limit="$limit" -v keep=200 '
 END {
     if (n == 0) exit
     first = n > keep ? n - keep + 1 : 1
-    printf "[kin6d test output cap: %d bytes (%d lines) beyond the first %d bytes; the last %d lines follow]\n", omitted, n, kept, n - first + 1
+    printf "[milca test output cap: %d bytes (%d lines) beyond the first %d bytes; the last %d lines follow]\n", omitted, n, kept, n - first + 1
     for (i = first; i <= n; i++) print tail[i % keep]
 }') 2>&1

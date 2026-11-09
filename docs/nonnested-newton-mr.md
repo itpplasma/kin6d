@@ -300,7 +300,7 @@ agents and are indicative only.
 Unit checks of the generic solvers live in FortNum: `fortnum_newton_mr` runs
 gradient-merit Newton-MR on a constrained Lagrangian saddle against a
 bisection oracle (no curvature exit taken), `fortnum_minres` covers
-indefinite and singular systems. The kin6d-local unit test of an earlier
+indefinite and singular systems. The milca-local unit test of an earlier
 revision (dense KKT MINRES with the exact block preconditioner in 3
 iterations; a constrained quartic with 4 negative Lagrangian Hessian
 eigenvalues in 9 steps, where the objective merit stalls) was removed with

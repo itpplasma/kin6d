@@ -1,10 +1,10 @@
 # Phase 1 P2/P3 convergence and cost
 
-Exact common-driver Solovev cases; KIN6D `7951c6a`, GNU Fortran 16.2.1,
+Exact common-driver Solovev cases; MILCA `7951c6a`, GNU Fortran 16.2.1,
 CMake `cpu` (`-O3`, no fast math), AMD Ryzen 9 5950X, CPU 7, one thread.
 The [CSV](p2-p3.csv) contains every measured metric, settings, input/binary
 hashes, source revisions and archived raw directories.
-The common driver is unchanged. Its KIN6D producer includes the lane patch
+The common driver is unchanged. Its MILCA producer includes the lane patch
 `iter_tc24-producer.patch` (SHA-256 `4cd6060261f699d379e80856b7712ef0f31f9a9ef4dcfd136d151e3713cf3259`).
 
 Each time is one mesh/assembly/solve measurement, matching the existing
@@ -90,11 +90,11 @@ not refine the radial interpolation used for q.
 
 Build with `cmake --preset cpu && cmake --build --preset cpu --target gs_phase1`.
 The TC24 producer must include degree selection. From that checkout, set
-`KIN6D_BINARY` to this build and invoke its unchanged common driver:
+`MILCA_BINARY` to this build and invoke its unchanged common driver:
 
 ```sh
-KIN6D_BINARY=/path/to/kin6d/build/gs_phase1 uv run python -m equilibrium.phase1.driver \
-  --case solovev_lcfs_A3 --code kin6d \
+MILCA_BINARY=/path/to/milca/build/gs_phase1 uv run python -m equilibrium.phase1.driver \
+  --case solovev_lcfs_A3 --code milca \
   --res '{"degree":3,"boundary_nodes":48,"max_area":0.036592167551878364}' \
   --workdir /disk/unique-run --output-dir /disk/results
 ```

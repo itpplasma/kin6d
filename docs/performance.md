@@ -222,7 +222,7 @@ Before expanding physics, retain two upstream native fixtures:
 2. FortSym: one shared definition emitted as primal/JVP/VJP and enclosure
    leaves, independent value/derivative oracles, and separately timed paths.
 
-KIN6D's `scripts/benchmark.sh` sweeps the FP and general damped-transport cases
+MILCA's `scripts/benchmark.sh` sweeps the FP and general damped-transport cases
 at several resolutions
 and records requested/achieved radius, solver/certificate/acceptance costs,
 state bytes and provenance. Correctness validation is outside timed sections.
@@ -485,13 +485,13 @@ owning layer:
 - FortSym: generated algebra/schedules;
 - FortAD: derivative transformations;
 - FortIO: I/O;
-- KIN6D: state layout, physics composition, global scheduling.
+- MILCA: state layout, physics composition, global scheduling.
 
 New generic AMR, shock-capturing, DSMC/MD, radiation-transport or sparse
 reaction kernels belong in the numerical library that actually owns them once
 their reusable interface is demonstrated.
 
-Retain a focused reproducer and recheck the original KIN6D case after upstream
+Retain a focused reproducer and recheck the original MILCA case after upstream
 promotion.
 
 ## Performance CI

@@ -1,6 +1,6 @@
 # Scope and design principles
 
-This page summarizes the long-term scope of kin6d and the principles that
+This page summarizes the long-term scope of milca and the principles that
 shape its design. It describes intent, not implemented capability; for what
 runs today see the [README](../README.md) and the topic pages listed in the
 [documentation index](README.md). The canonical architecture is
@@ -8,7 +8,7 @@ runs today see the [README](../README.md) and the topic pages listed in the
 
 ## Aim
 
-kin6d is meant to become one plasma code in which equilibrium, stability,
+milca is meant to become one plasma code in which equilibrium, stability,
 fluid, kinetic and microscopic models are configurations of shared operators
 rather than separate programs. Given a question and a required accuracy, the
 user (or eventually an adaptive controller) should be able to choose the
@@ -91,7 +91,7 @@ Details and ordering are in [ROADMAP.md](../ROADMAP.md).
 Physical vectors are Cartesian, and computational coordinates are general
 smooth maps; no core model may require a global toroidal angle or nested
 flux surfaces. FortFEM provides the generic spatial discretizations (FEEC,
-B-splines, DG/HDG, boundary operators); kin6d provides the plasma physics.
+B-splines, DG/HDG, boundary operators); milca provides the plasma physics.
 See [geometry](geometry.md), [numerics](numerics.md) and the
 [numerical-method catalogue](numerical-methods.md).
 
@@ -104,7 +104,7 @@ nullspace and entropy structure; see [collisions](collisions.md).
 QED processes, general relativity, reactor neutronics, detailed material
 mechanics and line-by-line non-LTE radiation transfer are outside the scope
 and are left to external codes. Reconstruction and diagnostic inference
-belong to the separate TIAGO project, which is to consume kin6d models.
+belong to the separate TIAGO project, which is to consume milca models.
 
 ## Software stack
 

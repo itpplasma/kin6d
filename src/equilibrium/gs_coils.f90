@@ -34,7 +34,7 @@ module milca_gs_coils
     !! Text coil table (neutral format; units m, A, turns).  Lines; '#'
     !! starts a comment; tokens are blank separated; names contain no blank.
     !!
-    !!     kin6d-coil-table 1
+    !!     milca-coil-table 1
     !!     coil NAME rect R Z DR DZ TURNS [quad=N] [fil=SIZE]
     !!     coil NAME filament R Z TURNS
     !!     circuit NAME IMIN IMAX MEMBER [MEMBER ...]
@@ -352,7 +352,7 @@ contains
 
         open (newunit=u, file=path, status='replace', action='write', iostat=stat)
         if (stat /= 0) return
-        write (u, '(a)') 'kin6d-coil-table 1'
+        write (u, '(a)') 'milca-coil-table 1'
         write (u, '(a)') '# units: m, A, turns; flux per ampere includes turns'
         do c = 1, size(set%coils)
             associate (coil => set%coils(c))
@@ -429,8 +429,8 @@ contains
             call split_tokens(line, tok, ntok)
             if (ntok == 0) cycle
             if (.not. header) then
-                if (ntok /= 2 .or. tok(1) /= 'kin6d-coil-table' .or. tok(2) /= '1') then
-                    call fail(11, 'missing header "kin6d-coil-table 1"')
+                if (ntok /= 2 .or. tok(1) /= 'milca-coil-table' .or. tok(2) /= '1') then
+                    call fail(11, 'missing header "milca-coil-table 1"')
                     exit
                 end if
                 header = .true.

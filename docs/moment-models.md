@@ -1,7 +1,7 @@
 # Moment models: fluid, gyrofluid, Landau-fluid and gyromoments
 
 Status: design specification. No production gyrofluid/gyromoment branch is yet
-implemented in KIN6D.
+implemented in MILCA.
 
 ## Role in the hierarchy
 

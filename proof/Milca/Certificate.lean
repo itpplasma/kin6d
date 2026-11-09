@@ -1,4 +1,4 @@
-import Kin6d.ManufacturedKrook
+import Milca.ManufacturedKrook
 
 /-!
 # Exact-rational data and a checked continuous theorem application
@@ -10,7 +10,7 @@ embedding. It does not assert that an external array reconstructs this profile.
 
 set_option autoImplicit false
 
-namespace Kin6d
+namespace Milca
 
 structure Certificate where
   exactAmplitude : ℚ
@@ -83,4 +83,4 @@ theorem Certificate.exact_nonnegative (c : Certificate) (hc : c.Valid)
   apply mul_nonneg (weight_bounds hv).1
   linarith [neg_le_of_abs_le hprod]
 
-end Kin6d
+end Milca

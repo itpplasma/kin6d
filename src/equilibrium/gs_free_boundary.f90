@@ -1490,13 +1490,13 @@ contains
         !! Fill-reducing ordering of native analysis. The factor is redone
         !! every Newton iteration and the analysis is serial, so approximate
         !! minimum degree (cheap analysis, fill slightly above nested
-        !! dissection) is faster overall; KIN6D_FB_ORDERING = nd selects nested
+        !! dissection) is faster overall; MILCA_FB_ORDERING = nd selects nested
         !! dissection.
         character(len=8) :: choice
         integer :: length, stat
 
         ordering = GS_DIRECT_ORDER_AMD
-        call get_environment_variable('KIN6D_FB_ORDERING', choice, length, stat)
+        call get_environment_variable('MILCA_FB_ORDERING', choice, length, stat)
         if (stat == 0 .and. length > 0) then
             if (trim(choice) == 'nd') ordering = GS_DIRECT_ORDER_ND
         end if
@@ -1510,7 +1510,7 @@ contains
 
         enabled = gs_direct_available()
         if (.not. enabled) return
-        call get_environment_variable('KIN6D_FB_SOLVER', choice, length, stat)
+        call get_environment_variable('MILCA_FB_SOLVER', choice, length, stat)
         if (stat == 0 .and. length > 0) then
             enabled = trim(choice) /= 'lu' .and. trim(choice) /= 'superlu'
         end if

@@ -71,7 +71,7 @@ program test_gs_axis_refinement
     call cylinder(two_pi*ac/64, axis_fine, psi_fine, q_fine)
     print '(a,2(es15.8,1x),es18.10,es12.4)', 'coarse P3 axis', axis_coarse, &
         psi_coarse, q_coarse
-    ! Registered coarse run cyl20261009_kinp3_profiles_kin6d_lundquist_A100_00,
+    ! Registered coarse run cyl20261009_kinp3_profiles_milca_lundquist_A100_00,
     ! its flux minimum confirmed by an independent monomial fit of the exported
     ! P3 field to -6.6303029203853043e+01.
     if (abs(psi_coarse + 6.6303029203853043e+01_dp) > 1.0e-6_dp) then

@@ -80,10 +80,10 @@ program gs_phase1_main
     call gs_timer_reset()
     call gs_progress_set(.true.)
     !$ threads = omp_get_max_threads()
-    call get_environment_variable('KIN6D_DETERMINISM', determinism)
+    call get_environment_variable('MILCA_DETERMINISM', determinism)
     if (len_trim(determinism) == 0) determinism = 'fast'
     if (trim(determinism) /= 'deterministic' .and. trim(determinism) /= 'fast') &
-        error stop 'KIN6D_DETERMINISM must be fast (default) or deterministic (debug)'
+        error stop 'MILCA_DETERMINISM must be fast (default) or deterministic (debug)'
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
         select case (trim(argument))

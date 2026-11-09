@@ -28,7 +28,7 @@ module milca_gs_timers
     logical :: progress_on = .false.
 contains
     subroutine gs_profile_value(label, value)
-        !! `PROF label value` on stderr when KIN6D_PROFILE is set.
+        !! `PROF label value` on stderr when MILCA_PROFILE is set.
         character(*), intent(in) :: label
         real(dp), intent(in) :: value
         real(dp) :: t0
@@ -42,13 +42,13 @@ contains
         character(len=8) :: value
         integer :: length, stat
 
-        call get_environment_variable('KIN6D_PROFILE', value, length, stat)
+        call get_environment_variable('MILCA_PROFILE', value, length, stat)
         enabled = stat == 0 .and. length > 0
     end function
 
     subroutine gs_phase_tick(label, t0)
         !! Wall time since the previous tick, written to stderr as
-        !! `PROF label seconds` when KIN6D_PROFILE is set. t0 < 0 starts a
+        !! `PROF label seconds` when MILCA_PROFILE is set. t0 < 0 starts a
         !! sequence. Serial sections only.
         character(*), intent(in) :: label
         real(dp), intent(inout) :: t0
@@ -58,7 +58,7 @@ contains
         real(dp) :: t
 
         if (.not. known) then
-            call get_environment_variable('KIN6D_PROFILE', value, length, stat)
+            call get_environment_variable('MILCA_PROFILE', value, length, stat)
             enabled = stat == 0 .and. length > 0
             known = .true.
         end if

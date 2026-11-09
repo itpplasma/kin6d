@@ -14,7 +14,7 @@ uniform bound on their *continuous* residual, not nodal values.
 
 set_option autoImplicit false
 
-namespace Kin6d
+namespace Milca
 
 open Set Function
 
@@ -86,4 +86,4 @@ theorem periodic_transport_error {f g s : ℝ → ℝ} {L v nu R : ℝ}
   rw [← hexact x]
   ring
 
-end Kin6d
+end Milca

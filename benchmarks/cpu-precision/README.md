@@ -5,10 +5,10 @@ emitted from the existing FortSym definitions. It compares fp32 arithmetic and
 portable fp16/bf16 storage with fp32 tile arithmetic against fp64. It leaves
 production candidates, final residuals and estimators unchanged. The storage
 codec is the shared FortGen runtime, pinned to its published main revision
-in `cmake/kin6d_cpu_precision.cmake`.
+in `cmake/milca_cpu_precision.cmake`.
 
-Configure the ordinary KIN6D tree with
-`-DKIN6D_BUILD_CPU_PRECISION_BENCHMARK=ON`, or build only these same microkernels:
+Configure the ordinary MILCA tree with
+`-DMILCA_BUILD_CPU_PRECISION_BENCHMARK=ON`, or build only these same microkernels:
 
 ```sh
 cmake -S benchmarks/cpu-precision -B build-cpu-precision -G Ninja \
@@ -38,7 +38,7 @@ Hessian leaf can enter the SIMD loop. Verify the actual compiler report on
 each architecture. A long-line option supports the retained generated batch
 calls. No private storage or precision framework is implemented here.
 
-[V] The ordinary KIN6D build also supplies `benchmark_equilibrium_cpu NR NTOR
+[V] The ordinary MILCA build also supplies `benchmark_equilibrium_cpu NR NTOR
 REPEATS`. It profiles energy/gradient, Hessian assembly and the fp64 D3 residual
 on the existing Solovev fixture's initial candidate. It does not solve that
 candidate or claim an equilibrium error bound. `gs_load_bench` profiles the real

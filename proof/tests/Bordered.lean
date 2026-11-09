@@ -1,10 +1,10 @@
-import Kin6d
+import Milca
 
 set_option autoImplicit false
 
-namespace Kin6d.Test.Bordered
+namespace Milca.Test.Bordered
 
-open Matrix Kin6d.Bordered
+open Matrix Milca.Bordered
 
 /-- One constraint `x₀ = 0` on `ℝ²`; `Z = e₁` spans its kernel. -/
 def M : Matrix (Fin 1) (Fin 2) ℝ := !![1, 0]
@@ -76,10 +76,10 @@ theorem K₁_inertia : posIndex (bordered H₁ M) = 1 ∧ negIndex (bordered H�
   obtain ⟨h1, h2, -⟩ := lemma_B2 (H := H₁) (by ext i j; fin_cases i <;> fin_cases j <;> simp [H₁]) hM hZ
   exact ⟨by rw [h1, hp]; rfl, by rw [h2, hn]; rfl⟩
 
-#print axioms Kin6d.Bordered.lemma_B1
-#print axioms Kin6d.Bordered.lemma_B2
-#print axioms Kin6d.Bordered.posIndex_eq_card_pos
-#print axioms Kin6d.Bordered.negIndex_eq_card_neg
-#print axioms Kin6d.Bordered.zeroIndex_eq_card_zero
+#print axioms Milca.Bordered.lemma_B1
+#print axioms Milca.Bordered.lemma_B2
+#print axioms Milca.Bordered.posIndex_eq_card_pos
+#print axioms Milca.Bordered.negIndex_eq_card_neg
+#print axioms Milca.Bordered.zeroIndex_eq_card_zero
 
-end Kin6d.Test.Bordered
+end Milca.Test.Bordered

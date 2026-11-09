@@ -22,7 +22,7 @@ module milca_triangle_basis
         (TRIANGLE_MAX_DEGREE + 1)*(TRIANGLE_MAX_DEGREE + 2)/2
 contains
     pure subroutine triangle_node_powers(degree, powers)
-        ! Barycentric powers of the nodal basis in KIN6D's local order: the
+        ! Barycentric powers of the nodal basis in MILCA's local order: the
         ! three vertices, then the degree - 1 nodes of each edge k -> k + 1,
         ! then the interior nodes. Node i sits at powers(:, i)/degree.
         integer, intent(in) :: degree

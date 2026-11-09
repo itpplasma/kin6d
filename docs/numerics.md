@@ -1,12 +1,12 @@
 # Numerical foundation
 
 Status: canonical numerical architecture. FortFEM already contains substantial
-tensor-product spline/FEEC machinery, but KIN6D does not yet have the final
+tensor-product spline/FEEC machinery, but MILCA does not yet have the final
 matrix-free/tiled production backend described here.
 
 ## Ownership
 
-FortFEM owns generic spatial mathematics. KIN6D owns plasma-specific equations,
+FortFEM owns generic spatial mathematics. MILCA owns plasma-specific equations,
 constitutive laws and composition.
 
 The preferred high-order kinetic path in this document is not the only
@@ -26,7 +26,7 @@ The intended spatial stack includes:
 - cut/unstructured fallback where geometry requires it;
 - FEM/BEM/DtN/PML boundary machinery.
 
-Do not reimplement generic spatial kernels in KIN6D.
+Do not reimplement generic spatial kernels in MILCA.
 
 ## Hyperbolic, shock and front-capable spatial path
 
@@ -128,7 +128,7 @@ validation/coarse/direct use.
 
 ## Many-RHS kinetic spatial actions
 
-KIN6D frequently applies the same spatial operator to many velocity/harmonic
+MILCA frequently applies the same spatial operator to many velocity/harmonic
 channels:
 
 \[

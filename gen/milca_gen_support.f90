@@ -1,7 +1,7 @@
-! Shared leaf-writing support for every KIN6D generator.
+! Shared leaf-writing support for every MILCA generator.
 ! One emit path (primal, JVP/VJP and strict interval leaves) and one FortSym
-! revision source: KIN6D_FORTSYM_REVISION in CMakeLists.txt, delivered as the
-! configured include file kin6d_fortsym_revision.inc.
+! revision source: MILCA_FORTSYM_REVISION in CMakeLists.txt, delivered as the
+! configured include file milca_fortsym_revision.inc.
 module milca_gen_support
     use fortsym_expr, only: expr_t, sym
     use fortsym_products, only: jvp, vjp
@@ -15,7 +15,7 @@ module milca_gen_support
                                      interval_runtime, emit_rigorous_kernel
     implicit none
     private
-    include 'kin6d_fortsym_revision.inc'
+    include 'milca_fortsym_revision.inc'
     public :: fortsym_revision, leaf_writer_t
 
     !> Writes one generated leaf module in the current FortSym context; the

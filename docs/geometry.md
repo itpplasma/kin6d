@@ -53,7 +53,7 @@ representation or nonperiodic boundaries are inappropriate.
 
 Prefer mapped tensor patches where practical; use fitted/cut/unstructured
 pieces when required rather than imposing tetrahedra everywhere. FortFEM owns
-generic maps/spaces/traces; kin6d supplies the physical field and boundary law.
+generic maps/spaces/traces; milca supplies the physical field and boundary law.
 [Spatial numerics](numerics.md) defines FEEC/IGA/DG and batching choices.
 
 ## Magnetic topology and equilibrium representations

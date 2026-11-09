@@ -17,7 +17,7 @@ export FC="$E/bin/x86_64-conda-linux-gnu-gfortran"
 export CC="$E/bin/x86_64-conda-linux-gnu-gcc"
 export LD_LIBRARY_PATH="$E/lib:$HOME/fsym-env/lib:$HOME/fortsym-diag/build-ci/lib:${LD_LIBRARY_PATH:-}"
 cmake --preset cpu -DCMAKE_PREFIX_PATH="$FS1/mumps;$E" \
-    -DKIN6D_FORTSYM_BUILD="$HOME/fortsym-diag/build-ci" > cfg.log 2>&1
+    -DMILCA_FORTSYM_BUILD="$HOME/fortsym-diag/build-ci" > cfg.log 2>&1
 cmake --build build --target gen_nonnested gen_equilibrium_core -j32 \
     > gen-build.log 2>&1
 ./build/gen_nonnested

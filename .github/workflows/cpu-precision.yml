@@ -3,9 +3,9 @@ on:
   pull_request:
     paths:
       - app/benchmark_cpu_precision.f90
-      - src/generated/kin6d_*_cpu_precision.f90
+      - src/generated/milca_*_cpu_precision.f90
       - gen/**
-      - cmake/kin6d_cpu_precision.cmake
+      - cmake/milca_cpu_precision.cmake
       - benchmarks/cpu-precision/**
       - .github/workflows/cpu-precision.yml
   merge_group:

@@ -383,7 +383,7 @@ contains
 
     subroutine perturbation_export(path, res, source, cocos_declared, s_pol, ip_sign, &
             status)
-        !! One documented ASCII file `path` (format kin6d-l7-v1) with all
+        !! One documented ASCII file `path` (format milca-l7-v1) with all
         !! surfaces of res(:), and the sidecar path//'.sha256' in sha256sum
         !! format.  status 0 on success.
         character(len=*), intent(in) :: path, source
@@ -397,8 +397,8 @@ contains
         status = 1
         open (newunit=u, file=path, status='replace', action='write', iostat=ios)
         if (ios /= 0) return
-        write (u, '(a)') '# KIN6D L7 perturbation export'
-        write (u, '(a)') 'format = kin6d-l7-v1'
+        write (u, '(a)') '# MILCA L7 perturbation export'
+        write (u, '(a)') 'format = milca-l7-v1'
         write (u, '(a)') 'source = '//trim(source)
         write (u, '(a,i0)') 'n = ', res(1)%n
         write (u, '(a)') 'n_sign = physical field X_phys = '// &

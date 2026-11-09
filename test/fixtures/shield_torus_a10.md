@@ -1,7 +1,7 @@
 # Circular CHEASE fixture: stored and reconstructed data
 
 This synthetic circular tokamak (aspect ratio 10, nominal q-axis 1.55) entered
-public [KIN6D](https://github.com/itpplasma/kin6d) in
+public [MILCA](https://github.com/itpplasma/milca) in
 71bccfa289d128c79b351f88f546c4e55f913350. That revision contains only the four
 profile arrays and a 65 by 65 poloidal-flux grid (902 lines). Its title also
 extends into the G-EQDSK integer fields. It contains no q, LCFS or limiter

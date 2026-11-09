@@ -26,7 +26,7 @@ ctest --preset debug -j 32 -R '^characteristic_and_steady_oracles$'
 
 CMake presets and registered CTest tests are the build/test authorities.
 The selected, digest-verified Fo driver also supports `fo test` and
-`fo exec kin6d_demo`. The shell helper uses the native CMake/CTest route
+`fo exec milca_demo`. The shell helper uses the native CMake/CTest route
 explicitly. The current focused resident workflow is recorded in
 [tooling](tooling.md#focused-development-workflow); never run the full suite.
 
@@ -105,7 +105,7 @@ owns orchestration, state, tests and plotting. Normal builds use committed
 outputs; regeneration is explicit:
 
 ```sh
-cmake --preset cpu -DKIN6D_FORTSYM_BUILD=/path/to/fortsym/build
+cmake --preset cpu -DMILCA_FORTSYM_BUILD=/path/to/fortsym/build
 cmake --build --preset cpu --target gen_laboratory
 ./build/gen_laboratory
 cmake --build --preset cpu
@@ -150,7 +150,7 @@ FortPlot required selected-subplot mesh/fill routing, explicit color-limit
 handling, legend geometry and subplot-aware animation capture. A new pixel
 oracle exercises capture without pre-rendering. Its focused tests, essential
 CI suite and required `make verify-artifacts` rendering gate pass. Changes live
-upstream; kin6d pins the repaired revision in CMake.
+upstream; milca pins the repaired revision in CMake.
 
 The session used Fo driver SHA256
 `6e54f805af13272e859ebf6c7ec48d205a22d7fdac7c84d435fdffc922bc76ee`.
@@ -192,6 +192,6 @@ and their receipts are kept outside the solver repository.
 The literature path also needed two published Helpy repairs: `6ebb1fb`
 (typed Zotero write payloads) and `8bfe74e` (dry-run write safety). Their focused
 behavioral tests and installed CLI smoke checks passed; no credentials or
-library exports are stored in kin6d.
+library exports are stored in milca.
 
 Chris&AI

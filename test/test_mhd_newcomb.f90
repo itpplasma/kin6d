@@ -218,7 +218,7 @@ contains
         m = real(mabs, dp)
         bt = btheta(r)
         bzz = bz(r)
-        ! F = (B_theta/r)(n |q| - |m|): the helicity of the kin6d harmonic
+        ! F = (B_theta/r)(n |q| - |m|): the helicity of the milca harmonic
         ff = bt/r*(nmode*qloc(r, bt, bzz) - m)
         k02 = k*k + m*m/(r*r)
         f = r*ff**2/k02

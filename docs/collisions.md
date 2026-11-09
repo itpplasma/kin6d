@@ -87,7 +87,7 @@ rather than prerequisites for reaching nonlinear Landau.
 
 ## Microscopic closure oracle
 
-The collision hierarchy is not the deepest physics layer. KIN6D retains a
+The collision hierarchy is not the deepest physics layer. MILCA retains a
 multispecies relativistic Maxwell--Lorentz finite-\(N\) reference in which
 collisions and correlations emerge from mutual electromagnetic interaction
 rather than an imposed collision operator.

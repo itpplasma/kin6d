@@ -1,5 +1,5 @@
 """Optional independent ODE/BVP oracle, never imported by production.
-Run from kin6d root: python test/reference/pp_fusion_oracle.py.
+Run from milca root: python test/reference/pp_fusion_oracle.py.
 Uses scipy 1.18.1 / numpy 2.5.4 / mpmath 1.4.1; no FEM-DVR or generated leaves.
 Writes a small frozen numeric table for the native Fortran test.
 """

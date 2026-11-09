@@ -267,16 +267,16 @@ It deliberately shares neither DVR assembly nor generated potential code.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target test_pp_fusion test_coulomb_encounter pp_fusion_export -j 16
 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 ctest --test-dir build -j 4 \
-  -R '^(pp_fusion_oracles|pp_fusion_export_contract|coulomb_encounter_oracles|kin6d_layering)$' \
+  -R '^(pp_fusion_oracles|pp_fusion_export_contract|coulomb_encounter_oracles|milca_layering)$' \
   --output-on-failure
 # Equivalent focused ordinary Fo entry point:
 fo test pp_fusion_oracles
 mkdir -p docs/data
 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 build/pp_fusion_export \
-  --json docs/data/pp_fusion_kin6d.json
+  --json docs/data/pp_fusion_milca.json
 mkdir -p ~/proj/fusion-skript/derivations/chapters/data
-cp docs/data/pp_fusion_kin6d.json \
-  ~/proj/fusion-skript/derivations/chapters/data/pp_fusion_kin6d.json
+cp docs/data/pp_fusion_milca.json \
+  ~/proj/fusion-skript/derivations/chapters/data/pp_fusion_milca.json
 ```
 
 The exporter also writes `output/pp_fusion_export.nc` through FortIO, embedding
@@ -291,10 +291,10 @@ Optional configuration is `--config FILE`, group `&pp_fusion`, with
 `rmax,hmax,h0,order,energy,strength`. Defaults live only in the Fortran type;
 the exporter materializes them in the resolved namelist. Unsupported inputs
 fail before any JSON is written. Retained generators are rebuilt by setting
-`KIN6D_FORTSYM_BUILD` to a build of the exact CMake-pinned FortSym revision:
+`MILCA_FORTSYM_BUILD` to a build of the exact CMake-pinned FortSym revision:
 
 ```sh
-cmake -S . -B build -DKIN6D_FORTSYM_BUILD=/path/to/pinned/fortsym-build
+cmake -S . -B build -DMILCA_FORTSYM_BUILD=/path/to/pinned/fortsym-build
 cmake --build build --target gen_pp_fusion -j 8
 build/gen_pp_fusion
 ```

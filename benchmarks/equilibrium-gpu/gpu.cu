@@ -86,7 +86,7 @@ static void run(int n, int repeats, const double* x, double* y, double* metrics)
     metrics[6]=double(ib+ob);
 }
 
-extern "C" int kin6d_gpu_benchmark(int n, int repeats, int precision, int action,
+extern "C" int milca_gpu_benchmark(int n, int repeats, int precision, int action,
                                    const double* x, double* y, double* metrics) {
     try {
         if (n<1 || repeats<1) return 1;

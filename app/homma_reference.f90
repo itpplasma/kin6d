@@ -234,7 +234,7 @@ contains
     subroutine write_header(u, case_index, deviation, units)
         integer, intent(in) :: u, case_index
         character(len=*), intent(in) :: deviation, units
-        write (u, '(a)') '# code,kin6d homma_reference (numerical Rosenbluth integrals)'
+        write (u, '(a)') '# code,milca homma_reference (numerical Rosenbluth integrals)'
         write (u, '(a)') '# code_revision,'//commit//' ('//tree//')'
         write (u, '(a)') '# case_file,'//trim(case_files(case_index))
         write (u, '(a)') '# case_file_sha256,'//trim(case_sha256(case_index))

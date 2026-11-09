@@ -5,7 +5,7 @@ first 1X1V slice.
 
 ## Principle
 
-KIN6D changes state space, ordering, closure, representation or coupling while
+MILCA changes state space, ordering, closure, representation or coupling while
 retaining common geometry, fields, residuals, diagnostics, derivative contracts,
 verification and certification machinery.
 
@@ -128,7 +128,7 @@ comparator) are separate model entries, not options of the isotropic static
 solver.
 
 An imported equilibrium is not certified merely because the producer reports a
-small force residual. KIN6D may certify an external candidate against its stated
+small force residual. MILCA may certify an external candidate against its stated
 continuous equilibrium model and, once the native model exists, re-solve it.
 Distinct stationary solutions remain distinct equilibria. TIAGO, not this model
 layer, owns reconstruction/posterior weights over several candidates.
@@ -201,7 +201,7 @@ response where useful.
 
 ## Spatial hybrid physics
 
-A long-range KIN6D capability is model fidelity that varies by region, for
+A long-range MILCA capability is model fidelity that varies by region, for
 example
 
 \[
@@ -353,7 +353,7 @@ physical observables.
 
 ## Adaptive fidelity objective
 
-Eventually KIN6D should estimate the observable effect of each unresolved
+Eventually MILCA should estimate the observable effect of each unresolved
 defect using an adjoint:
 
 \[

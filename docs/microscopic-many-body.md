@@ -6,7 +6,7 @@ for macroscopic plasma calculations.
 
 ## Classical parent model
 
-The deepest classical model in KIN6D is the **multispecies relativistic
+The deepest classical model in MILCA is the **multispecies relativistic
 Maxwell--Lorentz many-body system**: individual particle worldlines coupled to
 the electromagnetic field.
 
@@ -64,7 +64,7 @@ S
 \]
 
 Variation yields Maxwell plus relativistic Lorentz dynamics. For point charges,
-however, the self-field is singular. KIN6D must therefore distinguish:
+however, the self-field is singular. MILCA must therefore distinguish:
 
 - exact mutual interparticle electromagnetic interaction;
 - independent/free electromagnetic field data;
@@ -522,7 +522,7 @@ comparison implementation when its executable case is admitted.
 ## Relationship to the quantum branch
 
 Within **classical** plasma physics, Maxwell--Lorentz many-body dynamics is the
-bottom of the hierarchy. KIN6D now continues into quantum plasma fundamentals
+bottom of the hierarchy. MILCA now continues into quantum plasma fundamentals
 for degeneracy, exchange/diffraction, Wigner/quantum kinetic models,
 reduced-density-matrix/cumulant methods and microscopic quantum references.
 

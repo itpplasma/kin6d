@@ -2,7 +2,7 @@
 
 Status: plan, 2026-10-06. Planned items are not support claims.
 
-KIN6D certifies numerical solutions of a named model. This document plans
+MILCA certifies numerical solutions of a named model. This document plans
 the matching layer for the models themselves: every model the code solves is
 connected to its parent by an explicit derivation, and every derivation step
 carries a checked status. The goal is a verified map of plasma theory from
@@ -20,7 +20,7 @@ the same question.
 ## Scope
 
 The map covers all plasma physics needed for the research and teaching it
-serves, from first principles without gaps: every model used by KIN6D, by
+serves, from first principles without gaps: every model used by MILCA, by
 its consumers (e.g. NEO-2, SIMPLE, MEPHIT, TIAGO) and by the lectures is a
 node connected to the microscopic parents by checked edges. A typical
 end-to-end claim is a chain such as
@@ -48,7 +48,7 @@ derivation used by the map is reproduced here:
 2. state a scoped claim with explicit hypotheses, solution concept and
    non-claims;
 3. reproduce it: machine-checked algebra (FortSym), executable oracles and
-   KIN6D defect experiments, and a Lean replay where feasible; otherwise a
+   MILCA defect experiments, and a Lean replay where feasible; otherwise a
    complete written proof in our notation;
 4. obtain an independent review (`proof-audit` protocol);
 5. promote only when these gates pass; disagreements with the source become
@@ -81,11 +81,11 @@ interactive page (https://krystophny.github.io/plasma-skript/map/index.html,
 Physics and Kinetic Theory courses tag the nodes and edges they cover; their
 derivations are checked with SymPy, which is the course-level tool.
 
-KIN6D does not copy the registry. Its theory claims, FortSym derivations,
+MILCA does not copy the registry. Its theory claims, FortSym derivations,
 Lean proofs and defect experiments attach to the same node and edge ids.
-Because KIN6D is private, the public map shows research status as text only
+Because MILCA is private, the public map shows research status as text only
 and never links into this repository. Where a course SymPy derivation and a
-KIN6D FortSym derivation cover the same edge, each is an independent oracle
+MILCA FortSym derivation cover the same edge, each is an independent oracle
 for the other.
 
 ## Objects
@@ -101,7 +101,7 @@ for the other.
     (uniformity, time scales, secular terms);
   - which invariants and structure survive exactly, approximately, or not;
   - the source (textbook/paper, page and equation) it is checked against;
-  - the numerical companion experiment in KIN6D that measures its defect.
+  - the numerical companion experiment in MILCA that measures its defect.
 - **Solution concept per node:** function spaces and the notion of solution
   (strong/classical, weak, renormalized in the DiPerna--Lions sense,
   H-solutions for Landau with Coulomb interaction, measure-valued for N-body
@@ -149,7 +149,7 @@ Quantum branch:
    correlated references; Wigner--Kirkwood and Kelbg as semiclassical limits.
 
 Cross edges link the branches (Wigner -> Vlasov, quantum -> classical
-collision kernels, Kelbg pair statistics). The implemented KIN6D cases
+collision kernels, Kelbg pair statistics). The implemented MILCA cases
 attach to nodes as numerical companions: H1a to step 4, Q1/QG6 to quantum
 step 4, Q7 to quantum step 3, C3 to classical step 7, H1b to the
 quantum-classical cross edges.
@@ -162,7 +162,7 @@ Each step and each edge carries one status, mirroring the numerical states:
 2. **algebra-checked:** every identity verified symbolically under declared
    assumptions, with agreement of independent engines;
 3. **limit-checked:** known special cases and limits reproduced;
-4. **defect-measured:** the reduction's error measured by a KIN6D companion
+4. **defect-measured:** the reduction's error measured by a MILCA companion
    experiment across its regime;
 5. **literature intake:** a cited theorem with its hypotheses and
    solution concept, preserved for reproduction (not yet a trust anchor) (e.g. mean-field limits of Dobrushin, Braun--Hepp and
@@ -238,7 +238,7 @@ rewriting) rather than re-deriving it.
 
 ## First milestones
 
-Each milestone pairs a derivation with an existing KIN6D experiment:
+Each milestone pairs a derivation with an existing MILCA experiment:
 
 - T1 Vlasov linear response -> dielectric function -> Landau root,
   Bohm--Gross and cold limits (C3, Q7).

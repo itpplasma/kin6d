@@ -5,7 +5,7 @@ Code references in this section are to the integrated commit \code{e56e0dd} for 
 \src{src/equilibrium/gs\_nonlinear.f90}, \src{app/gs\_phase1.f90} and the two tests, and to
 \code{origin/main} \code{9e41d24} for \src{src/grad\_shafranov.f90},
 \src{gen/gen\_grad\_shafranov.f90} and
-\src{src/generated/kin6d\_grad\_shafranov\_leaves.f90} (identical on both
+\src{src/generated/milca\_grad\_shafranov\_leaves.f90} (identical on both
 commits).
 
 \subsection{Inventory}
@@ -82,7 +82,7 @@ I_{\mathrm{tr},h}=\sum_{\text{bdry edges}}\sum_q w_q\,
 \end{equation}
 through \code{gs\_current\_sheet}$(R,\mu_0,\nabla\psi_h,(t_Z,-t_R))
 =-(\nabla\psi_h\cdot(t_Z,-t_R))/(\mu_0R)$
-(\src{src/generated/kin6d\_grad\_shafranov\_leaves.f90:176},
+(\src{src/generated/milca\_grad\_shafranov\_leaves.f90:176},
 \src{src/equilibrium/gs\_ampere\_loop.f90:173-174}), with the one-sided gradient of the
 owning cell (\src{src/equilibrium/gs\_ampere\_loop.f90:171-172}). This is
 \eqref{eq:amp-gauss} with $\psi\to\psi_h$: the code agrees with the derivation.

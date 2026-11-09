@@ -127,7 +127,7 @@ program gen_ideal_map
    call w%close()
    ! Experimental CPU benchmark seam, retained derivatives of the same density.
    call w%open('gen_ideal_map', &
-      'src/generated/kin6d_map_cpu_precision.f90')
+      'src/generated/milca_map_cpu_precision.f90')
    call w%emit_batch('map_cpu_fp64', [character(8) :: names9, 'b1', 'b2', 'b3', &
       'p', 'mu0', 'sigma'], names45, hessian, ['mu0  ', 'sigma'], &
       precision=PRECISION_REAL64)

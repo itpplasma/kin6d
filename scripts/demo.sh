@@ -10,7 +10,7 @@ git ls-files -co --exclude-standard -z -- '*.f90' 'proof/*' 'CMakeLists.txt' \
 cmake --preset cpu
 cmake --build --preset cpu
 ctest --preset cpu
-./build/kin6d_demo "$@"
+./build/milca_demo "$@"
 ./build/steady_laboratory_demo
 ./build/transport_demo
 ./build/streaming_comparison_demo "$@"

@@ -247,7 +247,7 @@ The final clean Release comparison uses the same CPU/compiler, CPU 4 and five
 trials. Global Fortran flags are empty; Release uses `-O3`, with strict arithmetic
 flags on the numerical libraries. An earlier Fo Debug invocation had left
 checking flags in the shared build cache; the [owning repair](tooling.md#verified-cmake-profile-repair)
-is published and rechecked on kin6d. Those earlier runs remain separate from
+is published and rechecked on milca. Those earlier runs remain separate from
 this clean comparison. Neither fresh initialization nor geometry reuse implies a
 cold hardware cache. Other host activity remains uncontrolled.
 
@@ -303,7 +303,7 @@ Residual preparation now dominates the accepted 64-cell cached workload;
 production aggregate arithmetic and further certificate optimization remain
 open. No external-code, GPU or distributed speed ranking is established.
 
-Raw final sweeps are retained as `kin6d-clean-{cached,direct}-sweep-cpu4.log` in
+Raw final sweeps are retained as `milca-clean-{cached,direct}-sweep-cpu4.log` in
 the local evidence directory. `scripts/benchmark.sh` records compiler commands,
 executable digests, source manifests including untracked files, hardware and
 process resources. Release/Debug gates pass 5/5; optional formal gates pass 6/6.
