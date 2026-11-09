@@ -78,29 +78,22 @@ contains
                 g%theta_x = th
             end if
         end do
-        ! Golden-section refinement of the maximum: the separatrix closes at
-        ! theta_x, and the mesh columns end there.
+        ! Newton on dB/dtheta = 0 from the sampled maximum: the separatrix
+        ! closes at theta_x, and the mesh columns end there.
         block
-            real(dp) :: a, c, x1, x2, f1, f2, r
+            real(dp) :: b_t, b_tt, step
             integer :: it
-            r = (sqrt(5.0_dp) - 1)/2
-            a = g%theta_x - 2*pi/n
-            c = g%theta_x + 2*pi/n
-            x1 = c - r*(c - a)
-            x2 = a + r*(c - a)
-            f1 = field(x1)
-            f2 = field(x2)
-            do it = 1, 80
-                if (f1 > f2) then
-                    c = x2; x2 = x1; f2 = f1
-                    x1 = c - r*(c - a); f1 = field(x1)
-                else
-                    a = x1; x1 = x2; f1 = f2
-                    x2 = a + r*(c - a); f2 = field(x2)
-                end if
+            do it = 1, 50
+                call orbit_state(bf, s_star, g%theta_x, b, b_s, gg, i, g_s, i_s, iota, &
+                    psi_prime, status, b_t=b_t, b_tt=b_tt)
+                if (b_tt >= 0) exit
+                step = b_t/b_tt
+                g%theta_x = g%theta_x - max(-pi/n, min(pi/n, step))
+                if (abs(step) <= 4*epsilon(1.0_dp)) exit
             end do
-            g%theta_x = modulo(0.5_dp*(a + c), 2*pi)
-            b_max = field(g%theta_x)
+            g%theta_x = modulo(g%theta_x, 2*pi)
+            call orbit_state(bf, s_star, g%theta_x, b_max, b_s, gg, i, g_s, i_s, iota, &
+                psi_prime, status)
         end block
         g%lambda_c = b_ref/b_max
         g%kappa = iota*b_ref/(gg + iota*i)
@@ -109,14 +102,6 @@ contains
         g%e_star = p%energy - p%charge*phi
         g%v_star = sqrt(2*g%e_star/p%mass)
         status = ORBIT_OK
-    contains
-        real(dp) function field(th)
-            real(dp), intent(in) :: th
-            real(dp) :: bb, bs, g1, i1, gs, is, io, pp
-            integer :: st
-            call orbit_state(bf, s_star, th, bb, bs, g1, i1, gs, is, io, pp, st)
-            field = bb
-        end function field
     end subroutine hp_orbit_geometry
 
     !> Takes the drive of harmonic n_tor from pert at the orbit point; b_ref
@@ -176,25 +161,19 @@ contains
 
     !> The measure at (theta, xi) as the phase-space Jacobian of (psi*,
     !> theta, xi) at fixed H: the thin field's 1/(b k) at the orbit point
-    !> times dpsi/dpsi* at fixed (theta, xi) and v/v*. By Liouville it equals
+    !> times dpsi/dpsi* at fixed (theta, xi) and v/v*, with ds/ds* from the
+    !> implicit function theorem on the generated pitch residual. By Liouville it equals
     !> -(d mu_hat/d xi)/(2 theta_dot/v*), but stays regular where theta_dot
     !> and d mu_hat/d xi vanish together.
     real(dp) function measure(g, th, xi, op) result(m)
         class(hp_orbit_geometry_t), intent(in) :: g
         real(dp), intent(in) :: th, xi
         type(hp_operator_t), intent(in) :: op
-        type(orbit_point_t) :: pt, up, down
-        type(hp_orbit_geometry_t) :: shifted
-        real(dp), parameter :: h = 1e-6_dp
+        type(orbit_point_t) :: pt
         real(dp) :: b, b_s, gg, i, g_s, i_s, iota, psi_prime, iota_star, k, v, ds
         integer :: st
         b = g%mu_hat(th, xi, pt, st)
-        shifted = g
-        shifted%s_star = g%s_star + h
-        b = shifted%mu_hat(th, xi, up, st)
-        shifted%s_star = g%s_star - h
-        b = shifted%mu_hat(th, xi, down, st)
-        ds = (up%s - down%s)/(2*h)
+        ds = pt%s_star_s
         call orbit_state(g%bf, g%s_star, th, b, b_s, gg, i, g_s, i_s, iota_star, psi_prime, &
             st)
         call orbit_state(g%bf, pt%s, th, b, b_s, gg, i, g_s, i_s, iota, psi_prime, st)
@@ -216,7 +195,7 @@ contains
 
     !> Passing level mu_hat = val on the side kind = +-1, or the scaled
     !> separatrix xi = val xi_c(theta) on the side of val, xi_c the root of
-    !> mu_hat = lambda_c; by bisection in xi, where mu_hat falls from its value
+    !> mu_hat = lambda_c; by Newton in xi, where mu_hat falls from its value
     !> on s* at xi = 0 to zero at xi = +-1.
     subroutine orbit_level(g, kind, val, th, xi, dxi)
         class(hp_orbit_geometry_t), intent(in) :: g
@@ -234,25 +213,38 @@ contains
         end if
     contains
         !> |xi| on the side sigma where mu_hat = level; zero where mu_hat on s*
-        !> is already below the level (beyond the separatrix X point).
+        !> is already below the level (beyond the separatrix X point). mu_hat
+        !> falls monotonically to zero at |xi| = 1, so [0, 1] brackets the root;
+        !> Newton on the exact dmu_hat/dxi of the pitch point, bisecting a step
+        !> that leaves the bracket.
         real(dp) function root(sigma, level) result(x)
             real(dp), intent(in) :: sigma, level
             type(orbit_point_t) :: pt
-            real(dp) :: lo, hi, mid
+            real(dp) :: lo, hi, f, f_x, step
             integer :: it, st
             x = 0
             if (g%mu_hat(th, 0.0_dp, pt, st) <= level) return
+            x = sigma
+            if (level <= 0) return
             lo = 0
             hi = 1
-            do it = 1, 60
-                mid = 0.5_dp*(lo + hi)
-                if (g%mu_hat(th, sigma*mid, pt, st) > level) then
-                    lo = mid
+            ! First guess from mu_hat ~ mu_hat(0) (1 - xi^2).
+            x = sqrt(max(0.0_dp, 1 - level/g%mu_hat(th, 0.0_dp, pt, st)))
+            do it = 1, 100
+                f = g%mu_hat(th, sigma*x, pt, st) - level
+                f_x = sigma*pt%mu_xi*g%b_ref/g%e_star
+                if (f == 0) exit
+                if (f > 0) then
+                    lo = x
                 else
-                    hi = mid
+                    hi = x
                 end if
+                step = f/f_x
+                if (f_x == 0 .or. (x - step - lo)*(x - step - hi) > 0) step = x - 0.5_dp*(lo + hi)
+                x = x - step
+                if (abs(step) <= 4*epsilon(1.0_dp)) exit
             end do
-            x = sigma*0.5_dp*(lo + hi)
+            x = sigma*x
         end function root
     end subroutine orbit_level
 

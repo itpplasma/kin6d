@@ -17,7 +17,7 @@ program ntv_profile
     use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
         ntv_species_result_t, ntv_device_profile, ntv_read_input, DEVICE_OK, DEVICE_SOLVE
     implicit none
-    type(boozer_file_t) :: eq, pert
+    type(boozer_file_t), target :: eq, pert
     type(ntv_species_t), allocatable :: species(:)
     type(ntv_profile_t) :: prof
     type(ntv_resolution_t) :: res
