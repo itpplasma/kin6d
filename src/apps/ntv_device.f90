@@ -59,7 +59,7 @@ module milca_ntv_device
         ntv_device_axisymmetric, ntv_axisymmetric_result_t, ntv_omega_te_from_rotation, &
         ntv_indicator_t, ntv_device_indicators
     integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2, &
-        DEVICE_NO_CONVERGENCE = 3
+        DEVICE_NO_CONVERGENCE = 3, DEVICE_ORBIT_LOST = 4
 
     real(dp), parameter :: pi = 4*atan(1.0_dp), elementary = 1.602176634e-19_dp
 
@@ -110,10 +110,13 @@ module milca_ntv_device
     !> Omega_tE; in the 1/nu regime, where they do not depend on Omega_tE, it is
     !> the rotation the torque relaxes to. status is DEVICE_OK, or the failure
     !> of this surface and species, whose other fields are then zero; the
-    !> profile status is DEVICE_SOLVE when any of them failed.
+    !> profile status is DEVICE_SOLVE when any of them failed. With finite
+    !> orbit width on Gauss-Laguerre nodes, energies whose orbits leave the
+    !> file (lost to the wall or across the axis) carry no NTV in this model and
+    !> contribute zero; lost_weight is their share of the K_11 weight.
     type :: ntv_species_result_t
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
-            heat_flux = 0, torque = 0, offset_rotation = 0
+            heat_flux = 0, torque = 0, offset_rotation = 0, lost_weight = 0
         integer :: factorisations = 0, iterations = 0, status = DEVICE_OK
     end type
 
@@ -184,6 +187,7 @@ contains
         real(dp), allocatable :: x(:), w(:), r(:, :, :), j0(:), dpsi_dr(:), psi_pol_s(:), &
             b_ref(:), phi(:)
         integer, allocatable :: units(:, :), nfac(:, :, :), nits(:, :, :), ustat(:)
+        logical, allocatable :: lost(:, :, :)
         ! Energies x of the resonance kinks per surface and species, from the
         ! panels the adaptive quadrature refined.
         integer, parameter :: max_kinks = 16
@@ -244,7 +248,8 @@ contains
         nchunk = (ns + res%chunk - 1)/res%chunk
         nunit = nsp*res%n_x*nchunk
         allocate (units(3, nunit), ustat(nunit), r(ns, res%n_x, nsp), &
-            nfac(ns, res%n_x, nsp), nits(ns, res%n_x, nsp))
+            nfac(ns, res%n_x, nsp), nits(ns, res%n_x, nsp), lost(ns, res%n_x, nsp))
+        lost = .false.
         u = 0
         do a = 1, nsp
             do k = 1, res%n_x
@@ -301,6 +306,8 @@ contains
                         cycle
                     end if
                     r(i, k, a) = orbit_r(i, a, x(k), ks)
+                    lost(i, k, a) = ks == DEVICE_ORBIT_LOST
+                    if (lost(i, k, a)) cycle
                     if (ks /= HP_OK) return
                     nfac(i, k, a) = 1
                 end do
@@ -359,8 +366,8 @@ contains
             call hp_orbit_geometry(eq, p, prof%s(i), b_ref(i), g, st)
             if (st /= 0) return
             call hp_orbit_perturbation(g, pert, n_tor, b_ref(i))
-            ! Orbits leaving the file are outside the model: the surface fails.
-            st = DEVICE_SOLVE
+            ! Orbits leaving the file are outside the model and carry no NTV.
+            st = DEVICE_ORBIT_LOST
             if (.not. hp_orbit_confined(g, 32, 32)) return
             op%k = g%kappa
             op%k_power = 1
@@ -560,6 +567,7 @@ contains
             result(i, a)%torque = species(a)%z*elementary*result(i, a)%gamma_psi
             result(i, a)%offset_rotation = prof%omega_te(i) + result(i, a)%gamma_psi &
                 /(prof%density(i, a)*result(i, a)%k11*species(a)%z*elementary/t)
+            result(i, a)%lost_weight = sum(w, mask=lost(i, :, a))/sum(w)
             result(i, a)%factorisations = sum(nfac(i, :, a))
             result(i, a)%iterations = sum(nits(i, :, a))
         end subroutine assemble

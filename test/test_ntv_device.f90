@@ -6,7 +6,7 @@
 !! radial force balance returns the Omega_tE of the rotation it was solved for;
 !! the orbit-width indicators match the concentric-circle geometry of the file,
 !! and the finite-width kernel reproduces the thin kernel for thin orbits and
-!! fails a surface whose orbits leave the file.
+!! counts the energies whose orbits leave the file.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -394,7 +394,8 @@ contains
 
     !> Physical deuterons on s = 0.12 of a file that starts at s = 0.1: their
     !> orbits leave the file, which the finite-width model cannot represent.
-    !> The surface reports a failed solve instead of evaluating outside it.
+    !> Those energies carry no NTV and are counted in lost_weight instead of
+    !> being evaluated outside the file.
     subroutine orbit_width_lost()
         character(*), parameter :: eq_name = 'ntv_lost_eq.bc', pert_name = 'ntv_lost_pert.bc'
         type(boozer_file_t), target :: eq, pert
@@ -423,8 +424,9 @@ contains
         res%sources = .false.
         res%orbit_width = .true.
         call ntv_device_profile(eq, pert, 3, sp, prof, res, wide, status)
-        call check('lost orbits fail the profile', status == DEVICE_SOLVE)
-        call check('lost orbits fail the surface', wide(1, 1)%status == DEVICE_SOLVE)
+        call check('lost energies keep the profile', status == DEVICE_OK)
+        call check('lost energies are counted', wide(1, 1)%lost_weight > 0 .and. &
+            wide(1, 1)%lost_weight <= 1)
         ! The drive at points whose orbits leave the file is zero, not read
         ! from outside it, and the geometry reports the loss.
         block
