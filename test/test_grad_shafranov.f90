@@ -2,7 +2,7 @@ program test_grad_shafranov
    use, intrinsic :: iso_fortran_env, only: dp => real64
    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
                    gs_linear_response, sample_gs, solve_gs_profiles, gs_profile_integral
-   use kin6d_grad_shafranov_leaves, only: gs_field_jvp, gs_field_vjp, &
+   use milca_grad_shafranov_leaves, only: gs_field_jvp, gs_field_vjp, &
       gs_gold_hoyle, gs_gold_hoyle_jvp
    implicit none
    type(gs_state_t) :: coarse, fine

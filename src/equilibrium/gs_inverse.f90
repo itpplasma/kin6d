@@ -6,7 +6,7 @@ module milca_gs_inverse
         gs_profile_response_cache_t, prepare_gs_profile_response_cache, &
         gs_profile_value, gs_profile_integral
     use milca_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_inverse_leaves, only: gs_f_from_coarea, gs_square_slope, gs_f_from_square, &
+    use milca_gs_inverse_leaves, only: gs_f_from_coarea, gs_square_slope, gs_f_from_square, &
         gs_f_from_square_jvp, gs_profile_square_response, gs_q_log_residual, gs_q_log_residual_jvp, &
         gs_profile_mean_last, gs_profile_mean_last_jvp, gs_ff_zero
     use milca_gs_profile_law, only: gs_profile_law_t

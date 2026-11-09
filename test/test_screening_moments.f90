@@ -4,7 +4,7 @@ program test_screening_moments
     use milca_screening_moments, only: scr_t, scr_setup, scr_stencil, scr_steady, &
         scr_rate0, scr_transient
     use milca_fp_relaxation, only: fp_relax_t, fp_relax_setup, fp_relax_cells
-    use kin6d_fp_relaxation_leaves, only: fp_rel_maxwell, fp_rel_friction, fp_rel_diff_par, &
+    use milca_fp_relaxation_leaves, only: fp_rel_maxwell, fp_rel_friction, fp_rel_diff_par, &
         fp_rel_diff_perp, fp_rel_cross, fp_rel_face_lo, fp_rel_face_hi, fp_rel_speed
     use kin6d_thermal_screening_leaves, only: scr_friction_dt, scr_diff_par_dt, &
         scr_diff_perp_dt, scr_cross_dt, scr_distortion_k

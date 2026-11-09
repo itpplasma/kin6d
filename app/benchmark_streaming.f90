@@ -1,6 +1,6 @@
 program benchmark_streaming_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_leaves, only: coordinate, initial_coefficients, stream_step, &
+    use milca_leaves, only: coordinate, initial_coefficients, stream_step, &
                             stream_factors, stream_cached
     use milca_result_io, only: run_t, result_file_t
     implicit none

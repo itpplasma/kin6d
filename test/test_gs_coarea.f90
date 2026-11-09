@@ -4,7 +4,7 @@ program test_gs_coarea
                                     initialize_gs, gs_axis_candidate, &
                                     gs_element_jet
     use milca_gs_coarea, only: gs_level_coarea
-    use kin6d_gs_coarea_leaves, &
+    use milca_gs_coarea_leaves, &
         only: gs_contour_root_response
     implicit none
     type(gs_state_t) :: state, plus_state, minus_state

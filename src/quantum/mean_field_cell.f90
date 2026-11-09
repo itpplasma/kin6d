@@ -24,7 +24,7 @@ module kin6d_mean_field_cell
         jellium_spectrum_t, jellium_sector, jellium_sector_momenta, &
         jellium_density_model, jellium_lowest
     use milca_jellium_cell_leaves, only: jc_fermi, jc_susceptibility
-    use kin6d_mean_field_cell_leaves, only: mf_entropy, mf_free_energy, &
+    use milca_mean_field_cell_leaves, only: mf_entropy, mf_free_energy, &
         mf_temple_interval
     implicit none
     private

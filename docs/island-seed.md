@@ -3,7 +3,7 @@
 Status: implemented, opt-in (2026-10-28). Item 4 of the
 [relaxation comparators](relaxation-comparators.md#algorithms-to-adopt).
 Module `src/mhd/island_seed.f90` (`kin6d_island_seed`), generated leaves
-`src/generated/kin6d_island_seed_leaves.f90` from `gen/gen_island_seed.f90`,
+`src/generated/milca_island_seed_leaves.f90` from `gen/gen_island_seed.f90`,
 test `test/test_island_seed.f90`. Nothing calls it by default.
 
 ## What it does
@@ -68,8 +68,8 @@ a large-aspect-ratio, single-harmonic estimate.
 The pointwise kernels (`circle_rotation`, `seed_potential`, `pendulum_width`)
 are FortSym leaves with JVP/VJP. They were regenerated with the pinned FortSym
 8efec5b, built here against FLINT 3.6.0 and the system MPFR 4.2.1. The same
-build reproduces `kin6d_nonnested_leaves.f90` and
-`kin6d_metriplectic_leaves.f90` byte for byte. `circle_rotation` also
+build reproduces `milca_nonnested_leaves.f90` and
+`milca_metriplectic_leaves.f90` byte for byte. `circle_rotation` also
 supplies the poloidal and radial field components of the diagnostics (at unit
 metric), so no pointwise expression is repeated by hand.
 

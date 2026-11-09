@@ -5,7 +5,7 @@
 extensions in [Issan et al., arXiv:2610.07304v1](https://arxiv.org/html/2610.07304v1).
 The common parameter `tau=0` selects Landreman; nonzero `tau` selects Issan.
 The retained source is `gen/gen_nested_oracles.f90`, with checked-in output in
-`src/generated/kin6d_nested_oracle_leaves.f90`. All vectors and spatial
+`src/generated/milca_nested_oracle_leaves.f90`. All vectors and spatial
 derivatives are Cartesian. Units have mu0=1. These are ideal-MHD references,
 not kinetic equilibria or a new equilibrium solver.
 

@@ -9,9 +9,9 @@ module kin6d_map_3d_equilibrium
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
     use kin6d_ideal_seed_3d, only: toroidal_seed_t, ideal_seed_3d_angle_density
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
-    use kin6d_curve_chart_leaves, only: curve_fourier_mode
-    use kin6d_ideal_map_leaves, only: ideal_reference_form
-    use kin6d_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &
+    use milca_curve_chart_leaves, only: curve_fourier_mode
+    use milca_ideal_map_leaves, only: ideal_reference_form
+    use milca_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &
                                             map_3d_determinant, map_3d_flux
     implicit none
     private

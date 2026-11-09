@@ -11,7 +11,7 @@ program gs_phase1_main
         gs_readback_resolution, gs_readback_q
     use milca_gs_certificate, only: gs_fixed_certifier_t
     use milca_gs_error_control, only: gs_linear_goal_t, gs_fixed_linear_goal
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use milca_grad_shafranov_leaves, only: gs_source
     use milca_equilibrium_certificate, only: equilibrium_certificate_t, &
         certify, claim_name
     use milca_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &

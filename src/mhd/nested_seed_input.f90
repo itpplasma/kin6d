@@ -8,7 +8,7 @@ module kin6d_nested_seed_input
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
-    use kin6d_nested_oracle_leaves, only: nested_boundary_harmonic, &
+    use milca_nested_oracle_leaves, only: nested_boundary_harmonic, &
         nested_boundary_radius
     use kin6d_ideal_seed_3d, only: toroidal_profile_t
     implicit none

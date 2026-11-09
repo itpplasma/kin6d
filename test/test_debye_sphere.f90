@@ -4,7 +4,7 @@ program test_debye_sphere
     use fortnum_interval, only: interval_t, interval
     use milca_debye_sphere_reference, only: debye_sphere_values, &
         debye_sphere_enclosure, debye_sphere_bands
-    use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
+    use milca_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_inside_jvp, sphere_inside_vjp, sphere_outside_jvp, &
         sphere_outside_vjp, sphere_bare_inside_jvp, sphere_bare_outside_jvp
     implicit none

@@ -210,7 +210,7 @@ contains
     end subroutine error_check
 
     subroutine error_leaf_check()
-        use kin6d_ideal_response_error_leaves, only: ideal_ratio, ideal_tail, &
+        use milca_ideal_response_error_leaves, only: ideal_ratio, ideal_tail, &
             ideal_ratio_jvp, ideal_ratio_vjp, ideal_tail_jvp, ideal_tail_vjp
         real(dp) :: q, tail, dq, dtail, gd, ga, bd, bq
 

@@ -30,7 +30,7 @@
 module milca_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_fourier, only: fourier_derivative
-    use kin6d_dk_mono_leaves, only: dk_mono_point, dk_mono_point_jvp
+    use milca_dk_mono_leaves, only: dk_mono_point, dk_mono_point_jvp
     implicit none
     private
     public :: mono_coefficients_t, mono_coefficients, mono_coefficients_jvp

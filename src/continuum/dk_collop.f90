@@ -28,7 +28,7 @@ module milca_dk_collop
     use, intrinsic :: iso_fortran_env, only: dp => real64, real128
     use fortnum_quadrature, only: gauss_legendre, gauss_lobatto_legendre
     use fortnum_polynomial, only: lagrange_weights, lagrange_differentiation_matrix
-    use kin6d_dk_collop_leaves, only: collop_tp, collop_tp_series, collop_tp_jvp, &
+    use milca_dk_collop_leaves, only: collop_tp, collop_tp_series, collop_tp_jvp, &
         collop_tp_series_jvp, collop_fp_lo, collop_fp_hi, collop_fp_lo_jvp, collop_fp_hi_jvp, &
         collop_fp_lo_moments, collop_fp_hi_moments
     implicit none

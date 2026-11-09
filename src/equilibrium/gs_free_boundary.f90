@@ -63,7 +63,7 @@ module milca_gs_free_boundary
     use fortnum_roots, only: root_brent
     use fortnum_multiroot, only: argsort
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_gs_separatrix_leaves, only: gs_lcfs_ray_jet
+    use milca_gs_separatrix_leaves, only: gs_lcfs_ray_jet
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
                                GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &

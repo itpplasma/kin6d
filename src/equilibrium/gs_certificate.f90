@@ -7,7 +7,7 @@ module milca_gs_certificate
     use milca_equilibrium_certificate, only: equilibrium_certifier_t, &
         EQ_STABILITY_NONE, EQ_STABILITY_ESTIMATE, EQ_STABILITY_BOUND
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use milca_grad_shafranov_leaves, only: gs_source
     use milca_gs_profile_law, only: gs_law_sources
     use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t, GS_EQ_OK

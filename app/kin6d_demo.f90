@@ -3,7 +3,7 @@ module milca_demo_application
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_nan
     use milca_laboratory, only: laboratory_t, initialize, advance, sample, &
                                 solve_steady, certificate_radius, certificate_accepts
-    use kin6d_leaves, only: coordinate, reconstruct, interpolate, &
+    use milca_leaves, only: coordinate, reconstruct, interpolate, &
                             characteristic_reference, interval_reconstruct, &
                             interval_band
     use fortnum_interval, only: interval_t, interval, interval_pi

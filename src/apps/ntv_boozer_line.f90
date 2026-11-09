@@ -9,7 +9,7 @@ module milca_ntv_boozer_line
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_dk_ntv, only: ntv_line_t
     use milca_boozer_file, only: boozer_surface_t
-    use kin6d_ntv_boozer_leaves, only: ntv_boozer_point
+    use milca_ntv_boozer_leaves, only: ntv_boozer_point
     implicit none
     private
     public :: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK, NTV_LINE_REFUSED

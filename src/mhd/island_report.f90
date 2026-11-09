@@ -9,7 +9,7 @@ module kin6d_island_report
         nc_residual, nc_store, nc_source_data
     use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
     use milca_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_nonnested_leaves, only: island_defect_density, island_defect_norm
+    use milca_nonnested_leaves, only: island_defect_density, island_defect_norm
     implicit none
     private
     public :: island_report_t, island_residual_report

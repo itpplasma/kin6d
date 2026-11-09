@@ -3,7 +3,7 @@ program test_rosenbluth_reference
     ! slow_limit. Each stops with a non-zero exit code on failure.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_homma_leaves
+    use milca_homma_leaves
     use milca_rosenbluth_reference
     implicit none
     real(dp), parameter :: e_charge = 1.602176634e-19_dp

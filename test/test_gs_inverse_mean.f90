@@ -1,6 +1,6 @@
 program test_gs_inverse_mean
     use, intrinsic :: iso_fortran_env, only: dp=>real64
-    use kin6d_gs_inverse_leaves, only: gs_profile_mean_last, &
+    use milca_gs_inverse_leaves, only: gs_profile_mean_last, &
         gs_profile_mean_last_jvp, gs_profile_mean_last_vjp
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use milca_gs_inverse, only: gs_inverse_result_t, gs_inverse_f, gs_inverse_profile_status

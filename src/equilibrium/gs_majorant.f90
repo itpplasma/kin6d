@@ -3,13 +3,13 @@ module milca_gs_majorant
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
                                   gs_linear_response, gs_recovery_t
-    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp
+    use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp
     use kin6d_triangle_basis, only: triangle_bernstein_controls
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
     use fortfem_triangle_rt_arbitrary_order, only: triangle_rt_basis_t, &
         initialize_triangle_raviart_thomas, evaluate_triangle_raviart_thomas
-    use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux
+    use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux
     use fortfem_generated_equilibrated_flux_normal_component, only: &
         generated_equilibrated_flux_normal_component
     use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources

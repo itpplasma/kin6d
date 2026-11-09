@@ -8,7 +8,7 @@ program test_ideal_seed_3d
     use fortfem_element_to_csr, only: csr_matrix_t
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_ideal_seed_3d_leaves, only: seed_boundary_mode, &
+    use milca_ideal_seed_3d_leaves, only: seed_boundary_mode, &
         seed_boundary_mode_jvp, seed_boundary_mode_vjp
     use omp_lib, only: omp_set_num_threads
     implicit none

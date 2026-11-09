@@ -13,7 +13,7 @@ program test_gs_cuda_fixed_source
     use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t
     use milca_gs_quadrature_budget, only: gs_checked_equilibrated_majorant
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use milca_grad_shafranov_leaves, only: gs_source
     use fortnum_interval, only: interval_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use nn_solovev_fixture, only: boundary, exact, minor, pp

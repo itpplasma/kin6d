@@ -45,8 +45,8 @@ module kin6d_frozen_current
         nn_factor_solve_real, nn_factor_free
     use kin6d_nonnested_coupled, only: nc_layout_t, nc_layout, nc_store, &
         nc_factor_reduced
-    use kin6d_nonnested_leaves, only: vacuum_gauge
-    use kin6d_island_leaves, only: biot_savart_integrand
+    use milca_nonnested_leaves, only: vacuum_gauge
+    use milca_island_leaves, only: biot_savart_integrand
     implicit none
     private
     public :: fc_current_i, fc_exterior_t, fc_report_t, fc_exterior, fc_solve

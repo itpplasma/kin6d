@@ -4,7 +4,7 @@ program test_gs_p2
         sample_gs, gs_element_jet, gs_axis_candidate, gs_axis_safety_factor, &
         gs_classical_current, gs_current_jump, gs_linear_response, write_gs_mesh
     use milca_grad_shafranov, only: solve_gs_profiles
-    use kin6d_grad_shafranov_leaves, only: gs_smooth_axis_q_jvp, &
+    use milca_grad_shafranov_leaves, only: gs_smooth_axis_q_jvp, &
         gs_smooth_axis_q_vjp, gs_current_density_jvp, gs_current_density_vjp
     implicit none
     type(gs_state_t) :: state, vertex_case, p1

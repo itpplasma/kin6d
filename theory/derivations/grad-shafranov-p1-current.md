@@ -1,7 +1,7 @@
 # Distributional current of a continuous P1 flux
 
 - Scope: axisymmetric physical `(R,Z)`, `R>0`; CCW physical phi and signed flux per radian. Synthetic validation only: no equilibrium solve, smooth Hessian, continuous-force error estimate or axis-q admission.
-- Native field correspondence: `src/generated/kin6d_grad_shafranov_leaves.f90::gs_field` gives `BR=-psi_Z/R`, `BZ=psi_R/R`, `Bphi=F/R`. The test calls this native leaf and checks its signs/units against independent affine fields.
+- Native field correspondence: `src/generated/milca_grad_shafranov_leaves.f90::gs_field` gives `BR=-psi_Z/R`, `BZ=psi_R/R`, `Bphi=F/R`. The test calls this native leaf and checks its signs/units against independent affine fields.
 - Numerical test: `test/test_gs_p1_weak_current.f90`. Optional native FortSym exact check: `test/test_gs_p1_current_identities.f90`; fifteen antiderivative identities, no probes.
 
 ## Cell, edge and boundary identity

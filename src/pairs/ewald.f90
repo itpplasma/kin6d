@@ -17,7 +17,7 @@
 module kin6d_ewald
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_coulomb_leaves, only: ewald_real_shell_bound, &
+    use milca_coulomb_leaves, only: ewald_real_shell_bound, &
                                     ewald_reciprocal_shell_bound
     implicit none
     private

@@ -8,7 +8,7 @@ program test_nbody
     use milca_species, only: units_t, species_t, atomic_units, periodic_pair_units, &
         electron, pair_scales, pair_scales_t, plasma_scales, plasma_scales_t, &
         sommerfeld_parameter, pair_coupling
-    use kin6d_coulomb_leaves, only: coulomb_partial_wave, coulomb_pair, &
+    use milca_coulomb_leaves, only: coulomb_partial_wave, coulomb_pair, &
         coulomb_pair_vjp, coulomb_pair_jvp
     use kin6d_ewald, only: ewald_parameters_t, ewald_select, ewald_truncation_bound
     use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_periodic, &

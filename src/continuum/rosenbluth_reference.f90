@@ -2,10 +2,10 @@ module milca_rosenbluth_reference
     ! Rosenbluth potentials H=int f/|v-v'|, G=int f|v-v'| of a background that is
     ! a Maxwellian (l=0) plus a heat-flux distortion (l=1, linear in q), and the
     ! Fokker-Planck coefficients A=Gamma(1+m_a/m_b) grad H, D=Gamma/2 hess G.
-    ! Radial integrands and their v-derivatives come from kin6d_homma_leaves.
+    ! Radial integrands and their v-derivatives come from milca_homma_leaves.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_homma_leaves
+    use milca_homma_leaves
     implicit none
     private
     public :: homma_pair_t, homma_coeff_t

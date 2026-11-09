@@ -5,7 +5,7 @@ program test_fp_relaxation
     use milca_fp_relaxation, only: fp_relax_t, fp_relax_setup, fp_relax_initial, &
         fp_relax_step, fp_relax_run, fp_relax_moments, fp_relax_cells, fp_relax_nmom, &
         fp_relax_lmax
-    use kin6d_fp_relaxation_leaves, only: fp_rel_maxwell, fp_rel_gauss, &
+    use milca_fp_relaxation_leaves, only: fp_rel_maxwell, fp_rel_gauss, &
         fp_rel_rate_at, fp_rel_nu_s
     implicit none
     ! B04 parameters (thermal-force-benchmark/cases/B04_relaxation.nml, conventions.md).

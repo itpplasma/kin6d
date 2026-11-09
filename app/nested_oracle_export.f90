@@ -1,7 +1,7 @@
 program nested_oracle_export
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
-    use kin6d_nested_oracle_leaves, only: nested_boundary_radius, &
+    use milca_nested_oracle_leaves, only: nested_boundary_radius, &
         nested_boundary_harmonic, nested_boundary_phase, nested_setup, &
         nested_integer_averages
     use milca_result_io, only: run_t, result_file_t

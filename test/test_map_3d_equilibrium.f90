@@ -7,7 +7,7 @@ program test_map_3d_equilibrium
     use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample, &
                                         map_3d_coordinates
-    use kin6d_map_3d_readback_leaves, only: map_3d_field, &
+    use milca_map_3d_readback_leaves, only: map_3d_field, &
         map_3d_field_jvp, map_3d_field_vjp
     use omp_lib, only: omp_set_num_threads
     implicit none

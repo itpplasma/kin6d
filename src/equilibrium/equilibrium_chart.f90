@@ -8,9 +8,9 @@ module milca_equilibrium_chart
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
         ieee_quiet_nan
-    use kin6d_equilibrium_core_leaves, only: cylindrical_chart_position, &
+    use milca_equilibrium_core_leaves, only: cylindrical_chart_position, &
         cylindrical_chart_first, cylindrical_chart_second, cylindrical_chart_third
-    use kin6d_curve_chart_leaves, only: curve_fourier_mode, curve_normalize, &
+    use milca_curve_chart_leaves, only: curve_fourier_mode, curve_normalize, &
         curve_cross, curve_compose, curve_geometry, curve_norm, curve_rotate, &
         curve_mode_bounds, curve_tube_bounds, curve_admission_bounds, &
         curve_fourier_shift

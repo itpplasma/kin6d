@@ -13,7 +13,7 @@ module kin6d_map_equilibrium
                                        EQ_UNAVAILABLE
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
-    use kin6d_ideal_map_leaves, only: ideal_axisymmetric_field, ideal_reference_form, &
+    use milca_ideal_map_leaves, only: ideal_axisymmetric_field, ideal_reference_form, &
         ideal_region_weight, ideal_contour_density
     use milca_grad_shafranov, only: gs_state_t, gs_axis_candidate, gs_element_jet
     use milca_gs_coarea, only: gs_level_coarea

@@ -100,7 +100,7 @@ recorded floating-point time, not every instant between movie frames.
 `gen/gen_laboratory.f90` defines the numerical expressions. FortSym emits the
 primal leaves and JVP/VJP families for initialization, interpolation,
 reconstruction, streaming factors/application, steady sources/solve/residual, strict `real128` characteristic reference
-and interval leaves into `src/generated/kin6d_leaves.f90`. Handwritten Fortran
+and interval leaves into `src/generated/milca_leaves.f90`. Handwritten Fortran
 owns orchestration, state, tests and plotting. Normal builds use committed
 outputs; regeneration is explicit:
 

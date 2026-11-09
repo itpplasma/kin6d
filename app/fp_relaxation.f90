@@ -116,7 +116,7 @@ contains
 
     subroutine tau_of_b04(tau)
         ! tau_s at v_a = sqrt(3 T_b/m_a) (case file), from the leaves.
-        use kin6d_fp_relaxation_leaves, only: fp_rel_gamma, fp_rel_speed, fp_rel_xs, &
+        use milca_fp_relaxation_leaves, only: fp_rel_gamma, fp_rel_speed, fp_rel_xs, &
             fp_rel_mu, fp_rel_tau_s
         real(dp), intent(out) :: tau
         real(dp) :: gam, vt, va, x, muf, mr

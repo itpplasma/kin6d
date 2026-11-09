@@ -59,7 +59,7 @@ module kin6d_nonnested_coupled
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_profile, only: nn_fitted_source_t
-    use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
+    use milca_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
         anisotropic_flux, anisotropic_flux_jvp, anisotropic_flux_vjp, &
         coupled_current_vjp, parallel_drive_current, &
         parallel_drive_current_jvp, parallel_drive_current_vjp

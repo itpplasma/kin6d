@@ -4,7 +4,7 @@ program test_gs_cuda_picard
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs_profiles, &
         gs_profile_load, gs_profile_value, gs_profile_integral, apply_gs, &
         gs_requested_device, gs_factor_ready
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use milca_grad_shafranov_leaves, only: gs_source
     use kin6d_gs_direct, only: gs_direct_free
     use kin6d_gs_options, only: gs_set_options
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_reset, gs_timer_total, &

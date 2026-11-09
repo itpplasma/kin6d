@@ -74,7 +74,7 @@ module milca_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortnum_fourier, only: fourier_derivative
-    use kin6d_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
+    use milca_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
     use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_t, collop_build, &
         collop_moments, collop_vth, collop_nuhat, COLLOP_OK, COLLOP_FULL, &

@@ -8,7 +8,7 @@ find_package(OpenMP REQUIRED COMPONENTS Fortran)
 set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/modules")
 add_executable(benchmark_equilibrium_gpu benchmark.f90 gpu.cu
     generated/ideal_map_gpu_cpu.f90
-    ../../src/generated/kin6d_ideal_map_leaves.f90)
+    ../../src/generated/milca_ideal_map_leaves.f90)
 target_link_libraries(benchmark_equilibrium_gpu PRIVATE OpenMP::OpenMP_Fortran)
 set_target_properties(benchmark_equilibrium_gpu PROPERTIES CUDA_STANDARD 17)
 target_compile_options(benchmark_equilibrium_gpu PRIVATE

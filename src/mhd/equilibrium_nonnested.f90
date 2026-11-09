@@ -21,7 +21,7 @@ module kin6d_equilibrium_nonnested
     use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_nonnested_leaves, only: axisymmetric_pressure, fieldline_velocity
+    use milca_nonnested_leaves, only: axisymmetric_pressure, fieldline_velocity
     implicit none
     private
     public :: free_b_field_t, nn_report_t, nn_build, nn_solve, nn_export

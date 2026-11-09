@@ -18,7 +18,7 @@ module hb_fixture
     use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
-    use kin6d_nonnested_leaves, only: anisotropic_conductivity
+    use milca_nonnested_leaves, only: anisotropic_conductivity
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build
     implicit none

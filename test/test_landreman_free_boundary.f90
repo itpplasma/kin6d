@@ -51,7 +51,7 @@ program test_landreman_free_boundary
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, compiler_version, &
                                                                         compiler_options
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
+    use milca_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
                                 landreman_project_surface, landreman_axisymmetric_jvp, &
                                       landreman_axisymmetric_vjp
     use kin6d_landreman_benchmark, only: landreman_frozen_t, landreman_drive_t, &

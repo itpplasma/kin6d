@@ -22,7 +22,7 @@ module kin6d_near_encounter
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK, FORTNUM_DOMAIN_ERROR, &
                               status_set
-    use kin6d_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp
+    use milca_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp
     use kin6d_ocp_leaves, only: near_switch_pair, near_switch_pair_jvp
     implicit none
     private

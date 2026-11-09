@@ -35,7 +35,7 @@ program test_island_seed
         meridian_real_to_complex
     use fortsparse, only: csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
         fortsparse_status_t, status_ok
-    use kin6d_island_seed_leaves, only: circle_rotation, circle_rotation_jvp, &
+    use milca_island_seed_leaves, only: circle_rotation, circle_rotation_jvp, &
         circle_rotation_vjp, seed_potential, seed_potential_jvp, &
         seed_potential_vjp, pendulum_width, pendulum_width_jvp, pendulum_width_vjp
     implicit none

@@ -13,7 +13,7 @@ module milca_dk_pitch
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights
-    use kin6d_dk_pitch_leaves, only: dk_pitch_weights
+    use milca_dk_pitch_leaves, only: dk_pitch_weights
     implicit none
     private
     public :: pitch_operator_t, build_pitch_operator

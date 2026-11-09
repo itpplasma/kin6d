@@ -10,7 +10,7 @@ module milca_gs_nonlinear
     use kin6d_gs_options, only: gs_use_csr
     use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
                                   gs_law_c1, gs_law_sources_batch
-    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
+    use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
                                       gs_cut_discriminant, gs_cut_quadratic_discriminant
     use kin6d_gs_load_batch, only: batch_position_flux, batch_moments
     use gs_source_batch_mod, only: gs_source_batch

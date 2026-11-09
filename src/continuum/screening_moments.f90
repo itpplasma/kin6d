@@ -14,7 +14,7 @@ module milca_screening_moments
     use fortnum_quadrature, only: gauss_legendre_ab
     use milca_rosenbluth_reference, only: homma_pair_t, homma_radial_quad, homma_eps0
     use milca_fp_relaxation, only: fp_relax_t, fp_relax_setup
-    use kin6d_fp_relaxation_leaves, only: fp_rel_w3, fp_rel_face_lo, fp_rel_face_hi, &
+    use milca_fp_relaxation_leaves, only: fp_rel_w3, fp_rel_face_lo, fp_rel_face_hi, &
         fp_rel_sink, fp_rel_mom_u, fp_rel_trap_c, fp_rel_bdf2_a0, fp_rel_bdf2_a1, &
         fp_rel_bdf2_a2
     use kin6d_thermal_screening_leaves, only: scr_friction_dt, scr_diff_par_dt, &

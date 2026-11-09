@@ -4,7 +4,7 @@ program test_classical_pair
     use milca_classical_pair, only: classical_pair_model_t, initialize_classical_pair, &
         classical_pair_state, classical_pair_bin_center
     use milca_classical_pair_leaves, only: cp_statistic
-    use kin6d_coulomb_leaves, only: ewald_real_pair_jvp, ewald_real_pair_vjp
+    use milca_coulomb_leaves, only: ewald_real_pair_jvp, ewald_real_pair_vjp
     use kin6d_nbody, only: nbody_force, nbody_force_jvp, nbody_step, nbody_energy
     implicit none
     type(classical_pair_model_t) :: a, b

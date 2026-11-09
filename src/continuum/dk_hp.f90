@@ -35,7 +35,7 @@ module milca_dk_hp
         sparse_solve_op, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_OP_NORMAL, FORTSPARSE_OP_TRANSPOSE, FORTSPARSE_BACKEND_NATIVE, &
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
-    use kin6d_dk_hp_leaves, only: dk_hp_point, dk_hp_stream, dk_hp_ntv
+    use milca_dk_hp_leaves, only: dk_hp_point, dk_hp_stream, dk_hp_ntv
     use milca_dk_mono, only: mono_coefficients_t
     implicit none
     private

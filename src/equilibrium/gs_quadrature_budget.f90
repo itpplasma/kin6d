@@ -18,7 +18,7 @@ module milca_gs_quadrature_budget
         VERIFIED_BERNSTEIN_OK, verified_bernstein_source, &
         verified_bernstein_source_remainder
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_gs_error_leaves, only: gs_error_friedrichs_interval, &
+    use milca_gs_error_leaves, only: gs_error_friedrichs_interval, &
                                      gs_error_source_numerator_interval
     use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none

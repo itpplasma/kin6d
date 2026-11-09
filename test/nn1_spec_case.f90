@@ -7,7 +7,7 @@ module nn1_spec_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
         coil_set_modes, coil_mu0
-    use kin6d_nonnested_leaves, only: segment_potential, vacuum_gauge
+    use milca_nonnested_leaves, only: segment_potential, vacuum_gauge
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     type(coil_set_t) :: coils

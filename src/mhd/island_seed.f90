@@ -30,7 +30,7 @@ module kin6d_island_seed
     use kin6d_mhd_mesh, only: flux_mesh_locate
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve, nn_factor_free
-    use kin6d_island_seed_leaves, only: circle_rotation, seed_potential, &
+    use milca_island_seed_leaves, only: circle_rotation, seed_potential, &
         pendulum_width
     implicit none
     private

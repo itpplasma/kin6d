@@ -2,13 +2,13 @@ program interaction_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, ipoint
     use kin6d_interaction_laboratory
-    use kin6d_interaction_leaves, only: interaction_energy, &
+    use milca_interaction_leaves, only: interaction_energy, &
                                         interaction_particle_error_interval, &
                                         interaction_frame_time, &
                                         interaction_frame_time_interval, &
                                         interaction_particle_coordinate, &
                                         interaction_particle_coordinate_interval
-    use kin6d_coulomb_leaves, only: coulomb_pair
+    use milca_coulomb_leaves, only: coulomb_pair
     use milca_species, only: units_t, atomic_units, electron, pair_coupling
     use fortplot, only: figure, figure_t, get_global_figure, subplot, plot, &
                         scatter, quiver, &

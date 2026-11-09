@@ -4,7 +4,7 @@ module nt_error_fixture
     use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
-    use kin6d_nonnested_leaves, only: anisotropic_conductivity
+    use milca_nonnested_leaves, only: anisotropic_conductivity
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: r0 = 3, ftor = 3

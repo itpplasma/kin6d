@@ -9,8 +9,8 @@ module kin6d_nonnested_residual
     use kin6d_mhd_mesh, only: flux_mesh_geometry
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_riesz, nn_fourier_value
     use milca_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_equilibrium_core_leaves, only: maxwell_stress_delta
-    use kin6d_nonnested_leaves, only: axisymmetric_pressure
+    use milca_equilibrium_core_leaves, only: maxwell_stress_delta
+    use milca_nonnested_leaves, only: axisymmetric_pressure
     implicit none
     private
     public :: nn_residual, NN_RESIDUAL_ZERO_SCALE

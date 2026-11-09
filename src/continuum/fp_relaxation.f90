@@ -1,12 +1,12 @@
 ! Homogeneous test-particle Fokker-Planck relaxation in the Legendre modes
 ! l = 0, 1, 2 of the test-ion distribution (Homma 2014 Eq. 7, B04).
 ! Every pointwise coefficient, flux weight and moment weight comes from the
-! FortSym leaves in kin6d_fp_relaxation_leaves; this module holds only the
+! FortSym leaves in milca_fp_relaxation_leaves; this module holds only the
 ! cell bookkeeping and the linear algebra.
 module milca_fp_relaxation
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
-    use kin6d_fp_relaxation_leaves
+    use milca_fp_relaxation_leaves
     implicit none
     private
     public :: fp_relax_t, fp_relax_setup, fp_relax_initial, fp_relax_step, &
