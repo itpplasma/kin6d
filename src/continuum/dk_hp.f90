@@ -39,30 +39,13 @@ module milca_dk_hp
     use milca_dk_mono, only: mono_coefficients_t
     implicit none
     private
-    public :: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_system_t, &
+    public :: hp_geometry_t, hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_system_t, &
         hp_assemble, hp_factor, hp_solve, hp_coefficients, hp_free, hp_estimate, &
         hp_refine, hp_operator_t, hp_ntv_kernel
     integer, parameter, public :: HP_OK = 0, HP_BAD_INPUT = 1, HP_SINGULAR = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
 
-
-    !> b(theta) = a_0 + sum_m a_m cos(m theta) + c_m sin(m theta), the
-    !! trigonometric interpolant of the samples, with its single maximum
-    !! b_max at theta_x and minimum b_min.
-    type :: hp_field_t
-        integer :: m = 0
-        real(dp) :: kappa = 0, theta_x = 0, b_max = 0, b_min = 0
-        real(dp), allocatable :: a(:), c(:)
-    end type
-
-    !> Column breakpoints theta(1) = theta_x - 2 pi < ... < theta(end) =
-    !! theta_x; passing levels lam(1) = 0 < ... < lam(end) = lambda_c;
-    !! trapped rows zeta(1) = -1 < ... < zeta(end) = 1; degree p.
-    type :: hp_mesh_t
-        integer :: p = 0
-        real(dp), allocatable :: theta(:), lam(:), zeta(:)
-    end type
 
     !> Operator per unit speed: b.grad theta = k b**k_power, nu = nu_D/v; for
     !! one toroidal harmonic n of the NTV problem (milca_dk_ntv) also q, the
@@ -75,6 +58,74 @@ module milca_dk_hp
         integer, allocatable :: m(:)
         complex(dp), allocatable :: c(:)
     end type
+
+    !> The orbit geometry of the mesh: on the (theta, xi) cylinder of one
+    !> surface, the stream function of the orbits (its bracket is the
+    !> streaming term in the measure of the weak form), the row curves
+    !> (passing levels of sign kind = +-1 at level val, scaled separatrices
+    !> kind = 0 at val = zeta), and the pointwise coefficients of the weak form
+    !> per unit dtheta dxi. The separatrix closes at theta_x at the passing
+    !> level lambda_c.
+    type, abstract :: hp_geometry_t
+        real(dp) :: kappa = 0, theta_x = 0, lambda_c = 0
+    contains
+        procedure(stream_i), deferred :: stream
+        procedure(level_i), deferred :: level
+        procedure(point_i), deferred :: point
+    end type
+
+    abstract interface
+        real(dp) function stream_i(g, th, xi)
+            import :: dp, hp_geometry_t
+            class(hp_geometry_t), intent(in) :: g
+            real(dp), intent(in) :: th, xi
+        end function stream_i
+
+        subroutine level_i(g, kind, val, th, xi, dxi)
+            import :: dp, hp_geometry_t
+            class(hp_geometry_t), intent(in) :: g
+            integer, intent(in) :: kind
+            real(dp), intent(in) :: val, th
+            real(dp), intent(out) :: xi, dxi
+        end subroutine level_i
+
+        !> collide: coefficient of d_xi w d_xi g; drive_r, drive_e: the radial
+        !> and parallel drives of the axisymmetric problem; density: the
+        !> measure; phase, precess, drive, torque: the NTV terms of
+        !> milca_dk_hp_leaves (dk_hp_ntv).
+        subroutine point_i(g, th, xi, op, collide, drive_r, drive_e, density, phase, &
+                precess, drive, torque)
+            import :: dp, hp_geometry_t, hp_operator_t
+            class(hp_geometry_t), intent(in) :: g
+            real(dp), intent(in) :: th, xi
+            type(hp_operator_t), intent(in) :: op
+            real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, &
+                drive, torque
+        end subroutine point_i
+    end interface
+
+    !> b(theta) = a_0 + sum_m a_m cos(m theta) + c_m sin(m theta), the
+    !! trigonometric interpolant of the samples, with its single maximum
+    !! b_max at theta_x and minimum b_min: the thin-orbit geometry, whose
+    !! stream function is -lambda/2, lambda = (1 - xi^2)/b.
+    type, extends(hp_geometry_t) :: hp_field_t
+        integer :: m = 0
+        real(dp) :: b_max = 0, b_min = 0
+        real(dp), allocatable :: a(:), c(:)
+    contains
+        procedure :: stream => field_stream
+        procedure :: level => curve
+        procedure :: point => field_point
+    end type
+
+    !> Column breakpoints theta(1) = theta_x - 2 pi < ... < theta(end) =
+    !! theta_x; passing levels lam(1) = 0 < ... < lam(end) = lambda_c;
+    !! trapped rows zeta(1) = -1 < ... < zeta(end) = 1; degree p.
+    type :: hp_mesh_t
+        integer :: p = 0
+        real(dp), allocatable :: theta(:), lam(:), zeta(:)
+    end type
+
 
     !> Assembled system of n pitch unknowns with its element matrices
     !! (columns of mat), loads and density weights for residual estimates;
@@ -133,6 +184,7 @@ contains
         end do
         if (n_max /= 1 .or. n_min /= 1) return
         f%b_max = field_b(f, f%theta_x)
+        f%lambda_c = 1/f%b_max
         status = HP_OK
     end subroutine hp_field
 
@@ -140,7 +192,7 @@ contains
     !! layers towards the separatrix down to the relative width delta with
     !! ratio q, and n_col columns graded towards theta_x down to sqrt(delta).
     subroutine hp_default_mesh(f, p, n_col, n_bulk, delta, q, mesh)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         integer, intent(in) :: p, n_col, n_bulk
         real(dp), intent(in) :: delta, q
         type(hp_mesh_t), intent(out) :: mesh
@@ -149,7 +201,7 @@ contains
         integer :: j, n_l
 
         mesh%p = p
-        lc = 1/f%b_max
+        lc = f%lambda_c
         ! Relative distances to the separatrix: bulk spacing, then q^k.
         n_l = max(0, ceiling(log(delta/0.25_dp)/log(q)))
         layer = [(0.25_dp*q**j, j=0, n_l)]
@@ -172,7 +224,7 @@ contains
     !! periodic in theta, the trapped nodes on theta_x (the X point) one
     !! unknown. mat holds each element matrix column major.
     subroutine elements(f, mesh, op, sys, mat, status)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         type(hp_system_t), intent(inout) :: sys
@@ -242,7 +294,7 @@ contains
     !> Real system of the axisymmetric monoenergetic problem, b.grad theta =
     !! kappa b; drives 1 (radial) and 2 (parallel).
     subroutine hp_assemble(f, mesh, nu, sys, status)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         real(dp), intent(in) :: nu
         type(hp_system_t), intent(out) :: sys
@@ -287,7 +339,7 @@ contains
     !> major in s, with its loads (radial and parallel drive, NTV drive and
     !> torque functional) and density weights.
     subroutine element(f, mesh, op, kinds, vals, ec, load, dens, s)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         real(dp), intent(in) :: vals(2)
@@ -297,7 +349,7 @@ contains
         integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc, j
         real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), dphi(:, :), &
             b_ab(:), d_ab(:), da(:), db_(:), psi(:, :)
-        real(dp) :: th, th_a, xi_lo, xi_hi, d_lo, d_hi, xi, xi_b, bb, db, k, &
+        real(dp) :: th, th_a, xi_lo, xi_hi, d_lo, d_hi, xi, xi_b, &
             col, dr, de, den, ww, psi_a, psi_b, phase, precess, drive, torque
         complex(dp) :: loc_term, src
 
@@ -321,20 +373,16 @@ contains
         ! and right null vectors and the form is skew to rounding.
         do a1 = 0, p
             th = mesh%theta(ec) + th_a*(1 + node(a1 + 1))
-            call curve(f, kinds(1), vals(1), th, xi_lo, d_lo)
-            call curve(f, kinds(2), vals(2), th, xi_hi, d_hi)
+            call f%level(kinds(1), vals(1), th, xi_lo, d_lo)
+            call f%level(kinds(2), vals(2), th, xi_hi, d_hi)
             do a2 = 0, p
-                call dk_hp_stream(field_b(f, th), &
-                    xi_lo + (xi_hi - xi_lo)*(1 + node(a2 + 1))/2, psi(a1 + 1, a2 + 1))
+                psi(a1 + 1, a2 + 1) = f%stream(th, xi_lo + (xi_hi - xi_lo)*(1 + node(a2 + 1))/2)
             end do
         end do
         do q1 = 1, nq
             th = mesh%theta(ec) + th_a*(1 + xq(q1))
-            bb = field_b(f, th)
-            db = field_db(f, th)
-            k = op%k*bb**op%k_power
-            call curve(f, kinds(1), vals(1), th, xi_lo, d_lo)
-            call curve(f, kinds(2), vals(2), th, xi_hi, d_hi)
+            call f%level(kinds(1), vals(1), th, xi_lo, d_lo)
+            call f%level(kinds(2), vals(2), th, xi_hi, d_hi)
             xi_b = (xi_hi - xi_lo)/2
             src = 0
             if (allocated(op%m)) then
@@ -345,9 +393,7 @@ contains
             do q2 = 1, nq
                 xi = xi_lo + xi_b*(1 + xq(q2))
                 ww = wq(q1)*wq(q2)*th_a*xi_b
-                call dk_hp_point(bb, db, xi, k, op%nu, col, dr, de, den)
-                call dk_hp_ntv(bb, xi, k, cos(th), op%offset, op%wsign, phase, precess, &
-                    drive, torque)
+                call f%point(th, xi, op, col, dr, de, den, phase, precess, drive, torque)
                 ! -i n q xi k + i (n/v)(omega_E + pre (1 + wsign xi^2)(cos - offset)/b)
                 loc_term = (0, 1)*op%n*(-op%q*phase + (op%omega_e*den + op%pre*precess) &
                     /op%v)
@@ -430,7 +476,7 @@ contains
     !! A^T z = s_j. eta_el holds element indicators for refinement.
     !! This is an indicator, not a bound.
     subroutine hp_estimate(f, mesh, nu, i, j, value, eta, eta_el, status, n_dof)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         real(dp), intent(in) :: nu
         integer, intent(in) :: i, j
@@ -574,7 +620,7 @@ contains
     !! b.grad theta (k_power = 0) or k b (k_power = 1). Without a null space
     !! the complex system is solved directly.
     subroutine hp_ntv_kernel(f, mesh, op, r, status, n_dof)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         real(dp), intent(out) :: r
@@ -705,7 +751,7 @@ contains
     !> D_ij = <s_i g_j> on the given mesh; border holds the density-source
     !! multipliers of the two drives.
     subroutine hp_coefficients(f, mesh, nu, c, status)
-        type(hp_field_t), intent(in) :: f
+        class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         real(dp), intent(in) :: nu
         type(mono_coefficients_t), intent(out) :: c
@@ -734,25 +780,45 @@ contains
     !! (kind = +-1, val = Lambda) or a scaled separatrix (kind = 0, val =
     !! zeta). Differences of b are formed without cancellation near the X
     !! point.
-    pure subroutine curve(f, kind, val, th, xi, dxi)
-        type(hp_field_t), intent(in) :: f
+    subroutine curve(g, kind, val, th, xi, dxi)
+        class(hp_field_t), intent(in) :: g
         integer, intent(in) :: kind
         real(dp), intent(in) :: val, th
         real(dp), intent(out) :: xi, dxi
         real(dp) :: v, q, db
-        v = separatrix2(f, th)
-        db = field_db(f, th)
+        v = separatrix2(g, th)
+        db = field_db(g, th)
         if (kind /= 0) then
-            q = f%b_max*((1/f%b_max - val) + val*v)
+            q = g%b_max*((1/g%b_max - val) + val*v)
             xi = kind*sqrt(q)
             dxi = -kind*val*db/(2*sqrt(q))
         else if (v > 0) then
             xi = val*sqrt(v)
-            dxi = -val*db/(2*f%b_max*sqrt(v))
+            dxi = -val*db/(2*g%b_max*sqrt(v))
         else
             xi = 0; dxi = 0
         end if
     end subroutine curve
+
+    real(dp) function field_stream(g, th, xi) result(psi)
+        class(hp_field_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        call dk_hp_stream(field_b(g, th), xi, psi)
+    end function field_stream
+
+    subroutine field_point(g, th, xi, op, collide, drive_r, drive_e, density, phase, &
+            precess, drive, torque)
+        class(hp_field_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
+            torque
+        real(dp) :: bb, k
+        bb = field_b(g, th)
+        k = op%k*bb**op%k_power
+        call dk_hp_point(bb, field_db(g, th), xi, k, op%nu, collide, drive_r, drive_e, density)
+        call dk_hp_ntv(bb, xi, k, cos(th), op%offset, op%wsign, phase, precess, drive, torque)
+    end subroutine field_point
 
     !> xi_c^2 = 1 - b/b_max.
     pure real(dp) function separatrix2(f, th) result(s)
