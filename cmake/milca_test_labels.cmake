@@ -30,6 +30,8 @@ milca_test_labels(ideal_fb_landreman_helical_circuits fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 milca_test_labels(nonnested_exterior_frozen_sphere_oracle fast CLASSES mhd
     TARGETS test_nonnested_exterior_operators)
+milca_test_labels(nonnested_exterior_3d_vacuum_pilot slow CLASSES mhd
+    TARGETS test_nonnested_exterior)
 foreach(k 2 3)
     foreach(case fixed floating voltage exterior)
         milca_test_labels(nonnested_actions_${case}_p${k} fast CLASSES mhd
