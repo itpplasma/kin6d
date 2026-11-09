@@ -2,13 +2,15 @@
 !! frequency in its Lorentz limit, and sweeps over neighbouring surfaces
 !! preconditioned by one factorisation agree with a factorisation per surface,
 !! a second solve at the reported offset rotation carries no flux, and a
-!! surface that fails leaves the other surfaces of the profile intact.
+!! surface that fails leaves the other surfaces of the profile intact, and the
+!! radial force balance returns the Omega_tE of the rotation it was solved for.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
     use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
         ntv_species_result_t, ntv_device_profile, deflection_frequency, DEVICE_OK, &
-        DEVICE_SOLVE
+        DEVICE_SOLVE, ntv_axisymmetric_result_t, ntv_device_axisymmetric, &
+        ntv_omega_te_from_rotation
     implicit none
     real(dp), parameter :: r0 = 1.7_dp, a = 0.5_dp, b0 = 2.3_dp, eps = 0.1_dp
     real(dp), parameter :: jpol = -1.2e7_dp, itor_s = -3.0e5_dp, flux = -1.3_dp
@@ -20,6 +22,7 @@ program test_ntv_device
     call energy_coupled()
     call offset_rotation()
     call failed_surface()
+    call force_balance()
     if (failures > 0) error stop 'FAIL'
     print '(a)', 'All tests passed!'
 
@@ -242,6 +245,45 @@ contains
         call check('failed surface: the good surface is kept', &
             all(both(1, :)%status == DEVICE_OK) .and. all(both(1, :)%k11 == alone(1, :)%k11))
     end subroutine failed_surface
+
+    !> V_phi/R of the deuterons at R = 1.9 m from the axisymmetric solve at
+    !> Omega_tE = 2e3 rad/s; the force balance must return that Omega_tE.
+    subroutine force_balance()
+        character(*), parameter :: eq_name = 'ntv_force_eq.bc', pert_name = 'ntv_force_pert.bc'
+        type(boozer_file_t) :: eq, pert
+        type(ntv_species_t) :: sp(2)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_axisymmetric_result_t), allocatable :: r(:)
+        real(dp), parameter :: radius = 1.9_dp, omega_te = 2e3_dp
+        real(dp) :: rotation
+        integer :: status
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        sp(2) = ntv_species_t(-1.0_dp, 9.1093837e-31_dp)
+        prof%s = [0.45_dp]
+        prof%omega_te = [omega_te]
+        allocate (prof%density(1, 2), prof%temperature(1, 2), prof%density_s(1, 2), &
+            prof%temperature_s(1, 2), prof%kappa(1, 2))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -1*kev
+        prof%kappa(1, :) = [3e-4_dp, 6e-4_dp]
+        res%n_theta = 17
+        res%n_leg = 24
+        res%collisions = 3
+        res%nelem = 4
+        call ntv_device_axisymmetric(eq, pert, 3, sp, prof, res, r, status)
+        call check('force balance: axisymmetric solve', status == DEVICE_OK)
+        if (failures > 0) return
+        rotation = r(1)%omega(1) + r(1)%k_pol(1)/radius**2
+        call close_to('force balance: Omega_tE', ntv_omega_te_from_rotation(r(1), sp, prof, &
+            1, 1, radius, rotation), omega_te, 1e-10_dp)
+    end subroutine force_balance
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.

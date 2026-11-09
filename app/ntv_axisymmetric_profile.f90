@@ -9,7 +9,9 @@
 !! species b), b.grad theta/b, q, dpsi_pol/dr [Wb/m], dpsi_pol/ds [Wb], G [T m],
 !! <B^2> [T^2] and the status; then per surface a line 'flows' with s, the
 !! parallel flow <u_par B> of every species [T m/s] and the bootstrap current
-!! <j_par B> [T A/m^2] for the gradients and Omega_tE of the input.
+!! <j_par B> [T A/m^2] for the gradients and Omega_tE of the input, and a line
+!! 'rotation' with s, G_phi [T m] and per species omega and k_pol, so that the
+!! toroidal rotation is V_phi/R = omega + k_pol/R^2 [rad/s] at major radius R.
 program ntv_axisymmetric_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -54,8 +56,12 @@ program ntv_axisymmetric_profile
                 end if
             end do
         end do
-        if (result(i)%status == DEVICE_OK) print '(a,f12.8,*(es18.9))', 'flows ', prof%s(i), &
-            result(i)%flow, result(i)%bootstrap
+        if (result(i)%status == DEVICE_OK) then
+            print '(a,f12.8,*(es18.9))', 'flows ', prof%s(i), result(i)%flow, &
+                result(i)%bootstrap
+            print '(a,f12.8,*(es18.9))', 'rotation ', prof%s(i), result(i)%g_phi, &
+                (result(i)%omega(a), result(i)%k_pol(a), a=1, size(species))
+        end if
     end do
     write (error_unit, '(a,f10.2)') 'wall s ', real(c1 - c0, dp)/rate
     if (status /= DEVICE_OK) error stop 1

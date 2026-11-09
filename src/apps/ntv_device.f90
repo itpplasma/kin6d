@@ -42,7 +42,7 @@ module milca_ntv_device
     private
     public :: ntv_species_t, ntv_profile_t, ntv_resolution_t, ntv_species_result_t
     public :: ntv_device_profile, deflection_frequency, ntv_read_input, &
-        ntv_device_axisymmetric, ntv_axisymmetric_result_t
+        ntv_device_axisymmetric, ntv_axisymmetric_result_t, ntv_omega_te_from_rotation
     integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2, &
         DEVICE_NO_CONVERGENCE = 3
 
@@ -100,16 +100,19 @@ module milca_ntv_device
     !> ntv_axisymmetric_coefficients (responses i = particle, energy, parallel
     !> flow of species a to the drives j = A_1, A_2, parallel field of species
     !> b), b.grad theta/b (kappa), q, dpsi_pol/dr [Wb/m], dpsi_pol/ds [Wb], the
-    !> covariant toroidal field G [T m], <B^2> [T^2], the parallel flow <u_par B>
-    !> of each species [T m/s], the bootstrap current <j_par B> [T A/m^2] and
-    !> the status. With D_3j = -2 kappa q G d(a, b, 3, j) [m^2/s T per unit A_j],
+    !> covariant toroidal field G [T m] of the file and G_phi, the same along
+    !> the toroidal direction of Omega_tE, <B^2> [T^2], the parallel flow <u_par B> of each
+    !> species [T m/s], the bootstrap current <j_par B> [T A/m^2], and the
+    !> toroidal rotation V_phi/R = omega + k_pol/R^2 [rad/s] of each species with
+    !> omega = Omega_tE + p'/(Z e n) and k_pol = G_phi (<u_par B> - omega G_phi)
+    !> /<B^2> [m^2/s], and the status. With D_3j = -2 kappa q G d(a, b, 3, j) [m^2/s T per unit A_j],
     !> <u_par B>_a = -sum_b (D_31 A_1 + D_32 A_2) of species b; momentum-conserving
     !> self-collisions give D_31 = G T/(Z e) for a single species: A_1 drives
     !> the rigid rotation alone.
     type :: ntv_axisymmetric_result_t
-        real(dp), allocatable :: d(:, :, :, :), flow(:)
-        real(dp) :: kappa = 0, q = 0, dpsi_dr = 0, psi_pol_s = 0, g_cov = 0, b2 = 0, &
-            bootstrap = 0
+        real(dp), allocatable :: d(:, :, :, :), flow(:), omega(:), k_pol(:)
+        real(dp) :: kappa = 0, q = 0, dpsi_dr = 0, psi_pol_s = 0, g_cov = 0, g_phi = 0, &
+            b2 = 0, bootstrap = 0
         integer :: status = DEVICE_OK
     end type
 
@@ -529,7 +532,7 @@ contains
         allocate (sf(ns), result(ns))
         do i = 1, ns
             call surface(eq, pert, n_tor, prof%s(i), res, sf(i), j0, result(i)%dpsi_dr, &
-                result(i)%psi_pol_s, status, result(i)%g_cov, result(i)%b2)
+                result(i)%psi_pol_s, status, result(i)%g_cov, result(i)%b2, result(i)%g_phi)
             if (status /= DEVICE_OK) return
         end do
         !$omp parallel do schedule(dynamic, 1) default(shared) private(i)
@@ -581,8 +584,49 @@ contains
                 r%flow(a) = -conv*(sum(r%d(a, :, 3, 1)*a1) + sum(r%d(a, :, 3, 2)*a2))
             end do
             r%bootstrap = sum(species%z*elementary*prof%density(i, :)*r%flow)
+            allocate (r%omega(nsp), r%k_pol(nsp))
+            do a = 1, nsp
+                r%omega(a) = prof%omega_te(i) + prof%temperature(i, a) &
+                    /(species(a)%z*elementary)*(prof%density_s(i, a)/prof%density(i, a) &
+                    + prof%temperature_s(i, a)/prof%temperature(i, a))/r%psi_pol_s
+                r%k_pol(a) = r%g_phi*(r%flow(a) - r%omega(a)*r%g_phi)/r%b2
+            end do
         end subroutine flows
     end subroutine ntv_device_axisymmetric
+
+    !> E x B rotation Omega_tE [rad/s] of surface i from the radial force
+    !> balance, given the toroidal rotation V_phi/R [rad/s] of species a at
+    !> major radius r_major [m] (NEO-2 isw_calc_er = 1). V_phi/R is linear in
+    !> Omega_tE through omega_a and through A_1 of every species in the flow,
+    !> so two evaluations of the result's model give the root.
+    function ntv_omega_te_from_rotation(r, species, prof, i, a, r_major, rotation) &
+            result(omega_te)
+        type(ntv_axisymmetric_result_t), intent(in) :: r
+        type(ntv_species_t), intent(in) :: species(:)
+        type(ntv_profile_t), intent(in) :: prof
+        integer, intent(in) :: i, a
+        real(dp), intent(in) :: r_major, rotation
+        real(dp) :: omega_te, v0, v1
+        v0 = model(0.0_dp)
+        v1 = model(1.0_dp)
+        omega_te = (rotation - v0)/(v1 - v0)
+    contains
+        real(dp) function model(om)
+            real(dp), intent(in) :: om
+            real(dp) :: a1(size(species)), a2(size(species)), flow, omega
+            integer :: b
+            do b = 1, size(species)
+                a2(b) = prof%temperature_s(i, b)/(prof%temperature(i, b)*r%psi_pol_s)
+                a1(b) = prof%density_s(i, b)/(prof%density(i, b)*r%psi_pol_s) &
+                    + species(b)%z*elementary/prof%temperature(i, b)*om - 1.5_dp*a2(b)
+            end do
+            flow = 2*r%kappa*r%q*r%g_cov*(sum(r%d(a, :, 3, 1)*a1) + sum(r%d(a, :, 3, 2)*a2))
+            omega = om + prof%temperature(i, a)/(species(a)%z*elementary) &
+                *(prof%density_s(i, a)/prof%density(i, a) &
+                + prof%temperature_s(i, a)/prof%temperature(i, a))/r%psi_pol_s
+            model = omega + r%g_phi*(flow - omega*r%g_phi)/(r%b2*r_major**2)
+        end function model
+    end function ntv_omega_te_from_rotation
 
     !> Energy-coupled kernel per surface (one OpenMP unit per surface), with
     !> the species coupled through the collision operator:
@@ -734,7 +778,7 @@ contains
     !> harmonics of toroidal number n_tor resolved by the theta grid, and the
     !> flux-function factors of the torque.
     subroutine surface(eq, pert, n_tor, s, res, sf, j0, dpsi_dr, psi_pol_s, status, g_cov, &
-            b2_avg)
+            b2_avg, g_phi)
         type(boozer_file_t), intent(in) :: eq, pert
         integer, intent(in) :: n_tor
         real(dp), intent(in) :: s
@@ -742,7 +786,7 @@ contains
         type(ntv_surface_t), intent(out) :: sf
         real(dp), intent(out) :: j0, dpsi_dr, psi_pol_s
         integer, intent(out) :: status
-        real(dp), intent(out), optional :: g_cov, b2_avg
+        real(dp), intent(out), optional :: g_cov, b2_avg, g_phi
         type(boozer_surface_t) :: es, ps
         type(ntv_boozer_line_t) :: line
         real(dp) :: theta, bmod, grad_s, b2
@@ -786,6 +830,9 @@ contains
         call boozer_average(es, 2*res%n_theta, 1, grad_s, b2)
         dpsi_dr = psi_pol_s*grad_s
         if (present(g_cov)) g_cov = es%g_cov
+        ! NEO-2 counts Omega_tE and V_phi along the toroidal direction in which
+        ! the covariant field is -G of the file (ITER TC24 and AUG 30835).
+        if (present(g_phi)) g_phi = -es%g_cov
         if (present(b2_avg)) b2_avg = b2
         status = DEVICE_OK
     end subroutine surface
