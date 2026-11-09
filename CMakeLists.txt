@@ -1050,7 +1050,7 @@ add_executable(boozer_orbit_scan app/boozer_orbit_scan.f90)
 target_link_libraries(boozer_orbit_scan PRIVATE milca)
 add_executable(test_boozer_orbit test/test_boozer_orbit.f90)
 target_link_libraries(test_boozer_orbit PRIVATE milca)
-foreach(check deeply_trapped thin_bounce invariants)
+foreach(check deeply_trapped thin_bounce invariants pitch_map)
     add_test(NAME boozer_orbit_${check} COMMAND test_boozer_orbit ${check})
     milca_test_labels(boozer_orbit_${check} fast CLASSES equilibrium
         TARGETS test_boozer_orbit)

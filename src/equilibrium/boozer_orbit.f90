@@ -23,7 +23,7 @@ module milca_boozer_orbit
     implicit none
     private
     public :: orbit_particle_t, orbit_point_t, orbit_state, orbit_point, orbit_frequencies, &
-        orbit_flux_p
+        orbit_flux_p, orbit_pitch_point
     integer, parameter, public :: ORBIT_OK = 0, ORBIT_BAD_INPUT = 1, ORBIT_NO_ROOT = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -38,9 +38,10 @@ module milca_boozer_orbit
     end type
 
     !> The orbit at one theta: s, rho [m], v_par [m/s], B [T], theta_dot and
-    !> zeta_dot [rad/s].
+    !> zeta_dot [rad/s], and the magnetic moment mu [J/T] of the orbit through
+    !> the point (set by orbit_pitch_point).
     type :: orbit_point_t
-        real(dp) :: s = 0, rho = 0, v_par = 0, b = 0, theta_dot = 0, zeta_dot = 0
+        real(dp) :: s = 0, rho = 0, v_par = 0, b = 0, theta_dot = 0, zeta_dot = 0, mu = 0
     end type
 
 contains
@@ -190,6 +191,84 @@ contains
             q%zeta_dot = (h_rho*(1 + rho*i_s/psi_prime) - h_psi*i)/d
         end subroutine evaluate
     end subroutine orbit_point
+
+    !> The point at theta with local pitch xi = v_par/v of the orbit family
+    !> with surface s_star and total energy p%energy (p%mu is ignored): s is
+    !> the root of rho G = psi_p(s) - psi_p(s*), rho = m xi v/(Z e B), v the
+    !> speed from the energy at s, bracketed outwards from s* on the side of
+    !> the sign of rho G/iota and refined by bisection. pt%mu is the magnetic
+    !> moment of the orbit through the point, so that mu over (theta, xi) is
+    !> the stream function of the orbits at fixed (s*, H).
+    subroutine orbit_pitch_point(bf, p, s_star, theta, xi, pt, status)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, theta, xi
+        type(orbit_point_t), intent(out) :: pt
+        integer, intent(out) :: status
+        type(orbit_particle_t) :: q
+        real(dp) :: lo, hi, f_lo, f_hi, mid, f_mid, step, dir, b, b_s, g, i, g_s, i_s, &
+            iota, psi_prime, v
+        integer :: it
+        status = ORBIT_BAD_INPUT
+        if (p%mass <= 0 .or. p%charge == 0 .or. abs(xi) > 1) return
+        call orbit_state(bf, s_star, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, status)
+        if (status /= ORBIT_OK) return
+        lo = s_star
+        f_lo = residual(lo)
+        if (f_lo == 0) then
+            hi = lo
+        else
+            dir = sign(1.0_dp, f_lo*iota*psi_prime)
+            step = 1e-4_dp
+            do it = 1, 60
+                hi = s_star + dir*step
+                if (hi <= bf%d%s(1) .or. hi >= bf%d%s(size(bf%d%s))) then
+                    status = ORBIT_NO_ROOT
+                    return
+                end if
+                f_hi = residual(hi)
+                if (f_hi*f_lo <= 0) exit
+                step = 2*step
+            end do
+            if (f_hi*f_lo > 0) then
+                status = ORBIT_NO_ROOT
+                return
+            end if
+            do it = 1, 200
+                mid = 0.5_dp*(lo + hi)
+                f_mid = residual(mid)
+                if (f_mid*f_lo > 0) then
+                    lo = mid
+                    f_lo = f_mid
+                else
+                    hi = mid
+                end if
+                if (abs(hi - lo) < 1e-15_dp) exit
+            end do
+        end if
+        mid = 0.5_dp*(lo + hi)
+        call orbit_state(bf, mid, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, status)
+        if (status /= ORBIT_OK) return
+        v = speed(mid)
+        q = p
+        q%mu = p%mass*v**2*(1 - xi**2)/(2*b)
+        call orbit_point(bf, q, s_star, theta, sign(1.0_dp, xi), pt, status)
+        pt%mu = q%mu
+    contains
+        real(dp) function speed(s)
+            real(dp), intent(in) :: s
+            speed = sqrt(max(2*(p%energy + p%charge*p%omega_e*orbit_flux_p(bf, p%s_ref, s)) &
+                /p%mass, 0.0_dp))
+        end function speed
+
+        real(dp) function residual(s)
+            real(dp), intent(in) :: s
+            real(dp) :: bb, bs, gg, ii, gs, is, io, pp
+            integer :: st
+            call orbit_state(bf, s, theta, bb, bs, gg, ii, gs, is, io, pp, st)
+            residual = p%mass*xi*speed(s)/(p%charge*bb)*gg - orbit_flux_p(bf, s_star, s)
+        end function residual
+    end subroutine orbit_pitch_point
 
     !> Poloidal and toroidal frequencies of the orbit with surface s_star and
     !> the energy and magnetic moment of p. A trapped

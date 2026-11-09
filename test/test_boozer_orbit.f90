@@ -8,13 +8,17 @@
 !!                   2 pi/oint G dtheta/(v_par iota B) at s* as the mass goes
 !!                   to zero at fixed speed; the correction is quadratic in the
 !!                   mass (orbit width) because the field is up-down symmetric;
-!!   invariants      every orbit point carries the energy of the orbit.
+!!   invariants      every orbit point carries the energy of the orbit;
+!!   pitch_map       the pitch map returns the magnetic moment of the orbit at
+!!                   every point of it (mu is the stream function of the
+!!                   orbits at fixed s* and H), and mu B(s*, theta)/E tends to
+!!                   1 - xi^2 for thin orbits.
 program test_boozer_orbit
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, boozer_surface_t, &
         boozer_surface, BOOZER_OK
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_point, &
-        orbit_frequencies, orbit_state, ORBIT_OK
+        orbit_frequencies, orbit_state, orbit_pitch_point, ORBIT_OK
     use fortnum_quadrature, only: gauss_legendre
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp), e = 1.602176634e-19_dp
@@ -34,6 +38,7 @@ program test_boozer_orbit
     case ('deeply_trapped'); ok = deeply_trapped()
     case ('thin_bounce'); ok = thin_bounce()
     case ('invariants'); ok = invariants()
+    case ('pitch_map'); ok = pitch_map()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -147,6 +152,34 @@ contains
         ok = worst < 1e-10_dp
         print '(a,es10.2)', 'energy error', worst
     end function invariants
+
+    logical function pitch_map() result(ok)
+        type(orbit_particle_t) :: p, thin
+        type(orbit_point_t) :: pt, back
+        real(dp) :: th, worst, xi, v, b, b_s, g, i, g_s, i_s, iota, psi_prime, e_kin
+        integer :: k, st
+        p = particle(1.0_dp, 0.97_dp, 3e3_dp)
+        worst = 0
+        do k = -4, 4
+            th = 0.1_dp*k
+            call orbit_point(bf, p, s_star, th, merge(1.0_dp, -1.0_dp, k >= 0), pt, st)
+            if (st /= ORBIT_OK) exit
+            ! Kinetic energy E - Z e Phi with Phi = -omega_e (psi_p - psi_p(s*)).
+            v = sqrt(2*(p%energy + p%charge*p%omega_e*psi_p(pt%s))/p%mass)
+            xi = pt%v_par/v
+            call orbit_pitch_point(bf, p, s_star, th, xi, back, st)
+            if (st /= ORBIT_OK) exit
+            worst = max(worst, abs(back%mu/p%mu - 1), abs(back%s - pt%s))
+        end do
+        ok = st == ORBIT_OK .and. worst < 1e-10_dp
+        print '(a,es10.2)', 'mu and s along the orbit, worst deviation', worst
+        thin = particle(1e-6_dp, 0.97_dp, 0.0_dp)
+        xi = 0.3_dp
+        call orbit_pitch_point(bf, thin, s_star, 1.0_dp, xi, back, st)
+        call orbit_state(bf, s_star, 1.0_dp, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+        e_kin = thin%energy
+        ok = ok .and. close('thin mu B/E', back%mu*b/e_kin, 1 - xi**2, 1e-5_dp)
+    end function pitch_map
 
     !> psi_p(s) - psi_p(s*) = psi' int iota ds, exact by the trapezoid for the
     !> linear iota of the file.
