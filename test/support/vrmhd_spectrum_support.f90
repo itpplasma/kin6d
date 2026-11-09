@@ -1,6 +1,6 @@
 module vrmhd_spectrum_support
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &

@@ -376,7 +376,7 @@ must still be checked independently. An inward loop measures enclosed current
 and excludes its edge layer; it is a different observable from total current.
 Do not replace a pre-declared inward-loop gate silently with a boundary loop.
 
-`kin6d_gs_ampere_loop::gs_boundary_current` also returns optional nodal
+`milca_gs_ampere_loop::gs_boundary_current` also returns optional nodal
 weights. At fixed geometry and mu0 they define the linear coefficient JVP
 and Euclidean transpose VJP; shape derivatives are unavailable. It reuses
 the generated GS current-sheet leaf for the signed physical contraction.
@@ -433,7 +433,7 @@ off-equation perturbations and normalized-source derivatives are also checked.
 
 ## Fixed-source error estimator
 
-`kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional
+`milca_gs_majorant::gs_functional_majorant` computes a Repin functional
 majorant for `-div(grad(psi)/R)=mu0*pprime*R+FFprime/R`, with homogeneous
 Dirichlet data. It recovers a continuous vector P2 flux `y` by minimizing
 `D^2+C_F^2*B^2`, where `D=||sqrt(R)*(y-grad(psi)/R)||` and
@@ -450,7 +450,7 @@ limit. It prints the flux and balance contributions separately. Recovery uses
 O(DOF) storage and a separate symmetric positive-definite solve; its cost is
 not included in the reported primal mesh/assembly/solve timing.
 
-`kin6d_gs_equilibrated::gs_equilibrated_majorant` is the production default
+`milca_gs_equilibrated::gs_equilibrated_majorant` is the production default
 through `gs_fixed_certifier_t` and `gs_phase1`, on affine and mapped P1--P3
 meshes. FortFEM solves one small RT_p saddle-point problem per vertex patch;
 there is no global recovery solve. Physical coefficient/flux factors and their

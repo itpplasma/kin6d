@@ -31,7 +31,7 @@ program test_nonnested_force
     use kin6d_nonnested_force, only: nf_system_t, nf_report_t, nf_prepare, &
         nf_free, nf_load, nf_lorentz_load, nf_project, nf_potential_solve, &
         nf_l2_error, nf_deflate
-    use kin6d_equilibrium_harness, only: equilibrium_floor_report_t, &
+    use milca_equilibrium_harness, only: equilibrium_floor_report_t, &
         equilibrium_residual_floor, write_residual_floor
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use fortsparse, only: csc_matvec

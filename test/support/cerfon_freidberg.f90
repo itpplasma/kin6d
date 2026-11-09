@@ -3,9 +3,9 @@ module cerfon_freidberg_fixture
     ! Cerfon & Freidberg, Phys. Plasmas 17, 032502 (2010),
     ! https://doi.org/10.1063/1.3328818, eqs. (5)-(11), Secs. V-VI.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_cerfon_freidberg_leaves, only: cerfon_freidberg_jet, &
+    use milca_cerfon_freidberg_leaves, only: cerfon_freidberg_jet, &
         cerfon_freidberg_jet_jvp, cerfon_freidberg_jet_vjp
-    use kin6d_equilibrium_bulk_leaves, only: equilibrium_bulk_density, &
+    use milca_equilibrium_bulk_leaves, only: equilibrium_bulk_density, &
         equilibrium_bulk_density_jvp, equilibrium_bulk_density_vjp, &
         equilibrium_bulk_normalize, equilibrium_bulk_normalize_jvp, &
         equilibrium_bulk_normalize_vjp

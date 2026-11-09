@@ -2,7 +2,7 @@ module geqdsk_analytic_oracle
     ! Independent polynomial Solov'ev oracle, also the declared continuation.
     ! Same published family as test_equilibrium_core, not a production leaf.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
                                        EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
     implicit none
     real(dp), parameter :: r0 = 2, minor = 0.3_dp, f0 = 4, c = f0/(12*r0**3)
@@ -53,11 +53,11 @@ program test_geqdsk_adapter
     use geqdsk_analytic_oracle, only: oracle_t, r0, minor, f0, c, pi, mu0, q_oracle
     use milca_geqdsk_adapter, only: geqdsk_data_t, geqdsk_import_t, export_geqdsk, &
                                 import_geqdsk, geqdsk_grid, resolve_geqdsk, native_cocos
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, EQ_PSI, EQ_BZ
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrium, only: gs_equilibrium
-    use kin6d_gs_ampere_loop, only: gs_boundary_current
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, EQ_PSI, EQ_BZ
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrium, only: gs_equilibrium
+    use milca_gs_ampere_loop, only: gs_boundary_current
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
     use geqdsk_tools, only: geqdsk_t, geqdsk_read, geqdsk_write
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, eqdsk_read, psi_eval, &
                                      profiles_of_psin, surface_t, surface_build

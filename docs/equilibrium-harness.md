@@ -1,6 +1,6 @@
 # D8 equilibrium verification harness
 
-`kin6d_equilibrium_harness` owns the M6 case registry, seed descriptions,
+`milca_equilibrium_harness` owns the M6 case registry, seed descriptions,
 resolution validation and report contract. `run_equilibrium_case` invokes a
 lane driver and returns `equilibrium_state_t` plus `equilibrium_run_report_t`.
 The driver is an explicit procedure argument: the equilibrium layer does not

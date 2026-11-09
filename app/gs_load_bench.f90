@@ -4,9 +4,9 @@ program gs_load_bench
     !! range) and knot (one C1 knot inside: smooth rule on the crossed cells).
     !! Usage: gs_load_bench MODE MAX_AREA NREP [write|compare FILE [TOL]]
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_reset, &
                                GS_T_LOAD_CELLS
     implicit none

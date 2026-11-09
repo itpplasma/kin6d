@@ -1,6 +1,6 @@
 program test_vrmhd_fourier
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight

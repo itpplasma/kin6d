@@ -1,6 +1,6 @@
 # E2.1: exact symmetric limiter equilibria; numerical evidence, no certificate.
 target_sources(kin6d_equilibrium PRIVATE
-    src/generated/kin6d_equilibrium_bulk_leaves.f90)
+    src/generated/milca_equilibrium_bulk_leaves.f90)
 if(KIN6D_FORTSYM_BUILD)
     foreach(family cerfon_freidberg equilibrium_bulk)
         add_executable(gen_${family} gen/gen_${family}.f90)
@@ -8,7 +8,7 @@ if(KIN6D_FORTSYM_BUILD)
         add_test(NAME equilibrium_${family}_regeneration COMMAND ${CMAKE_COMMAND}
             -DGENERATOR=$<TARGET_FILE:gen_${family}>
             -DFAMILY=${family}
-            -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_${family}_leaves.f90
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_${family}_leaves.f90
             -DWORK=${CMAKE_BINARY_DIR}/${family}-regeneration
             -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_e21_regeneration.cmake)
         set_tests_properties(equilibrium_${family}_regeneration PROPERTIES TIMEOUT 60)
@@ -18,7 +18,7 @@ if(KIN6D_FORTSYM_BUILD)
 endif()
 
 add_library(kin6d_gs_cf_test STATIC
-    src/generated/kin6d_cerfon_freidberg_leaves.f90
+    src/generated/milca_cerfon_freidberg_leaves.f90
     test/support/cerfon_freidberg.f90)
 target_link_libraries(kin6d_gs_cf_test PUBLIC kin6d_equilibrium)
 add_executable(test_gs_cerfon_freidberg test/test_gs_cerfon_freidberg.f90)

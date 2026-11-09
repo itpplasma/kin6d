@@ -1,4 +1,4 @@
-module kin6d_gs_free_boundary
+module milca_gs_free_boundary
     !! Free-boundary Grad-Shafranov Newton solver on the FEM-BEM coupled
     !! operator (DESIGN sections 1.2 and 2).
     !!
@@ -6,16 +6,16 @@ module kin6d_gs_free_boundary
     !!
     !!     F(psi; I) = A psi - b(psi) - sum_k I_k load_k - extra,
     !!
-    !! A = K + S_h the coupled operator of kin6d_gs_coupling, load_k the coil
+    !! A = K + S_h the coupled operator of milca_gs_coupling, load_k the coil
     !! loads, extra a psi-independent nodal load, and b the plasma source
     !!
     !!     b_i = int f(s, R) 1{plasma} v_i dA,  s = (psi - psi_a)/(psi_b - psi_a),
     !!
-    !! with the normalised profile law of kin6d_gs_profile_law (s = 0 on the
+    !! with the normalised profile law of milca_gs_profile_law (s = 0 on the
     !! axis, s = 1 on the last closed surface, f = mu0 R p' + F F'/R inside
     !! and zero outside). The plasma is the connected set of s < 1 around
     !! the axis. The cut at s = 1 is one more level of the exact cubic
-    !! level-cut quadrature of kin6d_gs_nonlinear.
+    !! level-cut quadrature of milca_gs_nonlinear.
     !!
     !! Flux levels. psi_a is the extremum of the represented flux near the
     !! axis (a maximum when axis_sign = +1). psi_b is a linear functional of
@@ -70,13 +70,13 @@ module kin6d_gs_free_boundary
                                GS_DIRECT_ORDER_ND
     use milca_sort_keys, only: sort_key_order
     use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
                                   gs_requested_device
-    use kin6d_gs_coils, only: gs_circuit_set_t
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
+    use milca_gs_coils, only: gs_circuit_set_t
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
                                  gs_coupling_coil_load, GS_COUPLING_OK
-    use kin6d_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
     use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
                                     cubic_segment_stationary, &
                                     triangle_bernstein_controls
@@ -2650,4 +2650,4 @@ contains
         call gs_fb_newton(state, sys, currents, status, history)
     end subroutine solve_stage
 
-end module kin6d_gs_free_boundary
+end module milca_gs_free_boundary

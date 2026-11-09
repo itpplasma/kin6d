@@ -1,4 +1,4 @@
-module kin6d_equilibrium_state
+module milca_equilibrium_state
     ! One physical equilibrium state S = (B, p, Lambda, C, pi) shared by the
     ! psi, map and free-B lanes (docs/equilibrium-core.md, D1). The core holds
     ! the field through an evaluator, never a vector potential:
@@ -11,7 +11,7 @@ module kin6d_equilibrium_state
     ! boundary) knows psi only up to a constant; it declares that by the gauge
     ! EQ_GAUGE_BOUNDARY, and psi_bound is then its value on the boundary.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_chart, only: ideal_chart_t
+    use milca_equilibrium_chart, only: ideal_chart_t
     implicit none
     private
     public :: equilibrium_field_t, labelled_field_t, equilibrium_state_t
@@ -148,4 +148,4 @@ contains
         end select
         if (mu0 <= 0) status = 1
     end subroutine
-end module kin6d_equilibrium_state
+end module milca_equilibrium_state

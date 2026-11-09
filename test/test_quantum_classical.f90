@@ -24,7 +24,7 @@ program test_quantum_classical
     use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, &
         mc_energy
     use kin6d_quantum_fock, only: fock_matvec, fock_hamiltonian_t
-    use kin6d_quantum_fock_leaves, only: qf_kinetic
+    use milca_quantum_fock_leaves, only: qf_kinetic
     use fortnum_symmetric_eigen, only: symmetric_eigen
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)

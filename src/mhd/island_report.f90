@@ -8,7 +8,7 @@ module kin6d_island_report
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_residual, nc_store, nc_source_data
     use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_nonnested_leaves, only: island_defect_density, island_defect_norm
     implicit none
     private

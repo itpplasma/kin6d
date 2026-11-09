@@ -40,8 +40,8 @@ program test_ideal_map_hessian
     ! The Hessian, energy and gradient must not depend on the OpenMP team
     ! size (bitwise), including teams larger than the number of cells.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
         ideal_map_hessian, ideal_map_energy, ideal_map_expand, ideal_map_reduce, &
         IDEAL_MAP_OK

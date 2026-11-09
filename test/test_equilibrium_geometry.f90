@@ -5,7 +5,7 @@ module test_geometry_fields
     !           q_t = q0 + q2 r^2, whence q(r) = q_t R0/sqrt(R0^2 - r^2), the
     !           volume V = 2 pi^2 R0 r^2 and |grad psi| constant on a surface.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
     implicit none
     private
@@ -120,11 +120,11 @@ program test_equilibrium_geometry
     !   state     view of a psi-lane P3 Solov'ev state against the D7 readback
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_equilibrium_geometry
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrium, only: gs_equilibrium
+    use milca_equilibrium_geometry
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrium, only: gs_equilibrium
     use test_geometry_fields
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), two_pi = 2*pi

@@ -1,11 +1,11 @@
 program test_gs_axis_refinement
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_axis_candidate, gs_axis_safety_factor, sample_gs
-    use kin6d_gs_axis_recovery, only: gs_magnetic_axis
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
+    use milca_gs_axis_recovery, only: gs_magnetic_axis
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = r0/3, c = 32.86_dp/(12*r0**3)
     real(dp), parameter :: rc = 62.0_dp, ac = 0.62_dp

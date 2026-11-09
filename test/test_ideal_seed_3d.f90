@@ -6,8 +6,8 @@ program test_ideal_seed_3d
         ideal_map_init, ideal_map_freeze, ideal_map_prolong, ideal_map_hessian, &
         ideal_map_expand, ideal_map_reduce
     use fortfem_element_to_csr, only: csr_matrix_t
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_grad_shafranov, only: gs_state_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t
     use kin6d_ideal_seed_3d_leaves, only: seed_boundary_mode, &
         seed_boundary_mode_jvp, seed_boundary_mode_vjp
     use omp_lib, only: omp_set_num_threads

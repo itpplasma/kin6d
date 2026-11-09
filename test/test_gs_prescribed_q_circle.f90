@@ -1,11 +1,11 @@
 program test_gs_prescribed_q_circle
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, sample_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, sample_gs, &
                                     write_gs_mesh, read_gs_mesh
-    use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives, &
+    use milca_gs_prescribed_q, only: solve_gs_prescribed_q
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives, &
                                     write_gs_profile_law, read_gs_profile_law
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = r0/10, b0 = 5.3_dp
     real(dp), parameter :: mu0 = 1.2566370614359173e-6_dp

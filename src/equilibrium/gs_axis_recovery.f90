@@ -1,6 +1,6 @@
-module kin6d_gs_axis_recovery
+module milca_gs_axis_recovery
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, gs_axis_candidate
+    use milca_grad_shafranov, only: gs_state_t, gs_axis_candidate
     implicit none
     private
     public :: gs_magnetic_axis

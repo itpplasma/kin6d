@@ -1,4 +1,4 @@
-module kin6d_gs_symmetry
+module milca_gs_symmetry
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_gs_symmetry_leaves, only: gs_screw_profile_source, &
@@ -68,4 +68,4 @@ contains
                 dpp, dff, source, tangent)
         end select
     end subroutine
-end module kin6d_gs_symmetry
+end module milca_gs_symmetry

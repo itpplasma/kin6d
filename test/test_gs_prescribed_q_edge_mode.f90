@@ -8,11 +8,11 @@ program test_gs_prescribed_q_edge_mode
     ! The discrepancy-principle regularization (misfit = the truth law's own
     ! coarse-mesh misfit) recovers a smooth FF' close to the truth.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q, gs_q_table_value
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_prescribed_q, only: solve_gs_prescribed_q, gs_q_table_value
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium, &
                                  gs_readback_resolution
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = r0/10, mu0 = 1.2566370614359173e-6_dp

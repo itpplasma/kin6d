@@ -292,9 +292,9 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     endif()
     string(REPLACE "kin6d_" "" family_directory "${family_layer}")
     target_sources(${family_layer} PRIVATE
-        src/generated/kin6d_${quantum_family}_leaves.f90
+        src/generated/milca_${quantum_family}_leaves.f90
         src/${family_directory}/${quantum_family}.f90)
-    set_source_files_properties(src/generated/kin6d_${quantum_family}_leaves.f90
+    set_source_files_properties(src/generated/milca_${quantum_family}_leaves.f90
         PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 endforeach()
 # Q1/Q1b partial-wave encounter: banded symmetric eigensolver from LAPACK,

@@ -19,11 +19,11 @@ module kin6d_mean_field_cell
     use fortnum_symmetric_eigen, only: symmetric_eigen
     use kin6d_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
         get_fock_integrals, fock_matvec, fock_basis_info, get_fock_states
-    use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
+    use milca_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
     use kin6d_jellium_cell, only: jellium_cell_t, jellium_sector_t, &
         jellium_spectrum_t, jellium_sector, jellium_sector_momenta, &
         jellium_density_model, jellium_lowest
-    use kin6d_jellium_cell_leaves, only: jc_fermi, jc_susceptibility
+    use milca_jellium_cell_leaves, only: jc_fermi, jc_susceptibility
     use kin6d_mean_field_cell_leaves, only: mf_entropy, mf_free_energy, &
         mf_temple_interval
     implicit none

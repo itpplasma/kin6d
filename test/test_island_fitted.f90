@@ -1,6 +1,6 @@
 module fitted_island_data
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BPHI
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BPHI
     use kin6d_nonnested_profile, only: nn_profile_t
     implicit none
     type, extends(equilibrium_field_t) :: seed_t
@@ -58,7 +58,7 @@ program test_island_fitted
         nc_validate, nc_source_data, nc_fixed, nc_reduce, nc_residual, &
         nc_jacobian, nc_jvp, nc_vjp
     use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_island_case, only: island_case_read
     use kin6d_island_closure, only: ISLAND_INVALID, ISLAND_DELEGATE_B, ISLAND_BAD_DATA
     use kin6d_island_report, only: island_report_t, island_residual_report

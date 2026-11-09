@@ -1,6 +1,6 @@
 module kin6d_vrmhd_section
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix, &
         VRMHD_POINT_MATRIX_CALLS

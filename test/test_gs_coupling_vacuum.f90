@@ -1,14 +1,14 @@
 program test_gs_coupling_vacuum
     !! T1 (DESIGN 5.1): coils outside Gamma_c, no plasma. The coupled solution
     !! of a(psi, v) + <S psi, v> = sum_k I_k <g_k, v> is psi = sum_k I_k g_k
-    !! inside Gamma_c, with g_k the coil flux of kin6d_gs_coils evaluated
+    !! inside Gamma_c, with g_k the coil flux of milca_gs_coils evaluated
     !! directly. Errors are measured at all nodes and at interior sample
     !! points, and their convergence is checked under mesh refinement (P2 and
     !! P3) and under panel refinement of the BEM (fixed mesh).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
                                  gs_coupling_coil_load, gs_coupled_solve, GS_COUPLING_OK
     use gs_coupling_fixture, only: build_state, build_coils, fe_value
     implicit none

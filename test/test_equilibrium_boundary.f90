@@ -17,7 +17,7 @@ program test_equilibrium_boundary
         gamma_c_exterior, gamma_c_coil_traces, axisymmetric_coils_t, &
         polyline_coils_t, GAMMA_C_SCALAR, GAMMA_C_OK
     use milca_coils_3d, only: coil_set_from_polylines
-    use kin6d_gs_coils, only: gs_coil_filaments
+    use milca_gs_coils, only: gs_coil_filaments
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     character(16) :: argument

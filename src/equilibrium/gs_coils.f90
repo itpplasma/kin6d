@@ -1,4 +1,4 @@
-module kin6d_gs_coils
+module milca_gs_coils
     !! Coils and circuits for the free-boundary Grad-Shafranov problem.
     !!
     !! Flux convention.  Every coil flux is the poloidal flux per radian
@@ -658,4 +658,4 @@ contains
         call move_alloc(tmp, inc)
     end subroutine grow_incidence
 
-end module kin6d_gs_coils
+end module milca_gs_coils

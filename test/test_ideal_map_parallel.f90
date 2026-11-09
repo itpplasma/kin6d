@@ -22,8 +22,8 @@ program test_ideal_map_parallel
     !                      solves take another Newton path, and the end-point
     !                      oracle error agrees with the baseline.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &
         ideal_map_hessian, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_parallel_mass, ideal_map_rdof, ideal_map_point, ideal_map_expand, &

@@ -6,7 +6,7 @@ module kin6d_fermi_gas
     use fortnum_roots, only: root_newton
     use fortnum_status, only: fortnum_status_t, status_ok
     use fortnum_verified_quadrature, only: composite_midpoint_batch
-    use kin6d_fermi_gas_leaves, only: fermi_add_interval, fermi_apply_direction, &
+    use milca_fermi_gas_leaves, only: fermi_add_interval, fermi_apply_direction, &
         fermi_apply_direction_interval, fermi_apply_direction_vjp, &
         fermi_apply_direction_vjp_interval, fermi_argument, fermi_argument_interval, &
         fermi_curvature_interval, fermi_density_curvature_interval, &

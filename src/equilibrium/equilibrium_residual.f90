@@ -1,4 +1,4 @@
-module kin6d_equilibrium_residual
+module milca_equilibrium_residual
     ! One residual for every lane (docs/equilibrium-core.md, D3): the weak
     ! Maxwell-stress form
     !   R[xi] = int (B.grad xi.B/mu0 - (|B|^2/(2 mu0) + p) div xi) dV,
@@ -27,13 +27,13 @@ module kin6d_equilibrium_residual
     ! enclosed: the claim is a practical upper bound, never a certificate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t
+    use milca_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_geometry
     use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls
     use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_spd_matrix
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_P, EQ_VALUES
     use kin6d_equilibrium_core_leaves, only: stress_residual_density
     use kin6d_equilibrium_core_leaves, only: riesz_source, riesz_coefficient, &
@@ -375,4 +375,4 @@ contains
         end if
         status = 0
     end subroutine
-end module kin6d_equilibrium_residual
+end module milca_equilibrium_residual

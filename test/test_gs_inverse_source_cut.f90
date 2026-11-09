@@ -1,7 +1,7 @@
 program test_gs_inverse_source_cut
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_tangent_cache, &
+    use milca_grad_shafranov, only: gs_state_t, gs_profile_tangent_cache, &
         gs_profile_load_jvp
     implicit none
     type(gs_state_t) :: s

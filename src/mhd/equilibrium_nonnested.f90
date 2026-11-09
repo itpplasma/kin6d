@@ -18,9 +18,9 @@ module kin6d_equilibrium_nonnested
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate
-    use kin6d_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
+    use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_nonnested_leaves, only: axisymmetric_pressure, fieldline_velocity
     implicit none
     private

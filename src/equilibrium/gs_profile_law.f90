@@ -1,4 +1,4 @@
-module kin6d_gs_profile_law
+module milca_gs_profile_law
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use kin6d_grad_shafranov_leaves, only: gs_cubic, gs_cubic_jvp, &

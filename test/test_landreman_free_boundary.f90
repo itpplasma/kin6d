@@ -56,14 +56,14 @@ program test_landreman_free_boundary
                                       landreman_axisymmetric_vjp
     use kin6d_landreman_benchmark, only: landreman_frozen_t, landreman_drive_t, &
                                          landreman_volume_boundary, LANDREMAN_DELTA
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_coil_filaments
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
+    use milca_gs_coils, only: gs_circuit_set_t, gs_coil_filaments
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
              gs_fb_eval_t, gs_fb_history_t, gs_fb_setup, gs_fb_newton, gs_fb_evaluate, &
                                       gs_fb_locate, GS_FB_TARGET_MEAN
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_green_gradient
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
              ideal_fb_set_drive, ideal_fb_solve, ideal_fb_report_t, ideal_fb_shell_field
     use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d

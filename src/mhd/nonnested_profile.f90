@@ -10,7 +10,7 @@ module kin6d_nonnested_profile
     use fortfem_meridian_feec_n, only: meridian_point_basis
     use kin6d_mhd_mesh, only: flux_mesh_locate
     use kin6d_equilibrium_nonnested, only: free_b_field_t
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
                                        EQ_BR, EQ_BPHI, EQ_BZ, EQ_P
     use kin6d_nonnested_leaves, only: anisotropic_flux, coupled_current, &
                                       fitted_parallel_drive, profile_current_diagnostic

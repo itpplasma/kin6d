@@ -1,19 +1,19 @@
 program test_gs_symmetry
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_cell_data, gs_element_jet, sample_gs, apply_gs, gs_profile_load
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
         GS_SCREW, GS_CHART_RZ, GS_CHART_CARTESIAN, GS_UNSUPPORTED_SYMMETRY
     use kin6d_gs_symmetry_leaves, only: gs_screw_field, gs_screw_field_jvp, &
         gs_screw_field_vjp, gs_screw_source, gs_screw_source_jvp
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_cubic_load, &
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles, gs_cubic_load, &
         gs_profile_jacobian_t, apply_gs_profile_jacobian, gs_profile_response, &
         gs_normalize_current
-    use kin6d_gs_field_readback, only: sample_gs_many
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build
-    use kin6d_gs_majorant, only: gs_functional_majorant
-    use kin6d_gs_inverse, only: gs_inverse_result_t, gs_toroidal_flux
+    use milca_gs_field_readback, only: sample_gs_many
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build
+    use milca_gs_majorant, only: gs_functional_majorant
+    use milca_gs_inverse, only: gs_inverse_result_t, gs_toroidal_flux
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none
     real(dp), parameter :: lambda = 1.3_dp

@@ -1,8 +1,8 @@
 program test_vrmhd_gs
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data, &
         gs_element_jet, gs_linear_response
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &

@@ -8,9 +8,9 @@ program test_nonnested_vacuum
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
         nn_vacuum_mode, nn_point
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_residual, only: equilibrium_residual_t
     implicit none
     type(flux_mesh_t) :: fm
     type(nn_report_t) :: report

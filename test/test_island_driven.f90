@@ -47,9 +47,9 @@ program test_island_driven
                                        nc_layout, nc_continue
     use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
                        island_width_t, island_trace, island_periodic_point, island_width
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_residual, only: equilibrium_residual_t
     implicit none
     type(free_b_field_t) :: field
     type(flux_mesh_t) :: mesh

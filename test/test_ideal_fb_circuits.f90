@@ -32,8 +32,8 @@ program test_ideal_fb_circuits
     !   exterior3d   the same JVP/VJP checks with a frozen full-surface R2
     !                exterior attached (milca_equilibrium_boundary_3d form).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &

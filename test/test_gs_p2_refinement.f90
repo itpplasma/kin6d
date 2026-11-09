@@ -1,6 +1,6 @@
 program test_gs_p2_refinement
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         sample_gs, gs_classical_current, gs_element_jet, write_gs_mesh
     implicit none
     type(gs_state_t) :: coarse, fine, affine

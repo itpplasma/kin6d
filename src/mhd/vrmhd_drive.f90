@@ -1,6 +1,6 @@
 module kin6d_vrmhd_drive
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: GS_ROTATION
+    use milca_gs_symmetry, only: GS_ROTATION
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis
     use kin6d_vrmhd_section_leaves, only: vrmhd_harmonic_rotation, &
         vrmhd_harmonic_screw, vrmhd_pairing

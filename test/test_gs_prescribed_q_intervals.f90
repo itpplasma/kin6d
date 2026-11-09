@@ -13,9 +13,9 @@ program test_gs_prescribed_q_intervals
     !               forward solves, on a small case
     !   secant      exact-Jacobian and secant solutions agree
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data
-    use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data
+    use milca_gs_prescribed_q, only: solve_gs_prescribed_q
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none

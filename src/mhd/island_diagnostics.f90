@@ -4,7 +4,7 @@ module kin6d_island_diagnostics
     ! indicators, never continuous enclosures. No global field or workspace.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
                                        EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_nonnested_leaves, only: fieldline_velocity
     use kin6d_island_leaves, only: poincare_invariants, helical_phase

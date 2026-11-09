@@ -9,8 +9,8 @@ program test_gs_readback_free
     !!   3. On that sub-mesh, q(psi) and Phi(psi) match the exact Solov'ev
     !!      surfaces of the enclosed region.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = 0.62_dp, f = 32.86_dp
     real(dp), parameter :: c = f/(12*r0**3), gauge = 0.37_dp

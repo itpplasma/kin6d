@@ -5,7 +5,7 @@ program test_fermi_gas
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si, &
         occupation_fermi_gas, fermi_gas_jvp, fermi_gas_vjp
-    use kin6d_fermi_gas_leaves, only: fermi_positive, fermi_negative, &
+    use milca_fermi_gas_leaves, only: fermi_positive, fermi_negative, &
         fermi_positive_jvp, fermi_positive_vjp, fermi_si_parameters
     implicit none
     type(fermi_workspace_t) :: work

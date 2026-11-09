@@ -82,8 +82,8 @@ program fb3d_synthetic
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     !$ use omp_lib, only: omp_get_max_threads
     use fb3d_synthetic_field, only: iota_field_t
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: curve_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: curve_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_solve, &
         ideal_fb_report_t, ideal_fb_shell_field, IDEAL_FB_OK, ideal_fb_gradient, &
         ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect, ideal_fb_solve_shell_map
@@ -91,7 +91,7 @@ program fb3d_synthetic
     use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents
     use milca_coils_3d, only: coil_set_t, coil_mu0
-    use kin6d_makegrid_circuits, only: makegrid_circuits_read
+    use milca_makegrid_circuits, only: makegrid_circuits_read
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
     !$ use omp_lib, only: omp_get_max_threads
     implicit none

@@ -1,7 +1,7 @@
 program test_gs_profile_quadrature
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_load, &
+    use milca_grad_shafranov, only: gs_state_t, gs_profile_load, &
                                     gs_profile_load_jvp, gs_profile_load_vjp
     implicit none
     type(gs_state_t) :: state, affine

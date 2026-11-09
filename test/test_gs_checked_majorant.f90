@@ -1,10 +1,10 @@
 program test_gs_checked_majorant
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
                                      equilibrated_flux_estimate_t
-    use kin6d_gs_quadrature_budget, only: gs_checked_equilibrated_majorant
+    use milca_gs_quadrature_budget, only: gs_checked_equilibrated_majorant
     implicit none
     type(gs_state_t) :: state
     type(equilibrated_flux_estimate_t) :: estimate

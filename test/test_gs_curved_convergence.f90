@@ -1,8 +1,8 @@
 program test_gs_curved_convergence
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_cell_data, gs_element_jet
-    use kin6d_gs_majorant, only: gs_functional_majorant
+    use milca_gs_majorant, only: gs_functional_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, f = 32.86_dp

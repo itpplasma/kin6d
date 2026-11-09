@@ -4,7 +4,7 @@ program test_island_vacuum_oracle
                                  direct_coil, direct_field, solve_vacuum, orbit
     use milca_coil_quadrature_field, only: coil_quadrature_field_t, &
                                            coil_quadrature_init
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
                     island_width_t, island_periodic_point, island_width, island_trace, &
                                         island_stability

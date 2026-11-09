@@ -89,8 +89,8 @@ program test_ideal_free_boundary
     !                    a rigid antisymmetric shift (N = 0, 1)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &

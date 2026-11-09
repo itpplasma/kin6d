@@ -19,7 +19,7 @@ module kin6d_nonnested_transport
         meridian_fourier_source_t, meridian_fourier_diffusion, &
         meridian_fourier_load
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
     use kin6d_equilibrium_nonnested, only: nn_linear_solve
     use kin6d_nonnested_leaves, only: anisotropic_conductivity

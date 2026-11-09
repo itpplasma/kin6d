@@ -3,7 +3,7 @@ module test_equilibrium_core_fields
     ! the boundary R^2 = R0^2 + 2 R0 a cos t, R Z = R0 a sin t; mu0 = 1,
     ! mu0 p' = -16 c, F = f.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
     implicit none
     private
@@ -54,14 +54,14 @@ program test_equilibrium_core
     !                      bound brackets D3: the lower bound of a finer
     !                      test space does not exceed it
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_state, only: equilibrium_state_t
     use test_equilibrium_core_fields, only: solovev_field_t, r0, minor, f_tor, c_sol
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t, &
+    use milca_equilibrium_residual, only: equilibrium_residual_t, &
         equilibrium_residual
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrium, only: gs_equilibrium
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrium, only: gs_equilibrium
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_is_finite
     implicit none
     character(512) :: mode, work, fixtures

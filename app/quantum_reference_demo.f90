@@ -14,7 +14,7 @@ program quantum_reference_demo
         sample_quantum_observables, &
         quantum_occupation_bands, quantum_initial_norm, quantum_matrix_defect, &
         quantum_physical_radius
-    use kin6d_quantum_reference_gallery_leaves, only: qgallery_gap_interval, &
+    use milca_quantum_reference_gallery_leaves, only: qgallery_gap_interval, &
         qgallery_radius_interval, qgallery_time_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &

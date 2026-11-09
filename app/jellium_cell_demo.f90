@@ -249,7 +249,7 @@ contains
     end subroutine
 
     real(dp) function ideal_ground(cell) result(e)
-        use kin6d_quantum_fock_leaves, only: qf_kinetic
+        use milca_quantum_fock_leaves, only: qf_kinetic
         type(jellium_cell_t), intent(in) :: cell
         real(dp) :: eps(62), tmp
         integer :: i, j

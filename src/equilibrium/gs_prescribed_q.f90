@@ -1,13 +1,13 @@
-module kin6d_gs_prescribed_q
+module milca_gs_prescribed_q
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, output_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, solve_gs, gs_axis_candidate, &
+    use milca_grad_shafranov, only: gs_state_t, solve_gs, gs_axis_candidate, &
                                     gs_factor_ready
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_forcing_t, &
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles, gs_forcing_t, &
                                   gs_cubic_load, gs_profile_jacobian_t, &
                                   gs_profile_response, gs_profile_axis
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, &
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium, &
                                  gs_readback_resolution
     use fortnum_bspline, only: bspline_workspace_t, bspline_init, &
                                bspline_set_knots, bspline_eval_basis, bspline_eval_deriv
@@ -15,7 +15,7 @@ module kin6d_gs_prescribed_q
     use fortnum_linalg, only: dense_solve
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: solve_gs_prescribed_q, gs_q_table_value

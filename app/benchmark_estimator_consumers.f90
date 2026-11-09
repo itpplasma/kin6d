@@ -63,10 +63,10 @@ program benchmark_estimator_consumers
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, ampere_n_build, &
         ampere_n_solve, ampere_n_coupled_error, ampere_n_free
     use kin6d_mhd_response_n, only: ring_angles_set, ring_sheet_load, ring_sheet_edges
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrium, only: gs_equilibrium
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t, equilibrium_residual
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrium, only: gs_equilibrium
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_residual, only: equilibrium_residual_t, equilibrium_residual
     implicit none
     type(flux_mesh_t) :: fm
     type(free_b_field_t), target :: field

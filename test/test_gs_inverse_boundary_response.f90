@@ -1,6 +1,6 @@
 program test_gs_inverse_boundary_response
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_response, &
+    use milca_grad_shafranov, only: gs_state_t, gs_profile_response, &
         gs_profile_implicit_response, gs_profile_response_cache_t, &
         prepare_gs_profile_response_cache, gs_profile_load
     implicit none

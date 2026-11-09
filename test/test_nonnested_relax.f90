@@ -17,7 +17,7 @@ program test_nonnested_relax
         relax_report_t, relax_state_t, relax_prepare, relax_run, relax_state, &
         relax_store, relax_free, RELAX_IDEAL, RELAX_TAYLOR
     use fortfem_meridian_feec_n, only: meridian_load
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
     use kin6d_equilibrium_nonnested, only: nn_report_t, nn_solve, nn_vacuum_mode
     use kin6d_nonnested_relax, only: relax_pack_modes
     use nn_vacuum_fixture, only: vfield => field, ftor, nmodes, active_mode, &

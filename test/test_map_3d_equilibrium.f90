@@ -3,8 +3,8 @@ program test_map_3d_equilibrium
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
                                    ideal_seed_3d_init, ideal_seed_disk_mesh
     use kin6d_ideal_map, only: ideal_map_t
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample, &
                                         map_3d_coordinates
     use kin6d_map_3d_readback_leaves, only: map_3d_field, &

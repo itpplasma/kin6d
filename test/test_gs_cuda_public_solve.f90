@@ -1,6 +1,6 @@
 program test_gs_cuda_public_solve
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         assemble_gs_rhs, apply_gs, gs_apply_inverse, gs_requested_device
     use kin6d_gs_direct, only: gs_direct_free
     use kin6d_gs_options, only: gs_set_options

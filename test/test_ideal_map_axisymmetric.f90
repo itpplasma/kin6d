@@ -23,9 +23,9 @@ program test_ideal_map_axisymmetric
     !   factor <k>       cached factor input: the debug-verified solve is bitwise
     !                    the production solve, one symbolic analysis per solve
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, output_unit
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
@@ -43,11 +43,11 @@ program test_ideal_map_axisymmetric
         phi_edge, pullback_field_t, solovev_profile_t, pi, a, raxis, psi_axis, r0, &
         f_edge, seed_map_point, &
         pprime, ffprime, shaped
-    use kin6d_equilibrium_harness, only: equilibrium_case_t, &
+    use milca_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
         run_equilibrium_case, write_equilibrium_report, &
         equilibrium_floor_report_t, equilibrium_residual_floor, write_residual_floor
-    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_state, only: equilibrium_state_t
     use kin6d_map_equilibrium, only: map_equilibrium
     implicit none
     type :: map_case_state_t

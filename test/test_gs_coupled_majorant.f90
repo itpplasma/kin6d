@@ -17,25 +17,25 @@ program test_gs_coupled_majorant
     !! 3. Coil-current bounds: attained by the sign vector, never exceeded.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_grad_shafranov_leaves, only: gs_source
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, &
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build, &
         gs_coupling_coil_load, gs_coupling_source_load, gs_coupled_solve, &
         gs_coupled_matrix, GS_COUPLING_OK
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
         gs_fb_history_t, gs_fb_setup, gs_fb_evaluate, gs_fb_newton, &
         gs_fb_jacobian_apply, GS_FB_OK, GS_FB_LIMITER
-    use kin6d_gs_majorant, only: gs_coupled_estimator_t, gs_coupled_majorant_t, &
+    use milca_gs_majorant, only: gs_coupled_estimator_t, gs_coupled_majorant_t, &
         gs_coupled_goal_t, gs_fb_majorant_t, gs_coupled_estimator_build, &
         gs_coupled_majorant, gs_coupled_goal, gs_coupled_ip_moments, &
         gs_fb_majorant, gs_fb_inf_sup, gs_fb_goal, gs_coil_current_bounds, GS_CM_OK
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b
     use gs_fb_fixture, only: make_law
-    use kin6d_gs_certificate, only: gs_fb_certifier_t
-    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+    use milca_gs_certificate, only: gs_fb_certifier_t
+    use milca_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
         EQ_CLAIM_PRACTICAL
     implicit none
 

@@ -2,7 +2,7 @@ program benchmark_fermi_gas_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si
-    use kin6d_fermi_gas_leaves, only: fermi_electron_density, &
+    use milca_fermi_gas_leaves, only: fermi_electron_density, &
                                     fermi_relativity_indicator
     use milca_result_io, only: run_t, result_file_t
     implicit none

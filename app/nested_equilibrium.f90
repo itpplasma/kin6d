@@ -10,8 +10,8 @@ program nested_equilibrium
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_energy, ideal_map_reduce, ideal_map_prolong_correction
     use kin6d_map_3d_equilibrium, only: map_3d_coordinates, map_3d_sample
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
-    use kin6d_grad_shafranov, only: gs_state_t
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
+    use milca_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
     use milca_result_io, only: run_t, result_file_t
     use fortnum_quadrature, only: gauss_legendre
