@@ -134,6 +134,59 @@ scenario TC24; their data stay outside the repository.
 | 7 | coupled harmonics, overlapping resonances | isolated limits reproduce steps 5 and 6; Monte Carlo with finite orbits and the perturbation in the orbits; cost below Monte Carlo at the same accuracy. Overlap is expected in the pedestal (sheared E_r, large delta B), on the canonical Maxwellian background |
 | 8 | device curves | AUG 30835 and ITER TC24 with each switch alone and combined, against NEO-2, NEO-RT, POTATO and Monte Carlo where they apply, with the indicators of step 4 |
 
+## Step 3 formulation: orbit width on the orbit-class mesh
+
+Coordinates are (psi*, theta, H, mu, sigma) with psi* = p_phi/(Z e) = psi + m v_par G/(Z e B) (I
+neglected against G in the axisymmetric equilibrium; sign conventions as in the thin-orbit kernel)
+and one toroidal harmonic f1 = Re f(psi*, theta, H, mu, sigma) e^{i n phi}. At fixed (psi*, H, mu,
+sigma) the unperturbed orbit is fixed: for every theta the position psi(theta) is the root of
+
+    psi + m v_par(psi, theta) G(psi)/(Z e B(psi, theta)) = psi*,
+    v_par = sigma sqrt(2 (H - Z e Phi(psi) - mu B(psi, theta))/m),
+
+found by Newton from psi = psi* on the radial splines of the Boozer file. Along the orbit
+theta_dot = (v_par b + v_d) . grad theta and phi_dot = (v_par b + v_d) . grad phi, with v_d the
+grad-B, curvature and E x B drifts at psi(theta). The equation for each orbit is one-dimensional,
+
+    theta_dot d_theta f + i n phi_dot f - C[f] = i n delta_H d_{p_phi} F_c,
+
+delta_H = mu delta_B + m v_par^2 delta_B/B the perturbation of the Hamiltonian along the orbit
+(the full drift weight of the thin-orbit kernel) and F_c(psi*, H) the canonical Maxwellian, so
+d_{p_phi} F_c = F_c (A_1 + x^2 A_2)/(Z e) with the forces taken at psi*.
+
+Measure. (p_phi, phi), (H, t) and (mu, gyrophase) are canonical pairs, so the phase-space volume is
+Z e dpsi* dphi dH dt dmu up to a constant, at any orbit width, with dt = dtheta/|theta_dot|. In
+the measure dtheta/|theta_dot| per orbit the streaming term is antisymmetric (integration by parts
+along the orbit, closed by periodicity for passing and by the turning points for trapped orbits),
+and the drive pairs with the torque density in psi*,
+T(psi*) = Re sum_sigma int dH dmu dtheta/|theta_dot| (i n delta_H)^* f. In the thin-orbit limit
+1/|theta_dot| becomes the Boozer measure 1/(b^2 |xi|) of the kernel, which is the first check.
+
+Mesh. Orbits are labelled by lambda = mu B_ref/(H - Z e Phi(psi*)); the hp rows follow lambda
+levels as now, with the pitch coordinate eta = sigma sqrt(1 - lambda beta(theta, lambda)) and beta
+= B(psi(theta), theta)/B_ref the field the orbit sees, so eta = xi for thin orbits. Turning points
+and the trapped-passing boundary lambda_c(psi*) are those of beta: the boundary is the orbit with
+v_par = 0 at the maximum of beta along it, found by a scalar root in lambda. Near the axis the
+same root finding meets the potato orbits, whose theta range is bounded.
+
+Collisions, first stage. C acts at fixed position; at fixed psi* a change of pitch also moves
+psi* by m Delta v_par G/(Z e B). The first stage keeps the pitch and energy scattering at fixed
+psi*, evaluated at the orbit point, and drops the radial coupling, of relative size
+nu rho_pol^2 against the resonant broadening; the second stage adds it as a tridiagonal coupling of
+neighbouring psi* surfaces solved by GMRES with the surface factorisations as preconditioner (the
+plan of step 3). POTATO is collisionless, so the first stage meets it in the limit nu -> 0.
+
+Checks of the formulation (in addition to the gate of step 3):
+- rho* -> 0 by scaling the mass at fixed thermal speed reproduces the thin-orbit kernel, with
+  corrections linear in rho*;
+- Z e v_d . grad psi = p_phi_dot - m d_t(v_par G/B), so to first order in rho* the drive differs
+  from the thin-orbit drive by a total time derivative, which is the parallel-derivative source of
+  the thin-orbit kernel: the orbit-width drive at small rho* reproduces the kernel with that source
+  on, not off;
+- bounce and precession frequencies along psi* against POTATO's frequency scans and their thin
+  limit (energy and E_r scaled down) on the shared AUG equilibria;
+- the moments of F_c over the orbits give n(psi) from n(psi*) and back.
+
 ## NEO-2 feature parity
 
 The steps above extend the physics beyond NEO-2. Replacing NEO-2 also needs its remaining
