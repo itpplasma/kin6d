@@ -5,7 +5,7 @@ program test_fp
                                  fp_certificate_radius, fp_certificate_accepts, &
                                  fp_sample_band, fp_reference_band, fp_mass_interval, &
                                  fp_normalization_interval
-    use kin6d_fp_leaves, only: fp_flux, fp_flux_jvp, fp_flux_vjp, fp_step_jvp, &
+    use milca_fp_leaves, only: fp_flux, fp_flux_jvp, fp_flux_vjp, fp_step_jvp, &
                               fp_mass_error_band
     use fortnum_interval, only: interval_t, interval
     implicit none

@@ -3,7 +3,7 @@
 Status: first verified stage of step N1 of the 3D TC24 design (nonlinear lane,
 DESIGN section 7). Fixed boundary, ideal, nested-compatible, gamma = 0.
 Module `kin6d_ideal_map` (`src/mhd/ideal_map.f90`); generated leaves
-`src/generated/kin6d_ideal_map_leaves.f90` from `gen/gen_ideal_map.f90`.
+`src/generated/milca_ideal_map_leaves.f90` from `gen/gen_ideal_map.f90`.
 
 ## Formulation
 
@@ -97,7 +97,7 @@ not multiples of nfp: restricting all axis modes to nfp*m would retrace the
 same axis nfp times and violate injectivity. nfp = 1 admits general curves.
 
 **Generated mathematics and derivatives.** `gen/gen_curve_chart.f90` emits
-`src/generated/kin6d_curve_chart_leaves.f90` using pinned FortSym. The leaves
+`src/generated/milca_curve_chart_leaves.f90` using pinned FortSym. The leaves
 supply Fourier derivatives through order four, normalization and cross-product
 jets, and H through d3H. Handwritten code sums modes and assembles tensor
 symmetries. For fixed axis/guide data, the jet defines consistent q tangents

@@ -4,7 +4,7 @@ program test_gs_symmetry
         gs_cell_data, gs_element_jet, sample_gs, apply_gs, gs_profile_load
     use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
         GS_SCREW, GS_CHART_RZ, GS_CHART_CARTESIAN, GS_UNSUPPORTED_SYMMETRY
-    use kin6d_gs_symmetry_leaves, only: gs_screw_field, gs_screw_field_jvp, &
+    use milca_gs_symmetry_leaves, only: gs_screw_field, gs_screw_field_jvp, &
         gs_screw_field_vjp, gs_screw_source, gs_screw_source_jvp
     use milca_gs_profile_law, only: gs_profile_law_t
     use milca_gs_nonlinear, only: solve_gs_cubic_profiles, gs_cubic_load, &

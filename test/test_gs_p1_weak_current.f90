@@ -1,7 +1,7 @@
 program test_gs_p1_weak_current
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_grad_shafranov_leaves, only: gs_field
+    use milca_grad_shafranov_leaves, only: gs_field
     implicit none
     integer, parameter :: nw = 5
     real(dp), parameter :: xy(2, 4) = reshape([1._dp, 0._dp, 2._dp, 0._dp, &

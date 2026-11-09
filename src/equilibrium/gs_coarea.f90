@@ -7,7 +7,7 @@ module milca_gs_coarea
     use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
     use kin6d_triangle_basis, only: cubic_segment_roots, cubic_segment_stationary, &
         triangle_basis_jet
-    use kin6d_gs_coarea_leaves, only: gs_contour_weight, gs_cubic_flux, &
+    use milca_gs_coarea_leaves, only: gs_contour_weight, gs_cubic_flux, &
                                       gs_contour_weight_jvp, &
                                       gs_ray_trace, &
                                       gs_contour_root_response, &
@@ -16,7 +16,7 @@ module milca_gs_coarea
                                       gs_quadratic_translate, gs_polar_angle, &
                                       gs_polar_angle_jvp, &
                                       gs_boundary_weight, gs_boundary_weight_jvp
-    use kin6d_grad_shafranov_leaves, &
+    use milca_grad_shafranov_leaves, &
         only: gs_smooth_axis_q_jvp
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_linalg, only: dense_solve

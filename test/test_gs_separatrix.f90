@@ -10,7 +10,7 @@ program test_gs_separatrix
     use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_lcfs_levels, &
                                       gs_fb_trace_lcfs, GS_FB_XPOINT, GS_FB_OK
     use milca_cerfon_freidberg_leaves, only: cerfon_freidberg_jet
-    use kin6d_gs_separatrix_leaves, only: gs_lcfs_ray_jet, &
+    use milca_gs_separatrix_leaves, only: gs_lcfs_ray_jet, &
                                           gs_lcfs_ray_jet_jvp, gs_lcfs_ray_jet_vjp
     implicit none
     integer, parameter :: npoints = 256

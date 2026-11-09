@@ -25,7 +25,7 @@ module milca_classical_cell
     use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_coulomb_leaves, only: ewald_background
+    use milca_coulomb_leaves, only: ewald_background
     use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
     use kin6d_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
     use kin6d_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &

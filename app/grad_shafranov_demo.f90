@@ -11,7 +11,7 @@ program grad_shafranov_demo
    use milca_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
       claim_name
    use milca_result_io, only: run_t, result_file_t
-   use kin6d_grad_shafranov_leaves, only: gs_field
+   use milca_grad_shafranov_leaves, only: gs_field
    use fortplot_system_runtime, only: create_directory_runtime
    implicit none
    type(gs_state_t), target :: state

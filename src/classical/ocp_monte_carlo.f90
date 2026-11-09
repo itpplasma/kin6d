@@ -10,7 +10,7 @@
 !> n = 3/(4 pi), L = (4 pi N/3)^(1/3). Gamma is checked against the shared
 !> milca_species scales (one definition).
 !>
-!> Energy: Ewald sum of kin6d_coulomb_leaves with parameters from
+!> Energy: Ewald sum of milca_coulomb_leaves with parameters from
 !> kin6d_ewald (real space: minimum image for real_cutoff = 0, the OCP
 !> choice, else the image cube |n|_inf <= real_cutoff of the minimum-image
 !> separation, with the self-image constant; reciprocal cube
@@ -32,7 +32,7 @@ module milca_ocp_monte_carlo
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
-    use kin6d_coulomb_leaves, only: ewald_real_pair, ewald_reciprocal_weight, &
+    use milca_coulomb_leaves, only: ewald_real_pair, ewald_reciprocal_weight, &
                                     ewald_self, ewald_background
     use kin6d_correlation_hierarchy_leaves, only: ch_ewald_real_potential
     use kin6d_ewald, only: ewald_parameters_t, ewald_select

@@ -9,7 +9,7 @@ module kin6d_equilibrium_3d_driver
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
-    use kin6d_map_3d_readback_leaves, only: map_3d_cartesian
+    use milca_map_3d_readback_leaves, only: map_3d_cartesian
     use milca_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER

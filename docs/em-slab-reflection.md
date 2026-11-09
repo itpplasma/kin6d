@@ -11,7 +11,7 @@ Status: **candidate**. The dynamics is an untrusted PIC realization; the
 reported reflection/transmission coefficients, skin depth and wavelength are
 lock-in estimates compared with the linear cold-plasma oracle. No enclosure is
 claimed. Files: `src/em_slab.f90`, generator `gen/gen_em_slab.f90` with the
-emitted leaves `src/generated/kin6d_em_slab_leaves.f90`, tests
+emitted leaves `src/generated/milca_em_slab_leaves.f90`, tests
 `test/test_em_slab.f90`, application `app/em_slab_demo.f90`.
 
 ## Model

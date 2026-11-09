@@ -2,7 +2,7 @@ module kin6d_ideal_xi
     ! D5 first increment: plasma-volume Hessian in physical displacement jets.
     use, intrinsic :: iso_fortran_env, only: real32, real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_xi_leaves, only: xi_form_dp, xi_form_sp, &
+    use milca_ideal_xi_leaves, only: xi_form_dp, xi_form_sp, &
         xi_gradient_dp, xi_gradient_sp
     use ideal_mhd_batch, only: mhd_xi_fp64, mhd_xi_fp32, mhd_xi_mixed
     implicit none

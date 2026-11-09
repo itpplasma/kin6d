@@ -1,8 +1,8 @@
 program test_gs_error_leaves
     use, intrinsic :: iso_fortran_env, only: dp => real64, real128
     use fortnum_interval, only: interval_t, interval, contains
-    use kin6d_grad_shafranov_leaves, only: gs_source_interval
-    use kin6d_gs_error_leaves, only: gs_error_coefficient_interval, &
+    use milca_grad_shafranov_leaves, only: gs_source_interval
+    use milca_gs_error_leaves, only: gs_error_coefficient_interval, &
         gs_error_friedrichs_interval, gs_error_friedrichs_squared_interval, &
         gs_error_coefficient, gs_error_coefficient_jvp, &
         gs_error_coefficient_vjp, gs_error_flux, &

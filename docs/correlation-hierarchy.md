@@ -20,7 +20,7 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 
 - `src/classical/ocp_monte_carlo.f90` runs canonical Metropolis Monte Carlo with
   single-particle moves, uniform in `[-d, d]^3`. The energy is the Ewald sum
-  of `kin6d_coulomb_leaves`. Its parameters come from `kin6d_ewald` with the
+  of `milca_coulomb_leaves`. Its parameters come from `kin6d_ewald` with the
   new `real_cutoff = 0` (minimum-image real space; every omitted image is at
   least `L/2` away, and the existing shell bound covers it). The reciprocal
   sum uses the cube `0 < |n|_inf <= nk`. A move costs O(N) for the real-space

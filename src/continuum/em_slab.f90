@@ -22,7 +22,7 @@
 module milca_em_slab
     use, intrinsic :: iso_fortran_env, only: dp => real64
     !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num
-    use kin6d_em_slab_leaves, only: em_slab_boris, em_slab_velocity, em_slab_cic, &
+    use milca_em_slab_leaves, only: em_slab_boris, em_slab_velocity, em_slab_cic, &
         em_slab_faraday, em_slab_ampere, em_slab_mur, em_slab_ramp, &
         em_slab_sheet_current, em_slab_field_energy, em_slab_kinetic_energy, &
         em_slab_characteristics

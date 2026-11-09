@@ -1,5 +1,5 @@
 # Ideal current sheets at rational surfaces (docs/current-sheet-equilibrium.md).
-target_sources(kin6d_mhd PRIVATE src/generated/kin6d_current_sheet_leaves.f90
+target_sources(kin6d_mhd PRIVATE src/generated/milca_current_sheet_leaves.f90
     src/mhd/current_sheet_oracles.f90 src/mhd/sheet_slab_map.f90)
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_current_sheet gen/gen_current_sheet.f90)
@@ -7,7 +7,7 @@ if(KIN6D_FORTSYM_BUILD)
     add_test(NAME current_sheet_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_current_sheet>
         -DFAMILY=current_sheet
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_current_sheet_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_current_sheet_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/current-sheet-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_e21_regeneration.cmake)
     set_tests_properties(current_sheet_regeneration PROPERTIES TIMEOUT 60)

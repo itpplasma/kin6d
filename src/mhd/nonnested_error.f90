@@ -28,10 +28,10 @@ module kin6d_nonnested_error
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_equilibrium_nonnested, only: free_b_field_t
     use kin6d_triangle_basis, only: triangle_bernstein_controls
-    use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
+    use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
         gs_error_friedrichs
-    use kin6d_grad_shafranov_leaves, only: gs_source
-    use kin6d_nonnested_leaves, only: transport_error_data, &
+    use milca_grad_shafranov_leaves, only: gs_source
+    use milca_nonnested_leaves, only: transport_error_data, &
         transport_error_lower, transport_error_friedrichs
     use fortfem_meridian_feec_n, only: meridian_feec_t
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t, &

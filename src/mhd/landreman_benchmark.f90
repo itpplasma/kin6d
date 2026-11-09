@@ -1,7 +1,7 @@
 module kin6d_landreman_benchmark
     ! Numerical benchmark data, mu0=1. No validated continuation/error bound.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
+    use milca_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
                                       landreman_current_ray, landreman_toroidal_external
     use kin6d_ideal_map, only: ideal_frozen_t
     use fortnum_quadrature, only: gauss_legendre

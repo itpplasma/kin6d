@@ -44,7 +44,7 @@ module kin6d_nonnested_force
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, &
         nn_factor, nn_factor_solve_real, nn_factor_free
-    use kin6d_metriplectic_leaves, only: lorentz_force
+    use milca_metriplectic_leaves, only: lorentz_force
     use kin6d_nonnested_mapped, only: map_metric_t, METRIC_IDENTITY, nn_map_t, &
         nn_harmonic_forms, nn_vector_field_i
     implicit none

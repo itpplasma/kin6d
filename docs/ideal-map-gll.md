@@ -56,7 +56,7 @@ DX = [ R_s1        R_s2       0
 
 `gen/gen_ideal_gll.f90:29` substitutes this into the same `frozen_energy` and
 derives the seven-gradient and symmetric Hessian with FortSym. Checked-in
-leaves are `src/generated/kin6d_ideal_gll_leaves.f90:11`, `:33`, `:66`.
+leaves are `src/generated/milca_ideal_gll_leaves.f90:11`, `:33`, `:66`.
 The nonlinear R factors and all their mixed Hessian terms are retained.
 
 ## Unknowns, axis and constraints

@@ -46,7 +46,7 @@ program test_map_equilibrium
                  EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_UNAVAILABLE
     use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
     use milca_equilibrium_residual, only: equilibrium_residual_t, equilibrium_residual
-    use kin6d_ideal_map_leaves, only: ideal_axisymmetric_field, &
+    use milca_ideal_map_leaves, only: ideal_axisymmetric_field, &
                               ideal_axisymmetric_field_jvp, ideal_axisymmetric_field_vjp
     use omp_lib, only: omp_set_num_threads, omp_get_wtime
     implicit none

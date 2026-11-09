@@ -4,7 +4,7 @@ module island_outer_reference
     ! FortNum controls ODE error. The Frobenius cut delta is refined separately.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_island_leaves, only: cylindrical_outer_rhs
+    use milca_island_leaves, only: cylindrical_outer_rhs
     use fortnum_ode, only: ode_problem_t, ode_workspace_t, ode_solution_t, &
                            ode_integrate
     use fortnum_status, only: fortnum_status_t

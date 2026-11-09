@@ -24,7 +24,7 @@ module kin6d_pme
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
-    use kin6d_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp, &
+    use milca_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp, &
         ewald_self, ewald_background, ewald_reciprocal_weight
     use kin6d_near_encounter, only: near_split_t, near_pair, near_pair_jvp
     use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8, &

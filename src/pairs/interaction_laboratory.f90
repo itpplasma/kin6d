@@ -12,8 +12,8 @@ module kin6d_interaction_laboratory
     use milca_species, only: units_t, species_t, pair_scales_t, pair_scales
     use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step
-    use kin6d_coulomb_leaves, only: coulomb_pair_interval
-    use kin6d_interaction_leaves
+    use milca_coulomb_leaves, only: coulomb_pair_interval
+    use milca_interaction_leaves
     implicit none
     private
     public :: interaction_state_t, init_interaction, step_interaction, &

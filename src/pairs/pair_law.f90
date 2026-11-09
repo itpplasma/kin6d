@@ -1,7 +1,7 @@
 !> Short-range semiclassical pair term of the periodic electron cell
 !> (docs/quantum-classical-correlations.md): the declared addition to the
 !> one Ewald Coulomb pair energy, so the long-range part keeps a single
-!> definition (kin6d_ewald/kin6d_coulomb_leaves).
+!> definition (kin6d_ewald/milca_coulomb_leaves).
 !>
 !> pair_coulomb       no addition (bare Ewald Coulomb);
 !> pair_kelbg         periodic image sum of the Kelbg diffraction excess

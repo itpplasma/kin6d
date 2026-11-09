@@ -25,7 +25,7 @@ module kin6d_nonnested_relax
         nn_factor_solve_real, nn_factor_free, nn_divergence
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, METRIC_IDENTITY, &
         nn_harmonic_forms
-    use kin6d_metriplectic_leaves, only: friction_drift
+    use milca_metriplectic_leaves, only: friction_drift
     implicit none
     private
     public :: relax_system_t, relax_options_t, relax_report_t, relax_state_t

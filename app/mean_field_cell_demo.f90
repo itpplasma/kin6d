@@ -8,7 +8,7 @@ program mean_field_cell_demo
     use kin6d_quantum_fock, only: fock_hamiltonian_t
     use kin6d_jellium_cell
     use kin6d_mean_field_cell
-    use kin6d_mean_field_cell_leaves, only: mf_pz81_high, mf_pz81_low
+    use milca_mean_field_cell_leaves, only: mf_pz81_high, mf_pz81_low
     use milca_result_io, only: run_t, result_file_t
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, &
         legend, tight_layout, savefig, xscale, yscale, suptitle

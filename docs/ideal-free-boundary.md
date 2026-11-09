@@ -416,7 +416,7 @@ with μ0 = 1, δ = 0.01, ψ = (R² − 1)²/4 + Z² and S0 = {ψ = δ}:
   −2(R² − 1)/sqrt(1 − 4ψ)).
 
 `gen/gen_landreman.f90` retains these definitions and emits checked-in primal,
-JVP and VJP leaves in `src/generated/kin6d_landreman_leaves.f90`. Six exact
+JVP and VJP leaves in `src/generated/milca_landreman_leaves.f90`. Six exact
 FortSym native zero tests check divergence, field tangency, all three force
 balance components and current tangency. UNKNOWN fails; no probe is accepted.
 CTest checks the invariants at roundoff, the current against an independent

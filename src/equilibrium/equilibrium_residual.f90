@@ -35,8 +35,8 @@ module milca_equilibrium_residual
         gs_direct_solve, gs_direct_free
     use milca_equilibrium_state, only: equilibrium_state_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_P, EQ_VALUES
-    use kin6d_equilibrium_core_leaves, only: stress_residual_density
-    use kin6d_equilibrium_core_leaves, only: riesz_source, riesz_coefficient, &
+    use milca_equilibrium_core_leaves, only: stress_residual_density
+    use milca_equilibrium_core_leaves, only: riesz_source, riesz_coefficient, &
         riesz_flux, riesz_friedrichs
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &

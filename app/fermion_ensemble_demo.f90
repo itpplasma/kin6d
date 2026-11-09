@@ -8,7 +8,7 @@ program fermion_ensemble_demo
     use kin6d_fermion_ensemble
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, occupation_fermi_gas
-    use kin6d_fermion_ensemble_leaves, only: fermion_cold_density_matrix, &
+    use milca_fermion_ensemble_leaves, only: fermion_cold_density_matrix, &
         fermion_cold_density_matrix_series, fermion_exchange_hole, &
         fermion_boltzmann_hole, fermion_classical_limits
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, &

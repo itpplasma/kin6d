@@ -8,10 +8,10 @@ program test_ideal_map_field_angle
     !    wall pinned in that angle the field is wrong at the percent level;
     !    with the field angle it agrees with the exact field.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_field_angle_leaves, only: field_angle_mode, field_angle_mode_jvp, &
+    use milca_ideal_field_angle_leaves, only: field_angle_mode, field_angle_mode_jvp, &
         field_angle_mode_vjp, field_angle_form, field_angle_form_jvp, &
         field_angle_form_vjp
-    use kin6d_ideal_map_leaves, only: ideal_point_gradient_jets, &
+    use milca_ideal_map_leaves, only: ideal_point_gradient_jets, &
         ideal_point_field_gradient_jets, ideal_point_field_jets, &
         ideal_axisymmetric_field
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_energy, ideal_map_hessian, &

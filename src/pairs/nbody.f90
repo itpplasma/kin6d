@@ -2,7 +2,7 @@
 !> the microscopic cases (C0 relative encounter, C1 periodic pair, C2 cloud).
 !>
 !> State layout: state(1:3n) positions, state(3n+1:6n) velocities.
-!> Interactions come only from kin6d_coulomb_leaves (one Coulomb definition):
+!> Interactions come only from milca_coulomb_leaves (one Coulomb definition):
 !> - isolated: bare pair Coulomb, optional fixed point sources and a fixed
 !>   uniform sphere centred at the origin;
 !> - periodic: Ewald sum (kin6d_ewald parameters) with neutralizing
@@ -20,7 +20,7 @@ module kin6d_nbody
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK, FORTNUM_DOMAIN_ERROR, &
                               status_set
     use fortnum_ode_geometric, only: geometric_strang_step
-    use kin6d_coulomb_leaves, only: coulomb_pair, coulomb_pair_jvp, &
+    use milca_coulomb_leaves, only: coulomb_pair, coulomb_pair_jvp, &
         coulomb_sphere_inside, coulomb_sphere_inside_jvp, ewald_real_pair, &
         ewald_real_pair_jvp, ewald_reciprocal_weight, ewald_self, ewald_background
     use kin6d_ewald, only: ewald_parameters_t

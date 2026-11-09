@@ -22,16 +22,16 @@ module milca_grad_shafranov
    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
        lagrange_combined_jvp, &
        lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
-   use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
+   use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
       gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
        curve_value, boundary_curve, triangle_shapes, triangle_locate
-   use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
+   use milca_gs_inverse_leaves, only: gs_normalized_profile_response
    use milca_real_identity, only: same_real_value
    use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
       GS_SCREW, GS_UNSUPPORTED_SYMMETRY, gs_reduced_field
-   use kin6d_gs_symmetry_leaves, only: gs_screw_bilinear, &
+   use milca_gs_symmetry_leaves, only: gs_screw_bilinear, &
       gs_translation_source, gs_screw_source
    implicit none
    private

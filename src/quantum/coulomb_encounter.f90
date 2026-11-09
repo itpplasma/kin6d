@@ -784,7 +784,7 @@ contains
         use fortnum_status, only: fortnum_status_t
         use kin6d_interaction_laboratory, only: interaction_state_t, init_interaction, &
             step_interaction, sample_interaction
-        use kin6d_interaction_leaves, only: interaction_energy
+        use milca_interaction_leaves, only: interaction_energy
         use milca_species, only: units_t, species_t
         type(encounter_t), intent(in) :: enc
         integer, intent(in) :: nsample

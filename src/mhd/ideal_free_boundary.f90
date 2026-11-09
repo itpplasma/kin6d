@@ -57,10 +57,10 @@ module kin6d_ideal_free_boundary
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
-    use kin6d_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
+    use milca_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
     use kin6d_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
-    use kin6d_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
+    use milca_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
         fold_barrier_hessian
     use kin6d_triangle_basis, only: triangle_basis_jet
     use milca_sort_keys, only: sort_key_order

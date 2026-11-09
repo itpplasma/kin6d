@@ -1,13 +1,13 @@
 # Candidate LCFS topology readback; continuous bounds remain unavailable.
 target_sources(kin6d_equilibrium PRIVATE
-    src/generated/kin6d_gs_separatrix_leaves.f90)
+    src/generated/milca_gs_separatrix_leaves.f90)
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_gs_separatrix gen/gen_gs_separatrix.f90)
     target_link_libraries(gen_gs_separatrix PRIVATE milca_gen_support)
     add_test(NAME equilibrium_gs_separatrix_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_gs_separatrix>
         -DFAMILY=gs_separatrix
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_gs_separatrix_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_gs_separatrix_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/gs-separatrix-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_e21_regeneration.cmake)
     set_tests_properties(equilibrium_gs_separatrix_regeneration PROPERTIES TIMEOUT 60)

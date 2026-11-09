@@ -3,13 +3,13 @@ program steady_laboratory_demo
     use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
         fp_certificate_radius, fp_certificate_accepts, fp_mass_interval, &
         fp_normalization_interval
-    use kin6d_fp_leaves, only: fp_band, fp_reference, fp_mass_error_band
+    use milca_fp_leaves, only: fp_band, fp_reference, fp_mass_error_band
     use poisson_laboratory, only: coupled_steady_t, solve_coupled_steady, &
         coupled_sample, coupled_certificate_radius, &
         coupled_certificate_accepts
     use kin6d_poisson_leaves, only: poisson_reconstruct_interval, &
         coupled_distribution_interval
-    use kin6d_leaves, only: coordinate, interval_band
+    use milca_leaves, only: coordinate, interval_band
     use fortnum_interval, only: interval_t, interval, interval_pi
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, legend, savefig, tight_layout, xlim, ylim, suptitle, set_yscale, &

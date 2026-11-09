@@ -52,7 +52,7 @@ module kin6d_mhd_ideal_n
         surface_t, surface_build
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
     use kin6d_mhd_ampere_n, only: mu0, ampere_n_error_t
-    use kin6d_ideal_response_error_leaves, only: ideal_ratio, ideal_tail
+    use milca_ideal_response_error_leaves, only: ideal_ratio, ideal_tail
     use kin6d_mhd_closure_n, only: frobenius_basis
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     implicit none

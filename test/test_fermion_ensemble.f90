@@ -9,7 +9,7 @@ program test_fermion_ensemble
     use kin6d_fermion_ensemble
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, occupation_fermi_gas
-    use kin6d_fermion_ensemble_leaves, only: fermion_box_eos, fermion_box_eos_jvp
+    use milca_fermion_ensemble_leaves, only: fermion_box_eos, fermion_box_eos_jvp
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), scan(3) = [0.05_dp, 1.0_dp, 10.0_dp]
     type(fermion_spectrum_t) :: spec, wide

@@ -41,12 +41,12 @@ module kin6d_ideal_map
         TRIANGLE_MAX_DEGREE
     use kin6d_curved_triangle, only: triangle_locate
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_ideal_map_leaves, only: ideal_point_gradient_jets, &
+    use milca_ideal_map_leaves, only: ideal_point_gradient_jets, &
         ideal_point_hessian_jets, ideal_point_field_gradient_jets, &
         ideal_point_field_jets
-    use kin6d_ideal_field_angle_leaves, only: field_angle_mode
+    use milca_ideal_field_angle_leaves, only: field_angle_mode
     use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
-    use kin6d_curve_chart_leaves, only: curve_omega_metric
+    use milca_curve_chart_leaves, only: curve_omega_metric
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &

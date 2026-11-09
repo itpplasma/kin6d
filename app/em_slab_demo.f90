@@ -11,7 +11,7 @@ program em_slab_demo
     use milca_em_slab, only: em_slab_config_t, em_slab_result_t, em_slab_frames_t, &
         em_slab_run, em_slab_reflection, em_slab_decay_length, &
         em_slab_mean_amplitude, em_slab_wavenumber
-    use kin6d_em_slab_leaves, only: em_slab_fresnel, em_slab_evanescent, &
+    use milca_em_slab_leaves, only: em_slab_fresnel, em_slab_evanescent, &
         em_slab_vacuum_envelope, em_slab_evanescent_envelope
     use milca_result_io, only: run_t, result_file_t
     use milca_animation_export, only: animation_export_t

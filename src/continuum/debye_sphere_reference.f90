@@ -3,7 +3,7 @@ module milca_debye_sphere_reference
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, is_empty, iadd, &
         linear_interpolation_remainder
-    use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
+    use milca_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_inside_tangent, sphere_outside_tangent, sphere_inside_packet, &
         sphere_outside_packet, sphere_bare_inside, sphere_bare_outside, &
         sphere_bare_inside_interval, sphere_bare_outside_interval, &

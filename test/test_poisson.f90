@@ -15,7 +15,7 @@ program test_poisson
                                    coupled_density, coupled_collision, &
                                    coupled_collision_jvp, coupled_collision_vjp, &
                                    coupled_source_jvp
-    use kin6d_leaves, only: coordinate
+    use milca_leaves, only: coordinate
     implicit none
     real(dp), parameter :: pi = 3.141592653589793238462643383279502884_dp
     real(dp), parameter :: tolerance = 2.0e-14_dp

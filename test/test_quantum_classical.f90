@@ -15,7 +15,7 @@ program test_quantum_classical
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use kin6d_nbody, only: nbody_force
-    use kin6d_coulomb_leaves, only: ewald_background
+    use milca_coulomb_leaves, only: ewald_background
     use milca_classical_cell
     use kin6d_quantum_pair_cell
     use kin6d_quantum_classical_leaves

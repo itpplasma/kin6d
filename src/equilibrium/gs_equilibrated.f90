@@ -13,7 +13,7 @@ module milca_gs_equilibrated
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_triangle_basis, only: triangle_bernstein_controls
-    use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
+    use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
         gs_error_friedrichs
     use milca_gs_majorant, only: gs_point_source_fn
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature

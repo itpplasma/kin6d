@@ -75,7 +75,7 @@ add_library(kin6d_libneo_coils
     ${libneo_SOURCE_DIR}/src/field/bc_file.f90)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
-set_source_files_properties(src/generated/kin6d_leaves.f90
+set_source_files_properties(src/generated/milca_leaves.f90
     src/generated/kin6d_vrmhd_leaves.f90
     src/generated/kin6d_vrmhd_section_leaves.f90
     src/generated/kin6d_pp_fusion_leaves.f90
@@ -244,45 +244,45 @@ foreach(gate derivatives physics energy covariance)
     add_test(NAME vrmhd_${gate} COMMAND test_vrmhd_leaves ${gate})
     set_tests_properties(vrmhd_${gate} PROPERTIES LABELS rm1)
 endforeach()
-target_sources(kin6d_core PRIVATE src/generated/kin6d_leaves.f90 src/core/laboratory.f90
+target_sources(kin6d_core PRIVATE src/generated/milca_leaves.f90 src/core/laboratory.f90
     src/core/sort_keys.f90 src/core/real_identity.f90
     src/generated/kin6d_species_leaves.f90 src/core/species.f90)
-target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_leaves.f90 src/pairs/ewald.f90
+target_sources(kin6d_pairs PRIVATE src/generated/milca_coulomb_leaves.f90 src/pairs/ewald.f90
     src/generated/kin6d_ocp_leaves.f90 src/pairs/near_encounter.f90 src/pairs/pme.f90
-    src/pairs/nbody.f90 src/generated/kin6d_interaction_leaves.f90
+    src/pairs/nbody.f90 src/generated/milca_interaction_leaves.f90
     src/pairs/interaction_laboratory.f90)
 target_sources(kin6d_classical PRIVATE src/classical/ocp.f90 src/classical/pair_correlation.f90
     src/generated/kin6d_cloud_leaves.f90 src/classical/microscopic_cloud.f90)
 target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_poisson_leaves.f90 src/continuum/poisson_laboratory.f90
-    src/generated/kin6d_fp_leaves.f90 src/continuum/fp_laboratory.f90
-    src/generated/kin6d_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
-    src/generated/kin6d_dk_pitch_leaves.f90 src/continuum/dk_pitch.f90
-    src/generated/kin6d_dk_mono_leaves.f90 src/continuum/dk_mono.f90
-    src/generated/kin6d_dk_hp_leaves.f90 src/continuum/dk_hp.f90
-    src/generated/kin6d_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
-    src/generated/kin6d_dk_collop_leaves.f90 src/continuum/dk_collop.f90
+    src/generated/milca_fp_leaves.f90 src/continuum/fp_laboratory.f90
+    src/generated/milca_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
+    src/generated/milca_dk_pitch_leaves.f90 src/continuum/dk_pitch.f90
+    src/generated/milca_dk_mono_leaves.f90 src/continuum/dk_mono.f90
+    src/generated/milca_dk_hp_leaves.f90 src/continuum/dk_hp.f90
+    src/generated/milca_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
+    src/generated/milca_dk_collop_leaves.f90 src/continuum/dk_collop.f90
     src/generated/kin6d_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
     src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
     src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
     src/generated/kin6d_streaming_leaves.f90 src/continuum/streaming_comparison.f90
     src/continuum/streaming_particle_density.f90
     src/generated/kin6d_streaming_moments_leaves.f90 src/continuum/streaming_moments.f90
-    src/generated/kin6d_debye_sphere_leaves.f90 src/continuum/debye_sphere_reference.f90
+    src/generated/milca_debye_sphere_leaves.f90 src/continuum/debye_sphere_reference.f90
     src/generated/kin6d_slab_oscillation_leaves.f90 src/continuum/slab_oscillation.f90
     src/generated/kin6d_shielding_dynamics_leaves.f90 src/continuum/shielding_dynamics.f90
-    src/generated/kin6d_homma_leaves.f90 src/continuum/rosenbluth_reference.f90)
+    src/generated/milca_homma_leaves.f90 src/continuum/rosenbluth_reference.f90)
 set_source_files_properties(
-    src/generated/kin6d_species_leaves.f90 src/generated/kin6d_coulomb_leaves.f90
+    src/generated/kin6d_species_leaves.f90 src/generated/milca_coulomb_leaves.f90
     src/generated/kin6d_ocp_leaves.f90
-    src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
+    src/generated/kin6d_poisson_leaves.f90 src/generated/milca_fp_leaves.f90
     src/generated/kin6d_transport_leaves.f90 src/generated/kin6d_streaming_leaves.f90
     src/generated/kin6d_streaming_moments_leaves.f90
-    src/generated/kin6d_debye_sphere_leaves.f90
+    src/generated/milca_debye_sphere_leaves.f90
     src/generated/kin6d_slab_oscillation_leaves.f90
     src/generated/kin6d_shielding_dynamics_leaves.f90
-    src/generated/kin6d_interaction_leaves.f90
-    src/generated/kin6d_cloud_leaves.f90 src/generated/kin6d_homma_leaves.f90
+    src/generated/milca_interaction_leaves.f90
+    src/generated/kin6d_cloud_leaves.f90 src/generated/milca_homma_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
         quantum_reference_gallery classical_pair jellium_cell)
@@ -357,8 +357,8 @@ set_source_files_properties(
 target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_load_batch.f90
     src/fem2d/gs_timers.f90 src/fem2d/gs_options.f90 src/fem2d/gs_csr.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_symmetry.f90
-    src/generated/kin6d_gs_symmetry_leaves.f90
-    src/generated/kin6d_grad_shafranov_leaves.f90
+    src/generated/milca_gs_symmetry_leaves.f90
+    src/generated/milca_grad_shafranov_leaves.f90
     src/generated/kin6d_grad_shafranov_batch.f90 src/equilibrium/grad_shafranov.f90)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_core PUBLIC OpenMP::OpenMP_Fortran)
@@ -368,21 +368,21 @@ add_library(kin6d_gs_reference_test STATIC
     test/support/gs_reference_error.f90)
 target_link_libraries(kin6d_gs_reference_test PUBLIC kin6d)
 target_compile_options(kin6d_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
+target_sources(kin6d_equilibrium PRIVATE src/generated/milca_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_boozer_file_leaves.f90
     src/equilibrium/boozer_file.f90)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_inverse_leaves.f90
+target_sources(kin6d_equilibrium PRIVATE src/generated/milca_gs_inverse_leaves.f90
     src/equilibrium/gs_inverse.f90 src/equilibrium/gs_prescribed_q.f90)
-set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
-    src/generated/kin6d_gs_coarea_leaves.f90
+set_source_files_properties(src/generated/milca_gs_inverse_leaves.f90
+    src/generated/milca_gs_coarea_leaves.f90
     src/generated/kin6d_boozer_file_leaves.f90
-    src/generated/kin6d_dk_pitch_leaves.f90
-    src/generated/kin6d_dk_mono_leaves.f90
-    src/generated/kin6d_dk_hp_leaves.f90
-    src/generated/kin6d_dk_ntv_leaves.f90
-    src/generated/kin6d_dk_collop_leaves.f90
+    src/generated/milca_dk_pitch_leaves.f90
+    src/generated/milca_dk_mono_leaves.f90
+    src/generated/milca_dk_hp_leaves.f90
+    src/generated/milca_dk_ntv_leaves.f90
+    src/generated/milca_dk_collop_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
+set_source_files_properties(src/generated/milca_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_spatial)
 add_executable(test_real_identity test/test_real_identity.f90)
@@ -462,24 +462,24 @@ add_executable(test_equilibrium_harness test/test_equilibrium_harness.f90)
 target_link_libraries(test_equilibrium_harness PRIVATE kin6d)
 add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
-target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
+target_sources(kin6d_mhd PRIVATE src/generated/milca_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
     src/mhd/equilibrium_3d_driver.f90
-    src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
-    src/generated/kin6d_ideal_field_angle_leaves.f90
-    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
+    src/generated/milca_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
+    src/generated/milca_ideal_field_angle_leaves.f90
+    src/generated/milca_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
     src/mhd/nested_seed_input.f90)
-set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
+set_source_files_properties(src/generated/milca_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
-    src/generated/kin6d_fold_barrier_leaves.f90 src/mhd/ideal_free_boundary.f90)
+    src/generated/milca_fold_barrier_leaves.f90 src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
-    src/generated/kin6d_fold_barrier_leaves.f90
+    src/generated/milca_fold_barrier_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_sources(kin6d_equilibrium PRIVATE
-    src/generated/kin6d_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
-set_source_files_properties(src/generated/kin6d_nested_oracle_leaves.f90 PROPERTIES
+    src/generated/milca_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
+set_source_files_properties(src/generated/milca_nested_oracle_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 if(KIN6D_ENABLE_OPENMP)
     add_executable(benchmark_nested_oracles test/benchmark_nested_oracles.f90)
@@ -511,9 +511,9 @@ target_link_libraries(test_nested_oracles PRIVATE kin6d)
 add_test(NAME equilibrium_nested_exact_oracles COMMAND test_nested_oracles)
 set_tests_properties(equilibrium_nested_exact_oracles PROPERTIES
     ENVIRONMENT "OMP_NUM_THREADS=4" PROCESSORS 4)
-target_sources(kin6d_mhd PRIVATE src/generated/kin6d_landreman_leaves.f90
+target_sources(kin6d_mhd PRIVATE src/generated/milca_landreman_leaves.f90
     src/mhd/landreman_benchmark.f90)
-set_source_files_properties(src/generated/kin6d_landreman_leaves.f90 PROPERTIES
+set_source_files_properties(src/generated/milca_landreman_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_landreman_free_boundary test/test_landreman_free_boundary.f90)
 target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
@@ -784,13 +784,13 @@ set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEO
 target_sources(kin6d_fem2d PRIVATE src/fem2d/curved_triangle.f90
     src/generated/kin6d_segment_leaves.f90 src/fem2d/triangle_basis.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_majorant.f90 src/equilibrium/gs_profile_law.f90 src/equilibrium/gs_nonlinear.f90
-    src/equilibrium/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
+    src/equilibrium/gs_equilibrated.f90 src/generated/milca_gs_error_leaves.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_quadrature_budget.f90)
 set_source_files_properties(
     src/equilibrium/gs_quadrature_budget.f90
     src/equilibrium/gs_error_control.f90
-    src/generated/kin6d_gs_error_leaves.f90
-    src/generated/kin6d_grad_shafranov_leaves.f90
+    src/generated/milca_gs_error_leaves.f90
+    src/generated/milca_grad_shafranov_leaves.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/verified_rt0_majorant.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_bernstein_products.f90
@@ -813,7 +813,7 @@ add_test(NAME grad_shafranov_checked_source_study
     COMMAND test_gs_checked_source_remainder study)
 set_tests_properties(grad_shafranov_checked_source_study PROPERTIES
     TIMEOUT 300 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
-set_property(SOURCE src/generated/kin6d_gs_error_leaves.f90 APPEND PROPERTY
+set_property(SOURCE src/generated/milca_gs_error_leaves.f90 APPEND PROPERTY
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
 target_link_libraries(test_gs_error_leaves PRIVATE kin6d_equilibrium)
@@ -1311,9 +1311,9 @@ if(KIN6D_FORTSYM_BUILD)
     add_test(NAME grad_shafranov_rm0_symbolic
         COMMAND ${CMAKE_COMMAND}
             -DGENERATOR=$<TARGET_FILE:gen_gs_symmetry>
-            -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_gs_symmetry_leaves.f90
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_gs_symmetry_leaves.f90
             -DWORK=${CMAKE_BINARY_DIR}/rm0_regeneration
-            -DLEAF=kin6d_gs_symmetry_leaves.f90
+            -DLEAF=milca_gs_symmetry_leaves.f90
             -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_executable(gen_ideal_fb_kink gen/gen_ideal_fb_kink.f90)
     target_link_libraries(gen_ideal_fb_kink PRIVATE milca_gen_support)
@@ -1352,7 +1352,7 @@ if(KIN6D_FORTSYM_BUILD)
             grad_shafranov_forward_majorant_rejects_${premise}_omission PROPERTIES
             WILL_FAIL TRUE WORKING_DIRECTORY ${gs_majorant_check_dir}/${premise})
     endforeach()
-    set(gs_leaf_source ${CMAKE_CURRENT_SOURCE_DIR}/src/generated/kin6d_grad_shafranov_leaves.f90)
+    set(gs_leaf_source ${CMAKE_CURRENT_SOURCE_DIR}/src/generated/milca_grad_shafranov_leaves.f90)
     set(gs_check_dir ${CMAKE_BINARY_DIR}/gs_variational_evidence)
     file(MAKE_DIRECTORY ${gs_check_dir}/native ${gs_check_dir}/wrong_field
         ${gs_check_dir}/wrong_weight)
@@ -1395,49 +1395,49 @@ if(KIN6D_FORTSYM_BUILD)
     endforeach()
     add_test(NAME dk_pitch_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_pitch>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_pitch_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_dk_pitch_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/dk-pitch-regeneration
-        -DLEAF=kin6d_dk_pitch_leaves.f90
+        -DLEAF=milca_dk_pitch_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_pitch_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_pitch)
     add_test(NAME dk_mono_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_mono>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_mono_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_dk_mono_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/dk-mono-regeneration
-        -DLEAF=kin6d_dk_mono_leaves.f90
+        -DLEAF=milca_dk_mono_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_mono_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_mono)
     add_test(NAME dk_hp_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_hp>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_hp_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_dk_hp_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/dk-hp-regeneration
-        -DLEAF=kin6d_dk_hp_leaves.f90
+        -DLEAF=milca_dk_hp_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_hp_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_hp)
     add_test(NAME ntv_boozer_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ntv_boozer>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ntv_boozer_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ntv_boozer_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ntv-boozer-regeneration
-        -DLEAF=kin6d_ntv_boozer_leaves.f90
+        -DLEAF=milca_ntv_boozer_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(ntv_boozer_leaf_regeneration fast CLASSES apps
         TARGETS gen_ntv_boozer)
     add_test(NAME dk_ntv_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_ntv>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_ntv_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_dk_ntv_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/dk-ntv-regeneration
-        -DLEAF=kin6d_dk_ntv_leaves.f90
+        -DLEAF=milca_dk_ntv_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_ntv_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_ntv)
     add_test(NAME dk_collop_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_collop>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_collop_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_dk_collop_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/dk-collop-regeneration
-        -DLEAF=kin6d_dk_collop_leaves.f90
+        -DLEAF=milca_dk_collop_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(dk_collop_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_collop)
@@ -1463,7 +1463,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(vrmhd_leaf_regeneration PROPERTIES LABELS rm1)
     add_test(NAME island_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_islands>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_island_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/island-leaf-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_island_regeneration.cmake)
     kin6d_test_labels(island_leaf_regeneration fast CLASSES equilibrium
@@ -1489,50 +1489,50 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_mhd_coordinates.cmake)
     add_test(NAME ideal_xi_exact_identity_and_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_xi>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_xi_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ideal_xi_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-xi-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_xi_regeneration.cmake)
     add_test(NAME nonnested_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nonnested>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nonnested_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_nonnested_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nonnested-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nonnested_regeneration.cmake)
     kin6d_test_labels(nonnested_exact_regeneration fast CLASSES mhd TARGETS gen_nonnested)
     add_test(NAME metriplectic_identities_and_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_metriplectic>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_metriplectic_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_metriplectic_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/metriplectic-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_metriplectic_regeneration.cmake)
     kin6d_test_labels(metriplectic_identities_and_regeneration fast CLASSES mhd
         TARGETS gen_metriplectic)
     add_test(NAME island_seed_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_island_seed>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_seed_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_island_seed_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/island-seed-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_island_seed_regeneration.cmake)
     kin6d_test_labels(island_seed_exact_regeneration fast CLASSES mhd
         TARGETS gen_island_seed)
     add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
     add_test(NAME ideal_field_angle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_field_angle>
-        -DLEAF=kin6d_ideal_field_angle_leaves.f90
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_field_angle_leaves.f90
+        -DLEAF=milca_ideal_field_angle_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ideal_field_angle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-field-angle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME homma_leaves_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_homma>
-        -DLEAF=kin6d_homma_leaves.f90
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_homma_leaves.f90
+        -DLEAF=milca_homma_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_homma_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/homma-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME fp_relaxation_leaves_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_fp_relaxation>
-        -DLEAF=kin6d_fp_relaxation_leaves.f90
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_fp_relaxation_leaves.f90
+        -DLEAF=milca_fp_relaxation_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_fp_relaxation_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/fp-relaxation-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME thermal_screening_leaves_regeneration COMMAND ${CMAKE_COMMAND}
@@ -1545,18 +1545,18 @@ if(KIN6D_FORTSYM_BUILD)
         TARGETS gen_thermal_screening)
     add_test(NAME ideal_map_leaves_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_map>
-        -DLEAF=kin6d_ideal_map_leaves.f90
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_map_leaves.f90
+        -DLEAF=milca_ideal_map_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ideal_map_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-map-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME ideal_seed_3d_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_seed_3d>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_seed_3d_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ideal_seed_3d_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-seed-3d-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_ideal_seed_3d_regeneration.cmake)
     add_test(NAME equilibrium_map_3d_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_map_3d_readback>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_map_3d_readback_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_map_3d_readback_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/map-3d-readback-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_map_3d_readback_regeneration.cmake)
     add_executable(check_response_strip_current gen/check_response_strip_current.f90)
@@ -1568,7 +1568,7 @@ if(KIN6D_FORTSYM_BUILD)
     add_test(NAME check_homma_derivations COMMAND check_homma_derivations)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_curve_chart_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/curve-chart-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_curve_chart_regeneration.cmake)
 endif()
@@ -1622,9 +1622,9 @@ add_test(NAME relativistic_fermi_gas_oracles COMMAND test_relativistic_fermi_gas
 add_executable(test_fermi_gas_cold test/test_fermi_gas_cold.f90)
 target_link_libraries(test_fermi_gas_cold PRIVATE kin6d)
 add_test(NAME fermi_gas_cold_sommerfeld COMMAND test_fermi_gas_cold)
-target_sources(kin6d_quantum PRIVATE src/generated/kin6d_fermion_ensemble_leaves.f90
+target_sources(kin6d_quantum PRIVATE src/generated/milca_fermion_ensemble_leaves.f90
     src/quantum/fermion_ensemble.f90)
-set_source_files_properties(src/generated/kin6d_fermion_ensemble_leaves.f90
+set_source_files_properties(src/generated/milca_fermion_ensemble_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_fermion_ensemble test/test_fermion_ensemble.f90)
 target_link_libraries(test_fermion_ensemble PRIVATE kin6d)
@@ -1660,7 +1660,7 @@ add_dependencies(kin6d_io kin6d_build_info)
 # NTV field lines from Boozer files: composes the equilibrium reader with the
 # continuum kernel, so it lives in the application layer.
 add_library(kin6d_ntv_geometry src/apps/ntv_boozer_line.f90
-    src/generated/kin6d_ntv_boozer_leaves.f90 src/apps/ntv_device.f90)
+    src/generated/milca_ntv_boozer_leaves.f90 src/apps/ntv_device.f90)
 target_link_libraries(kin6d_ntv_geometry PUBLIC kin6d)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_ntv_geometry PUBLIC OpenMP::OpenMP_Fortran)
@@ -1738,9 +1738,9 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_mean_field_cell gen/gen_mean_field_cell.f90)
     target_link_libraries(gen_mean_field_cell PRIVATE milca_gen_support)
 endif()
-target_sources(kin6d_quantum PRIVATE src/generated/kin6d_mean_field_cell_leaves.f90
+target_sources(kin6d_quantum PRIVATE src/generated/milca_mean_field_cell_leaves.f90
     src/quantum/mean_field_cell.f90)
-set_source_files_properties(src/generated/kin6d_mean_field_cell_leaves.f90
+set_source_files_properties(src/generated/milca_mean_field_cell_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_mean_field_cell test/test_mean_field_cell.f90)
 target_link_libraries(test_mean_field_cell PRIVATE kin6d)
@@ -2049,9 +2049,9 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d_mhd PRIVATE src/generated/ideal_mhd_energy_generated.f90
     src/mhd/ideal_xi.F90
-    src/generated/kin6d_ideal_xi_leaves.f90)
+    src/generated/milca_ideal_xi_leaves.f90)
 # Generated derivatives retain the primal ABI for constant partials.
-set_source_files_properties(src/generated/kin6d_ideal_xi_leaves.f90
+set_source_files_properties(src/generated/milca_ideal_xi_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_ideal_mhd_coordinates test/test_ideal_mhd_coordinates.f90)
 target_link_libraries(test_ideal_mhd_coordinates PRIVATE kin6d_mhd)
@@ -2062,13 +2062,13 @@ add_test(NAME ideal_xi_hessian_and_analytic_limits COMMAND test_ideal_xi)
 set_tests_properties(ideal_xi_hessian_and_analytic_limits PROPERTIES
     ENVIRONMENT "OMP_NUM_THREADS=2" PROCESSORS 2)
 target_sources(kin6d_mhd PRIVATE src/mhd/map_equilibrium.f90)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
-    src/generated/kin6d_curve_chart_leaves.f90
+target_sources(kin6d_equilibrium PRIVATE src/generated/milca_equilibrium_core_leaves.f90
+    src/generated/milca_curve_chart_leaves.f90
     src/equilibrium/equilibrium_chart.f90 src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
     src/equilibrium/equilibrium_residual.f90 src/equilibrium/equilibrium_readback.f90
     src/equilibrium/equilibrium_certificate.f90 src/equilibrium/gs_certificate.f90
     src/equilibrium/equilibrium_boundary.f90 src/equilibrium/equilibrium_geometry.f90)
-set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
+set_source_files_properties(src/generated/milca_equilibrium_core_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_equilibrium_boundary test/test_equilibrium_boundary.f90)
 target_link_libraries(test_equilibrium_boundary PRIVATE kin6d)
@@ -2200,7 +2200,7 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 target_sources(kin6d_mhd PRIVATE src/mhd/mhd_mesh.f90 src/mhd/mhd_ampere_n.f90
-    src/generated/kin6d_ideal_response_error_leaves.f90
+    src/generated/milca_ideal_response_error_leaves.f90
     src/mhd/mhd_response_n.f90 src/mhd/mhd_ideal_n.f90 src/mhd/mhd_closure_n.f90
     src/mhd/mhd_layer_n.f90)
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_feec_n)
@@ -2389,9 +2389,9 @@ set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN1: closed free-B states and the vacuum / axisymmetric-pressure restrictions.
-target_sources(kin6d_mhd PRIVATE src/generated/kin6d_nonnested_leaves.f90
+target_sources(kin6d_mhd PRIVATE src/generated/milca_nonnested_leaves.f90
     src/mhd/equilibrium_nonnested.f90 src/mhd/nonnested_residual.f90)
-set_source_files_properties(src/generated/kin6d_nonnested_leaves.f90
+set_source_files_properties(src/generated/milca_nonnested_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 
 add_library(kin6d_nn_solovev_test STATIC test/support/nn_solovev_fixture.f90)
@@ -2436,7 +2436,7 @@ set_tests_properties(nonnested_transport_anisotropy_pollution
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 target_sources(kin6d_mhd PRIVATE src/mhd/island_diagnostics.f90)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_island_leaves.f90
+target_sources(kin6d_equilibrium PRIVATE src/generated/milca_island_leaves.f90
     src/equilibrium/coil_quadrature_field.f90)
 add_executable(test_island_diagnostics test/test_island_diagnostics.f90)
 add_executable(test_island_driven test/support/island_outer_reference.f90
@@ -2684,8 +2684,8 @@ target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
     src/mhd/nonnested_newton_mr.f90
     src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_beltrami_mr.f90
     src/mhd/nonnested_relax.f90 src/mhd/nonnested_force.f90
-    src/generated/kin6d_metriplectic_leaves.f90)
-set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
+    src/generated/milca_metriplectic_leaves.f90)
+set_source_files_properties(src/generated/milca_metriplectic_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_nonnested_beltrami_spec test/test_nonnested_beltrami_spec.f90)
 target_link_libraries(test_nonnested_beltrami_spec PRIVATE kin6d)
@@ -2804,9 +2804,9 @@ set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 # Energy-criterion island seeding (docs/island-seed.md).
-target_sources(kin6d_mhd PRIVATE src/generated/kin6d_island_seed_leaves.f90
+target_sources(kin6d_mhd PRIVATE src/generated/milca_island_seed_leaves.f90
     src/mhd/island_seed.f90)
-set_source_files_properties(src/generated/kin6d_island_seed_leaves.f90
+set_source_files_properties(src/generated/milca_island_seed_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_island_seed test/test_island_seed.f90)
 target_link_libraries(test_island_seed PRIVATE kin6d)
@@ -2867,9 +2867,9 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_em_slab gen/gen_em_slab.f90)
     target_link_libraries(gen_em_slab PRIVATE milca_gen_support)
 endif()
-target_sources(kin6d_continuum PRIVATE src/generated/kin6d_em_slab_leaves.f90
+target_sources(kin6d_continuum PRIVATE src/generated/milca_em_slab_leaves.f90
     src/continuum/em_slab.f90)
-set_source_files_properties(src/generated/kin6d_em_slab_leaves.f90
+set_source_files_properties(src/generated/milca_em_slab_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_em_slab test/test_em_slab.f90)
 target_link_libraries(test_em_slab PRIVATE kin6d)

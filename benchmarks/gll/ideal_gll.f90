@@ -7,8 +7,8 @@ module milca_ideal_gll_spike
     use fortfem_element_to_csr, only: build_node_to_element
     use fortfem_tensor_contractions, only: tensor_contract
     use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_ideal_map_leaves, only: ideal_reference_form
-    use kin6d_ideal_gll_leaves, only: gll_energy, gll_gradient, gll_hessian, &
+    use milca_ideal_map_leaves, only: ideal_reference_form
+    use milca_ideal_gll_leaves, only: gll_energy, gll_gradient, gll_hessian, &
         gll_landreman_map
     implicit none
     private

@@ -18,7 +18,7 @@ program test_gs_coupled_majorant
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use milca_grad_shafranov_leaves, only: gs_source
     use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build, &
         gs_coupling_coil_load, gs_coupling_source_load, gs_coupled_solve, &
