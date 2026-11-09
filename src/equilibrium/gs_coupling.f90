@@ -44,7 +44,7 @@ module milca_gs_coupling
         gamma_c_exterior, axisymmetric_coils_t, GAMMA_C_FLUX, GAMMA_C_OK
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use milca_sort_keys, only: sort_key_order
-    use kin6d_gs_timers, only: gs_phase_tick
+    use milca_gs_timers, only: gs_phase_tick
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data
     use milca_gs_coils, only: gs_circuit_set_t
     use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY

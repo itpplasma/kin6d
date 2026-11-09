@@ -2,7 +2,7 @@ program test_gs_device_selection
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_requested_device, GS_DEVICE_FAILURE, GS_UNSUPPORTED_DEVICE
-    use kin6d_gs_options, only: gs_set_options
+    use milca_gs_options, only: gs_set_options
     use milca_gs_profile_law, only: gs_profile_law_t
     use milca_gs_nonlinear, only: solve_gs_cubic_profiles, &
         gs_profile_jacobian_t, cubic_response => gs_profile_response

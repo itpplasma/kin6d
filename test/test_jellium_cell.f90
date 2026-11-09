@@ -10,9 +10,9 @@ program test_jellium_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_symmetric_eigen, only: symmetric_eigen
     use fortnum_interval, only: interval_t
-    use kin6d_quantum_fock
-    use kin6d_quantum_correlations, only: quantum_cumulant_norms
-    use kin6d_jellium_cell
+    use milca_quantum_fock
+    use milca_quantum_correlations, only: quantum_cumulant_norms
+    use milca_jellium_cell
     implicit none
     integer, allocatable :: modes(:, :)
     type(jellium_cell_t) :: cell

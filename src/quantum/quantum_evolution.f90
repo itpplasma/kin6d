@@ -1,4 +1,4 @@
-module kin6d_quantum_evolution
+module milca_quantum_evolution
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint, interval, mag, intersect, entire
@@ -988,4 +988,4 @@ contains
             end do
         end select
     end subroutine
-end module kin6d_quantum_evolution
+end module milca_quantum_evolution

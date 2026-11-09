@@ -1,4 +1,4 @@
-module kin6d_fermi_gas
+module milca_fermi_gas
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, intersect, mag, is_empty
@@ -845,4 +845,4 @@ contains
         ok = .true.
     end function finite_interval
 
-end module kin6d_fermi_gas
+end module milca_fermi_gas

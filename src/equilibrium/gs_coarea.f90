@@ -4,8 +4,8 @@ module milca_gs_coarea
     use milca_grad_shafranov, only: gs_state_t, &
                                     gs_element_jet, gs_axis_candidate, &
                                     gs_axis_safety_factor, GS_UNSUPPORTED_GEOMETRY
-    use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
-    use kin6d_triangle_basis, only: cubic_segment_roots, cubic_segment_stationary, &
+    use milca_curved_triangle, only: triangle_geometry, triangle_locate
+    use milca_triangle_basis, only: cubic_segment_roots, cubic_segment_stationary, &
         triangle_basis_jet
     use milca_gs_coarea_leaves, only: gs_contour_weight, gs_cubic_flux, &
                                       gs_contour_weight_jvp, &

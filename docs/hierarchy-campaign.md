@@ -119,7 +119,7 @@ run from the repository root and must reproduce committed leaves exactly.
   thermodynamic-limit hole (deviation 8.6e-5 at N=1021), grand-canonical
   EOS (e_N-e_TL ~ 1/N), classical limits and finite differences. The
   alternating power-sum recursion cancels up to 5e36 cold; it is used only
-  as a cross-check. Q8: relativistic option in `kin6d_fermi_gas`
+  as a cross-check. Q8: relativistic option in `milca_fermi_gas`
   (`gen_relativistic_fermi`, convexity tail, graded Fermi-window mesh;
   nonrelativistic path bit-identical). Certified to x_F=10 at 1e7 K;
   NR/UR/Chandrasekhar/classical limits checked by an independent binary128

@@ -4,7 +4,7 @@ module milca_gs_majorant
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
                                   gs_linear_response, gs_recovery_t
     use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp
-    use kin6d_triangle_basis, only: triangle_bernstein_controls
+    use milca_triangle_basis, only: triangle_bernstein_controls
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
     use fortfem_triangle_rt_arbitrary_order, only: triangle_rt_basis_t, &
@@ -17,11 +17,11 @@ module milca_gs_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK, &
         KRYLOV_MAX_ITERATIONS
-    use kin6d_gs_csr, only: gs_csr_build, gs_csr_apply_full, csr_matrix_t
-    use kin6d_gs_options, only: gs_use_direct
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_gs_csr, only: gs_csr_build, gs_csr_apply_full, csr_matrix_t
+    use milca_gs_options, only: gs_use_direct
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
-    use kin6d_gs_timers, only: gs_phase_tick
+    use milca_gs_timers, only: gs_phase_tick
     use milca_gs_coupling, only: gs_coupling_t, gs_coupling_bem_nodes, &
         gs_coupled_apply, gs_coupling_steklov
     use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors

@@ -11,8 +11,8 @@ module milca_equilibrium_3d_driver
     use milca_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
     use milca_map_3d_readback_leaves, only: map_3d_cartesian
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_curved_triangle, only: triangle_locate
-    use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
+    use milca_curved_triangle, only: triangle_locate
+    use milca_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
     use milca_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
         NESTED_SEED_NFP, NESTED_SEED_OK
     implicit none

@@ -1,4 +1,4 @@
-module kin6d_quantum_correlations
+module milca_quantum_correlations
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_sort_keys, only: sort_key_order
@@ -271,4 +271,4 @@ contains
             end if
         end subroutine
     end subroutine
-end module kin6d_quantum_correlations
+end module milca_quantum_correlations

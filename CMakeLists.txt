@@ -252,7 +252,7 @@ target_sources(kin6d_pairs PRIVATE src/generated/milca_coulomb_leaves.f90 src/pa
     src/pairs/nbody.f90 src/generated/milca_interaction_leaves.f90
     src/pairs/interaction_laboratory.f90)
 target_sources(kin6d_classical PRIVATE src/classical/ocp.f90 src/classical/pair_correlation.f90
-    src/generated/kin6d_cloud_leaves.f90 src/classical/microscopic_cloud.f90)
+    src/generated/milca_cloud_leaves.f90 src/classical/microscopic_cloud.f90)
 target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/milca_poisson_leaves.f90 src/continuum/poisson_laboratory.f90
     src/generated/milca_fp_leaves.f90 src/continuum/fp_laboratory.f90
@@ -282,7 +282,7 @@ set_source_files_properties(
     src/generated/milca_slab_oscillation_leaves.f90
     src/generated/milca_shielding_dynamics_leaves.f90
     src/generated/milca_interaction_leaves.f90
-    src/generated/kin6d_cloud_leaves.f90 src/generated/milca_homma_leaves.f90
+    src/generated/milca_cloud_leaves.f90 src/generated/milca_homma_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
         quantum_reference_gallery classical_pair jellium_cell)
@@ -300,13 +300,13 @@ endforeach()
 # Q1/Q1b partial-wave encounter: banded symmetric eigensolver from LAPACK,
 # the external numerical dependency FortNum already declares.
 find_package(LAPACK REQUIRED)
-target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
+target_sources(kin6d_pairs PRIVATE src/generated/milca_coulomb_encounter_leaves.f90
     src/pairs/radial_dvr.f90)
 target_sources(kin6d_quantum PRIVATE src/generated/milca_pp_fusion_leaves.f90
     src/quantum/pp_fusion.f90
     src/generated/milca_pp_fusion_eft_leaves.f90 src/quantum/pp_fusion_eft.f90
     src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
-set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
+set_source_files_properties(src/generated/milca_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
@@ -364,18 +364,18 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_core PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 add_library(kin6d_gs_reference_test STATIC
-    test/generated/kin6d_gs_reference_error_leaves.f90
+    test/generated/milca_gs_reference_error_leaves.f90
     test/support/gs_reference_error.f90)
 target_link_libraries(kin6d_gs_reference_test PUBLIC kin6d)
 target_compile_options(kin6d_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(kin6d_equilibrium PRIVATE src/generated/milca_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_boozer_file_leaves.f90
+target_sources(kin6d_equilibrium PRIVATE src/generated/milca_boozer_file_leaves.f90
     src/equilibrium/boozer_file.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/milca_gs_inverse_leaves.f90
     src/equilibrium/gs_inverse.f90 src/equilibrium/gs_prescribed_q.f90)
 set_source_files_properties(src/generated/milca_gs_inverse_leaves.f90
     src/generated/milca_gs_coarea_leaves.f90
-    src/generated/kin6d_boozer_file_leaves.f90
+    src/generated/milca_boozer_file_leaves.f90
     src/generated/milca_dk_pitch_leaves.f90
     src/generated/milca_dk_mono_leaves.f90
     src/generated/milca_dk_hp_leaves.f90
@@ -1443,9 +1443,9 @@ if(KIN6D_FORTSYM_BUILD)
         TARGETS gen_dk_collop)
     add_test(NAME boozer_file_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_boozer_file>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_boozer_file_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_boozer_file_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/boozer-file-regeneration
-        -DLEAF=kin6d_boozer_file_leaves.f90
+        -DLEAF=milca_boozer_file_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     kin6d_test_labels(boozer_file_leaf_regeneration fast CLASSES equilibrium
         TARGETS gen_boozer_file)
@@ -1809,9 +1809,9 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_correlation_hierarchy PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_core PRIVATE src/core/series_statistics.f90)
-target_sources(kin6d_classical PRIVATE src/generated/kin6d_correlation_hierarchy_leaves.f90
+target_sources(kin6d_classical PRIVATE src/generated/milca_correlation_hierarchy_leaves.f90
     src/classical/ocp_monte_carlo.f90 src/classical/correlation_hierarchy.f90 src/classical/ocp_hnc.f90)
-set_source_files_properties(src/generated/kin6d_correlation_hierarchy_leaves.f90
+set_source_files_properties(src/generated/milca_correlation_hierarchy_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_correlation_hierarchy test/test_correlation_hierarchy.f90)
 target_link_libraries(test_correlation_hierarchy PRIVATE kin6d)

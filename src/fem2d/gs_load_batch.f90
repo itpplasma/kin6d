@@ -1,4 +1,4 @@
-module kin6d_gs_load_batch
+module milca_gs_load_batch
     !! Vectorised kernels of the fixed-rule smooth-cell load. All dummy arguments
     !! are explicit-shape and contiguous, so the loops over the quadrature
     !! points vectorise (`omp simd`). The quadrature index runs fastest in the
@@ -80,4 +80,4 @@ contains
         end do
     end subroutine
 
-end module kin6d_gs_load_batch
+end module milca_gs_load_batch

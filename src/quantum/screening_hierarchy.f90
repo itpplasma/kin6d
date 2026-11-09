@@ -2,14 +2,14 @@
 !> neutralizing background (Debye, finite-T Fermi/Thomas-Fermi, Lindhard/RPA).
 !> Units kF = 1, EF = 1, x = q/(2 kF); G(x) = -chi0(q)/N(0). Static ideal-gas
 !> response only: no local-field correction, no correlations.
-module kin6d_screening_hierarchy
+module milca_screening_hierarchy
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval
     use fortnum_quadrature, only: gauss_legendre
     use milca_species, only: units_t, species_t, plasma_scales_t, plasma_scales, &
         pair_coupling
-    use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
+    use milca_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si
     use milca_fermi_gas_leaves, only: fermi_argument, fermi_positive, fermi_negative
     use milca_screening_leaves, only: screening_lindhard_inner, &
@@ -29,12 +29,12 @@ module kin6d_screening_hierarchy
     real(dp), parameter :: grading = 0.25_dp, pi = acos(-1.0_dp)
 
     !> Static ideal-gas screening state at (theta, kappa2). theta = 0 is the
-    !> exact T=0 limit (closed-form Lindhard); theta > 0 uses mu from kin6d_fermi_gas.
+    !> exact T=0 limit (closed-form Lindhard); theta > 0 uses mu from milca_fermi_gas.
     type :: screening_state_t
         real(dp) :: theta = 0.0_dp, mu = 1.0_dp, kappa2 = 0.0_dp
-        !> ks/kTF0 = sqrt(G(0)) from kin6d_fermi_gas; kD/kTF0 = sqrt(2/(3 theta)).
+        !> ks/kTF0 = sqrt(G(0)) from milca_fermi_gas; kD/kTF0 = sqrt(2/(3 theta)).
         real(dp) :: ks_ratio = 1.0_dp, kd_ratio = huge(1.0_dp)
-        !> Certified kin6d_fermi_gas enclosure of ks/kTF0 (1% output budget).
+        !> Certified milca_fermi_gas enclosure of ks/kTF0 (1% output budget).
         type(interval_t) :: ks_ratio_bound
         !> Physical scales in the caller's reduced units (0 if normalized setup).
         real(dp) :: kf = 0.0_dp, ktf0 = 0.0_dp, ks = 0.0_dp, kd = 0.0_dp
@@ -142,7 +142,7 @@ contains
         end if
     end function
 
-    !> Fermi occupation at r = p/pF from the authoritative kin6d_fermi_gas leaves.
+    !> Fermi occupation at r = p/pF from the authoritative milca_fermi_gas leaves.
     pure real(dp) function occupation(r, theta, mu) result(f)
         real(dp), intent(in) :: r, theta, mu
         real(dp) :: z
@@ -488,4 +488,4 @@ contains
                                min(0.25_dp, 4.0_dp/maxval(r)), table)
         call screened_ratio_from_table(state, table, r, ratio, tail, indicator)
     end subroutine
-end module kin6d_screening_hierarchy
+end module milca_screening_hierarchy

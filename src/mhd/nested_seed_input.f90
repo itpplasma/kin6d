@@ -7,7 +7,7 @@ module milca_nested_seed_input
     ! Both oracle families have two field periods (nested_boundary_harmonic).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
+    use milca_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
     use milca_nested_oracle_leaves, only: nested_boundary_harmonic, &
         nested_boundary_radius
     use milca_ideal_seed_3d, only: toroidal_profile_t

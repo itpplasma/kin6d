@@ -1,4 +1,4 @@
-module kin6d_gs_timers
+module milca_gs_timers
     ! Per-phase wall clocks for the Grad--Shafranov path. Phases are accumulated
     ! by the master thread only, outside parallel regions. A module-level
     ! accumulator keeps the intent(in) numerical interfaces unchanged.

@@ -9,7 +9,7 @@ program test_coulomb_encounter
     use milca_radial_dvr
     use milca_coulomb_encounter
     use milca_coulomb_kepler
-    use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_rutherford, ce_free_width
+    use milca_coulomb_encounter_leaves, only: ce_mott, ce_rutherford, ce_free_width
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab, gauss_lobatto_legendre
     use fortnum_special_legendre, only: legendre_p_normalized_table
     implicit none

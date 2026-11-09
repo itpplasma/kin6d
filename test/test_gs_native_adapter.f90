@@ -1,6 +1,6 @@
 program test_gs_native_adapter
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, &
         gs_direct_factor, gs_direct_solve, gs_direct_solve_block, &
         gs_direct_free, GS_DIRECT_INDEFINITE
     use fortsparse, only: FORTSPARSE_BACKEND_NATIVE

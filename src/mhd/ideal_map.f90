@@ -37,9 +37,9 @@ module milca_ideal_map
     ! tests at two weights.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES, &
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES, &
         TRIANGLE_MAX_DEGREE
-    use kin6d_curved_triangle, only: triangle_locate
+    use milca_curved_triangle, only: triangle_locate
     use milca_grad_shafranov, only: gs_state_t
     use milca_ideal_map_leaves, only: ideal_point_gradient_jets, &
         ideal_point_hessian_jets, ideal_point_field_gradient_jets, &
@@ -61,7 +61,7 @@ module milca_ideal_map
         sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
         FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t, FORTSPARSE_SYM_INDEFINITE, &
         sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
-    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
+    use milca_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
     private

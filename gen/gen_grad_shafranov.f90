@@ -123,7 +123,7 @@ program gen_grad_shafranov
    call w%close()
    ! Cubic Lagrange segment on the nodes 0, 1/3, 2/3, 1 (flux samples along a
    ! P3 edge): value at t of (sum_i L_i(t) (v_i - level)) and the slopes of
-   ! the interpolant at t = 0, 1/2, 1. Consumed by kin6d_triangle_basis.
+   ! the interpolant at t = 0, 1/2, 1. Consumed by milca_triangle_basis.
    tt = sym('t'); level = sym('level')
    do i = 0, 3
       seg_v(i) = sym('v'//achar(48 + i))

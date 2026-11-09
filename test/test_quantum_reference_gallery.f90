@@ -2,7 +2,7 @@ program test_quantum_reference_gallery
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval, imul
-    use kin6d_quantum_reference_gallery, only: quantum_observable_packet_t, &
+    use milca_quantum_reference_gallery, only: quantum_observable_packet_t, &
         prepare_quantum_observables, sample_quantum_observables, &
         quantum_initial_norm, quantum_matrix_defect, quantum_physical_radius, &
         prepare_quantum_pair_sector

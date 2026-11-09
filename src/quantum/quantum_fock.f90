@@ -1,4 +1,4 @@
-module kin6d_quantum_fock
+module milca_quantum_fock
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, ipoint, entire
@@ -1688,4 +1688,4 @@ contains
             keys(raw) = s*m3 + u; pr_(raw) = pr; pi_(raw) = pi
         end subroutine
     end subroutine
-end module kin6d_quantum_fock
+end module milca_quantum_fock

@@ -10,7 +10,7 @@ Model: homogeneous ideal 3D spin-two electron gas with a neutralizing
 background, static linear response (ideal-gas RPA). A static local-field
 correction, correlations and the dynamic response are out of scope.
 Inputs `(n, T)` in the caller's reduced units map through `milca_species`
-to `Theta, r_s, Gamma, lambda_D`; `kin6d_fermi_gas` supplies `mu` and
+to `Theta, r_s, Gamma, lambda_D`; `milca_fermi_gas` supplies `mu` and
 `k_s^2 = (e^2/eps0) dn/dmu` (charge `sqrt(g)`, `eps0 = 1/(4 pi)`).
 Units inside: `kF = 1`, `EF = 1`, `x = q/(2kF)`,
 `G(x) = -chi0(q)/N(0)`, `eps = 1 + kappa2 G(q/2)/q^2`,
@@ -57,7 +57,7 @@ Evidence (`test_screening`, `app/screening_demo.f90`, r_s = 1):
 | theta = 10, phi/phi_bare vs exp(-k_s r), 1 <= k_s r <= 4 | 7.2e-4 relative |
 | G(0) inside the certified fermi_gas `k_s` enclosure | all theta |
 
-Finding (resolved): the `kin6d_fermi_gas` *candidate* `k_s/kTF0` was off by
+Finding (resolved): the `milca_fermi_gas` *candidate* `k_s/kTF0` was off by
 up to 1.8e-3 (relative) at `theta ~ 0.025`, inside its certified 1% enclosure.
 The cause was one Gauss rule across the Fermi window; the graded mesh split
 at the Fermi surface (docs/fermi-gas.md) brings `G(0)/k_s - 1` at

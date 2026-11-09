@@ -1,6 +1,6 @@
 program benchmark_nested_oracles
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_nested_oracles, only: nested_oracle_t
+    use milca_nested_oracles, only: nested_oracle_t
     use omp_lib, only: omp_get_wtime, omp_set_num_threads, &
         omp_set_dynamic, omp_get_num_threads
     implicit none

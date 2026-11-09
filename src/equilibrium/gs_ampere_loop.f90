@@ -8,7 +8,7 @@ module milca_gs_ampere_loop
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use milca_triangle_basis, only: triangle_basis_jet
     use milca_grad_shafranov_leaves, only: gs_current_sheet
     use milca_gs_profile_law, only: gs_profile_law_t
     use milca_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t, gs_forcing_t

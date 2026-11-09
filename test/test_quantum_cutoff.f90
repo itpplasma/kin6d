@@ -1,13 +1,13 @@
 program test_quantum_cutoff
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
     use fortnum_interval, only: interval_t
-    use kin6d_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
+    use milca_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
                                   init_fock_basis, fock_basis_info, get_fock_states, &
                          prepare_jellium_hamiltonian, assemble_fock_hamiltonian_block, &
                   assemble_fock_hamiltonian_block_interval, assemble_jellium_pair_sector
-    use kin6d_quantum_evolution, only: quantum_evolution_t, &
+    use milca_quantum_evolution, only: quantum_evolution_t, &
          initialize_quantum_evolution, solve_quantum_evolution, sample_quantum_evolution
-    use kin6d_quantum_reference_gallery, only: quantum_observable_packet_t, &
+    use milca_quantum_reference_gallery, only: quantum_observable_packet_t, &
                  quantum_initial_norm, quantum_matrix_defect, quantum_physical_radius, &
                                  prepare_quantum_pair_sector, sample_quantum_observables
     implicit none

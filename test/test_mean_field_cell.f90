@@ -10,9 +10,9 @@ program test_mean_field_cell
     !> spectra; Hellmann-Feynman against finite differences; vanishing Slater
     !> cumulants; Mermin limits (ideal grand-canonical gas, Theta -> 0).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_matvec
-    use kin6d_jellium_cell
-    use kin6d_mean_field_cell
+    use milca_quantum_fock, only: fock_hamiltonian_t, fock_matvec
+    use milca_jellium_cell
+    use milca_mean_field_cell
     implicit none
     integer, allocatable :: modes(:, :)
 

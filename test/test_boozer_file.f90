@@ -6,7 +6,7 @@
 program test_boozer_file
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file
-    use kin6d_boozer_file_leaves, only: boozer_metric, boozer_metric_jvp, &
+    use milca_boozer_file_leaves, only: boozer_metric, boozer_metric_jvp, &
         boozer_metric_vjp
     implicit none
     real(dp), parameter :: r0 = 1.7_dp, a = 0.5_dp, b0 = 2.3_dp, eps = 0.1_dp

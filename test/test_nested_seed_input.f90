@@ -3,7 +3,7 @@ program test_nested_seed_input
     ! off the projection grid, and profile fits against independent oracle
     ! profile evaluations at points that are neither fit nor check nodes.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
+    use milca_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
     use milca_nested_oracle_leaves, only: nested_setup
     use milca_ideal_seed_3d, only: toroidal_profile_t
     use milca_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &

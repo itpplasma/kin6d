@@ -20,7 +20,7 @@
 module milca_radial_dvr
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_coulomb_encounter_leaves, only: ce_radial_potential, ce_kinetic_scale
+    use milca_coulomb_encounter_leaves, only: ce_radial_potential, ce_kinetic_scale
     use fortnum_quadrature, only: gauss_lobatto_legendre
     use fortnum_polynomial, only: barycentric_weights, lagrange_differentiation_matrix
     implicit none

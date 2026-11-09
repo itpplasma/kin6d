@@ -18,7 +18,7 @@ module milca_coulomb_encounter
     use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
                                 radial_band_hamiltonian, radial_band_matvec, &
                                 radial_eigen_window, radial_locate
-    use kin6d_coulomb_encounter_leaves
+    use milca_coulomb_encounter_leaves
     use milca_species_leaves, only: species_pair_scales, species_sommerfeld
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use fortnum_interval, only: interval_t, ipoint

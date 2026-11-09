@@ -1,10 +1,10 @@
 ! Independent known-solution validation, not a general GS certifier.
-module kin6d_gs_reference_error
+module milca_gs_reference_error
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, operator(+), &
         operator(-), operator(*), operator(/), abs
-    use kin6d_gs_reference_error_leaves, only: gs_reference_error_density_interval
+    use milca_gs_reference_error_leaves, only: gs_reference_error_density_interval
     use fortfem_reference_scalar_intervals, only: generated_affine_p2_scalar_interval
     implicit none
     private
@@ -98,4 +98,4 @@ contains
             max_field2%hi = max(max_field2%hi, density(1)%hi)
         end subroutine cover
     end subroutine enclose_gs_reference_cell
-end module kin6d_gs_reference_error
+end module milca_gs_reference_error

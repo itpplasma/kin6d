@@ -1,5 +1,5 @@
 ! Two-body Reid68 impulse-approximation pp fusion, MeV/fm/seconds.
-module kin6d_pp_fusion
+module milca_pp_fusion
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, &

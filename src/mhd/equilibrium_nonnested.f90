@@ -15,7 +15,7 @@ module milca_equilibrium_nonnested
         csc_normalize_symmetric_raw, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
     use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_locate
     use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &

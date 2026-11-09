@@ -1,4 +1,4 @@
-module kin6d_nested_oracles
+module milca_nested_oracles
     ! Exact nested ideal-MHD references, mu0=1. No solver uses these as forcing.
     ! Local mathematics (including derivatives) is in gen/gen_nested_oracles.f90.
     use, intrinsic :: iso_fortran_env, only: dp => real64

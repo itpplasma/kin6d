@@ -2,7 +2,7 @@ program test_gs_direct_mpi
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use mpi, only: MPI_Initialized, MPI_Finalized, MPI_Init_thread, MPI_Finalize, &
         MPI_THREAD_SERIALIZED, MPI_SUCCESS
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_factor, gs_direct_solve, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_factor, gs_direct_solve, &
         gs_direct_free
     implicit none
     type(gs_direct_t) :: solver

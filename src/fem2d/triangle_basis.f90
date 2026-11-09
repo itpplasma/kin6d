@@ -1,4 +1,4 @@
-module kin6d_triangle_basis
+module milca_triangle_basis
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_generated_p1_basis, only: generated_p1_jet
     use fortfem_generated_p2_basis, only: generated_p2_jet

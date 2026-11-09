@@ -1,8 +1,8 @@
 program test_pp_fusion_eft
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_pp_fusion_eft
-    use kin6d_pp_fusion, only: pp_mp, pp_alpha, pp_fusion_config_t, &
+    use milca_pp_fusion_eft
+    use milca_pp_fusion, only: pp_mp, pp_alpha, pp_fusion_config_t, &
         pp_fusion_result_t, pp_fusion_solve
     use milca_pp_fusion_eft_leaves, only: eft_orders, eft_coulomb_slope
     implicit none

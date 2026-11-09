@@ -7,7 +7,7 @@ program gs_load_bench
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_gs_profile_law, only: gs_profile_law_t
     use milca_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load
-    use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_reset, &
+    use milca_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_reset, &
                                GS_T_LOAD_CELLS
     implicit none
     type(gs_state_t) :: state

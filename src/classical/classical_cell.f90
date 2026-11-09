@@ -70,7 +70,7 @@ module milca_classical_cell
     end type
 contains
     !> Cell of n electrons at density parameter rs (L from the shared rs map,
-    !> as kin6d_jellium_cell) and Theta = kT/E_F; model selects the pair law.
+    !> as milca_jellium_cell) and Theta = kT/E_F; model selects the pair law.
     subroutine init_classical_cell(cell, n, rs, theta, model, ok, tolerance)
         type(classical_cell_t), intent(out) :: cell
         integer, intent(in) :: n, model

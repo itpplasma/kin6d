@@ -1,4 +1,4 @@
-module kin6d_gs_options
+module milca_gs_options
     ! Run-time switches for the Grad--Shafranov linear algebra. The defaults are
     ! the fast path (CSR operators, cached Cholesky factor). The old element-wise
     ! operator and the Jacobi-CG solvers stay selectable for comparison:

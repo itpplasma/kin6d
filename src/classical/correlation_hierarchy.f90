@@ -25,7 +25,7 @@
 module milca_correlation_hierarchy
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_correlation_hierarchy_leaves, only: ch_ybg_force_moment, &
+    use milca_correlation_hierarchy_leaves, only: ch_ybg_force_moment, &
         ch_excess_energy_density, ch_ocp_energy_fit, ch_ocp_energy_fit_jvp
     implicit none
     private

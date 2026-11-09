@@ -2,7 +2,7 @@ program test_quantum_evolution
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t
-    use kin6d_quantum_evolution, only: quantum_evolution_t, &
+    use milca_quantum_evolution, only: quantum_evolution_t, &
         initialize_quantum_evolution, solve_quantum_evolution, &
         sample_quantum_evolution, sample_quantum_evolution_box, &
         quantum_evolution_accepted, solve_quantum_evolution_tangent, &

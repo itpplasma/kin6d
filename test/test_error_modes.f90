@@ -1,6 +1,6 @@
 program test_error_modes
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
-    use kin6d_quantum_evolution
+    use milca_quantum_evolution
     use milca_slab_oscillation, only: slab_oscillation_state_t, &
         initialize_slab_oscillation, slab_oscillation_indicator
     use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, fp_indicator

@@ -1,7 +1,7 @@
 program test_nested_boundary_input
     ! Independent reconstruction in the external VMEC Fourier convention.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_nested_oracles, only: nested_oracle_t
+    use milca_nested_oracles, only: nested_oracle_t
     implicit none
     integer, parameter::maxmode = 32
     type(nested_oracle_t)::o

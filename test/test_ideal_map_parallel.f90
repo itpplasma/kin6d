@@ -33,7 +33,7 @@ program test_ideal_map_parallel
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use ideal_map_cases, only: setup_case, boundary_point, phi_edge, &
         solovev_profile_t, pi, a, psi_exact, psi_axis
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     implicit none
     character(16) :: mode, arg
     integer :: n = 32, degree = 2

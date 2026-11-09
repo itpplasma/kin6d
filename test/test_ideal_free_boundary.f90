@@ -104,13 +104,13 @@ program test_ideal_free_boundary
         IDEAL_FB_NOT_CONVERGED, ideal_fb_attach_exterior_3d, ideal_fb_mode_weight, &
         ideal_fb_curvature_t, ideal_fb_negative_curvature, ideal_fb_trust_subproblem, &
         ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect
-    use kin6d_curved_triangle, only: triangle_locate
+    use milca_curved_triangle, only: triangle_locate
     use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
     use fortnum_symmetric_eigen, only: dense_oracle => symmetric_eigen
     use fortnum_quadrature, only: gauss_legendre
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use milca_triangle_basis, only: triangle_basis_jet
     use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
         cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
     use milca_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &

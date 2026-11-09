@@ -2,7 +2,7 @@ program test_gs_reference_error
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, log, contains, operator(-), &
         operator(*), operator(/)
-    use kin6d_gs_reference_error, only: gs_reference_parameters_t, &
+    use milca_gs_reference_error, only: gs_reference_parameters_t, &
         enclose_gs_reference_cell
     implicit none
     type(gs_reference_parameters_t) :: parameters

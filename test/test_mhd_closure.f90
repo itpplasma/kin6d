@@ -56,7 +56,7 @@ program test_mhd_closure
         surface_t, surface_build, find_surface_q
     use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
         ring_labels_smooth
-    use kin6d_gs_direct, only: gs_direct_available
+    use milca_gs_direct, only: gs_direct_available
     use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl, mu0
     use milca_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &

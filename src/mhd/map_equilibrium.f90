@@ -20,9 +20,9 @@ module milca_map_equilibrium
     use milca_gs_axis_recovery, only: gs_magnetic_axis
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use milca_gs_equilibrium, only: gs_geometry_view, gs_readback_resolution
-    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls, &
+    use milca_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls, &
         TRIANGLE_MAX_NODES
-    use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
+    use milca_curved_triangle, only: triangle_geometry, triangle_locate
     use delaunay_types, only: mesh_t
     use point_location, only: locate_point
     implicit none

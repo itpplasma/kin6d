@@ -69,7 +69,7 @@ module milca_mhd_ampere_n
         csc_conjugate_transpose, fortsparse_status_t, status_ok, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         csc_normalize_symmetric_raw
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, &
         gs_direct_factor, gs_direct_solve, gs_direct_free
     implicit none
     private

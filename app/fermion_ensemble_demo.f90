@@ -5,8 +5,8 @@ program fermion_ensemble_demo
     ! Writes CSV and preliminary PNG figures to output/ (not committed).
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use fortnum_interval, only: interval_t
-    use kin6d_fermion_ensemble
-    use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
+    use milca_fermion_ensemble
+    use milca_fermi_gas, only: fermi_workspace_t, fermi_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, occupation_fermi_gas
     use milca_fermion_ensemble_leaves, only: fermion_cold_density_matrix, &
         fermion_cold_density_matrix_series, fermion_exchange_hole, &
