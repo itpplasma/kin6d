@@ -72,6 +72,7 @@ module milca_dk_hp
         procedure(stream_i), deferred :: stream
         procedure(level_i), deferred :: level
         procedure(point_i), deferred :: point
+        procedure :: perturbation => op_perturbation
     end type
 
     abstract interface
@@ -384,14 +385,9 @@ contains
             call f%level(kinds(1), vals(1), th, xi_lo, d_lo)
             call f%level(kinds(2), vals(2), th, xi_hi, d_hi)
             xi_b = (xi_hi - xi_lo)/2
-            src = 0
-            if (allocated(op%m)) then
-                do j = 1, size(op%m)
-                    src = src + (0, 1)*op%n*op%c(j)*exp((0, 1)*op%m(j)*th)
-                end do
-            end if
             do q2 = 1, nq
                 xi = xi_lo + xi_b*(1 + xq(q2))
+                src = f%perturbation(th, xi, op)
                 ww = wq(q1)*wq(q2)*th_a*xi_b
                 call f%point(th, xi, op, col, dr, de, den, phase, precess, drive, torque)
                 ! -i n q xi k + i (n/v)(omega_E + pre (1 + wsign xi^2)(cos - offset)/b)
@@ -799,6 +795,21 @@ contains
             xi = 0; dxi = 0
         end if
     end subroutine curve
+
+    !> The drive of one toroidal harmonic at (theta, xi), i n sum_m c_m
+    !> exp(i m theta) from the operator's amplitudes; a geometry whose orbits
+    !> leave the surface overrides it with the amplitudes at the orbit point.
+    complex(dp) function op_perturbation(g, th, xi, op) result(src)
+        class(hp_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        integer :: j
+        src = 0
+        if (.not. allocated(op%m)) return
+        do j = 1, size(op%m)
+            src = src + (0, 1)*op%n*op%c(j)*exp((0, 1)*op%m(j)*th)
+        end do
+    end function op_perturbation
 
     real(dp) function field_stream(g, th, xi) result(psi)
         class(hp_field_t), intent(in) :: g
