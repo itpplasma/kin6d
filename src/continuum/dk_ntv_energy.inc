@@ -380,9 +380,7 @@
         integer, intent(in) :: model
         type(energy_system_t), intent(out) :: e
         integer, intent(out) :: status
-    type(collop_t) :: op
-    real(dp), allocatable :: galerkin(:, :), moment(:), lorentz(:, :, :, :, :)
-    integer :: a, st, kk, n_leg
+    integer :: n_leg
 
     status = NTV_BAD_INPUT
     e%ns = size(species)
@@ -402,6 +400,23 @@
     e%gp = g
     e%gp%stream = 0; e%gp%mirror = 0; e%gp%nu = 0; e%gp%omega = 0
     call cache_blocks(e)
+    call collision_part(species, lnlambda, grid, model, n_leg, e, status)
+    end subroutine energy_assemble
+
+    !> Speed masses, drive moments and the scaled collision rows of e (with
+    !> e%ns and e%nx set): the part of the energy-coupled system that does
+    !> not depend on the surface.
+    subroutine collision_part(species, lnlambda, grid, model, n_leg, e, status)
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model, n_leg
+        type(energy_system_t), intent(inout) :: e
+        integer, intent(out) :: status
+    type(collop_t) :: op
+    real(dp), allocatable :: galerkin(:, :), moment(:), lorentz(:, :, :, :, :)
+    integer :: a, st, kk
+
     allocate (e%d4(e%nx), e%d6(e%nx))
     ! Kinetic terms with the speed masses lumped at the GLL nodes (the
     ! spectral-element mass), so that only the collision rows couple nodes.
@@ -447,7 +462,54 @@
     e%pre = e%pre - lorentz
     if (e%coupled) e%full = e%full - lorentz
     status = NTV_OK
-    end subroutine energy_assemble
+    end subroutine collision_part
+
+    !> Collision rows of the energy-coupled operator for solvers outside this
+    !> module: rows(k, kk, a, b, l), node k of species a against node kk of
+    !> species b in degree l, scaled by the row factor of (k, a), the operator's
+    !> own (full or test-particle) rows; ratio(k, a) the streaming coefficient
+    !> of node k after the same scaling (lumped over Galerkin speed mass); d3,
+    !> d4, d6 the lumped moments w x^p exp(-x^2) of the nodes 2..n; vt, tz the
+    !> thermal speed and T/(Z e) of each species.
+    subroutine ntv_collision_rows(species, lnlambda, grid, model, n_leg, rows, ratio, &
+            d3, d4, d6, vt, tz, status)
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model, n_leg
+        real(dp), allocatable, intent(out) :: rows(:, :, :, :, :), ratio(:, :), d3(:), &
+            d4(:), d6(:), vt(:), tz(:)
+        integer, intent(out) :: status
+    type(energy_system_t) :: e
+    integer :: a, b, k, l
+    status = NTV_BAD_INPUT
+    e%ns = size(species)
+    e%nx = grid%n - 1
+    if (e%ns < 1 .or. size(lnlambda, 1) /= e%ns .or. size(lnlambda, 2) /= e%ns) return
+    if (n_leg < 2) return
+    call collision_part(species, lnlambda, grid, model, n_leg, e, status)
+    if (status /= NTV_OK) return
+    allocate (rows(e%nx, e%nx, e%ns, e%ns, 0:n_leg - 1), ratio(e%nx, e%ns))
+    do l = 0, n_leg - 1
+        do b = 1, e%ns
+            do a = 1, e%ns
+                do k = 1, e%nx
+                    rows(k, :, a, b, l) = collision_rows(e, k, a, b, l)
+                end do
+            end do
+        end do
+    end do
+    do a = 1, e%ns
+        do k = 1, e%nx
+            ratio(k, a) = e%row(k, a)*e%vt(a)*e%m3(k, k)
+        end do
+    end do
+    d3 = [(e%m3(k, k), k=1, e%nx)]
+    d4 = e%d4
+    d6 = e%d6
+    vt = e%vt
+    tz = e%tz
+    end subroutine ntv_collision_rows
 
     !> The system of one speed node: the node-diagonal part of the operator,
     !> including the diagonal of the energy scattering.

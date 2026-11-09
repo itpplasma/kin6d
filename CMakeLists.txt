@@ -262,6 +262,7 @@ target_sources(milca_continuum PRIVATE src/continuum/vlasov_response.f90
     src/continuum/dk_mono_thermal.f90
     src/generated/milca_dk_hp_leaves.f90 src/continuum/dk_hp.f90
     src/generated/milca_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
+    src/continuum/dk_surface.f90
     src/generated/milca_dk_collop_leaves.f90 src/continuum/dk_collop.f90
     src/generated/milca_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
     src/generated/milca_transport_leaves.f90 src/continuum/transport_laboratory.f90
@@ -1059,7 +1060,7 @@ foreach(check onsager momentum local collisionless)
 endforeach()
 add_executable(test_ntv_surface test/test_ntv_surface.f90)
 target_link_libraries(test_ntv_surface PRIVATE milca)
-foreach(check axisymmetric quasisymmetric monoenergetic onsager ambipolar iterative
+foreach(check axisymmetric quasisymmetric monoenergetic onsager ambipolar iterative real
         exact)
     add_test(NAME ntv_surface_${check} COMMAND test_ntv_surface ${check})
     milca_test_labels(ntv_surface_${check} fast CLASSES continuum
