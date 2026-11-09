@@ -91,6 +91,13 @@ module milca_dk_mono
             real(dp), intent(inout) :: b(ldb, *)
             integer, intent(out) :: info
         end subroutine dgetrs
+        subroutine dgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+            import :: dp
+            character, intent(in) :: transa, transb
+            integer, intent(in) :: m, n, k, lda, ldb, ldc
+            real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+            real(dp), intent(inout) :: c(ldc, *)
+        end subroutine dgemm
     end interface
 
 contains
@@ -418,25 +425,45 @@ contains
         status = MONO_SINGULAR
         do l = f%lmax, 1, -1
             r = rhs(:, l, :)
-            if (l < f%lmax) r = r - matmul(upper(f%d, f%p, l), z(:, :, l + 1))
+            if (l < f%lmax) call subtract_upper(f, l, z(:, :, l + 1), r)
             call dgetrs('N', n, m, f%s_lu(:, :, l), n, f%s_piv(:, l), r, n, info)
             if (info /= 0) return
             z(:, :, l) = r
         end do
-        b0(1:n, :) = rhs(:, 0, :) - matmul(upper(f%d, f%p, 0), z(:, :, 1))
+        r = rhs(:, 0, :)
+        call subtract_upper(f, 0, z(:, :, 1), r)
+        b0(1:n, :) = r
         b0(n + 1, :) = constraint
         call dgetrs('N', n + 1, m, f%border_lu, n + 1, f%border_piv, b0, n + 1, info)
         if (info /= 0) return
         z(:, :, 0) = b0(1:n, :)
         mu = b0(n + 1, :)
         do l = 1, f%lmax
-            z(:, :, l) = z(:, :, l) - matmul(f%y(:, :, l), z(:, :, l - 1))
+            call dgemm('N', 'N', n, m, n, -1.0_dp, f%y(:, :, l), n, z(:, :, l - 1), n, &
+                1.0_dp, z(:, :, l), n)
         end do
         do l = 0, f%lmax
             x(:, l, :) = z(:, :, l)
         end do
         status = MONO_OK
     end subroutine mono_solve
+
+    !> r = r - Up_l z without forming Up_l: the streaming row stream (l + 1)/
+    !> (2l + 3) times d z and the mirror term (as in upper).
+    subroutine subtract_upper(f, l, z, r)
+        type(mono_factor_t), intent(in) :: f
+        integer, intent(in) :: l
+        real(dp), intent(in) :: z(:, :)
+        real(dp), intent(inout) :: r(:, :)
+        real(dp) :: dz(size(z, 1), size(z, 2))
+        integer :: j
+        call dgemm('N', 'N', f%n, size(z, 2), f%n, 1.0_dp, f%d, f%n, z, f%n, 0.0_dp, dz, &
+            f%n)
+        do j = 1, size(z, 2)
+            r(:, j) = r(:, j) - f%p%stream*(l + 1)/real(2*l + 3, dp)*dz(:, j) &
+                + f%p%mirror*(l + 1)*(l + 2)/real(2*l + 3, dp)*z(:, j)
+        end do
+    end subroutine subtract_upper
 
     !> A x without the border, with deflection frequency nu per unit length.
     pure function mono_apply(f, nu, x) result(y)
