@@ -202,6 +202,24 @@ The coarse speed grid of the first three rows is a like-for-like grid, not
 a converged one: single-species d11 with the full operator needs about
 6 elements of order 6 before momentum conservation suppresses it.
 
+Monoenergetic coefficients of a 3D surface (`mono_coefficients_3d`) against
+MONKES ([Escoto et al. 2024](https://doi.org/10.1088/1741-4326/ad3fc9)).
+MONKES drives with (I d_zeta B - G d_theta B)/(sqrt(g) B^3), sqrt(g) =
+(G + iota I)/B^2, which is G/(iota B0) times the drive of `dk_mono`, and
+divides D31 by psi' and D11 by psi'^2 (psi' = d psi/dr of its radius
+r = a sqrt(s)); its coefficients carry a factor 2. With a = G/(iota B0 psi'):
+D11_M = 2 a^2 D11, D31_M = -2 a D31, D33_M = 2 D33. On a synthetic field
+(test `dk_mono_monkes`, iota = sqrt(2) - 1) all three agree to 3e-12 at
+nu = 1e-3 to 1 with both codes at 23 x 15 points; the test uses 15 x 9
+points and 60 Legendre polynomials (3e-10). On the DIII-D helical core of
+Cianciosa et al. (2017) at s = 0.058 (iota = 0.999), D33 agreed at once and
+D11 differed by 1.8e-4: MONKES keeps a Boozer mode only if |bmnc| > 1e-5
+B00, which for a field without stellarator symmetry also drops sine modes
+(here 1159 of 1188 modes, sine amplitudes up to 3.9e-5 B00). With the same
+truncation applied to MILCA's input the three coefficients agree to 3e-10 at
+nu = 1e-3 to 1. A rational iota (5/11) is a poor benchmark: both codes'
+D11 then converge only once the resonant harmonic is resolved.
+
 ### K2: global steady distributions and quasineutrality
 
 Retain v_d.grad(psi) partial_psi f on the unknown over a radial domain, where

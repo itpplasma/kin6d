@@ -13,6 +13,16 @@
 !!     values at kappa (iota - N)/iota times (1 + N I/G) iota/(iota - N) and
 !!     its square, and D33 is unchanged; an axisymmetric b on the 3D grid
 !!     reproduces the tokamak coefficients.
+!!   monkes  the 3D coefficients on b = 1 - 0.1 cos(theta) - 0.04 cos(theta - zeta)
+!!     + 0.02 cos(2 theta - zeta), iota = sqrt(2) - 1, G = 6, I = 0.3 (Boozer,
+!!     B0 = 1, one field period) against MONKES (Escoto et al., Nucl. Fusion
+!!     64, 076030, 2024; commit add6c3f, 23 x 15 points, 160 Legendre, its own
+!!     resolution change below 3e-10 at these nu). Its radial drive is
+!!     (I d_zeta B - G d_theta B)/(sqrt(g) B^3) with sqrt(g) = (G + iota I)/B^2,
+!!     G/(iota B0) times that of dk_mono, and it divides D31 by psi' and D11
+!!     by psi'^2 (psi' = 1 for this input); its Gamma carry a factor 2. Hence
+!!     D11_M = 2 a^2 D11, D31_M = -2 a D31 and D33_M = 2 D33 with
+!!     a = G/(iota B0 psi'), the sign from MONKES's opposite drive convention.
 !! The finite-collisionality corrections of the first two limits scale like
 !! sqrt(nu); two collisionalities eliminate them (Richardson).
 program test_dk_mono
@@ -41,6 +51,7 @@ program test_dk_mono
     case ('factor_api'); ok = factor_api()
     case ('coupling'); ok = coupling()
     case ('quasisymmetric_3d'); ok = quasisymmetric_3d()
+    case ('monkes'); ok = monkes()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -379,5 +390,35 @@ contains
         call mono_coefficients(b(:, 1), kappa, nu, 40, c1, st)
         ok = close_to('axisymmetric D31', ca%d31, c1%d31, 1e-12_dp) .and. ok
     end function quasisymmetric_3d
+
+    logical function monkes() result(ok)
+        integer, parameter :: nt = 15, nz = 9
+        real(dp), parameter :: g = 6.0_dp, ci = 0.3_dp, nus(2) = [1e-2_dp, 1e-1_dp]
+        ! MONKES D11, D31, D33 at nus.
+        real(dp), parameter :: ref(3, 2) = reshape([9.354582512257392e-02_dp, &
+            -1.963283462963152e-01_dp, 6.317977038800533e+01_dp, 4.578653600991239e-01_dp, &
+            -2.948369754006410e-03_dp, 6.545797593299846e+00_dp], [3, 2])
+        type(mono_coefficients_t) :: c
+        real(dp) :: b(nt, nz), iota, a, th, ze
+        integer :: i, j, k, st
+        iota = sqrt(2.0_dp) - 1
+        do j = 1, nz
+            do i = 1, nt
+                th = 2*pi*(i - 1)/nt
+                ze = 2*pi*(j - 1)/nz
+                b(i, j) = 1 - 0.1_dp*cos(th) - 0.04_dp*cos(th - ze) + 0.02_dp*cos(2*th - ze)
+            end do
+        end do
+        a = g/iota
+        ok = .true.
+        do k = 1, 2
+            call mono_coefficients_3d(b, 1, 1/iota, ci/g, iota/(g + iota*ci), nus(k), 60, &
+                c, st)
+            ok = ok .and. st == MONO_OK
+            ok = close_to('MONKES D11', 2*a*a*c%d11, ref(1, k), 1e-9_dp) .and. ok
+            ok = close_to('MONKES D31', -2*a*c%d31, ref(2, k), 1e-9_dp) .and. ok
+            ok = close_to('MONKES D33', 2*c%d33, ref(3, k), 1e-9_dp) .and. ok
+        end do
+    end function monkes
 
 end program test_dk_mono
