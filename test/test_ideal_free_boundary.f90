@@ -95,7 +95,8 @@ program test_ideal_free_boundary
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
-        ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
+        ideal_fb_solve_vacuum, ideal_fb_shell_field, ideal_fb_shell_locate, &
+        IDEAL_FB_OK, &
         ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &
         ideal_fb_hypotheses_print, ideal_fb_mode_inertia, ideal_fb_mode_lanczos, &
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
@@ -1354,6 +1355,41 @@ contains
         if (log(errors(2)/errors(3))/log(2.0_dp) < degree - 0.6_dp) &
             error stop 'vacuum order below k - 0.6'
         if (errors(3) > 1.0e-3_dp) error stop 'vacuum field error'
+        call located_field(fb, .true.)
+    end subroutine
+
+    subroutine located_field(fb, exact)
+        ! Field at physical points: locate (R, Z, phi) in the shell and, when
+        ! exact, compare B with the exact field. The points are images of
+        ! pseudo-random master points, so the location must reproduce them.
+        type(ideal_fb_t), intent(in) :: fb
+        logical, intent(in) :: exact
+        real(dp) :: x(3), y(3), b(3), be(2), psi, xi(2), xj(2), u(3), phi
+        real(dp) :: worst, miss
+        integer :: i, e, f, st, seed
+        worst = 0; miss = 0; seed = 0
+        do i = 1, 200
+            call random_number(u)
+            e = 1 + int(u(1)*fb%ncell)
+            xi = [u(2), u(3)*(1 - u(2))]
+            phi = 2*pi*u(1)
+            call ideal_fb_shell_field(fb, e, xi, phi, x, b, st)
+            if (st /= 0) error stop 'shell field'
+            call ideal_fb_shell_locate(fb, x, seed, f, xj, phi, st)
+            if (st /= 0) error stop 'shell locate'
+            seed = f
+            call ideal_fb_shell_field(fb, f, xj, phi, y, b, st)
+            miss = max(miss, maxval(abs(y(:2) - x(:2))), &
+                abs(modulo(y(3) - x(3) + pi, 2*pi) - pi))
+            if (.not. exact) cycle
+            call field_ext(x(1), x(2), be, psi)
+            worst = max(worst, sqrt((b(1) - be(1))**2 + (b(3) - be(2))**2 &
+                + (b(2) - f_vac/x(1))**2)/sqrt(sum(be**2) + (f_vac/x(1))**2))
+        end do
+        print '(a,es10.3,a,es10.3)', 'located points: position miss', miss, &
+            '  max rel |B - B_exact|', worst
+        if (miss > 1.0e-10_dp) error stop 'located position'
+        if (worst > 2.0e-3_dp) error stop 'located field'
     end subroutine
 
     real(dp) function shell_error(fb) result(rel)
@@ -1450,6 +1486,7 @@ contains
         print '(a,es10.3)', 'trace closure / curl-free mismatch (T, T m)', closure
         call ideal_fb_solve_vacuum(fa, st)
         if (st /= IDEAL_FB_OK) error stop 'vacuum solve a'
+        call located_field(fa, .false.)
         gamma_scale = 1.12_dp
         call build(28*degree, 24, degree, .false., 3, 1, fbig)
         call ideal_fb_set_drive(fbig, sampler, st)
