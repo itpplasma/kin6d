@@ -279,7 +279,8 @@ contains
         if (op%q /= 0) phase = m*pt%zeta_dot/(op%q*g%v_star)
         precess = 0
         drive = m*(1 + xi*xi)/b
-        torque = 2*k*drive
+        ! As the thin field: the flux weight with the surface measure 1/b**k_power.
+        torque = 2*k*drive/b**op%k_power
     end subroutine orbit_point_coefficients
 
 end module milca_ntv_orbit_geometry
