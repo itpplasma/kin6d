@@ -10,7 +10,7 @@ program test_pme
     use milca_species, only: units_t, species_t, reduced_units, electron
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use kin6d_pme, only: pme_parameters_t, pme_select, pme_estimate
-    use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8
+    use milca_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8
     use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_periodic_mesh, &
         nbody_force, nbody_force_jvp, nbody_step, nbody_fix, nbody_set_encounter, &
         nbody_energy, nbody_step_jvp

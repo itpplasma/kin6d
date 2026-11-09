@@ -5,7 +5,7 @@ module milca_transport_sampling
     use milca_transport_laboratory, only: transport_state_t, locate_cell
     use milca_transport_certificate, only: transport_certificate_t, &
         transport_observable_band
-    use kin6d_transport_leaves, only: transport_basis_interval, &
+    use milca_transport_leaves, only: transport_basis_interval, &
         transport_weighted_mode_accumulate_interval, transport_interpolate_interval, &
         transport_scalar_add_interval, transport_curvature_accumulate_interval
     implicit none

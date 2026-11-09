@@ -6,10 +6,10 @@ program test_vrmhd_section
     use kin6d_vrmhd_section
     use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
+    use milca_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
         vrmhd_curl_rotation, vrmhd_curl_screw
-    use kin6d_vrmhd_leaves, only: vrmhd_chi_flux_limited, &
+    use milca_vrmhd_leaves, only: vrmhd_chi_flux_limited, &
         vrmhd_chi_flux_limited_jvp, &
         vrmhd_chi_flux_limited_vjp
     use fortfem_mesh_2d, only: mesh_2d_t

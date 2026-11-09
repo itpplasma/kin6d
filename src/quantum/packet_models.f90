@@ -31,7 +31,7 @@ module kin6d_packet_models
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_gaussian_pair, only: gaussian_t, pair_rule_t, pair_rule_init, pair_elements, &
                                    gaussian_value, gaussian_norm2
-    use kin6d_packet_models_leaves
+    use milca_packet_models_leaves
     use kin6d_coulomb_encounter, only: encounter_t, encounter_state, encounter_project, &
                                        encounter_angular_bins, encounter_norm, in_sector, &
                                        SECTOR_PRODUCT, SECTOR_SINGLET, SECTOR_TRIPLET

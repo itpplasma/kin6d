@@ -24,7 +24,7 @@ program test_nonnested_force
         s_mapping => mapping, s_coordinates => coordinates, s_c => c
     use nn_vacuum_fixture, only: annulus_mesh
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve, nn_factor_t, nn_factor, nn_factor_solve_real, nn_factor_free
     use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve

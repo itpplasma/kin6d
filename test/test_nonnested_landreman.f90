@@ -180,7 +180,7 @@ program test_nonnested_landreman
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint, &
         meridian_load
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_linear_solve
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_linear_solve
     use kin6d_nonnested_residual, only: nn_residual
     use milca_equilibrium_residual, only: equilibrium_residual_t
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P

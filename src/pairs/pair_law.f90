@@ -11,10 +11,10 @@
 !>
 !> Every image |d + nL| beyond the image range carries Kelbg/exchange terms
 !> below exp(-36) relative to their contact values. Leaves come from
-!> kin6d_quantum_classical_leaves (one symbolic source).
+!> milca_quantum_classical_leaves (one symbolic source).
 module kin6d_pair_law
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_quantum_classical_leaves, only: qcm_kelbg, qcm_kelbg_series, &
+    use milca_quantum_classical_leaves, only: qcm_kelbg, qcm_kelbg_series, &
         qcm_kelbg_excess, qcm_exchange, qcm_pauli
     implicit none
     private

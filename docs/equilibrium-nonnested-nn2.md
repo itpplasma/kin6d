@@ -776,7 +776,7 @@ without a true-error oracle; these timings retain the practical claim.
 
 ## Frozen-current field (E3.5 level 2)
 
-`kin6d_frozen_current` computes the field of a prescribed current density
+`milca_frozen_current` computes the field of a prescribed current density
 J on the Fourier FEEC spaces of the coupled solver: the same Coulomb-gauge
 saddle point (curl-curl block, gradient coupling, multiplier lambda) with J
 held fixed and no transport or Ohm rows. Testing Ampere with grad chi shows

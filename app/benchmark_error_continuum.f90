@@ -6,7 +6,7 @@ program benchmark_error_continuum
         fp_certificate_radius
     use poisson_laboratory, only: coupled_steady_t, solve_coupled_steady, &
         coupled_certificate_radius, poisson_mode_t, solve_poisson_mode
-    use kin6d_poisson_leaves, only: poisson_coefficients_interval
+    use milca_poisson_leaves, only: poisson_coefficients_interval
     use milca_streaming_comparison, only: streaming_state_t, init_streaming, &
         advance_streaming, streaming_radius
     use milca_transport_laboratory, only: transport_state_t, initialize_transport, &

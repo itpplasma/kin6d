@@ -4,7 +4,7 @@ module milca_transport_certificate
     use fortnum_interval, only: interval_t, interval, mag
     use milca_transport_laboratory, only: transport_state_t, transport_valid, &
                                           sample_transport_coefficients_interval
-    use kin6d_transport_leaves, only: transport_residual_cell_interval, &
+    use milca_transport_leaves, only: transport_residual_cell_interval, &
                transport_residual_box_interval, transport_certificate_radius_interval, &
                  transport_tangent_radius_interval, transport_tangent_source_interval, &
                              transport_goal_band_interval, transport_scalar_add_interval, &

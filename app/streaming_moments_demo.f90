@@ -5,11 +5,11 @@ program streaming_moments_demo
         initialize_streaming_moments, advance_streaming_moments, &
         sample_streaming_moments, sample_streaming_moments_box, &
         sample_streaming_moments_distribution
-    use kin6d_streaming_moments_leaves, only: streaming_moments_initial
+    use milca_streaming_moments_leaves, only: streaming_moments_initial
     use milca_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
         init_streaming, advance_streaming, init_streaming_particles, &
         get_streaming_particles
-    use kin6d_streaming_leaves, only: streaming_plot_x, streaming_velocity_coordinate, &
+    use milca_streaming_leaves, only: streaming_plot_x, streaming_velocity_coordinate, &
         streaming_frame_time, streaming_characteristic, streaming_display_shift, &
         streaming_particle_midpoint, streaming_particle_glyph_size
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, &

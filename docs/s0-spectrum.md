@@ -99,7 +99,7 @@ test includes every radial branch in this admitted m=1 space.
 
 `gen/gen_s0_gs_space.f90` emits the physical values, R/Z derivatives and polar
 volume Jacobian, with JVP/VJP leaves, into
-`src/generated/kin6d_s0_gs_space_leaves.f90`. The adapter reuses
+`src/generated/milca_s0_gs_space_leaves.f90`. The adapter reuses
 `xi_gradient_n` for the toroidal derivative and frame rotation, and FortFEM's
 generated line basis for radial P1 values and derivatives. Element loops
 use OpenMP and fixed-size local scratch. Four Gauss points per radial cell and

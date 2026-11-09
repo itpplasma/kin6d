@@ -7,7 +7,7 @@ program steady_laboratory_demo
     use poisson_laboratory, only: coupled_steady_t, solve_coupled_steady, &
         coupled_sample, coupled_certificate_radius, &
         coupled_certificate_accepts
-    use kin6d_poisson_leaves, only: poisson_reconstruct_interval, &
+    use milca_poisson_leaves, only: poisson_reconstruct_interval, &
         coupled_distribution_interval
     use milca_leaves, only: coordinate, interval_band
     use fortnum_interval, only: interval_t, interval, interval_pi

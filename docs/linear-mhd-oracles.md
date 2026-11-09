@@ -17,7 +17,7 @@ The second command prints the reference table. With the pinned FortSym build
 configured as described in [tooling.md](tooling.md), also build
 `gen_rm_oracles`; the label then includes a regeneration comparison.
 The mathematical source is `gen/gen_rm_oracles.f90`, the emitted leaves are
-`src/generated/kin6d_rm_oracle_leaves.f90`, and the shooting and root-finding
+`src/generated/milca_rm_oracle_leaves.f90`, and the shooting and root-finding
 composition is `test/support/rm_mhd_oracles.f90`. This library is linked only
 by the oracle test executable. FortNum supplies adaptive Cash--Karp integration
 and Brent root finding; the reference has no dependency on a nonlinear MHD

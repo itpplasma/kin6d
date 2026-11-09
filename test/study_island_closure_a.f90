@@ -2,7 +2,7 @@ module island_a_study_trace
     ! Field-line tracing on the converged provider field that marks lines
     ! leaving the mesh instead of stopping (open lines reach the walls).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_velocity
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_velocity
     implicit none
     type(free_b_field_t), pointer :: traced => null()
     logical :: left_mesh = .false.

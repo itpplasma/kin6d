@@ -2,7 +2,7 @@ module poisson_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, mag
-    use kin6d_poisson_leaves, only: poisson_coefficients, poisson_reconstruct, &
+    use milca_poisson_leaves, only: poisson_coefficients, poisson_reconstruct, &
                                    poisson_coefficients_interval, &
                                    poisson_energy_interval, coupled_denominator, &
                                    coupled_amplitude, coupled_amplitude_interval, &

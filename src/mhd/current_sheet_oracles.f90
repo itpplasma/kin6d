@@ -1,4 +1,4 @@
-module kin6d_current_sheet_oracles
+module milca_current_sheet_oracles
     ! Linear ideal current-sheet references, mu0 = 1
     ! (docs/current-sheet-equilibrium.md section 5). Oracles only: no solver
     ! uses them as forcing.
@@ -340,4 +340,4 @@ contains
         end do
         status = 0
     end subroutine
-end module kin6d_current_sheet_oracles
+end module milca_current_sheet_oracles

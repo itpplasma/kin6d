@@ -91,18 +91,18 @@ program test_ideal_fb_traces3d
     use milca_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
         ideal_chart_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
-    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
+    use milca_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
         coupling_surface_t
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
         bem_pair_report_t, assemble_parametric_bem_p2_circulant
     use fortfem_parametric_laplace_bem_3d, only: bem_operators_t, &
         bem_exterior_dtn_t, build_exterior_dtn
     use fortfem_bem_circulant, only: bem_circulant_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_hessian, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
     use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0, segment_b

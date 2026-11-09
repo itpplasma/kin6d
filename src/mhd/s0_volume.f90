@@ -3,7 +3,7 @@ module kin6d_s0_volume
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_ideal_xi, only: xi_bilinear
-    use kin6d_s0_leaves, only: s0_mass_dp
+    use milca_s0_leaves, only: s0_mass_dp
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, &
         FORTSPARSE_OK, status_set, FORTSPARSE_INVALID_MATRIX
     implicit none

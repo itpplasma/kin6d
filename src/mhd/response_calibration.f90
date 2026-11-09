@@ -6,7 +6,7 @@ module kin6d_response_calibration
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_polynomial, only: lagrange_deriv_weights
-    use kin6d_response_calibration_leaves, only: sheet_field, &
+    use milca_response_calibration_leaves, only: sheet_field, &
         distance_leaf => spot_distance
     implicit none
     private

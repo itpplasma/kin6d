@@ -19,7 +19,7 @@ module ocp_shielding_app
         ocp_thermostat, ocp_kinetic_temperature, ocp_mode, ocp_radial_histogram, &
         ocp_debye_shell
     use kin6d_nbody, only: nbody_system_t, nbody_energy
-    use kin6d_ocp_leaves, only: debye_structure
+    use milca_ocp_leaves, only: debye_structure
     use milca_result_io, only: run_t, result_file_t
     use milca_animation_export, only: animation_export_t
     use milca_series_statistics, only: series_autocorrelation

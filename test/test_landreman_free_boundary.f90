@@ -4,8 +4,8 @@ module landreman_circuit_basis
     ! field B_phi = 1/R (unit F), then optional coils_3d circuits.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
-    use kin6d_ideal_free_boundary, only: ideal_fb_field_basis_t
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t
+    use milca_ideal_free_boundary, only: ideal_fb_field_basis_t
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t
     implicit none
     private
     type, extends(ideal_fb_field_basis_t), public :: ring_basis_t
@@ -64,11 +64,11 @@ program test_landreman_free_boundary
                                       gs_fb_locate, GS_FB_TARGET_MEAN
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_green_gradient
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
              ideal_fb_set_drive, ideal_fb_solve, ideal_fb_report_t, ideal_fb_shell_field
-    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use milca_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
-    use kin6d_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
+    use milca_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
              ideal_fb_set_currents, coil_circuit_basis_t, coil_circuit_basis_init
     use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
     use landreman_circuit_basis, only: ring_basis_t
@@ -78,7 +78,7 @@ program test_landreman_free_boundary
     real(dp) :: distance(2), field_error(2), pressure_error(2)
     integer :: st, l
     ! Modes: (none) set_drive with the fitted sampler; circuits: the same
-    ! drive through circuit currents (kin6d_ideal_fb_circuits); helical:
+    ! drive through circuit currents (milca_ideal_fb_circuits); helical:
     ! nfp = 3, N = 1 with an added 3-fold window-coil circuit; bem3d: the
     ! same chain=16,32 cases through the full-surface R2 BEM exterior
     ! (24 rotated sectors, block-circulant), each compared with the per-n

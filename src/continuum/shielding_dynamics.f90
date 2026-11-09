@@ -3,7 +3,7 @@ module milca_shielding_dynamics
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, is_empty, &
                                 linear_interpolation_remainder
-    use kin6d_shielding_dynamics_leaves, only: shielding_step, &
+    use milca_shielding_dynamics_leaves, only: shielding_step, &
                         shielding_interval_length, shielding_interval_length_interval, &
      shielding_slope_interval, shielding_residual_interval, shielding_radius_interval, &
                     shielding_mode, shielding_mode_interval, shielding_error_interval, &

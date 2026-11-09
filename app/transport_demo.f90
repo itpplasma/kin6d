@@ -12,10 +12,10 @@ program transport_demo
         certify_transport_cached, certify_transport_tangent_cached, &
         transport_linear_enclosure, certify_transport_linear, &
         certify_transport_tangent_linear
-    use kin6d_transport_leaves, only: transport_source_affine, transport_plot_x, &
+    use milca_transport_leaves, only: transport_source_affine, transport_plot_x, &
         transport_cosine_moment_cell_interval, transport_scalar_add_interval, &
         transport_accuracy_interval
-    use kin6d_poisson_leaves, only: coupled_distribution_interval
+    use milca_poisson_leaves, only: coupled_distribution_interval
     use fortnum_interval, only: interval_t, interval, rad
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, legend, tight_layout, savefig, ylim, xlim, suptitle

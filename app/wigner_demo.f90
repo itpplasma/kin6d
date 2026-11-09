@@ -185,7 +185,7 @@ program wigner_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_wigner_poisson
     use milca_wigner_dispersion, only: beam_t, dispersion_root
-    use kin6d_wigner_leaves, only: wigner_bohm_gross, wigner_cold_two_stream
+    use milca_wigner_leaves, only: wigner_bohm_gross, wigner_cold_two_stream
     use milca_wigner_plots, only: plot_summary, plot_movie
     use milca_result_io, only: run_t, result_file_t
     implicit none

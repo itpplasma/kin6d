@@ -21,7 +21,7 @@ module kin6d_nonnested_transport
     use fortsparse, only: csc_t, csc_matvec
     use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
-    use kin6d_equilibrium_nonnested, only: nn_linear_solve
+    use milca_equilibrium_nonnested, only: nn_linear_solve
     use milca_nonnested_leaves, only: anisotropic_conductivity
     use kin6d_nonnested_error, only: nn_error_t, nt_axisymmetric_error
     implicit none

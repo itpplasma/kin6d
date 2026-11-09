@@ -1,11 +1,11 @@
 # S0 frequency targeting consumes the complete FortNum eigen target and the
 # physical plasma-volume Hessian. Generic sparse numerics remain in FortSparse.
 target_sources(kin6d_mhd PRIVATE src/mhd/s0_volume.f90 src/mhd/s0_spectrum.f90
-    src/generated/kin6d_s0_leaves.f90 src/mhd/s0_gs_space.f90
-    src/generated/kin6d_s0_gs_space_leaves.f90)
-set_source_files_properties(src/generated/kin6d_s0_leaves.f90 PROPERTIES
+    src/generated/milca_s0_leaves.f90 src/mhd/s0_gs_space.f90
+    src/generated/milca_s0_gs_space_leaves.f90)
+set_source_files_properties(src/generated/milca_s0_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-set_source_files_properties(src/generated/kin6d_s0_gs_space_leaves.f90 PROPERTIES
+set_source_files_properties(src/generated/milca_s0_gs_space_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_s0_gs_kink test/test_s0_gs_kink.f90
     test/support/s0_cylinder_oracle.f90)
@@ -45,7 +45,7 @@ if(TARGET milca_gen_support)
     target_link_libraries(gen_s0_gs_space PRIVATE milca_gen_support)
     add_test(NAME s0_gs_space_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_s0_gs_space>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_s0_gs_space_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_s0_gs_space_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/s0-gs-space-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_s0_gs_space_regeneration.cmake)
     set_tests_properties(s0_gs_space_regeneration PROPERTIES TIMEOUT 10
@@ -54,7 +54,7 @@ if(TARGET milca_gen_support)
     target_link_libraries(gen_s0 PRIVATE milca_gen_support)
     add_test(NAME s0_exact_identities_and_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_s0>
-        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_s0_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_s0_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/s0-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_s0_regeneration.cmake)
 endif()

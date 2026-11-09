@@ -353,7 +353,7 @@ wall treatment has not been checked here.
 ## Leaf interface and verification scope
 
 The generator is [gen_vrmhd_leaves.f90](../gen/gen_vrmhd_leaves.f90); committed
-[Fortran leaves](../src/generated/kin6d_vrmhd_leaves.f90) need no symbolic
+[Fortran leaves](../src/generated/milca_vrmhd_leaves.f90) need no symbolic
 runtime. Each routine is named `vrmhd_<term>` and has `_jvp` (Jacobian-vector
 product) and `_vjp` (vector-Jacobian product) companions. Inputs, including
 parameters and test data, precede the output `value`; tangent inputs follow

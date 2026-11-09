@@ -71,7 +71,7 @@ units `omega_p`, `v_ref`, `lambda = v_ref/omega_p`,
 The grid is Fourier in x and periodic Fourier in v (eta). Strang step:
 
 1. stream dt/2 exactly in (k, v) through the shared
-   `kin6d_streaming_leaves:streaming_rotation` leaf;
+   `milca_streaming_leaves:streaming_rotation` leaf;
 2. Poisson: `Vhat_k = nhat_k/k^2` (`V = -phi`, `phi'' = n - 1`);
 3. kick dt exactly in (x, eta): `fhat *= exp(i dt sum_k s_k(eta) Vhat_k e^{ikx})`,
    `s_k = 2 sin(hbar k eta/2)/hbar`, which is the shift `v +- hbar k/2`. The

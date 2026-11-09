@@ -2,7 +2,7 @@ program test_nonnested_beltrami_spec
     ! External synthetic SPEC oracle. Samples contain physical (R,Z,phi,B).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build
     use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve

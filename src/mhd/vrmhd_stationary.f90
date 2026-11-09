@@ -3,7 +3,7 @@ module kin6d_vrmhd_stationary
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis, &
         vrmhd_section_residual, vrmhd_section_jacobian, vrmhd_section_gauge_basis
-    use kin6d_vrmhd_section_leaves, only: vrmhd_pairing
+    use milca_vrmhd_section_leaves, only: vrmhd_pairing
     use fortsparse, only: csc_t, csc_from_triplet, csc_matvec, csc_transpose, &
         fortsparse_status_t, status_ok
     implicit none

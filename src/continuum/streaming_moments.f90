@@ -5,10 +5,10 @@ module milca_streaming_moments
     use milca_streaming_comparison, only: streaming_state_t, init_streaming, &
         advance_streaming, density_coefficients_streaming, streaming_radius, &
         evaluate_streaming
-    use kin6d_streaming_leaves, only: streaming_rotation, streaming_rotation_interval, &
+    use milca_streaming_leaves, only: streaming_rotation, streaming_rotation_interval, &
         streaming_mode_accumulate, streaming_mode_accumulate_interval, &
         streaming_enlarge_interval
-    use kin6d_streaming_moments_leaves, only: streaming_moments_current_cell, &
+    use milca_streaming_moments_leaves, only: streaming_moments_current_cell, &
         streaming_moments_current_cell_interval, &
         streaming_moments_current_radius_interval, &
         streaming_moments_bulk, streaming_moments_bulk_interval

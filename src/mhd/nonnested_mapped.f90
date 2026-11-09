@@ -17,7 +17,7 @@ module kin6d_nonnested_mapped
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_from_triplet, &
         fortsparse_status_t, status_ok
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
     implicit none
     private

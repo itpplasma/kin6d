@@ -50,7 +50,7 @@ program fb3d_synthetic
     ! synthetic nfp = 3 modular-coil case (benchmarks/fb3d-synthetic): coils
     ! from the MAKEGRID file (libneo reader, one circuit, EXTCUR = 1), traces
     ! on the non-axisymmetric Gamma_c, field-period R2 exterior, Newton on the
-    ! one residual of kin6d_ideal_free_boundary. Writes <out>.lcfs (boundary
+    ! one residual of milca_ideal_free_boundary. Writes <out>.lcfs (boundary
     ! points x y z |B| on full-turn phi-hat samples) and <out>.json.
     ! Usage: fb3d_synthetic coils iota.dat phiedge out [nedge nchain ntor
     !        nphi_map nphi_bem nphi_surface sign max_iterations q1c q2c
@@ -84,11 +84,11 @@ program fb3d_synthetic
     use fb3d_synthetic_field, only: iota_field_t
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_equilibrium_chart, only: curve_chart_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_solve, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_solve, &
         ideal_fb_report_t, ideal_fb_shell_field, IDEAL_FB_OK, ideal_fb_gradient, &
         ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect, ideal_fb_solve_shell_map
-    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
+    use milca_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents
     use milca_coils_3d, only: coil_set_t, coil_mu0
     use milca_makegrid_circuits, only: makegrid_circuits_read

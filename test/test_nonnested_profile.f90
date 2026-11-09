@@ -104,7 +104,7 @@ program test_nonnested_profile
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
 use fortfem_meridian_fourier_scalar, only: meridian_fourier_value, meridian_fourier_load
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_profile, only: nn_fitted_source_t, nn_fit_source, &
                                        nn_state_profile_t, nn_profile_defect_t
     use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve

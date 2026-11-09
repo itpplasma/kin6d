@@ -1,4 +1,4 @@
-module kin6d_frozen_current
+module milca_frozen_current
     ! Level 2 of the device island field hierarchy: the magnetic field of a
     ! frozen current density J on the NN1 FEEC complex times a real Fourier
     ! series in phi (modes 0..N, FortFEM's real block layout as in
@@ -41,7 +41,7 @@ module kin6d_frozen_current
     use fortfem_axisymmetric_gs_kernel, only: gs_green
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, sparse_solver_t, &
         sparse_solve, sparse_destroy, fortsparse_status_t, status_ok
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free
     use kin6d_nonnested_coupled, only: nc_layout_t, nc_layout, nc_store, &
         nc_factor_reduced

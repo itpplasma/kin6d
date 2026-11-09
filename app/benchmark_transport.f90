@@ -11,7 +11,7 @@ program benchmark_transport_main
         transport_sampling_workspace_t, initialize_transport_sampling, &
         prepare_transport_basis, certify_transport_cached, &
         certify_transport_tangent_cached, transport_sampling_bytes
-    use kin6d_transport_leaves, only: transport_source_affine, transport_plot_x, &
+    use milca_transport_leaves, only: transport_source_affine, transport_plot_x, &
         transport_cosine_moment_cell_interval, transport_scalar_add_interval, &
         transport_accuracy_interval
     use fortnum_interval, only: interval_t, interval, rad

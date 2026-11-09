@@ -54,7 +54,7 @@ contains
 end module ideal_fb_test_field
 
 program test_ideal_free_boundary
-    ! N4 building blocks of the 3D free boundary (kin6d_ideal_free_boundary).
+    ! N4 building blocks of the 3D free boundary (milca_ideal_free_boundary).
     !   derivatives      gradient of L against central differences of L, KKT
     !                    Hessian against differences of the gradient (N = 0
     !                    and N = 1, nfp = 3, perturbed state, all blocks)
@@ -93,7 +93,7 @@ program test_ideal_free_boundary
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
         ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &

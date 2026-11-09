@@ -71,7 +71,7 @@ that finite-pressure algorithm and makes no matched performance claim.
 
 ## Implemented equations and interfaces
 
-`kin6d_equilibrium_nonnested` stores V2 coefficients for modes 0:N with
+`milca_equilibrium_nonnested` stores V2 coefficients for modes 0:N with
 B_-n = conjugate(B_n), and the harmonic F_vac/R separately. At n = 0 the
 auxiliary scalar a = R A_phi satisfies
 

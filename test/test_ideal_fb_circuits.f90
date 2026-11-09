@@ -23,7 +23,7 @@ end module ideal_fb_circuits_test_field
 
 program test_ideal_fb_circuits
     ! Circuit currents as parameters of the nested-map free-boundary residual
-    ! (kin6d_ideal_fb_circuits), synthetic public coils only, nfp = 3, N = 1:
+    ! (milca_ideal_fb_circuits), synthetic public coils only, nfp = 3, N = 1:
     !   derivatives  JVP in the currents against central differences of the
     !                residual (exact for its quadratic current dependence),
     !                adjoint identity <v, J w> = <J^T v, w>, superposition of
@@ -35,10 +35,10 @@ program test_ideal_fb_circuits
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
-    use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
+    use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
-    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
+    use milca_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
     use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0

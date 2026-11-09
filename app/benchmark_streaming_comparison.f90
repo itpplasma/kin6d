@@ -2,7 +2,7 @@ program benchmark_streaming_comparison_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_streaming_comparison, only: streaming_state_t, init_streaming, &
         advance_streaming, evaluate_streaming, streaming_radius
-    use kin6d_streaming_leaves, only: streaming_velocity_coordinate
+    use milca_streaming_leaves, only: streaming_velocity_coordinate
     use milca_result_io, only: run_t, result_file_t
     implicit none
     integer :: cells = 128, repeats = 50, trials = 5

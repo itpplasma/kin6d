@@ -6,7 +6,7 @@ program test_transport
         transport_valid, solve_transport, solve_transport_tangent, &
         solve_transport_vjp, sample_transport, sample_transport_arrays, &
         sample_transport_coefficients_interval
-    use kin6d_transport_leaves, only: transport_node, transport_node_jvp, &
+    use milca_transport_leaves, only: transport_node, transport_node_jvp, &
         transport_node_vjp, transport_source_affine, transport_residual_cell_interval, &
         transport_cosine_moment_cell_interval
     use milca_transport_certificate, only: transport_certificate_t, certify_transport, &

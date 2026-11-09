@@ -27,7 +27,7 @@ module kin6d_pme
     use milca_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp, &
         ewald_self, ewald_background, ewald_reciprocal_weight
     use kin6d_near_encounter, only: near_split_t, near_pair, near_pair_jvp
-    use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8, &
+    use milca_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8, &
         pme_assignment_factor
     implicit none
     private

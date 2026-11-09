@@ -42,7 +42,7 @@ module kin6d_nonnested_force
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, &
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, &
         nn_factor, nn_factor_solve_real, nn_factor_free
     use milca_metriplectic_leaves, only: lorentz_force
     use kin6d_nonnested_mapped, only: map_metric_t, METRIC_IDENTITY, nn_map_t, &

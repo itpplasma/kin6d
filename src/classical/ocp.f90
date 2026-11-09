@@ -20,7 +20,7 @@ module milca_ocp
     use milca_species, only: units_t, species_t, reduced_units, electron, &
         plasma_scales, plasma_scales_t, electron_mass_si, elementary_charge_si
     use kin6d_pme, only: pme_parameters_t, pme_select
-    use kin6d_ocp_leaves, only: debye_image, debye_zero_mode, debye_shell_bound
+    use milca_ocp_leaves, only: debye_image, debye_zero_mode, debye_shell_bound
     use kin6d_nbody, only: nbody_system_t, nbody_periodic_mesh, nbody_fix, &
         nbody_step, nbody_step_jvp, nbody_set_encounter
     implicit none

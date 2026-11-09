@@ -24,7 +24,7 @@ module ocp_oscillation_app
     use milca_pair_correlation, only: pair_counts, pair_distribution, structure_factor
     use milca_slab_oscillation, only: slab_oscillation_state_t, &
         initialize_slab_oscillation, solve_slab_oscillation, sample_slab_oscillation
-    use kin6d_ocp_leaves, only: bohm_gross, debye_structure
+    use milca_ocp_leaves, only: bohm_gross, debye_structure
     use milca_result_io, only: run_t, result_file_t
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &

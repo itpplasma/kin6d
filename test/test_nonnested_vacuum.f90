@@ -6,7 +6,7 @@ program test_nonnested_vacuum
         periodic_radius, full_periodic, stability, island_edge, annulus_mesh
     use kin6d_mhd_mesh, only: flux_mesh_t
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
+    use milca_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
         nn_vacuum_mode, nn_point
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_nonnested_residual, only: nn_residual

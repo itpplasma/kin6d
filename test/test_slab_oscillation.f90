@@ -3,7 +3,7 @@ program test_slab_oscillation
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval, contains, operator(+)
     use milca_slab_oscillation
-    use kin6d_slab_oscillation_leaves, only: slab_oscillation_rhs_jvp, &
+    use milca_slab_oscillation_leaves, only: slab_oscillation_rhs_jvp, &
                                       slab_oscillation_rhs_vjp, &
                                       slab_oscillation_hermite_interval
     implicit none

@@ -15,7 +15,7 @@ module kin6d_coulomb_kepler
     use kin6d_coulomb_encounter_leaves, only: ce_outer_turning, &
         ce_kepler_width, ce_radial_packet, ce_hydrogen_level, ce_kepler, ce_phase, &
         ce_state_bound
-    use kin6d_species_leaves, only: species_pair_scales
+    use milca_species_leaves, only: species_pair_scales
     implicit none
     private
     public :: kepler_t, kepler_init, kepler_autocorrelation, kepler_mean_radius

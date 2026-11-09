@@ -7,7 +7,7 @@
 !> from gen/milca_symbolic_physics.f90, never retyped here.
 module milca_species
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_species_leaves, only: species_pair_scales, species_sommerfeld, &
+    use milca_species_leaves, only: species_pair_scales, species_sommerfeld, &
                                     species_plasma_scales, species_unit_map
     implicit none
     private

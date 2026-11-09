@@ -6,7 +6,7 @@ module nn_coupled_case
     ! B.grad p = 0.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, pp, laplacian
-    use kin6d_equilibrium_nonnested, only: free_b_field_t
+    use milca_equilibrium_nonnested, only: free_b_field_t
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     implicit none
     real(dp) :: chi_perp = 1, g0 = 1
@@ -52,7 +52,7 @@ program test_nonnested_coupled
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
     use fortsparse, only: csc_t, csc_matvec
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
+    use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_residual, only: nn_residual
     use milca_equilibrium_residual, only: equilibrium_residual_t
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_PSI, &

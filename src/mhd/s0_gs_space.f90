@@ -6,7 +6,7 @@ module kin6d_s0_gs_space
     use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_s0_gs_space_leaves, only: s0_polar_geometry, s0_polar_jet
+    use milca_s0_gs_space_leaves, only: s0_polar_geometry, s0_polar_jet
     use kin6d_ideal_xi, only: xi_gradient_n, XI_OK
     use kin6d_s0_volume, only: s0_assemble_volume
     use fortfem_generated_line_basis, only: generated_line_jet
