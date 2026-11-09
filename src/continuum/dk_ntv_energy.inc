@@ -673,7 +673,7 @@
         integer, intent(out) :: status
         real(dp), allocatable :: c(:, :), w(:, :), wr(:), wi(:), work(:), vl(:, :), &
             chat(:, :)
-        integer, allocatable :: piv(:)
+        integer, allocatable :: piv(:), mode_status(:)
         integer :: nm, l, info, m, a, k
         nm = e%nx*e%ns
         status = NTV_SINGULAR
@@ -706,12 +706,14 @@
         end do
         h%modal = .true.
         h%j0 = 0
-        allocate (h%sys(nm), h%node(nm, 1))
+        allocate (h%sys(nm), h%node(nm, 1), mode_status(nm))
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(m)
         do m = 1, nm
             h%sys(m) = mode_system(e, chat(m, :))
-            call factor_species(h%sys(m), 1, h%node(m, 1), status)
-            if (status /= NTV_OK) return
+            call factor_species(h%sys(m), 1, h%node(m, 1), mode_status(m))
         end do
+        !$omp end parallel do
+        status = merge(NTV_OK, NTV_SINGULAR, all(mode_status == NTV_OK))
     end subroutine factor_modal
 
     !> Scaled collision rows of degree l over (node, species), node fastest.
@@ -765,7 +767,7 @@
         complex(dp), intent(out) :: x(:, :, 0:, :)
         integer, intent(out) :: status
         complex(dp), allocatable :: z(:, :, :), y(:, :, :)
-        integer :: m, j, info, nm, n2
+        integer :: m, j, info, nm, n2, bad
         nm = e%nx*e%ns
         n2 = 2*e%n
         ! z(row, block, mode) = V^-1 rhs over the speed-species index.
@@ -773,7 +775,9 @@
         do j = 0, e%nb - 1
             z(:, j, :) = matmul(reshape(rhs(:, :, j, :), [n2, nm]), transpose(h%vinv))
         end do
-        status = NTV_SINGULAR
+        bad = 0
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(m, j, info) &
+        !$omp reduction(+:bad)
         do m = 1, nm
             associate (f => h%node(m, 1), s => h%sys(m))
                 do j = e%nb - 1, 0, -1
@@ -781,7 +785,7 @@
                         - offdiag_apply(s, 1, j, j + 1, z(:, j + 1:j + 1, m))
                     call zgetrs('N', n2, 1, f%s_lu(:, :, j), n2, f%piv(:, j), &
                         z(:, j, m), n2, info)
-                    if (info /= 0) return
+                    if (info /= 0) bad = bad + 1
                 end do
                 y(:, 0, m) = z(:, 0, m)
                 do j = 1, e%nb - 1
@@ -789,6 +793,9 @@
                 end do
             end associate
         end do
+        !$omp end parallel do
+        status = NTV_SINGULAR
+        if (bad > 0) return
         do j = 0, e%nb - 1
             x(:, :, j, :) = reshape(matmul(y(:, j, :), transpose(h%v)), &
                 [n2, e%nx, e%ns])
@@ -1076,6 +1083,8 @@
         integer :: a, b, j, r, l, k
         real(dp) :: corr(e%nx, e%nx)
         y = 0
+        !$omp parallel do collapse(2) schedule(static) default(shared) &
+        !$omp private(a, b, j, r, l, k, corr)
         do a = 1, e%ns
             do j = 0, e%nb - 1
                 y(:, :, j, a) = offdiag_apply(e, a, j, j, x(:, :, j, a))
@@ -1110,4 +1119,5 @@
                 end if
             end do
         end do
+        !$omp end parallel do
     end function apply_full
