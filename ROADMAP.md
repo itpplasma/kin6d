@@ -651,6 +651,64 @@ Development sequence:
 
 See [adaptive-multiscale-uq.md](docs/adaptive-multiscale-uq.md).
 
+## OT0 — orbit tracers in MILCA geometry (cross-cutting, decided 2026-11-09)
+
+MILCA traces particles in its own fields with several independent pushers, so
+orbit physics, wall loads and later particle-based representations (PIC/PIF,
+semi-Lagrangian characteristics, particle and Lagrangian MHD, the R10 edge
+code, backward first-passage problems) share one field interface and one
+boundary-event layer. SIMPLE and GORILLA stay independent products and
+external oracles. MILCA's versions are derived from the mathematics, not copied
+from their sources, so that agreement remains independent evidence.
+
+Layering: a `milca_particles` library above `milca_field` (charts, point
+location, B, grad B, A, metric in the plasma map, the vacuum shell and imported
+libneo fields) and below the solvers, so a client links pushers without the
+equilibrium or MHD solvers.
+
+Order:
+
+1. **OT1, GORILLA-type polynomial pusher on the isoparametric mesh.** Each
+   curved cell (P2/P3 triangle in the reference plane times a \(\hat\varphi\)
+   interval between planes) is split into tetrahedra in its master coordinates,
+   with diagonals fixed by global vertex number so faces conform. The
+   guiding-centre quantities (covariant \(A^*_k\), \(h_k\), \(|B|\), \(\Phi\))
+   are interpolated linearly in master coordinates from MILCA's exact nodal
+   values; the curved geometry enters only through the metric at the vertices.
+   Each sub-cell then carries a linear ODE \(\dot z = Az + b\) with constant
+   \(A\), advanced by its truncated exponential series of order 2 to 4 with
+   Hamiltonian time tracing, and face crossings are polynomial roots. The
+   plasma boundary and \(\Gamma_c\) are cell faces, so no cell straddles a field
+   discontinuity. A prism with a bilinear interpolant is not affine and loses
+   the constant-matrix structure, hence the split; tensor-product quad and hex
+   cells (VRMHD phase 2) are split the same way. Oracles: exact invariants
+   (energy, \(\mu\), \(p_\varphi\) in axisymmetry), the analytic circular
+   tokamak, refinement in planes and cells, GORILLA itself on an exported
+   equilibrium, and SIMPLE.
+2. **OT1q, quadratic in-cell option.** A P2 interpolant makes the sub-cell ODE
+   nonlinear; it is advanced by a Taylor/Picard series with root-found face
+   crossings. It is promoted only if it beats refined OT1 in accuracy per cost
+   on a named observable, and the piecewise-linear symplecticity argument for
+   GORILLA does not carry over, so it needs its own structure test.
+3. **OT2, reference integrators.** Guiding centre and full orbit by FortNum
+   RK45/DOP853 with event location, Boris and a variational full-orbit scheme.
+4. **OT3, canonical symplectic pushers.** Meiss–Hazeltine and Albert
+   coordinates (vector-potential component as radius) built natively from the
+   map lane inside the plasma and on the shell's reference coordinates outside,
+   implicit midpoint and Gauss schemes, following Albert (2025, domains without
+   nested flux surfaces) and Albert et al. (Nucl. Mater. Energy 102200, 2026).
+   Handover across the LCFS is gated by energy and \(p_\varphi\) conservation.
+5. **OT4, stochastic collisions.** Itô SDEs generated from the same FortSym
+   Fokker–Planck operator as the continuum solver, including the drift
+   correction \(\partial D\) of position-dependent diffusion; gate against the
+   continuum solution with spatially varying coefficients.
+6. **OT5, boundary events.** First wall hits on STL/CAD meshes and on mesh
+   faces, with hit point, facet and impact energy.
+
+Promotion follows the milestone rules: tangent and adjoint of pushed states
+with respect to the field state, and smoothed observables where loss counts are
+not differentiable.
+
 ## R4 — 0X3V collision laboratory
 
 Introduce the future velocity representation in the smallest domain. Progress:
