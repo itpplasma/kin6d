@@ -1,4 +1,4 @@
-submodule(milca_nonnested_beltrami) kin6d_nonnested_beltrami_mr
+submodule(milca_nonnested_beltrami) milca_nonnested_beltrami_mr
     ! Opt-in matrix-free MINRES path of the Taylor closure
     ! (docs/equilibrium-beltrami.md, docs/nonnested-newton-mr.md). After
     ! lifting the boundary trace the fixed-mu equation is the symmetric
@@ -700,4 +700,4 @@ contains
         call system_clock(count, rate)
         wall = real(count, dp)/real(rate, dp)
     end function
-end submodule kin6d_nonnested_beltrami_mr
+end submodule milca_nonnested_beltrami_mr

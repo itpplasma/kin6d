@@ -40,12 +40,12 @@ if(NCDUMP)
     run_expect(TRUE "weights = 3, 21, 12 ;" "${NCDUMP}" -v weights,scale
         output/test_result_io.nc)
     foreach(pattern "scale = 2\\.5 ;" "double cube\\(cube_dim3, cube_dim2, cube_dim1\\)"
-            "double grid\\(pair, w\\)" "scale:kin6d_status = \"certified-discrete\""
-            "weights:units = \"m\"" ":kin6d_config_literal = \"! probe override"
-            ":kin6d_config_resolved = \"&PROBE" ":fortio_revision = \"${FORTIO_PIN}\""
+            "double grid\\(pair, w\\)" "scale:milca_status = \"certified-discrete\""
+            "weights:units = \"m\"" ":milca_config_literal = \"! probe override"
+            ":milca_config_resolved = \"&PROBE" ":fortio_revision = \"${FORTIO_PIN}\""
             ":fortsparse_revision = \"${FORTSPARSE_PIN}\""
             ":libneo_revision = \"${LIBNEO_PIN}\""
-            ":kin6d_git_commit = \"[0-9a-f]+\"" ":created_utc = \"[0-9-]+T[0-9:]+Z\""
+            ":milca_git_commit = \"[0-9a-f]+\"" ":created_utc = \"[0-9-]+T[0-9:]+Z\""
             ":compiler_version = \"" ":probe_argument = \"tag-a\"")
         if(NOT last_output MATCHES "${pattern}")
             message(FATAL_ERROR "ncdump lacks /${pattern}/:\n${last_output}")

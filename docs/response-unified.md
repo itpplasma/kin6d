@@ -10,7 +10,7 @@ from the iter_tc24 response ladder (rungs a-c, L5 TC24 array, 2026-10-13).
 
 1. Not a collection of replacements. GPEC/DCON/rdcon, MARS-F, MARS-K, ARES,
    MEPHIT and SLAYER stay external oracles; none is reimplemented. Their
-   physics models are all reachable as settings of one KIN6D formulation.
+   physics models are all reachable as settings of one MILCA formulation.
 2. Same physics models, better numerics. The claim is robustness and accuracy
    per cost at rational surfaces (no fit rings, no delta extrapolation, no
    Mercier-exponent bookkeeping), not new physics.
@@ -271,7 +271,7 @@ gate.
   552161a covers only the sheet closure); fit diagnostics (spread over
   `layer_ratio`, |a1/Phi|) reported per rational; three-point delta fit with
   the delta^(2 eps) term as the last change to the fit machinery. Gates: all
-  `mhd_*` ctests unchanged; c1_kin6d parity with GPEC within the c1 gate;
+  `mhd_*` ctests unchanged; c1_milca parity with GPEC within the c1 gate;
   TC24 zero-pressure q = 3 spread < 7 %; full pressure reported, not gated.
 - R-B1: resolved resistive strip in the periodic-cylinder chart. Gates:
   constant-psi Dhat and the L5 numerical layer (non-constant psi, viscous) to
@@ -309,7 +309,7 @@ gate.
   interior map does (same/step 3.9 %, matching (5.247/5)^(4/5)).
 
   nrad ladder, R0/a 40, xd 0.02, GMRES 3e-8, MUMPS (sCluster job 3225264,
-  kin6d 8021456; times 11-29 s on 4 threads):
+  milca 8021456; times 11-29 s on 4 threads):
 
   | nrad | rings | (a) rel | (b) S 1e6 | S 1e7 | S 1e8 |
   |---:|---:|---:|---:|---:|---:|

@@ -8,7 +8,7 @@ host memory. This is not a resident GPU equilibrium implementation or a
 benchmark of the indefinite ideal-map Newton system.
 
 Configure the existing `cpu` preset with
-`KIN6D_ENABLE_CUDA_GS_SOLVE=ON`, an explicitly qualified CUDA compiler and
+`MILCA_ENABLE_CUDA_GS_SOLVE=ON`, an explicitly qualified CUDA compiler and
 `CMAKE_CUDA_ARCHITECTURES` for the allocated device. Build only
 `test_gs_cuda_fixed_source` and the affected native-adapter and layering tests.
 The option defaults to OFF. It enables FortSparse's existing native CUDA

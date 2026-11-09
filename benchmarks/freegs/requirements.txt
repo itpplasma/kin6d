@@ -1,4 +1,4 @@
-# Optional oracle environment, never a KIN6D runtime/test dependency.
+# Optional oracle environment, never a MILCA runtime/test dependency.
 # Python 3.12; FreeGS v0.8.2 = 8b838c1df162ca770a6937ac79d8c73e8f10a53b.
 FreeGS==0.8.2
 numpy==1.26.4

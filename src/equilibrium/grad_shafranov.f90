@@ -2620,14 +2620,14 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             return
         end if
         state%element_order = 2
-        if (index(header, 'kin6d-gs-mesh-v1:') > 0) then
+        if (index(header, 'milca-gs-mesh-v1:') > 0) then
             state%element_order = 1
-        else if (index(header, 'kin6d-gs-mesh-v4:') > 0) then
+         else if (index(header, 'milca-gs-mesh-v4:') > 0) then
             state%element_order = 3
             state%mapped = .true.
-        else if (index(header, 'kin6d-gs-mesh-v3:') > 0) then
+         else if (index(header, 'milca-gs-mesh-v3:') > 0) then
             state%mapped = .true.
-        else if (index(header, 'kin6d-gs-mesh-v2:') == 0) then
+         else if (index(header, 'milca-gs-mesh-v2:') == 0) then
             close (unit)
             return
         end if
@@ -2711,13 +2711,13 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             iostat=status)
       if (status /= 0) return
       if (state%element_order == 3) then
-         write (unit, '(a)') '# kin6d-gs-mesh-v4: isoparametric P3 SI R Z psi boundary'
+         write (unit, '(a)') '# milca-gs-mesh-v4: isoparametric P3 SI R Z psi boundary'
       else if (state%mapped) then
-         write (unit, '(a)') '# kin6d-gs-mesh-v3: isoparametric P2 SI R Z psi boundary'
+         write (unit, '(a)') '# milca-gs-mesh-v3: isoparametric P2 SI R Z psi boundary'
       else if (state%element_order == 1) then
-         write (unit, '(a)') '# kin6d-gs-mesh-v1: SI R[m] Z[m] psi[Wb/rad] boundary'
+         write (unit, '(a)') '# milca-gs-mesh-v1: SI R[m] Z[m] psi[Wb/rad] boundary'
       else
-         write (unit, '(a)') '# kin6d-gs-mesh-v2: P2 SI R[m] Z[m] psi[Wb/rad] boundary'
+         write (unit, '(a)') '# milca-gs-mesh-v2: P2 SI R[m] Z[m] psi[Wb/rad] boundary'
       end if
       write (unit, *) size(state%psi), size(state%triangles, 2)
       do j = 1, size(state%psi)

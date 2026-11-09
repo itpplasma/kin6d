@@ -1,14 +1,14 @@
 # Transport and multiscale coupling
 
 Status: canonical transport/multiscale specification. KAMEL/QL-Balance and
-GORILLA provide important internal heritage/oracles, but no generic KIN6D
+GORILLA provide important internal heritage/oracles, but no generic MILCA
 transport engine is implemented yet.
 
 ## Principle
 
 Transport is a **macro evolution problem** whose closure can range from an
 empirical coefficient to the direct flux of a global nonlinear kinetic solve.
-KIN6D should support this entire ladder without forcing all microphysics into a
+MILCA should support this entire ladder without forcing all microphysics into a
 scalar diffusion coefficient.
 
 For transported macro variables \(u_a\),
@@ -114,7 +114,7 @@ where \(X\) denotes thermodynamic forces or profile perturbations.
 
 ## Traditional integrated modelling as an early mode
 
-KIN6D should support the historically successful equilibrium/transport
+MILCA should support the historically successful equilibrium/transport
 separation directly. Here "equilibrium" means a selected stationary forward
 state; it may be a native Grad--Shafranov/general-MHD solve or, early on, a
 validated imported candidate. The transport architecture must not assume that
@@ -146,7 +146,7 @@ Fidelity can then increase continuously:
 This cheap mode is important for scenarios, scans, control and teaching and
 should not be delayed until global GK/FK exists.
 
-ASTRA-like 1D/1.5D transport is therefore a valid KIN6D configuration, not an
+ASTRA-like 1D/1.5D transport is therefore a valid MILCA configuration, not an
 external workflow concept.
 
 ## KAMEL/QL-Balance heritage
@@ -163,7 +163,7 @@ The current KAMEL repository already provides a concrete internal example:
 \text{QL-Balance profile evolution}.
 \]
 
-KIN6D should first reproduce this pattern in memory through common state and
+MILCA should first reproduce this pattern in memory through common state and
 closure interfaces, preserving QL-Balance/KAMEL as independent regression
 oracles.
 
@@ -232,7 +232,7 @@ or an equivalent conservative transport operator.
 This is especially important for 2D/3D stellarator, RMP, island, stochastic and
 finite-orbit-width transport where a radial local coefficient is inadequate.
 
-The public GORILLA code is currently an orbit/characteristic engine; KIN6D
+The public GORILLA code is currently an orbit/characteristic engine; MILCA
 should treat richer global-transport/spectrum coupling as a planned extension,
 not claim it as existing public GORILLA functionality.
 
@@ -268,7 +268,7 @@ analytic orbit/resonance limit before consuming turbulence generated elsewhere.
 
 ## Coupling-strength ladder
 
-KIN6D should support progressively tighter coupling:
+MILCA should support progressively tighter coupling:
 
 ### C0 — offline/table closure
 Precomputed coefficients/tables feed transport.
@@ -402,7 +402,7 @@ then separable 2D/3D manufactured cases, Onsager/neoclassical limits, and
 cross-code integrated cases.
 
 The first 2D/3D transport implementation should use the same FortFEM mapped
-spaces as the rest of KIN6D rather than introduce an independent transport mesh
+spaces as the rest of MILCA rather than introduce an independent transport mesh
 stack.
 
 ## Certification

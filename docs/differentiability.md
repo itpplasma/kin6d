@@ -9,7 +9,7 @@ Earlier analytical checks are retained in [the laboratory evidence](steady-labor
 
 ## Principle
 
-KIN6D differentiates mathematical operators and implicit equations, not the
+MILCA differentiates mathematical operators and implicit equations, not the
 incidental algorithms used to solve them.
 
 Every continuous production operator should expose, where its domain is smooth,
@@ -111,17 +111,17 @@ certified gradient. Statistical sensitivities retain separate probability and
 sampling-error statements.
 ## External inference consumers
 
-TIAGO is the reconstruction/inference consumer for experimental data. KIN6D
+TIAGO is the reconstruction/inference consumer for experimental data. MILCA
 must expose enough of the implicit stationary map that TIAGO can compute
 diagnostic derivatives without differentiating through the solver algorithm.
 The preferred contract is matrix-free: evaluate the forward state/observable,
 apply JVPs, and apply VJPs/adjoints in the declared physical pairings.
 
 For a diagnostic map H(U,eta), TIAGO may compose its own reverse-mode
-diagnostic derivative with KIN6D's implicit adjoint. KIN6D does not own the
+diagnostic derivative with MILCA's implicit adjoint. MILCA does not own the
 likelihood, measurement covariance, calibration nuisance parameters, priors or
 posterior covariance. The existing TIAGO/VMEC++ exact-adjoint path remains an
-independent reference implementation while a future KIN6D provider is added.
+independent reference implementation while a future MILCA provider is added.
 
 If several distinct equilibria are supplied to TIAGO, derivatives/covariances
 are local to each one. A finite mixture of local Laplace approximations is an
@@ -198,7 +198,7 @@ design derivative contains
 G_c-G_xF_x^{-1}F_c.
 \]
 
-KIN6D should realize this with matrix-free JVP/VJP and linearized solves rather
+MILCA should realize this with matrix-free JVP/VJP and linearized solves rather
 than forming full Jacobians or sensitivity matrices.
 
 A re-solve/projection after each design step is a solver policy. The derivative

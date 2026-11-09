@@ -218,7 +218,7 @@ contains
             do j = 1, ns
                 call profile%evaluate(s(j), iota_s(j), unused1, unused2)
             end do
-            ! KIN6D's frozen field needs iota without zeros: halve an update
+            ! MILCA's frozen field needs iota without zeros: halve an update
             ! that would change its sign
             update = (target - measured)/slope
             do j = 1, 30

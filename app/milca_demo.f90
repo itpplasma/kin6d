@@ -19,7 +19,7 @@ module milca_demo_application
     ! 193 frames of dt = 5/128 span t = 0..7.5 in 8 s at 24 fps.
     integer :: nv = 256, frames = 193
     real(dp) :: time_step = 0.0390625_dp, steady_nu = 0.75_dp
-    namelist /kin6d_demo/ nv, frames, time_step, steady_nu
+    namelist /milca_demo/ nv, frames, time_step, steady_nu
     type(run_t) :: run
     type(result_file_t) :: result
     type(laboratory_t) :: state, coarse, steady
@@ -43,17 +43,17 @@ module milca_demo_application
 contains
     subroutine run_demo()
         pi = interval_pi()
-        call run%start('kin6d_demo')
+        call run%start('milca_demo')
         ios = 0; msg = ''
         call run%open_config(unit)
-        if (run%has_config()) read (unit, nml=kin6d_demo, iostat=ios, iomsg=msg)
-        call run%close_config(unit, 'kin6d_demo', ios, msg)
+        if (run%has_config()) read (unit, nml=milca_demo, iostat=ios, iomsg=msg)
+        call run%close_config(unit, 'milca_demo', ios, msg)
         if (nv < 4) error stop 'nv must be at least 4 (coarse grid uses nv/2)'
         if (frames < 1) error stop 'frames must be positive'
         if (.not. (time_step > 0.0_dp .and. steady_nu > 0.0_dp)) &
             error stop 'time_step and steady_nu must be positive'
         call run%open_resolved(unit)
-        write (unit, nml=kin6d_demo)
+        write (unit, nml=milca_demo)
         call run%close_resolved(unit)
         allocate (image(nv, nx), profile(nv + 1), exact(nv + 1), lower_line(nv + 1), &
             upper_line(nv + 1), coarse_line(nv + 1), frame_time(frames), &
@@ -102,7 +102,7 @@ contains
         call write_result()
         print '(a,f7.3,a,es12.4)', 'Final time=', final_time, &
             ' uniform snapshot bound=', radius
-       print '(a)', 'Bounds use reviewed interpolation analysis and FortNum arithmetic.'
+        print '(a)', 'Bounds use reviewed interpolation analysis and FortNum arithmetic.'
         print '(a)', 'This streaming bound has no Lean or velocity-tail claim.'
     end subroutine run_demo
 
@@ -249,7 +249,7 @@ contains
     end subroutine
 end module
 
-program kin6d_demo
+program milca_demo
     use milca_demo_application, only: run_demo
     implicit none
     call run_demo()

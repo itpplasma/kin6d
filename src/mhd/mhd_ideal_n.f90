@@ -820,7 +820,7 @@ contains
         iters = 0
         resid = huge(1.0_dp)
         solve_status = 0
-        call get_environment_variable('KIN6D_L4_DEBUG', env)
+        call get_environment_variable('MILCA_L4_DEBUG', env)
         debug = len_trim(env) > 0
         nr = size(rings)
         ns = cl%ns

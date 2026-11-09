@@ -118,7 +118,7 @@ The entries ZᵀHY and YᵀHY are removed by congruences with the C and Cᵀ blo
 
 The result is diag(ZᵀHZ, [0 Cᵀ; C 0]). The second block has eigenvalues ±σ_i(C): r positive and r negative. Sylvester's law of inertia completes the proof. ∎
 
-- Lean: B1 and B2 are checked in `proof/Kin6d/Bordered.lean` (`lemma_B1`, `lemma_B2`; real matrices, finite index types, inertia counted variationally and shown equal to eigenvalue counts for symmetric matrices).
+- Lean: B1 and B2 are checked in `proof/Milca/Bordered.lean` (`lemma_B1`, `lemma_B2`; real matrices, finite index types, inertia counted variationally and shown equal to eigenvalue counts for symmetric matrices).
 
 ## 5. Vacuum elimination and the vertical saddle
 

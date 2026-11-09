@@ -73,7 +73,7 @@ program test_ideal_fb_traces3d
     !                 residual with a frozen R2 exterior.
     !   makegrid      the same coils written as a MAKEGRID file with groups
     !                 and read through libneo (neo_makegrid_coils): circuits,
-    !                 turns, identical traces, and kin6d Biot-Savart of each
+    !                 turns, identical traces, and milca Biot-Savart of each
     !                 group against libneo's neo_biotsavart.
     !   scaling       (not a CTest) trace-build strong scaling over threads.
     !   exterior      R2 exterior of the helical Gamma_c: the field-period
@@ -588,7 +588,7 @@ contains
         real(dp), allocatable :: turns(:), pts(:, :), turns0(:)
         integer, allocatable :: circuit(:), npts(:), circuit0(:)
         character(len=16), allocatable :: group_name(:)
-        real(dp) :: x(3), b_kin6d(3), b_libneo(3), err, worst
+        real(dp) :: x(3), b_milca(3), b_libneo(3), err, worst
         integer :: ncircuit, st, k, c, s, i
         call write_makegrid(path, 64)
         call makegrid_circuits_read(path, coils, circuit, turns, ncircuit, st, &
@@ -619,7 +619,7 @@ contains
         print '(a,es10.2)', 'traces MAKEGRID vs direct coils ', err
         if (err > 1e-14_dp) error stop 'MAKEGRID traces'
         ! Independent Biot-Savart: libneo (Gaussian units, current/c) of each
-        ! group polygon against kin6d segments with winding counts.
+        ! group polygon against milca segments with winding counts.
         call read_makegrid_coils(path, mc)
         worst = 0
         do k = 1, nc
@@ -627,20 +627,20 @@ contains
             do i = 1, 7
                 x = [3.0_dp + 1.2_dp*cos(1.1_dp*i), 0.7_dp*sin(0.9_dp*i), &
                     1.5_dp*sin(1.7_dp*i)]
-                b_kin6d = 0
+                b_milca = 0
                 do c = 1, coils%ncoil
                     if (circuit(c) /= k) cycle
                     do s = coils%first(c), coils%first(c + 1) - 1
-                        b_kin6d = b_kin6d + turns(c)*segment_b(coils%a(:, s), &
+                        b_milca = b_milca + turns(c)*segment_b(coils%a(:, s), &
                             coils%l(:, s), x)
                     end do
                 end do
                 b_libneo = 1.0e-7_dp*clight*compute_magnetic_field(group_polygon, x)
-                worst = max(worst, norm2(b_kin6d - b_libneo)/norm2(b_kin6d))
+                worst = max(worst, norm2(b_milca - b_libneo)/norm2(b_milca))
             end do
         end do
-        print '(a,es10.2)', 'group field kin6d vs libneo Biot-Savart ', worst
-        if (worst > 1e-12_dp) error stop 'Biot-Savart kin6d vs libneo'
+        print '(a,es10.2)', 'group field milca vs libneo Biot-Savart ', worst
+        if (worst > 1e-12_dp) error stop 'Biot-Savart milca vs libneo'
         print '(a)', 'MAKEGRID circuits ok'
     end subroutine
 

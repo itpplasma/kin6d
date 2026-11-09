@@ -45,7 +45,7 @@ with h = ωη ≤ ½ and ρ ≥ ρ₋ = (1 − √(1 − 2h))/ω. Then:
 [Deuflhard 2011](https://doi.org/10.1007/978-3-642-23899-4), chapter 2 (content not verified: the theorem number and exact statement in the 2011 edition have not been read). The proof is not yet reproduced here: FB-E2 remains "cited".
 
 - Equivalent radii-polynomial form ([certification.md](../../docs/certification.md), "Nonlinear steady states"): with A ≈ J(x₀)⁻¹, Y ≥ ‖AF(x₀)‖ and Z(r) ≥ sup_{B(x₀,r)}‖I − AJ(x)‖, any r with Y + Z(r)r < r proves existence and uniqueness in B̄(x₀, r).
-- What a KIN6D certificate needs (all **open**):
+- What a MILCA certificate needs (all **open**):
   1. Y: an outward-rounded residual F(x₀) with interval quadrature of the generated leaves, and an enclosure of AF(x₀). The solve with the MUMPS factor is untrusted; an iterative-refinement residual bound is acceptable.
   2. ω or Z(r): a bound on the third derivative of L_h over the ball. FortSym currently emits value, gradient and Hessian leaves (`gen/gen_vacuum_shell.f90`, `gen/gen_ideal_map.f90`); a third-derivative-contraction or HVP-of-Hessian leaf with interval evaluation, or a Lipschitz bound per cell, is missing.
   3. ‖J(x₀)⁻¹‖: an enclosure of the smallest singular value on the gauged space, i.e. the β_h of the D4 interface ([equilibrium-core.md](../../docs/equilibrium-core.md), D4). Since σ_min ≤ |λ_v| (λ_v the vertical eigenvalue), β_h is at most of the |λ_v| scale, estimated by |K_Z| (numerical identification); the certificate radius is then limited by roughly 1/|K_Z| or worse (repair 2026-10-19, see gauge file section 5, conditioning).

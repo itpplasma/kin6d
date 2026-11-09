@@ -1,7 +1,7 @@
 # General three-dimensional equilibrium with islands
 
 [H] Design accepted with controller decisions, 2026-10-22. This document proposes the next
-non-nested increments of [KIN6D](https://github.com/itpplasma/kin6d), rather
+non-nested increments of [MILCA](https://github.com/itpplasma/milca), rather
 than claiming an implemented machine equilibrium solver. It admits islands,
 separatrices and stochastic regions without requiring a global flux label or
 piecewise-constant pressure. Static isotropic MHD is the first target. Flows,
@@ -20,7 +20,7 @@ scaling and the additional gates, without creating a second equilibrium core.
 [V] Evidence notation throughout: **[V]** denotes a checked source, repository
 contract or mathematical deduction. **[H]** denotes a proposed implementation,
 acceptance threshold or resource estimate that remains to be demonstrated.
-A source comparison does not establish that KIN6D meets the proposed gate.
+A source comparison does not establish that MILCA meets the proposed gate.
 
 ## Decisions (controller review 2026-10-22)
 
@@ -53,8 +53,8 @@ C is regional and opt-in, and SPEC single volume (G3) verifies only C.
 
 [H] Chris's decision of 2026-10-22 supersedes the staged I7a/I7b plan and
 axisymmetric Γ_c fit check: I7 uses full non-axisymmetric 3D BEM from the start,
-coupling the KIN6D interior through FortFEM's exterior Dirichlet-to-Neumann
-(DtN) API. Reuse the adapter in [draft PR #47](https://github.com/itpplasma/kin6d/pull/47)
+coupling the MILCA interior through FortFEM's exterior Dirichlet-to-Neumann
+(DtN) API. Reuse the adapter in [draft PR #47](https://github.com/itpplasma/milca/pull/47)
 (lane `bem3d5`), subject to its consumer gates. A prescribed coil trace on a
 large Ω may remain an independent verification oracle.
 
@@ -67,7 +67,7 @@ currents with synthetic/private filaments outside the public repo. LHD n=1 RMP
 follows only with an LHD-lane calibrated RMP coil set and I11 gates.
 
 [H] Chris's design decision of 2026-10-22 is to retain general FEM,
-non-nested fields and explicit error control as KIN6D's purpose, with G-axis
+non-nested fields and explicit error control as MILCA's purpose, with G-axis
 and G-speed governing the nested path. DOF counts are secondary to measured
 time-to-solution. His 19:30 direction makes **high order the
 default path** within general isoparametric FEM: p=4–8 and higher
@@ -79,7 +79,7 @@ the exact generated energy Hessian, including a matrix-free Hessian action.
 
 [H] Pursue IH1 → IH3 below: high-order nested efficiency first, then
 estimator-driven hp-adaptive non-nested solves. IH2 adds optional
-field-aligned/curve-following charts constructed from a VMEC++ or KIN6D nested
+field-aligned/curve-following charts constructed from a VMEC++ or MILCA nested
 solution as an accelerator. These local charts relax NN2's rejection of
 alignment without imposing nested topology or replacing the complete, gated
 unaligned path. Use high p in smooth regions and local
@@ -106,11 +106,11 @@ Likewise, SIESTA uses nested *background coordinates* but permits a non-nested
 magnetic field. BMW/EXTENDER reconstruction can reveal islands without solving
 a new equilibrium for the reconstructed field.
 
-[H] In the final column, “KIN6D” means the proposed formulation, subject to the
+[H] In the final column, “MILCA” means the proposed formulation, subject to the
 gates below. Avoidance of a representation restriction is not an existence
 or uniqueness theorem, and it does not remove static MHD's compatibility laws.
 
-| code | formulation | what it imposes | limitation for us | how KIN6D avoids it |
+| code | formulation | what it imposes | limitation for us | how MILCA avoids it |
 |---|---|---|---|---|
 | HINT / HINT2 [H89], [H06], [H17] | Alternating pressure and resistive/viscous magnetic relaxation on a real-space mesh | HINT2 averages pressure along a finite field-line length and sets it to zero for sufficiently short connections to the exterior | Profile and edge depend on averaging length and relaxation prescription, which are additional model inputs | Declare transport coefficients, sources, open-line boundary conditions and their limits explicitly, with separate pressure and force residuals |
 | SIESTA [S11] | Preconditioned energy relaxation with interlaced resistive steps | VMEC-derived coordinate mesh, fixed conducting outer boundary in the 2011 formulation, adiabatic pressure evolution and enhanced numerical resistivity | A nested seed is useful but cannot define the general computational domain or arbitrary final profiles | Physical-space FEEC mesh independent of field topology, explicit closure targets and Γ_c boundary coupling |
@@ -453,7 +453,7 @@ that the mode-0 deviation is O(epsilon^2) and the n >= 1 response
 O(epsilon) (measured orders 2.000 and 1.000), and that epsilon_parallel
 falls as the ratio rises on the nested field.
 
-[H] The following are not yet provided. The KIN6D revision is not compiled
+[H] The following are not yet provided. The MILCA revision is not compiled
 into the provenance record, so the consumer must record its binary. Source-profile
 coefficients, chi_perp, conductivities and more than one boundary direction are
 not yet parameters. The provider supports only a fixed boundary, offers no
@@ -582,7 +582,7 @@ No physical coil lies in a cell declared current-free vacuum.
 [H] Decompose exterior response from imposed coil field, enforce the normal
 and tangential field matching through Γ_c, and carry noncontractible fluxes
 explicitly. Reuse M4's D6 contract and the exterior DtN adapter in
-[KIN6D draft PR #47](https://github.com/itpplasma/kin6d/pull/47) (`bem3d5`),
+[MILCA draft PR #47](https://github.com/itpplasma/milca/pull/47) (`bem3d5`),
 subject to consumer verification. Its unmerged status does not establish a
 verified free-boundary capability of this design's baseline.
 
@@ -596,11 +596,11 @@ The refined-solve flux error estimate in
 is conditional on saturation and quadrature convergence. It is not a
 certificate and does not apply to P1 fluxes. Rotational block-circulant P2 assembly
 ([#105](https://github.com/lazy-fortran/fortfem/pull/105), queued) reduces
-repeated-sector work, but the KIN6D gate still stalls on coincident pairs at
+repeated-sector work, but the MILCA gate still stalls on coincident pairs at
 quadrature degree 96.
 
 [H] Close generic coincident-pair quadrature and any further high-order trace
-gaps in FortFEM, without duplicating BEM in KIN6D. Add a compressed operator
+gaps in FortFEM, without duplicating BEM in MILCA. Add a compressed operator
 (H-matrix/FMM/ACA) there only if measured dense memory and solve/assembly cost
 at W7-X surface sizes require it. Consumer accuracy gates remain unchanged.
 A prescribed coil normal trace on a large coil-free Ω is an optional
@@ -637,7 +637,7 @@ This is unsuitable for machine-scale Fourier resolution.
 JVP actions**, not subtractive finite-difference Jacobians. Gather a vector,
 apply discrete curl, synthesize Fourier fields, apply quadrature-point JVP
 leaves, transform/test and scatter. Generate primal/JVP/VJP leaves from the
-same KIN6D FortSym definitions. Gauge and harmonic constraints, current rows,
+same MILCA FortSym definitions. Gauge and harmonic constraints, current rows,
 boundary response and closure derivatives participate in the same action.
 Keep the small assembled NN2 solve as an independent discrete comparator.
 
@@ -669,12 +669,12 @@ preconditioner factor fill can dominate memory and must be measured separately.
 
 [H] IH1 is governed by G-axis and G-speed. Its proposed nested DOF gate is
 secondary to time-to-solution: at the same G6 accuracy and
-matched model/input data, KIN6D uses **at most 2× VMEC++'s independent real
+matched model/input data, MILCA uses **at most 2× VMEC++'s independent real
 solution DOFs**. This factor is a hypothesis, not measured performance.
 [The nested benchmark](../benchmarks/nested/README.md) (lane N1) reports DOFs
 and their counting conventions, achieved accuracy, setup/solve wall time,
 hardware, thread count and peak RSS per code for VMEC++, GVEC, DESC and
-KIN6D, including its high-order variant once available. Report constraint/auxiliary unknowns
+MILCA, including its high-order variant once available. Report constraint/auxiliary unknowns
 separately so different state parametrisations remain interpretable. N1 is
 the G-speed scoreboard: total time-to-solution, including setup, must be
 ≤ the fastest of VMEC++, GVEC and DESC at matched accuracy on the same
@@ -687,7 +687,7 @@ p-multigrid or low-order-refined preconditioning in
 [FortFEM](https://github.com/lazy-fortran/fortfem), and sum-factorisation kernels
 generated through [FortSym](https://github.com/lazy-fortran/fortsym), with
 missing generic generation support added there. I3/I4 (matrix-free lane I34)
-consume these operators rather than implementing them privately in KIN6D.
+consume these operators rather than implementing them privately in MILCA.
 Target O(p^4) work per 3D tensor-product element at quadrature order O(p),
 and measure operator cost per element versus p=2,3,4,6,8 and higher before
 claiming that scaling. High-order states/observables must agree with the
@@ -877,7 +877,7 @@ than declaring an ideal equilibrium. Machine comparisons never replace G0–G9.
 ## Library boundaries and bounded milestones
 
 [V] Generic numerical machinery stays in its owning library, with physics
-composition in KIN6D. Reuse the pinned interfaces and check upstream before
+composition in MILCA. Reuse the pinned interfaces and check upstream before
 introducing a workaround. Implementation PRs include generated leaves and
 focused affected tests, while this design PR changes documentation only.
 
@@ -886,8 +886,8 @@ focused affected tests, while this design PR changes documentation only.
 | [FortFEM](https://github.com/lazy-fortran/fortfem) | Commuting FEEC complexes, Piola/trace operators, partial assembly and Fourier testing, regional interface quadrature, generic anisotropic estimators and Γ_c/3D BEM actions |
 | [FortSparse](https://github.com/lazy-fortran/fortsparse) | Sparse meridian block setup, factor reuse, gauge-aware block preconditioner and bordered Schur solves, memory/scaling instrumentation |
 | [FortNum](https://github.com/lazy-fortran/fortnum) | FFT, Krylov orchestration where owned there, field-line ODE/root routines, Bessel functions, quadrature and verified arithmetic, without island physics policy |
-| [FortSym](https://github.com/lazy-fortran/fortsym) | Generic symbolic differentiation and CPU/CUDA emission, primal/JVP/VJP consistency tools; no KIN6D-specific equilibrium model |
-| KIN6D `gen/`, equilibrium and MHD layers | Pressure/current/Beltrami derivations and emitted leaves, closure admissibility and masks, physical targets/coil composition, shared D3–D8 adapters and topology observables |
+| [FortSym](https://github.com/lazy-fortran/fortsym) | Generic symbolic differentiation and CPU/CUDA emission, primal/JVP/VJP consistency tools; no MILCA-specific equilibrium model |
+| MILCA `gen/`, equilibrium and MHD layers | Pressure/current/Beltrami derivations and emitted leaves, closure admissibility and masks, physical targets/coil composition, shared D3–D8 adapters and topology observables |
 | libneo adapter | Mature equilibrium interchange and conventions, upstream fixes for exercised defects, with no imported solver ontology imposed on native states |
 
 [H] Each row below is one bounded PR with its own gate. Upstream generic
@@ -905,7 +905,7 @@ optional charts nor a DOF reduction establishes either gate.
 | I3 | Matrix-free generated JVP/VJP action over existing coupled unknowns | I1, assembled comparison on G0/G1, JVP finite-difference check ≤1e−7 and adjoint pairing ≤1e−10 |
 | I4 | Mode-block preconditioner and FFT/tiled action | I3, G0–G3 unchanged; memory grows ≤2.5× when M doubles at fixed mesh, with timed 1/2/4/8-thread ladder |
 | IH1 | High-order nested path with exact-Hessian Newton and upstream sum-factorised actions | Upstream prerequisites above and I3/I4 (I34); existing-ladder agreement with P2/P3 within estimated error, G6, G-axis and G-speed through N1; report the secondary ≤2× VMEC++ DOF target and operator cost per element versus p |
-| IH2 | Optional accelerator: local field-aligned/curve-following charts from a VMEC++ or KIN6D nested solution | IH1, I1 and I3/I4; positive chart Jacobians, commuting/Piola and conservative transfer checks, G-axis/G-speed and G0/G6 retained; charts remain regular through the G4 separatrix while the solved field may change topology, and the unaligned path remains complete and independently gated |
+| IH2 | Optional accelerator: local field-aligned/curve-following charts from a VMEC++ or MILCA nested solution | IH1, I1 and I3/I4; positive chart Jacobians, commuting/Piola and conservative transfer checks, G-axis/G-speed and G0/G6 retained; charts remain regular through the G4 separatrix while the solved field may change topology, and the unaligned path remains complete and independently gated |
 | IH3 | hp-adaptive non-nested path with a refinement indicator from I6 island diagnostics/error estimator, high p in smooth regions and local h-refinement at islands/separatrices/current sheets | IH1, I1, I3/I4 and I6, with IH2 optional; G-axis, nested G-speed, G4/G5/G7 and fixed-DOF pollution gate above; report DOFs inside/outside the marked region, with unmarked-region DOFs ≤1.25× the nested seed at matched accuracy [H] |
 | I5a | B via frozen fitted S and conductivity/current drive on the reference label, solving A+D | I1/I3, G1a/G1d and seed-target reproduction on G4; expose seed-fit and solved-target defects |
 | I5b | Π_B diagnostic and explicit whole-island mixing diagnostic | I5a, G1b on the projection operator itself and G4; expose trace, target and current-solvability defects |

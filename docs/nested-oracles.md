@@ -166,7 +166,7 @@ indicator rather than a continuous bound. For either family, `flux` supplies
 Phi(psi), and `profiles` supplies psi(s), Phi(s), iota(s) and p(s), with
 s=Phi(psi)/Phi(delta). The sheared exporter still writes geometry only;
 connecting these matched profiles to its external equilibrium input remains
-open. KIN6D's own map seed takes them through `milca_nested_seed_input`
+open. MILCA's own map seed takes them through `milca_nested_seed_input`
 (`src/mhd/nested_seed_input.f90`): `nested_seed_boundary` projects the exact
 boundary onto the seed's Fourier convention and `nested_seed_profile` returns
 Phi(delta) together with iota(s) and p(s) as monomials in s. These are exact for
@@ -263,6 +263,6 @@ flux coordinate; the existing geometry-only export does not supply them.
 `desc` or `gvec` and the exported input path, using that code's environment.
 It records installed versions, checks nonsymmetric coefficient preservation,
 and for DESC compares physical positions against the Fortran-produced NetCDF
-points. These optional external readers are not KIN6D runtime dependencies.
+points. These optional external readers are not MILCA runtime dependencies.
 
 Chris&AI

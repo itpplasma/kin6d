@@ -19,11 +19,11 @@ asymptotic kinetic/transport claims.
 An imported equilibrium is a candidate physical state, not the definition of
 the equilibrium model. EQDSK/gEQDSK and VMEC/SPECTRE/etc. files must retain
 their source conventions and provenance, be checked in physical space, and
-later be re-solved with the matching native KIN6D model when that capability
+later be re-solved with the matching native MILCA model when that capability
 exists. For axisymmetric MHD this means a native Grad--Shafranov re-solve; a
 free-boundary reconstruction additionally needs the external coil/current or
 equivalent boundary data. For three-dimensional MHD, nested-surface imports are
-valuable initial guesses/comparators but do not constrain KIN6D to nested
+valuable initial guesses/comparators but do not constrain MILCA to nested
 surfaces. See [equilibria and inference](equilibria-inference.md).
 
 | Domain | Intended full-kinetic use | Reduced/hybrid use |
@@ -42,7 +42,7 @@ be useful reduced turbulence benchmarks; they are not the flagship geometry
 for full-orbit steady kinetics. Gyrokinetics changes the equations and scale
 requirements in addition to removing a velocity angle. GENE-X demonstrates
 the practical role of global full-f gyrokinetics in tokamak and stellarator
-core/edge/SOL calculations; it does not supply kin6d's certificates.
+core/edge/SOL calculations; it does not supply milca's certificates.
 [GENE-X description](https://genex.ipp.mpg.de/about)
 
 ## Device envelope

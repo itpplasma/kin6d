@@ -8,7 +8,7 @@ program benchmark_equilibrium_gpu
     implicit none
     interface
         integer(c_int) function gpu(n, repeats, precision, action, x, y, metrics) &
-            bind(c, name='kin6d_gpu_benchmark')
+                bind(c, name='milca_gpu_benchmark')
             import c_int, c_double
             integer(c_int), value :: n, repeats, precision, action
             real(c_double), intent(in) :: x(*)

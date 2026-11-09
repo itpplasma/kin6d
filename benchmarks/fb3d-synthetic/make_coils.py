@@ -1,4 +1,4 @@
-"""Synthetic public nfp = 3 modular coils for the KIN6D 3D free-boundary case.
+"""Synthetic public nfp = 3 modular coils for the MILCA 3D free-boundary case.
 
 Planar circular coils of radius RC centred on the helical axis
     R(phi) = R0 + EPS cos(NFP phi),  Z(phi) = EPS sin(NFP phi)
@@ -6,7 +6,7 @@ in the plane normal to the axis tangent, NCOIL coils per field period at
 phi_j = 2 pi (j + 1/2) / (NFP NCOIL) (stellarator symmetric). All coils form
 one circuit (MAKEGRID group 1) carrying CURRENT ampere-turns each, oriented so
 that the vacuum field points along +phi. Written in MAKEGRID format with the
-winding current in column 4, read by VMEC++ (makegrid) and by KIN6D through
+winding current in column 4, read by VMEC++ (makegrid) and by MILCA through
 libneo's neo_makegrid_coils.
 """
 import argparse

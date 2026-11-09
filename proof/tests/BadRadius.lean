@@ -1,8 +1,8 @@
-import Kin6d
+import Milca
 
 set_option autoImplicit false
 
-namespace Kin6d.Test
+namespace Milca.Test
 
 def corrupt : Certificate := ⟨1 / 2, 3 / 8, 3 / 16, 1 / 32⟩
 
@@ -10,4 +10,4 @@ def corrupt : Certificate := ⟨1 / 2, 3 / 8, 3 / 16, 1 / 32⟩
 theorem corrupt_valid : corrupt.Valid := by
   norm_num [corrupt, Certificate.Valid]
 
-end Kin6d.Test
+end Milca.Test

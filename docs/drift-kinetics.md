@@ -256,7 +256,7 @@ because sqrt(1 - lambda B) is odd in t. The theta direction is next.
 
 Drifts: v_d.grad psi only in the drive; v_d.grad alpha (grad-B, finite-beta
 curvature, shear term) local in the operator, not bounce-averaged (as
-NEO-2-QL `isw_calc_magdrift`). All drift leaves come from FortSym in KIN6D
+NEO-2-QL `isw_calc_magdrift`). All drift leaves come from FortSym in MILCA
 `gen/`, shared by operator, frequency placer and tracing.
 
 ## Discretisation
@@ -303,7 +303,7 @@ Against NEO-2-PAR in Lorentz mode on libneo's tok02 file (s = 0.50781,
 nu* = nu R/(iota v) from 4e-4 to 4e1; NEO-2's collpar per cm is 2 nu_D/v):
 NEO-2's conductivity ratio gamma_E = (pi/4) 3 nu D33/<b^2> and the
 normalisation-free ratio D13 D31/(D11 D33) agree to 2e-4 and 1.1e-3, and the
-gap shrinks as NEO-2 is refined (test `dk_mono_neo2_tok02`). The KIN6D values
+gap shrinks as NEO-2 is refined (test `dk_mono_neo2_tok02`). The MILCA values
 are converged to 1e-6 at 65 theta points and 200 Legendre polynomials in
 0.011 s of one core; NEO-2 approaches 1e-3 only at four times its default
 resolution, in 1.9 to 4.9 s on two MPI ranks with 1 to 3.6 GB.
@@ -422,10 +422,10 @@ the stage-1 reference in three places, each a switch of `dk_ntv` (#238):
 drift and drive weight (1 + xi^2)/b instead of lambda, the curvature drift
 c_J xi^2 of the file's toroidal current (c_J = 2 B0 I'/(G q eps') = 0.045 to
 0.27), and b.grad theta = k b with the flux measure of Boozer angles. With
-all three on (KIN6D at 193 theta points and 1600 to 3200 Legendre
+all three on (MILCA at 193 theta points and 1600 to 3200 Legendre
 polynomials, NEO-2 at eta_part_trapped = 140, lag = 5):
 
-| eps | KIN6D / Pa | NEO-2 / Pa | NEO-2/KIN6D | NEO-2 lag 5 -> 9 | NEO-2 eta 70 -> 140 |
+| eps | MILCA / Pa | NEO-2 / Pa | NEO-2/MILCA | NEO-2 lag 5 -> 9 | NEO-2 eta 70 -> 140 |
 |---|---|---|---|---|---|
 | 0.010 | 2.834e-10 | 2.884e-10 | 1.018 | -0.2 % | -2.8 % |
 | 0.020 | 2.446e-7 | 2.399e-7 | 0.981 | +0.5 % | -0.0 % |
@@ -436,11 +436,11 @@ polynomials, NEO-2 at eta_part_trapped = 140, lag = 5):
 
 The torque is the ion NTV torque density. NEO-2's lag 9 -> 13 change is
 0.09 % (eps = 0.02); at eps = 0.01 its pitch grid is not converged and
-eta_part_trapped = 200 diverges in its iteration. KIN6D changes by at most
+eta_part_trapped = 200 diverges in its iteration. MILCA changes by at most
 1.3e-3 between 193 and 321 theta points and 1600 to 6400 polynomials, and by
 +0.13 % (eps = 0.02) and +0.42 % (eps = 0.03) from 16 to 24 energy nodes
 (24 -> 32: 0.04 %). With these drift and collision choices matched, the two
-codes agree to 0.4 % to 1.9 %, NEO-2 below KIN6D at every eps >= 0.02;
+codes agree to 0.4 % to 1.9 %, NEO-2 below MILCA at every eps >= 0.02;
 at eps = 0.02 and
 0.06 the gap exceeds both codes' numerical spread. NEO-2-QL also solves two source
 terms of Kasilov et al. (2014), Eq. (61): the rest of the perturbed radial
@@ -453,21 +453,21 @@ same rows and resolution) the drift source changes the torque by -6.4 % to
 | eps | 0.010 | 0.020 | 0.030 | 0.040 | 0.045 | 0.060 |
 |---|---|---|---|---|---|---|
 | both sources | -3.67 % | -2.58 % | -0.96 % | -0.22 % | -0.09 % | -0.01 % |
-| NEO-2/KIN6D | 1.056 | 1.007 | 1.005 | 0.994 | 0.989 | 0.981 |
+| NEO-2/MILCA | 1.056 | 1.007 | 1.005 | 0.994 | 0.989 | 0.981 |
 
 They close the gap at eps = 0.02 and 0.03 and leave it unchanged for
 eps >= 0.04; the 1.1 % and 1.9 % at eps = 0.045 and 0.06 are not explained
 by them, and at eps = 0.01 NEO-2's pitch grid is not converged. The torques
 are energy sums with the node weights wx (F1 + (x - 5/2) F2), which
-reproduce the reported KIN6D column to 2e-3. The
+reproduce the reported MILCA column to 2e-3. The
 switch defects on these rows are -0.3 % to +10 % (all three together, growing
 with eps), so on some rows the stage-1 model and NEO-2's differ by more than
 the codes do.
-At eps = 0.03 both codes rise as nu falls: KIN6D by 0.10 % and 0.95 % at nu/2
+At eps = 0.03 both codes rise as nu falls: MILCA by 0.10 % and 0.95 % at nu/2
 and nu/4, NEO-2 by 0.22 % and 0.42 % (not pitch-converged at nu/4).
 
 Interpretation of #183: an independent discretisation (NEO-2's finite elements
-on eta levels along the field line) reproduces KIN6D's torque to 2 % with the
+on eta levels along the field line) reproduces MILCA's torque to 2 % with the
 matched terms above. This does not establish the cause of the 4 to 5 % deficit
 against the collisionless full-phase reference. The collisionality trend
 supports finite-collisionality effects as a candidate explanation; that the
@@ -479,38 +479,38 @@ without treating this gate as passed.
 
 Timing at the reported resolution errors, both codes on one AMD EPYC 7452
 node with eight
-threads each (KIN6D: the stage-1 model, 16 energy nodes solved one after the
+threads each (MILCA: the stage-1 model, 16 energy nodes solved one after the
 other; NEO-2: test-particle pitch-angle operator). Error is the change to each
-code's own finest run (KIN6D 193 x 3200 or 6400; NEO-2 eta 140, lag 9
-where available); unknowns of KIN6D are summed over the 16 energy nodes:
+code's own finest run (MILCA 193 x 3200 or 6400; NEO-2 eta 140, lag 9
+where available); unknowns of MILCA are summed over the 16 energy nodes:
 
 | eps | code, resolution | error | unknowns | wall | peak memory |
 |---|---|---|---|---|---|
 | 0.045 | NEO-2, eta 70, lag 5 | 7e-3 (lag) | 0.57 M | 175 s | 18.2 GiB |
 | 0.045 | NEO-2, eta 70, lag 9 | ~1e-3 | 0.95 M | 624 s | 60.7 GiB |
-| 0.045 | KIN6D, 129 x 1600 | 1.0e-3 | 3.3 M | 170 s | 1.6 GiB |
-| 0.045 | KIN6D, 193 x 1600 | 1e-5 | 4.9 M | 551 s | 3.6 GiB |
+| 0.045 | MILCA, 129 x 1600 | 1.0e-3 | 3.3 M | 170 s | 1.6 GiB |
+| 0.045 | MILCA, 193 x 1600 | 1e-5 | 4.9 M | 551 s | 3.6 GiB |
 | 0.030 | NEO-2, eta 70, lag 5 | 2.3e-3 | 0.52 M | 166 s | 16.5 GiB |
 | 0.030 | NEO-2, eta 140, lag 5 | 8e-4 (lag) | 1.32 M | 421 s | 44.4 GiB |
-| 0.030 | KIN6D, 161 x 1200 | 2.0e-3 | 3.1 M | 240 s | 1.9 GiB |
-| 0.030 | KIN6D, 193 x 1600 | 2e-5 | 4.9 M | 546 s | 3.6 GiB |
+| 0.030 | MILCA, 161 x 1200 | 2.0e-3 | 3.1 M | 240 s | 1.9 GiB |
+| 0.030 | MILCA, 193 x 1600 | 2e-5 | 4.9 M | 546 s | 3.6 GiB |
 
 The errors in the table are those of the theta/Legendre and pitch/energy
-resolution only. KIN6D's 16-node energy rule adds 0.13 % (eps = 0.02) and
+resolution only. MILCA's 16-node energy rule adds 0.13 % (eps = 0.02) and
 0.42 % (eps = 0.03); 24 nodes reduce it and cost 1.5 times more. Comparing
-KIN6D's 129 x 1600 row with NEO-2's eta 70, lag 9 row at eps = 0.045,
-KIN6D is 3.7 times faster, uses 38 times less memory and has 3.5 times more
-unknowns. Comparing KIN6D's 193 x 1600 row with NEO-2's eta 140, lag 5 row
-at eps = 0.03, NEO-2 is 1.3 times faster; KIN6D uses 12 times less memory
-and has 3.7 times more unknowns. Scaling the KIN6D timings by the stated
-1.5 energy-node cost gives estimated speed factors of 2.4 in KIN6D's favour
+MILCA's 129 x 1600 row with NEO-2's eta 70, lag 9 row at eps = 0.045,
+MILCA is 3.7 times faster, uses 38 times less memory and has 3.5 times more
+unknowns. Comparing MILCA's 193 x 1600 row with NEO-2's eta 140, lag 5 row
+at eps = 0.03, NEO-2 is 1.3 times faster; MILCA uses 12 times less memory
+and has 3.7 times more unknowns. Scaling the MILCA timings by the stated
+1.5 energy-node cost gives estimated speed factors of 2.4 in MILCA's favour
 and 2 in NEO-2's favour, respectively; these are not matched-total-accuracy
 measurements. For the two coarser eps = 0.03 rows, NEO-2 is 1.4 times faster;
-KIN6D uses 8.7 times less memory and has 6 times more unknowns. NEO-2 cannot
+MILCA uses 8.7 times less memory and has 6 times more unknowns. NEO-2 cannot
 refine its pitch grid past
 eta 140 at eps = 0.01, where it diverges at 200, so that row has no matched
 accuracy. Not measured: the 16 energy nodes solved in parallel, which
-KIN6D's layout allows, and other node types.
+MILCA's layout allows, and other node types.
 
 The orbit-class elements (`dk_hp`) solve the same stage-1 harmonic
 (`hp_ntv_kernel`): in the measure dtheta dxi/(b b.grad theta) the streaming
@@ -611,7 +611,7 @@ elements agree to 2e-12, the field part to 2e-6 for self-collisions and to
 8e-4 of the largest element for the electron-on-deuteron block at l = 0,
 whose elements are 1e-4 of the Lorentz ones; that block is where the two
 quadratures differ most, and which of them is closer is not established
-beyond the KIN6D conservation and exchange-rate checks. Intrinsic
+beyond the MILCA conservation and exchange-rate checks. Intrinsic
 ambipolarity and the kinetic solve with energy scattering follow.
 
 The primal field-particle assembly evaluates two scaled moment sweeps, below
@@ -708,7 +708,7 @@ pair blocks and pair-block factorisations per node and species above them.
 
 ## Axisymmetric Boozer oracle adapter
 
-`kin6d_ntv_geometry` adapts an axisymmetric Boozer surface to the existing
+`milca_ntv_geometry` adapts an axisymmetric Boozer surface to the existing
 local Lorentz kernel through `ntv_line_t`. The circular provider reproduces
 the original kernel, including collision-frequency, electric-precession and
 perturbation-amplitude tangents and resolution indicators. An imported line
@@ -751,8 +751,8 @@ These serve other lanes as well and come first.
 
 | Item | Content | Owner |
 |---|---|---|
-| DK-pre-1 | D7 kinetic geometry view: batched B, \|B\|, grad\|B\|, kappa, metric, grad psi, field-line label nu and d_psi nu, q, q', flux-surface averages (coarea, with JVP/VJP) | KIN6D (D7), using FortFEM `flux_surface_average` |
-| DK-pre-2 | L7 export: xi_n, Lagrangian delta B_L,n, kappa.xi_n in memory; distance to rationals; `.bc` for oracles | KIN6D (L-lane) |
+| DK-pre-1 | D7 kinetic geometry view: batched B, \|B\|, grad\|B\|, kappa, metric, grad psi, field-line label nu and d_psi nu, q, q', flux-surface averages (coarea, with JVP/VJP) | MILCA (D7), using FortFEM `flux_surface_average` |
+| DK-pre-2 | L7 export: xi_n, Lagrangian delta B_L,n, kappa.xi_n in memory; distance to rationals; `.bc` for oracles | MILCA (L-lane) |
 | DK-pre-3 | Preconditioned complex (F)GMRES with right preconditioner and many right-hand sides | FortNum |
 | DK-pre-4 | DG advection plus SIPG assembly on curved 2D domains | FortFEM |
 
@@ -761,7 +761,7 @@ are repaired there.
 
 ## NEO-2 parity (tracker #198)
 
-KIN6D anticipates NEO-2's complete feature set, as one operator instead of the
+MILCA anticipates NEO-2's complete feature set, as one operator instead of the
 QL/PAR pair: monoenergetic and multispecies transport, bootstrap current,
 conductivity and Ware pinch (#189), the generalized Spitzer function for current
 drive with the relativistic operator (#190, #187), a fast-ion source (#191;
@@ -823,7 +823,7 @@ Implementation starts after the generators move to the reworked FortSym API
   with twisted periodicity (order p + 1); Lorentz eigenfunctions P_l(xi)
   with eigenvalue -nu_D l(l+1)/2; null-space dimension at n = 0;
   conservation defects; FortSym JVP/VJP pairing of the drift leaves.
-- V1 stage-1 harness unchanged: a KIN6D DK run is one more root next to
+- V1 stage-1 harness unchanged: a MILCA DK run is one more root next to
   NEO-RT, PENTRC, NEO-2 and ARES.
 - V2 collisionless limits: NEO-RT superbanana plateau (stage-1 ratios
   1.02-1.12, PASS), per bounce harmonic, shear on/off; POTATO reported as

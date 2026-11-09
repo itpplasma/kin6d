@@ -10,7 +10,7 @@ module milca_ideal_seed
     ! are smooth at the seed axis (a ray map y = c + rho (b - c) is only C1
     ! there unless the boundary is a circle about c, which caps the map's
     ! convergence order). Profiles are q(s) and p(s) in the normalised poloidal
-    ! flux s = |zeta|^2 with the total toroidal flux Phi_edge, as in KIN6D's 2D
+    ! flux s = |zeta|^2 with the total toroidal flux Phi_edge, as in MILCA's 2D
     ! prescribed-q solve:
     !     psi_axis = -Phi_edge/(2 pi int_0^1 q ds),   chi = psi_axis (1 - s),
     !     b3 = 4 pi |psi_axis| q(s) / (R K(s)),

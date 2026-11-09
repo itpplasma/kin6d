@@ -19,7 +19,7 @@ on U_ε = {F² > 0} (eqs. 2–3).
 - (∇×B)×B = ∇p exactly (eq. 6). In field-line labels, ψ = (u + ε/2)² + v² ≥ 0 (eq. 16).
 - Nested solid tori Ω_δ = {ψ ≤ δ} for 0 < δ < (1 − ε)²/4 (eqs. 18–19).
 - ι = 2 on every surface (closed field lines, eq. 26). Two field periods; stellarator symmetric. ε → 0 gives the Solov'ev field Ψ0 = (R² − 1)²/4 + Z², I = √(1 − 4Ψ0) (eqs. 7–8).
-- KIN6D's closed form in `test/test_nonnested_landreman.f90:2–20` writes the same field with X = x/a, Y = y/b. That the two are algebraically identical is not re-checked here.
+- MILCA's closed form in `test/test_nonnested_landreman.f90:2–20` writes the same field with X = x/a, Y = y/b. That the two are algebraically identical is not re-checked here.
 - The sheared family (section 3) and the non-symmetric extension ([Issan et al., arXiv:2610.07304](https://arxiv.org/abs/2610.07304)) satisfy the same hypotheses (smooth, analytic, nested). The construction applies verbatim; their parameter ranges are not re-derived here.
 
 Pick S0 = {ψ = δ}, Ω = Ω_δ, and set
@@ -63,7 +63,7 @@ B_{in}\chi_\Omega=B_J+B_K,\qquad B_J={\rm BS}[\mu_0J\chi_\Omega],\quad B_K={\rm 
 [\![\tilde p+|B|^2/2\mu_0]\!]_{S_0}=\tilde p|_{S_0}+\frac{|B_{in}|^2-|B_{out}|^2}{2\mu_0}=0 .
 \]
 
-4. With coil field B_e := B̃_x|_{D_c} (all sources outside Γ_c) and internal field B_i := B_J outside Γ_c (decaying, dipole-like), (B_in, p̃ on Ω; B_out on V) satisfies conditions 1–4 of the first variation ([free-boundary-first-variation.md](free-boundary-first-variation.md), section 6). It is therefore a stationary point of the continuous KIN6D Lagrangian with this drive. The period hypothesis H_per of the first-variation file holds by construction, because F and c are defined as the periods of B_out (section 3).
+4. With coil field B_e := B̃_x|_{D_c} (all sources outside Γ_c) and internal field B_i := B_J outside Γ_c (decaying, dipole-like), (B_in, p̃ on Ω; B_out on V) satisfies conditions 1–4 of the first variation ([free-boundary-first-variation.md](free-boundary-first-variation.md), section 6). It is therefore a stationary point of the continuous MILCA Lagrangian with this drive. The period hypothesis H_per of the first-variation file holds by construction, because F and c are defined as the periods of B_out (section 3).
 
 **Converse and uniqueness (proved).**
 - If any vacuum field B_out on V equals B_in on S0 as a vector, then B_out − B_J on V and B_x on Ω glue across S0 without jumps. The glued field is curl- and divergence-free in the sense of distributions, hence harmonic componentwise (Weyl's lemma). So G4 (extension on the open D_c with traces on Γ_c) is necessary for a surface-current-free exterior that is C¹ up to Γ_c (**verified**: the converse yields exactly this form).
@@ -76,7 +76,7 @@ B_{in}\chi_\Omega=B_J+B_K,\qquad B_J={\rm BS}[\mu_0J\chi_\Omega],\quad B_K={\rm 
 - Poloidal circulation of B_out = μ0 × (flux of J through a meridian section of Ω) = μ0 I_tor. It comes entirely from B_J. B̃_x is curl-free on D_c, which contains a spanning disk of every poloidal loop, so it contributes 0. This fixes c (with the sign convention of N4: c = −μ0 I_p for current along +φ).
 - Toroidal circulation of B_J on a toroidal loop γ in V̄ (including γ ⊂ S0) is μ0 × (flux of J through a surface Σ spanning γ) = k μ0 I_tor, where k = lk(γ, magnetic axis) (orientation sign). J is divergence-free and tangent to S0, so its flux through Σ ∩ Ω is I_tor times the intersection number of Σ with the core circle; poloidal current contributes nothing because meridians bound disks inside Ω (**verified**, audit 2026-10-19).
   - It vanishes only for a longitude with k = 0. Axisymmetric check: for coaxial circles {R, Z = const}, k = 0 and B_{J,φ} = 0 outside Ω.
-- KIN6D's toroidal cycle is the class of {θ̂ = const} (τ₂ = dθ̂/2π has zero period on it), so 2πF = ∮_γ B_out·dl = ∮_γ B_in·dl for γ ⊂ S0 the image of that cycle. This holds for any k. The split is 2πF = ∮_γ B̃_x·dl + k μ0 I_tor.
+- MILCA's toroidal cycle is the class of {θ̂ = const} (τ₂ = dθ̂/2π has zero period on it), so 2πF = ∮_γ B_out·dl = ∮_γ B_in·dl for γ ⊂ S0 the image of that cycle. This holds for any k. The split is 2πF = ∮_γ B̃_x·dl + k μ0 I_tor.
 - **Linking condition (hypothesis, per case).** "F comes from B̃_x only" and "F is the TF-coil content of the drive, the current through the hole of D_c" hold iff k = 0. If the reference cycle {θ̂ = const} links the axis k ≠ 0 times, 2πF gains k μ0 I_tor. The linking number of the reference toroidal cycle must be computed per case. At ε = 0 with the geometric θ̂, k = 0 and F = I(δ) = √(1 − 4δ). The TF content must avoid the z-axis.
 - Sign c = −μ0 I_p is consistent with a counter-clockwise θ̂ in (R, Z) and right-handed (R, φ, Z) (**verified** by hand); that the code uses this convention is not verified.
 - The single-valued remainder of B̃_x on D_c is ∇χ_x. Its traces on Γ_c are the coil drive (a, h) of the first-variation file. For R1 they are per-n Fourier traces in the physical φ: the Landreman field has two field periods, so n ∈ 2Z; with nfp = 2 the drive has k = n/2. For R2 they are plain surface traces.
@@ -93,14 +93,14 @@ B_{in}\chi_\Omega=B_J+B_K,\qquad B_J={\rm BS}[\mu_0J\chi_\Omega],\quad B_K={\rm 
 ## 5. Approximate drive and computable defect (FB-G6, proved as a residual statement)
 
 - For any curl-free B̃_x^h on D_c (e.g. the fit of section 4), let d = B_J + B̃_x^h − B_in on S0.
-- The Landreman state then satisfies the KIN6D stationarity conditions up to:
+- The Landreman state then satisfies the MILCA stationarity conditions up to:
   - a flux leak (B_out^h·n = d·n on S0);
   - a traction defect (|B_in|² − |B_out^h|²)/2μ0 = −B_in·d_t/μ0 + O(|d|²).
 - Both are computable from closed forms and quadrature. Converted into an error bound on the discrete solution, the defect gives ≲ ‖F(x_Landreman)‖/β_h. This requires the β_h of FB-E2 (**open**). Without it the benchmark is a residual test, not an error oracle.
 
-## 6. KIN6D data for the benchmark (FB-G5)
+## 6. MILCA data for the benchmark (FB-G5)
 
-| KIN6D datum | Value | Status |
+| MILCA datum | Value | Status |
 |---|---|---|
 | frozen b̂, χ̂ on the reference plasma domain | pull-back of B_in, ψ through the chosen reference map | proved (exact data); needs a 3D frozen reference (N1/N3), see gap list |
 | pressure per label | p̃ = 2(δ − ψ) | proved |

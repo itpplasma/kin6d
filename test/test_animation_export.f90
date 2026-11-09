@@ -66,7 +66,7 @@ program test_animation_export
         error stop 'note not escaped'
     if (index(json, 'say \"hi\"\\path') == 0) error stop 'resolved text not escaped'
     if (index(json, '"shape": [2, 3]') == 0) error stop 'shape missing'
-    if (index(json, '"schema": "kin6d-animation-export-v1"') == 0) &
+    if (index(json, '"schema": "milca-animation-export-v1"') == 0) &
         error stop 'schema missing'
     print '(a)', 'animation export contract: ok'
 contains

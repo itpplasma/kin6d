@@ -13,7 +13,7 @@ It is a cross-code case without an exact equilibrium oracle. Runtime settings
 in the adapter replace the original very tight iteration tolerances.
 
 [V] Build the opt-in `benchmark_nested_reference` target. The optional Python
-adapter calls external codes and their readers; it does not implement KIN6D's
+adapter calls external codes and their readers; it does not implement MILCA's
 physics. In a Slurm allocation with the selected package installed:
 
 ```sh
@@ -66,13 +66,13 @@ least measured VMEC point, although its native Newton phases cost much more. P3 
 the measured count by 38% relative to P2, while finer P3 meshes can worsen pressure
 accuracy.
 
-[V] The study uses KIN6D main 072d226 and its pinned FortSparse 4f716f6, plus a second
+[V] The study uses MILCA main 072d226 and its pinned FortSparse 4f716f6, plus a second
 build with the P1 FortSparse patch d835267 (the same source tree as published faa7b53 in
 [FortSparse #28](https://github.com/lazy-fortran/fortsparse/pull/28)). Main already
 selects native supernodal pivoted LU with AMD in `src/mhd/ideal_map.f90`, so these are not
 timings of the older scalar-LDLT map path. The native boundary/profile driver and
 physical-point diagnostics are taken from pending [PR
-#35](https://github.com/itpplasma/kin6d/pull/35), pinned at 558f1ce, and linked against
+#35](https://github.com/itpplasma/milca/pull/35), pinned at 558f1ce, and linked against
 the listed main solver. This benchmark does not integrate that PR or qualify a 3D
 common-core adapter on main.
 
@@ -81,26 +81,26 @@ with affinity restricted to either one or eight physical cores. VMEC++ caps its 
 team at `min(requested, (ns-1)/2)` for fixed boundaries. The low-radial-count points
 therefore use four or six native workers within the eight-core budget, and the table marks
 that cap. Other points request one/eight OpenMP threads. OpenBLAS and MKL use one
-thread. KIN6D uses GNU Fortran 12.2, Release, OpenMP, AMD ordering and the
+thread. MILCA uses GNU Fortran 12.2, Release, OpenMP, AMD ordering and the
 compiler-floor recipe. External packages are VMEC++ 0.9.1, GVEC 1.5.0 and DESC 0.17.3
 with JAX 0.9.2, all on CPU. The existing DESC environment was reused. The VMEC++
 checkout 0bd147f also built and solved the Landreman input out of tree, and the
 fixed-boundary solver sources are unchanged from its v0.9.1 tag used for cluster timing.
 The table uses one completed process per point, with superseded instrumentation attempts
 retained separately, so small timing differences do not establish a regression or
-speedup. No complete GPU equilibrium path is provided by this KIN6D prototype or the
+speedup. No complete GPU equilibrium path is provided by this MILCA prototype or the
 inspected VMEC++ build. CUDA leaf timings in `benchmarks/equilibrium-gpu` cannot supply
 a solver speedup.
 
 [V] C counts the code-specific spatial coefficients: R/Z/lambda in VMEC++ and DESC,
-X1/X2/lambda in GVEC, and three map-coordinate fields in KIN6D. VMEC++ follows the
+X1/X2/lambda in GVEC, and three map-coordinate fields in MILCA. VMEC++ follows the
 requested `ns * mnmax * 3` count, doubled for a nonsymmetric run. DESC uses its actual
 R, Z and lambda basis sizes, and GVEC its native radial degree-five B-spline basis size
 times the actual Fourier mode count for each field. These counts precede axis, boundary
-and gauge constraints. KIN6D also reports the free reduced unknown count after its
+and gauge constraints. MILCA also reports the free reduced unknown count after its
 constraints. They are distinct quantities, and an exact cross-code comparison of
 independent free unknowns is not available. Only P2 and P3 are admitted by
-`ideal_seed_disk_mesh`. KIN6D has meridional triangular Pk elements and `2*N+1` toroidal
+`ideal_seed_disk_mesh`. MILCA has meridional triangular Pk elements and `2*N+1` toroidal
 modes, and its poloidal resolution is the FE mesh, rather than a second Fourier basis.
 
 [V] The 1% sampled-fields gate requires all of B RMS, pressure RMS and maximum
@@ -123,21 +123,21 @@ per-point ledger retains both thread results and failed attempts.
 
 | Code | Case | Resolution | C / free | B / p / flux-label (%) | Strong force | Δiota | Workflow s, 1/8 | Native call or S s, 1/8 | RSS MiB, 1/8 | C at 1% fields |
 |---|---|---|---:|---|---|---|---|---|---|---:|
-|KIN6D main|Landreman|p2-n4-b16|3,699 / 1,890|0.342 / 0.52 / 0.941|—|0 (input)|3.86/1.37|3.81/1.35 S|50.6/60.6|3,699|
-|KIN6D main|Landreman|p3-n4-b8|2,295 / 1,098|0.162 / 0.396 / 0.748|—|0 (input)|4.21/1.96|4.17/1.94 S|49.6/62.9|2,295|
-|KIN6D P1 pin|Landreman|p2-n4-b16|3,699 / 1,890|0.342 / 0.52 / 0.941|—|0 (input)|3.84/1.38|3.79/1.36 S|50.8/60.8|3,699|
+|MILCA main|Landreman|p2-n4-b16|3,699 / 1,890|0.342 / 0.52 / 0.941|—|0 (input)|3.86/1.37|3.81/1.35 S|50.6/60.6|3,699|
+|MILCA main|Landreman|p3-n4-b8|2,295 / 1,098|0.162 / 0.396 / 0.748|—|0 (input)|4.21/1.96|4.17/1.94 S|49.6/62.9|2,295|
+|MILCA P1 pin|Landreman|p2-n4-b16|3,699 / 1,890|0.342 / 0.52 / 0.941|—|0 (input)|3.84/1.38|3.79/1.36 S|50.8/60.8|3,699|
 |VMEC++|Landreman|m5-ns13 (worker cap 6)|2,379 / —|0.079 / 0.646 / 0.807|0.0832|4.44e-16|5.19/5.16|0.028/0.0233|441/455|2,379|
 |GVEC|Landreman|m8 (Jacobian abort)|11,258 / —|— / — / —|—|—|≥69.9/≥18.4|—/—|475/499|—|
 |DESC|Landreman|m4|443 / —|0.168 / 7.08 / 7.66|0.00644|0|47/26.8|31.6/14.8|2.49e+03/2.51e+03|—|
 |DESC|Landreman|m8|2,877 / —|0.165 / 8.15 / 10.9|0.000323|0|275/154|259/142|1.05e+04/1.04e+04|—|
-|KIN6D main|Issan|p2-n4-b16|3,699 / 1,890|0.257 / 0.435 / 0.711|—|0 (input)|5.41/1.93|5.36/1.91 S|50.4/66.6|3,699|
-|KIN6D main|Issan|p3-n4-b8|2,295 / 1,098|0.115 / 0.335 / 0.55|—|0 (input)|3.87/1.85|3.83/1.83 S|49.9/68.8|2,295|
-|KIN6D P1 pin|Issan|p2-n4-b16|3,699 / 1,890|0.257 / 0.435 / 0.711|—|0 (input)|5.23/1.93|5.19/1.9 S|52.4/60.8|3,699|
+|MILCA main|Issan|p2-n4-b16|3,699 / 1,890|0.257 / 0.435 / 0.711|—|0 (input)|5.41/1.93|5.36/1.91 S|50.4/66.6|3,699|
+|MILCA main|Issan|p3-n4-b8|2,295 / 1,098|0.115 / 0.335 / 0.55|—|0 (input)|3.87/1.85|3.83/1.83 S|49.9/68.8|2,295|
+|MILCA P1 pin|Issan|p2-n4-b16|3,699 / 1,890|0.257 / 0.435 / 0.711|—|0 (input)|5.23/1.93|5.19/1.9 S|52.4/60.8|3,699|
 |VMEC++|Issan|m4-ns9 (worker cap 4)|2,214 / —|0.0835 / 0.702 / 0.843|0.188|4.44e-16|5.1/5.08|0.0361/0.026|437/449|2,214|
 |GVEC|Issan|m8 (Jacobian abort)|11,258 / —|— / — / —|—|—|≥56.8/≥15.9|—/—|473/499|—|
 |DESC|Issan|m4|891 / —|0.155 / 6.25 / 6.14|0.00181|0|245/105|231/94.2|5.86e+03/5.91e+03|—|
 |DESC|Issan|m8 (600 s limit)|5,763 / —|— / — / —|—|—|≥600/≥600|—/—|3.63e+04/3.61e+04|—|
-| KIN6D main | QA | current-driven seed unavailable | — | — | — | — | — | — | — | — |
+| MILCA main | QA | current-driven seed unavailable | — | — | — | — | — | — | — | — |
 |VMEC++|QA|m4-ftol12|2,091 / —|0.0418 / 0 / 0.269|0.0237|0.00023|5.4/5.44|0.0903/0.187|435/447|2,091|
 |GVEC|QA|m4|1,089 / —|0.0172 / 0 / 0.234|0.0106|0.000326|19/16.8|17.1/14.9|243/251|1,089|
 |DESC|QA|m4|443 / —|0.073 / 0 / 1.17|0.00243|0.00074|61/33.7|41.6/18.3|3.72e+03/3.71e+03|2,877|
@@ -164,7 +164,7 @@ errors. The integer comparator's strong force norm also omits interelement face
 currents. Iota profiles are reported in the input orientation: DESC's positive-Jacobian
 theta reversal and GVEC's phi=-zeta chart must be accounted for. The fixed iota and
 total toroidal-flux constraints are not independent D7 readback integrals or field-line
-traces. The QA current-driven nested initializer is still unavailable in KIN6D. The NN1
+traces. The QA current-driven nested initializer is still unavailable in MILCA. The NN1
 coil-vacuum QA study is a different boundary problem and was not substituted. G6's
 non-nested reduction study is separate.
 
@@ -236,8 +236,8 @@ axisymmetric sheared control with N=0 and M=b/2 the B error is 8.7e-4, 3.2e-4 an
 
 [V] The adapter records separate native-call and complete workflow timers, actual basis
 sizes, affinity, solver status and parent/child peak RSS. Workflow time includes
-imports, conversion, readback and output, while KIN6D's workflow also includes boundary
-preparation. External native-call timers exclude those costs. For KIN6D, S is the sum of
+imports, conversion, readback and output, while MILCA's workflow also includes boundary
+preparation. External native-call timers exclude those costs. For MILCA, S is the sum of
 disjoint energy/gradient, Hessian and factor/solve timers, a lower bound on the complete
 Newton call. Whole-workflow totals include Python startup and external readback, which
 can dominate short VMEC++ solves. RSS is the measured process maximum rather than the
@@ -251,7 +251,7 @@ tightening VMEC FTOL from 1e-8 to 1e-12 removes most of the flux-label discrepan
 against the original-input reference. The loose m=12 run is therefore not used as the
 final QA reference. The m=4/m=8 tighter-tolerance points and independent radial ladder
 are retained alongside the default settings. Those controls are also provided by the
-separate [G6 adapter extension](https://github.com/itpplasma/kin6d/pull/72).
+separate [G6 adapter extension](https://github.com/itpplasma/milca/pull/72).
 
 [V] The P1 comparison covers N=4 and b=16 at P2/P3. It is a comparison at fixed
 discretization, rather than an independent search for P1's minimum DOF count. The

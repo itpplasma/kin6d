@@ -11,7 +11,7 @@ program screening_moments_main
     real(dp), parameter :: amu = 1.66053906660e-27_dp, e_charge = 1.602176634e-19_dp
     real(dp), parameter :: mp = 1.67262192369e-27_dp
     integer, parameter :: nb07 = 4, nwin = 5, nsample = 4
-    character(len=*), parameter :: code = 'kin6d screening_moments (Eulerian, first order in grad T)'
+    character(len=*), parameter :: code = 'milca screening_moments (Eulerian, first order in grad T)'
     type(run_t) :: run
     type(result_file_t) :: result
     integer :: cells_per_unit = 64, window_steps = 100, unit, ios, k
@@ -196,7 +196,7 @@ contains
             'cloud spreading, so the 300 eV/m rows are exactly three times the 100 eV/m rows); '// &
             'steady slope instead of a fit over 100 <= Omega_a t <= 700; deterministic, so se '// &
             'columns are 0 and dt_coll_over_tau_s is the label converged; '// &
-            'results written to output/homma/ (copy to results/kin6d/)'
+            'results written to output/homma/ (copy to results/milca/)'
         write (unit, '(a)') '# error_estimate: err_dt_* = |coarse - fine| over the two '// &
             'resolutions above; values are the fine resolution'
         write (unit, '(a)') '# units: drifts m/s along e_x and e_y; grad_x eV/m'
@@ -234,7 +234,7 @@ contains
             'at the origin, collisions at the particle position'
         write (unit, '(a)') '# convention_deviations: first order in grad T; deterministic, '// &
             'so se_window is 0; d_mean_v_dt_window_m_s2 holds the t = 0 rate; '// &
-            'results written to output/homma/ (copy to results/kin6d/)'
+            'results written to output/homma/ (copy to results/milca/)'
         write (unit, '(a)') '# error_estimate: err_* = |coarse - fine| over the two resolutions; '// &
             'values are the fine resolution'
         write (unit, '(a)') '# units: rates m/s^2; velocities m/s; grad eV/m'

@@ -1,13 +1,13 @@
 !> Compact animation-data export for external visualizations (lecture Manim
 !> scenes). A visualization consumes the exported arrays unchanged; the
-!> scientific source remains the kin6d application that wrote them.
+!> scientific source remains the milca application that wrote them.
 !>
 !> Layout of an export directory DIR/<slug>/:
 !> - one raw little-endian file per array, `<name>.f32` (IEEE binary32) or
 !>   `<name>.u8`/`<name>.u16` (unsigned codes of a linear quantization), stored in
 !>   Fortran (column-major) order with the shape recorded in the header;
 !> - `provenance.json`: application, command line, literal and resolved
-!>   namelist, kin6d commit/tree, compiler, dependency revisions, declared
+!>   namelist, milca commit/tree, compiler, dependency revisions, declared
 !>   physical parameters with units, and one entry per array (file, dtype,
 !>   shape, order, units, description, decode rule for quantized arrays).
 !> No timestamp is written, so equal inputs give byte-identical exports.
@@ -18,10 +18,10 @@ module milca_animation_export
     use milca_result_io, only: run_t, runtime_git
     implicit none
     private
-    include 'kin6d_build_info.inc'
+    include 'milca_build_info.inc'
 
     character(len=*), parameter, public :: animation_export_schema = &
-        'kin6d-animation-export-v1'
+        'milca-animation-export-v1'
 
     !> One export directory; entries accumulate until close().
     type, public :: animation_export_t
@@ -154,14 +154,14 @@ contains
         call field('config_path', quoted(this%run%config_path))
         call field('config_literal', quoted(this%run%literal))
         call field('config_resolved', quoted(this%run%resolved))
-        call field('kin6d_git_commit_build', quoted(kin6d_git_commit))
-        call field('kin6d_git_tree_build', quoted(kin6d_git_dirty))
-        call field('kin6d_git_commit_runtime', quoted(commit))
-        call field('kin6d_git_tree_runtime', quoted(tree))
-        call field('kin6d_build_type', quoted(kin6d_build_type))
+        call field('milca_git_commit_build', quoted(milca_git_commit))
+        call field('milca_git_tree_build', quoted(milca_git_dirty))
+        call field('milca_git_commit_runtime', quoted(commit))
+        call field('milca_git_tree_runtime', quoted(tree))
+        call field('milca_build_type', quoted(milca_build_type))
         call field('compiler_version', quoted(compiler_version()))
-        call field('fortnum_revision', quoted(kin6d_fortnum_revision))
-        call field('fortsym_revision', quoted(kin6d_fortsym_revision))
+        call field('fortnum_revision', quoted(milca_fortnum_revision))
+        call field('fortsym_revision', quoted(milca_fortsym_revision))
         call field('notes', '{'//this%notes//'}')
         call field('parameters', '{'//this%parameters//'}')
         write (unit, '(a)') '  "arrays": {'//this%arrays//'}'

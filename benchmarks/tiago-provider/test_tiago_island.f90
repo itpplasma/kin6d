@@ -138,7 +138,7 @@ program test_tiago_island
     call island_provider_free(reference)
     call island_provider_free(cold)
     call island_provider_free(model%provider)
-    print '(a)', 'PASS: Cartesian KIN6D provider with existing TIAGO MSE and MAP'
+    print '(a)', 'PASS: Cartesian MILCA provider with existing TIAGO MSE and MAP'
 contains
     subroutine initialize(provider, eps)
         type(island_provider_t), intent(inout) :: provider

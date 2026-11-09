@@ -34,7 +34,7 @@ cannot work.
 
 ```
 FC=gfortran cmake --preset cpu \
-  -DKIN6D_FORTSYM_BUILD=/Users/ert/code/lazy-fortran/fortsym/build \
+  -DMILCA_FORTSYM_BUILD=/Users/ert/code/lazy-fortran/fortsym/build \
   -DFETCHCONTENT_SOURCE_DIR_FORTNUM=/tmp/fortnum-error-strategy
 cmake --build build -j 10
 ctest --preset cpu -j 8

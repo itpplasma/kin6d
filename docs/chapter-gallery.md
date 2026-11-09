@@ -35,7 +35,7 @@ seconds to a minute.
 
 | Target | Movie / figures | Teaching message |
 |---|---|---|
-| `kin6d_demo` | `free-streaming.mp4`, `final-snapshot.png` | Free streaming shears f(x,v) into ever finer velocity stripes; the certified sup-error bound grows with them and the slice error stays inside |
+| `milca_demo` | `free-streaming.mp4`, `final-snapshot.png` | Free streaming shears f(x,v) into ever finer velocity stripes; the certified sup-error bound grows with them and the slice error stays inside |
 | `streaming_comparison_demo` | `particles-vlasov.mp4` | Weighted particles and an Eulerian Fourier/P1 grid carry the same free-streaming f; their densities agree within both certified bands |
 | `streaming_moments_demo` | `particles-to-moments.mp4` | Velocity moments compress f(x,v) into density and bulk velocity with whole-cell bounds; they follow the flow but discard the velocity structure |
 | `debye_sphere_demo` | `debye-potential-reduction.mp4` | As R/lambda_D sweeps from 0.5 to 2, linear electron screening confines the sphere potential within a Debye length (a sequence of equilibria, not a transient) |

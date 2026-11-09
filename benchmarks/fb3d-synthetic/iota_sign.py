@@ -1,6 +1,6 @@
 """Multi-turn straight-field-line oracle for the iota sign in the chart frame.
 
-KIN6D's frozen field (app/fb3d_synthetic.f90, iota_field_t) has
+MILCA's frozen field (app/fb3d_synthetic.f90, iota_field_t) has
 chi_gradient = sign * b3 * iota * y on the reference point y = (q1, q2) of the
 curve chart (chart_frame.py). With b_pol = (-d chi/dq2, d chi/dq1) and b3 the
 toroidal density (src/mhd/ideal_map.f90) a field line obeys

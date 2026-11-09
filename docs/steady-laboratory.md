@@ -266,7 +266,7 @@ repair evidence rather than a claim of complete dependency capture.
 Regenerate all numerical leaves with:
 
 ```sh
-cmake --preset cpu -DKIN6D_FORTSYM_BUILD=/path/to/pinned/fortsym/build
+cmake --preset cpu -DMILCA_FORTSYM_BUILD=/path/to/pinned/fortsym/build
 cmake --build --preset cpu --target gen_laboratory gen_poisson gen_fp gen_transport
 ./build/gen_laboratory
 ./build/gen_poisson
@@ -279,7 +279,7 @@ ctest --preset cpu
 CMake checks the FortSym source revision before enabling regeneration.
 Normal builds do not require FortSym. The installed Fo driver remains
 `6e54f805af13272e859ebf6c7ec48d205a22d7fdac7c84d435fdffc922bc76ee`.
-The shared kin6d Gremlin development lane still reports the documented
+The shared milca Gremlin development lane still reports the documented
 CMake-only input-capture blocker; native CMake/CTest supplies the evidence.
 
 Chris&AI

@@ -45,7 +45,7 @@ program test_mhd_closure
     !!  8. Ideal limit: eta -> 0 at fixed rotation gives the ideal-inertial
     !!     layer, whose current tends to the L6 closure as the inertial width
     !!     |gamma| (mu0 rho)^(1/2)/F' -> 0 (order 1/2 in rho).
-    !! KIN6D_CLOSURE_STUDY="prof R0 nrad delta ratio maxit nfit" runs one FEEC
+    !! MILCA_CLOSURE_STUDY="prof R0 nrad delta ratio maxit nfit" runs one FEEC
     !! Delta' case (convergence studies), "edge" the edge oracle alone.
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -616,7 +616,7 @@ contains
         !! The physical-current row now supplies the original gate as well:
         !! actual strip current / L4 within 1e-3 at BOTH xd=0.02 and 0.01.
         !! No fitted correction is applied to the interface amplitudes.
-        !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
+        !! MILCA_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
         character(len=128) :: env
         real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order, physical, physical2
         integer :: nr, i
@@ -625,7 +625,7 @@ contains
         real(dp), parameter :: xd_gate = 1.0e-2_dp
         real(dp) :: none(0)
         complex(dp) :: gt(3), gc(3), gs(3), g0(0)
-        call get_environment_variable('KIN6D_STRIP_LADDER', env)
+        call get_environment_variable('MILCA_STRIP_LADDER', env)
         if (len_trim(env) > 0) then
             read (env, *) r0l, xdl, nr
             call fe_strip(r0l, xdl, nr, etas, gt, gc, gs, ierr, cerr)
@@ -712,7 +712,7 @@ contains
             character(len=16) :: ev2
             integer :: nsr
             nsr = 0
-            call get_environment_variable('KIN6D_STRIP_STEPRINGS', ev2)
+            call get_environment_variable('MILCA_STRIP_STEPRINGS', ev2)
             if (len_trim(ev2) > 0) read (ev2, *) nsr
             ! rings across the tanh current step, spacing wstep/2
             if (nsr > 0) then
@@ -775,8 +775,8 @@ contains
         tol = 1.0e-7_dp
         block
             character(len=32) :: ev
-            ! KIN6D_STRIP_TOL="tol maxit" overrides the GMRES settings (studies)
-            call get_environment_variable('KIN6D_STRIP_TOL', ev)
+            ! MILCA_STRIP_TOL="tol maxit" overrides the GMRES settings (studies)
+            call get_environment_variable('MILCA_STRIP_TOL', ev)
             if (len_trim(ev) > 0) read (ev, *) tol, gmres_max
         end block
         ! outer response to prescribed edge sheets (no drive): M
@@ -1105,10 +1105,10 @@ contains
     end function inv2
 
     subroutine study()
-        !! KIN6D_CLOSURE_STUDY="prof r0 nrad delta ratio": one FE Delta'.
+        !! MILCA_CLOSURE_STUDY="prof r0 nrad delta ratio": one FE Delta'.
         character(len=128) :: env
         real(dp) :: delta, ratio, rs, dfe, dode
-        call get_environment_variable('KIN6D_CLOSURE_STUDY', env)
+        call get_environment_variable('MILCA_CLOSURE_STUDY', env)
         if (len_trim(env) == 0) return
         if (trim(env) == 'edge') then
             call edge_current_jump()
@@ -1633,7 +1633,7 @@ contains
         nfit = nfit_fe
         block
             character(len=4) :: rsh
-            call get_environment_variable('KIN6D_RES_SHAPE', rsh)
+            call get_environment_variable('MILCA_RES_SHAPE', rsh)
             if (rsh(1:1) == '0') opt%strip_shape = .false.
         end block
         ! rationals q = m/n inside the plasma (FE equilibrium)
@@ -1824,12 +1824,12 @@ contains
     end subroutine shield_cylinder
 
     subroutine shield_study(args)
-        !! KIN6D_CLOSURE_STUDY="shield q0 m r0 nrad delta ratio bs mc [ReD ImD
+        !! MILCA_CLOSURE_STUDY="shield q0 m r0 nrad delta ratio bs mc [ReD ImD
         !! [nfit]]" (GPEC lar default profile, R0/a = r0, boundary sheet bs and
-        !! moved edge current mc as 0/1).  KIN6D_SHIELD_DPRIME=1 replaces the
+        !! moved edge current mc as 0/1).  MILCA_SHIELD_DPRIME=1 replaces the
         !! drive by unit large-solution targets (Delta' mode, ReD >= 900) and
         !! prints r_s Delta' from the fitted slopes and from the sheets;
-        !! KIN6D_SHIELD_TOL sets the GMRES tolerance (default 1e-6)."
+        !! MILCA_SHIELD_TOL sets the GMRES tolerance (default 1e-6)."
         !! (with r_s Delta_layer = ReD + i ImD the layer is resistive)
         character(len=*), intent(in) :: args
         real(dp) :: rs, sref, eref, dpe, delta, ratio, sfe, sl, efe, dd(2)
@@ -1838,7 +1838,7 @@ contains
         read (args, *) q0, mres, r0, nrad, delta, ratio, ibs, imc
         block
             character(len=16) :: tv
-            call get_environment_variable('KIN6D_SHIELD_TOL', tv)
+            call get_environment_variable('MILCA_SHIELD_TOL', tv)
             if (len_trim(tv) > 0) read (tv, *) shield_tol
         end block
         read (args, *, iostat=ios) q0, mres, r0, nrad, delta, ratio, ibs, imc, dd, &
@@ -1876,7 +1876,7 @@ contains
         !! q = mres/nmode is resistive (resistive_closure) with the prescribed
         !! layer response r_s Delta_layer = dlay (the other layers stay ideal)
         !! and prec returns the reconnected flux A/psi_vac (a1 average).
-        !! dprime (or KIN6D_SHIELD_DPRIME) replaces the drive by unit large-
+        !! dprime (or MILCA_SHIELD_DPRIME) replaces the drive by unit large-
         !! solution targets; dpr returns r_s Delta' from the edge sheets.
         use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
             ring_flux_harmonic
@@ -1910,7 +1910,7 @@ contains
         nfit = nfit_fe
         block
             character(len=4) :: rsh
-            call get_environment_variable('KIN6D_RES_SHAPE', rsh)
+            call get_environment_variable('MILCA_RES_SHAPE', rsh)
             if (rsh(1:1) == '0') opt%strip_shape = .false.
         end block
         if (present(bsheet)) opt%boundary_sheet = bsheet
@@ -2016,7 +2016,7 @@ contains
             logical :: dpm
             dpm = .false.
             if (present(dprime)) dpm = dprime
-            call get_environment_variable('KIN6D_SHIELD_DPRIME', dbg)
+            call get_environment_variable('MILCA_SHIELD_DPRIME', dbg)
             if (len_trim(dbg) > 0 .or. dpm) then
                 phe = (0.0_dp, 0.0_dp)
                 do j = 1, nr

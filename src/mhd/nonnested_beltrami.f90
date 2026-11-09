@@ -34,7 +34,7 @@ module milca_nonnested_beltrami
     public :: beltrami_constraint, BELTRAMI_OK, BELTRAMI_INVALID, BELTRAMI_RESONANT
     integer, parameter :: BELTRAMI_OK = 0, BELTRAMI_INVALID = 1, BELTRAMI_RESONANT = 2
     real(dp), parameter :: pi = acos(-1.0_dp)
-    ! Matrix-free MINRES path (submodule kin6d_nonnested_beltrami_mr,
+    ! Matrix-free MINRES path (submodule milca_nonnested_beltrami_mr,
     ! docs/nonnested-newton-mr.md): preconditioner of the saddle system.
     integer, parameter :: BELTRAMI_PC_NONE = 0, BELTRAMI_PC_JACOBI = 1, &
         BELTRAMI_PC_BLOCK = 2

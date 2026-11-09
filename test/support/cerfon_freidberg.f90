@@ -69,7 +69,7 @@ contains
         call constraints(model, residual)
         if (maxval(abs(residual)) > 2e-11_dp) error stop 'CF boundary residual'
         ! Up-down symmetry makes the axis lie on y=0. Bracket the derivative;
-        ! no KIN6D axis search or readback enters this oracle.
+        ! no MILCA axis search or readback enters this oracle.
         call root_brent(axis_derivative, 1 - model%eps, 1 + model%eps, &
             model%axis, root_status, 2e-14_dp, 1e-15_dp, 128)
         if (root_status%code /= FORTNUM_OK) error stop 'CF exact axis root'

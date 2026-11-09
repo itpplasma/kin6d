@@ -1,5 +1,5 @@
 {
-"schema":"kin6d-pp-fusion-v1",
+"schema":"milca-pp-fusion-v1",
 "claim_status":"candidate",
 "numerical_bound":"unavailable; convergence indicators only",
 "model_bound":"unavailable; one-body Reid68 model",
@@ -15,7 +15,7 @@
 "fortsym_revision":"435f8975ab5cec1624f8f76a26d9ea57e3b06195",
 "compiler":"GCC version 16.2.1 20260810",
 "compiler_options":"-I /home/ert/code/kin6d/app -I /home/ert/code/kin6d/build/modules -I /home/ert/code/kin6d/build/result_include -I /home/ert/code/kin6d/build/_deps/fortio-build/modules -mtune=generic -march=x86-64 -O3 -ftrampoline-impl=heap -fopenmp -fpreprocessed -J modules -fpre-include=/usr/include/finclude/math-vector-fortran.h",
-"command":"build/pp_fusion_export --json docs/data/pp_fusion_kin6d.json",
+"command":"build/pp_fusion_export --json docs/data/pp_fusion_milca.json",
 "literal_configuration":"(no configuration file; all defaults)",
 "resolved_configuration":"&PP_FUSION\n RMAX=  100.00000000000000     ,\n HMAX= 0.80000000000000004     ,\n H0=  5.0000000000000003E-002,\n ENERGY=  1.0000000000000000E-003,\n ORDER=8          ,\n STRENGTH= 2*1.0000000000000000       ,\n /\n",
 "B_d_MeV":  2.2246020776246951E+000,

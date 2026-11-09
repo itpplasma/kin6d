@@ -1,5 +1,5 @@
 {
-"schema":"kin6d-pp-fusion-eft-v1",
+"schema":"milca-pp-fusion-eft-v1",
 "claim_status":"candidate",
 "rate_expansion":"Lambda is the truncated amplitude; Lambda2 is the consistently expanded rate",
 "verification":"verified implementation; model assumptions remain hypotheses",

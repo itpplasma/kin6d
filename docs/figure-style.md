@@ -1,4 +1,4 @@
-# kin6d plot and animation style
+# milca plot and animation style
 
 Scope: figures and movies produced by `app/*_demo.f90` through fortplot.
 These rules affect presentation only. Each plotted band must still come from

@@ -139,7 +139,7 @@ contains
         data%psi_axis = readback%psi_axis; data%psi_edge = eq%psi_bound
         data%ip = ip; data%rcentr = rcentr; data%bcentr = eq%f_vac/rcentr
         data%lcfs = lcfs; data%limiter = limiter
-        data%header = 'KIN6D COCOS 3 SI; candidate equilibrium'
+        data%header = 'MILCA COCOS 3 SI; candidate equilibrium'
         select type (field => eq%field)
         class is (gs_field_t)
             do i = 1, nr

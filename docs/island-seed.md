@@ -149,7 +149,7 @@ unchanged. With a resonant but axisymmetric state, g = 0 and a* = 0 exactly.
 `island_seed_leaves` checks the leaf identities, the JVP against central
 differences (2e-10 or better) and the JVP/VJP pairing (4e-16 or better).
 `island_seed_exact_regeneration` checks the generated leaves against
-the generator when `KIN6D_FORTSYM_BUILD` is set.
+the generator when `MILCA_FORTSYM_BUILD` is set.
 
 ## Limits
 

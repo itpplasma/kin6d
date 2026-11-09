@@ -35,10 +35,10 @@ program gs_reference_error
     open(newunit=unit,file=trim(path),status='old',action='read')
     read(unit,'(a)') header
     if (ndof == 3) then
-        if (index(header, '# kin6d-gs-mesh-v1:') /= 1) &
+        if (index(header, '# milca-gs-mesh-v1:') /= 1) &
             error stop 'reference enclosure supports P1 mesh-v1 only'
     else
-        if (index(header, '# kin6d-gs-mesh-v2: P2 ') /= 1) &
+        if (index(header, '# milca-gs-mesh-v2: P2 ') /= 1) &
             error stop 'affine-p2 requires native P2 mesh-v2'
     end if
     read(unit,*) n,m

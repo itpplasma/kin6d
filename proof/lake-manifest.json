@@ -111,7 +111,7 @@
       "configFile": "lakefile.toml"
     }
   ],
-  "name": "kin6dProof",
+  "name": "milcaProof",
   "lakeDir": ".lake",
   "fixedToolchain": false
 }

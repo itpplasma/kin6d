@@ -462,7 +462,7 @@ contains
     end subroutine
 
     function island_provider_provenance(prov) result(text)
-        ! key=value record for the consumer's provenance ledger. The KIN6D
+        ! key=value record for the consumer's provenance ledger. The MILCA
         ! revision is not compiled in; the consumer records its binary.
         type(island_provider_t), intent(in) :: prov
         character(:), allocatable :: text

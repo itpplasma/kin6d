@@ -1,7 +1,7 @@
 # Error control and performance
 
 Status: measured policy and implemented Q0 slice, 2026-10-06. The audience is
-KIN6D implementers choosing the cheapest defensible statement for a requested
+MILCA implementers choosing the cheapest defensible statement for a requested
 observable. The [measurement ledger](../benchmarks/error-control/baseline.json)
 and [raw samples](../benchmarks/error-control/baseline.csv) cover existing
 case paths. The [instrumented follow-up](../benchmarks/error-control/measured.json)
@@ -72,7 +72,7 @@ chi-square lower-tail bound for a norm; Rademacher quadratic forms can use
 Hanson–Wright bounds; Hutchinson trace estimators need their actual matrix
 assumptions and concentration inequality. Randomized QMC needs a declared
 randomization and an applicable concentration/error theorem. These are policy
-options, not claims that all implementations exist in KIN6D.
+options, not claims that all implementations exist in MILCA.
 
 The implemented FortNum sampler draws iid uniform coordinates of a fixed
 vector, given a proved envelope `M >= max_i |r_i|`. With `m` samples,
@@ -143,7 +143,7 @@ run. See the CSV for inputs, scales, widths, timing method and all repetitions.
 The finite Hermitian Hamiltonian is immutable binary64 input. FortNum stores
 outward row magnitude sums once and performs point matrix actions with
 `gamma_(2n)*sum |H_ij|*max |v_j|`, interval-input widths and absolute underflow
-allowances. KIN6D composes real/imaginary actions and hbar division through
+allowances. MILCA composes real/imaginary actions and hbar division through
 the retained symbolic RHS/scaling definitions. Hermite coefficients,
 Bernstein residual reduction, norm, radius accumulation and endpoints remain
 outward. No dense interval multiplication is required in D; S retains it.
@@ -190,7 +190,7 @@ claims. In particular, setup amortization matters for the sheet solves.
 
 For every elliptic or coercive spatial model, the standard numerical-error
 metric is the patchwise equilibrated-residual (Prager--Synge) energy bound.
-FortFEM owns one implementation per operator family; KIN6D wraps it with the
+FortFEM owns one implementation per operator family; MILCA wraps it with the
 physical coefficient, source and guaranteed constants
 ([GS estimator](grad-shafranov.md#fixed-source-error-estimator)). Local
 patch problems are O(N) and parallel; any H(div)/H(curl) reconstruction gives

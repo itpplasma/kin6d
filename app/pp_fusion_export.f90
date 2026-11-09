@@ -8,7 +8,7 @@ program pp_fusion_export
     use milca_result_io, only: run_t, result_file_t, runtime_git
     use fortnum_special_coulomb, only: coulomb_c0_squared
     implicit none
-    include 'kin6d_build_info.inc'
+    include 'milca_build_info.inc'
     type(pp_fusion_config_t) :: cfg
     type(pp_fusion_result_t) :: answer
     type(run_t) :: run
@@ -21,7 +21,7 @@ program pp_fusion_export
     namelist /pp_fusion/ rmax, hmax, h0, energy, order, strength
     rmax = cfg%rmax; hmax = cfg%hmax; h0 = cfg%h0; energy = cfg%energy
     order = cfg%order; strength = cfg%strength
-    json_path = 'output/pp_fusion_kin6d.json'
+    json_path = 'output/pp_fusion_milca.json'
     call run%start('pp_fusion_export')
     call run%open_config(unit)
     ios = 0; message = ''
@@ -85,7 +85,7 @@ program pp_fusion_export
     if (ios /= 0) &
         error stop 'cannot open requested JSON path (create its directory first)'
     write (json_unit, '(a)') '{'
-    call string('schema', 'kin6d-pp-fusion-v1')
+    call string('schema', 'milca-pp-fusion-v1')
     call string('claim_status', trim(answer%status))
     call string('numerical_bound', trim(answer%numerical_bound))
     call string('model_bound', trim(answer%model_bound))
@@ -97,8 +97,8 @@ program pp_fusion_export
     call string('constants_doi', '10.1103/RevModPhys.97.025002')
     call string('git_commit', commit)
     call string('git_tree', tree)
-    call string('fortnum_revision', kin6d_fortnum_revision)
-    call string('fortsym_revision', kin6d_fortsym_revision)
+    call string('fortnum_revision', milca_fortnum_revision)
+    call string('fortsym_revision', milca_fortsym_revision)
     call string('compiler', compiler_version())
     call string('compiler_options', compiler_options())
     call string('command', run%command_line)

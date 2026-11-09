@@ -242,7 +242,7 @@ variations and is not an NN2 reference.
   checks the isotropic blocks against the per-n Dirichlet forms to 1.6e-15,
   the loads to 3.5e-16, and exact Galerkin reproduction of P2 x trig with a
   phi-dependent tensor to 8.7e-15.
-- KIN6D `milca_nonnested_transport`: `nt_conductivity_t` samples any
+- MILCA `milca_nonnested_transport`: `nt_conductivity_t` samples any
   `equilibrium_field_t`, including the NN1 free-B state, and `nt_solve`
   runs the Dirichlet solve through `nn_linear_solve`. The reported residual
   is the normwise backward error |r|/(||A||p|| + |rhs|), with up to two

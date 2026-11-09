@@ -1,5 +1,5 @@
 {
-  "baseline_repository": "https://github.com/itpplasma/kin6d",
+  "baseline_repository": "https://github.com/itpplasma/milca",
   "baseline_revision": "87c89c9df7184ffd99e06a3a45f1ccc45a7b822f",
   "cpu": "AMD Ryzen 9 5950X",
   "compiler": "GNU Fortran (GCC) 16.2.1 20260810",

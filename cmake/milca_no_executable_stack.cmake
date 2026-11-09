@@ -1,4 +1,4 @@
-# Check the built KIN6D target files, including ELF members of static
+# Check the built MILCA target files, including ELF members of static
 # libraries, for an executable stack. Targets that were not built in this
 # tree are skipped, so a tier checks exactly what it built.
 if(NOT ELF_FORMAT STREQUAL "ELF")
@@ -10,7 +10,7 @@ if(NOT READELF OR NOT EXISTS "${READELF}")
 endif()
 include("${TARGET_MANIFEST}")
 set(checked 0)
-foreach(target_file IN LISTS KIN6D_STACK_TARGETS)
+foreach(target_file IN LISTS MILCA_STACK_TARGETS)
     if(NOT EXISTS "${target_file}")
         continue()
     endif()
@@ -35,6 +35,6 @@ foreach(target_file IN LISTS KIN6D_STACK_TARGETS)
     endif()
 endforeach()
 if(checked EQUAL 0)
-    message(FATAL_ERROR "No built KIN6D target files to check")
+    message(FATAL_ERROR "No built MILCA target files to check")
 endif()
-message(STATUS "${checked} built KIN6D target files have non-executable stacks")
+message(STATUS "${checked} built MILCA target files have non-executable stacks")

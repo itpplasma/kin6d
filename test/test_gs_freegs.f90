@@ -270,7 +270,7 @@ contains
             call gs_law_primitives(law, flux_levels(i + 1) - ev%psi_bound, &
                                    pressure, f, status)
             call check(status, 'F readback')
-            ! FreeGS q is positive for this f>0, Ip>0 example. KIN6D's COCOS 3
+            ! FreeGS q is positive for this f>0, Ip>0 example. MILCA's COCOS 3
             ! signed q has the opposite sign (sigma=sign(psi_b-psi_a)).
             values(8 + i) = sign(1.0_dp, ev%psi_bound - ev%psi_axis) &
                             *f*coarea(i + 1)/(2*pi)

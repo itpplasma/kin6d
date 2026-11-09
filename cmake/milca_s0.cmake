@@ -1,6 +1,6 @@
 # S0 frequency targeting consumes the complete FortNum eigen target and the
 # physical plasma-volume Hessian. Generic sparse numerics remain in FortSparse.
-target_sources(kin6d_mhd PRIVATE src/mhd/s0_volume.f90 src/mhd/s0_spectrum.f90
+target_sources(milca_mhd PRIVATE src/mhd/s0_volume.f90 src/mhd/s0_spectrum.f90
     src/generated/milca_s0_leaves.f90 src/mhd/s0_gs_space.f90
     src/generated/milca_s0_gs_space_leaves.f90)
 set_source_files_properties(src/generated/milca_s0_leaves.f90 PROPERTIES
@@ -9,9 +9,9 @@ set_source_files_properties(src/generated/milca_s0_gs_space_leaves.f90 PROPERTIE
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_s0_gs_kink test/test_s0_gs_kink.f90
     test/support/s0_cylinder_oracle.f90)
-target_link_libraries(test_s0_gs_kink PRIVATE kin6d_mhd)
+target_link_libraries(test_s0_gs_kink PRIVATE milca_mhd)
 add_executable(test_s0_gs_space test/test_s0_gs_space.f90)
-target_link_libraries(test_s0_gs_space PRIVATE kin6d_mhd)
+target_link_libraries(test_s0_gs_space PRIVATE milca_mhd)
 add_test(NAME s0_gs_space_jets_and_derivatives COMMAND test_s0_gs_space)
 set_tests_properties(s0_gs_space_jets_and_derivatives PROPERTIES TIMEOUT 10
     LABELS "stability;s0")
@@ -28,7 +28,7 @@ set_tests_properties(s0_gs_kink_radial_refinement s0_gs_kink_aspect_ratio
     PROCESSORS 8 LABELS "stability;s0"
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
 add_executable(test_s0 test/test_s0.f90)
-target_link_libraries(test_s0 PRIVATE kin6d_mhd)
+target_link_libraries(test_s0 PRIVATE milca_mhd)
 add_test(NAME s0_alfven_wave_convergence COMMAND test_s0)
 add_test(NAME s0_shear_continuum_targeting COMMAND test_s0 continuum)
 add_test(NAME s0_physical_metric_contracts COMMAND test_s0 contracts)
@@ -36,7 +36,7 @@ set_tests_properties(s0_alfven_wave_convergence s0_shear_continuum_targeting
     s0_physical_metric_contracts PROPERTIES TIMEOUT 60 PROCESSORS 2
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
 add_executable(test_s0_tae test/test_s0_tae.f90)
-target_link_libraries(test_s0_tae PRIVATE kin6d_mhd)
+target_link_libraries(test_s0_tae PRIVATE milca_mhd)
 add_test(NAME s0_toroidal_continuum_gap COMMAND test_s0_tae)
 set_tests_properties(s0_toroidal_continuum_gap PROPERTIES TIMEOUT 60 PROCESSORS 2
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
@@ -47,7 +47,7 @@ if(TARGET milca_gen_support)
         -DGENERATOR=$<TARGET_FILE:gen_s0_gs_space>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_s0_gs_space_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/s0-gs-space-regeneration
-        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_s0_gs_space_regeneration.cmake)
+        -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_s0_gs_space_regeneration.cmake)
     set_tests_properties(s0_gs_space_regeneration PROPERTIES TIMEOUT 10
         LABELS "stability;s0")
     add_executable(gen_s0 gen/gen_s0.f90)
@@ -56,7 +56,7 @@ if(TARGET milca_gen_support)
         -DGENERATOR=$<TARGET_FILE:gen_s0>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_s0_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/s0-regeneration
-        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_s0_regeneration.cmake)
+        -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_s0_regeneration.cmake)
 endif()
 
 add_test(NAME s0_external_kink_rigid_growth COMMAND test_ideal_free_boundary kink_growth)

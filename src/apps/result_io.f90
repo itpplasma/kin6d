@@ -1,4 +1,4 @@
-!> Configuration and result contract for KIN6D applications (campaign F5).
+!> Configuration and result contract for MILCA applications (campaign F5).
 !>
 !> Input: an optional Fortran namelist file named by `--config FILE`. Each
 !> application owns its namelist groups and their defaults; this module only
@@ -17,11 +17,11 @@ module milca_result_io
     implicit none
     private
     public :: runtime_git
-    include 'kin6d_build_info.inc'
+    include 'milca_build_info.inc'
 
     !> Directory that receives every application result.
     character(len=*), parameter, public :: result_directory = 'output'
-    character(len=*), parameter, public :: result_schema = 'kin6d-result-v1'
+    character(len=*), parameter, public :: result_schema = 'milca-result-v1'
     character(len=*), parameter :: no_config = &
         '(no configuration file; all defaults)'
 
@@ -195,29 +195,29 @@ contains
         call check(nf90_create(this%path, ior(NF90_NETCDF4, NF90_CLOBBER), &
             this%ncid), this%path)
         call runtime_git(commit, dirty, run%name)
-        call this%attribute('kin6d_schema', result_schema)
-        call this%attribute('kin6d_application', run%name)
-        call this%attribute('kin6d_command_line', run%command_line)
-        call this%attribute('kin6d_config_path', nonempty(run%config_path))
-        call this%attribute('kin6d_config_literal', nonempty(run%literal))
-        call this%attribute('kin6d_config_resolved', run%resolved)
-        call this%attribute('kin6d_git_commit', kin6d_git_commit)
-        call this%attribute('kin6d_git_tree', kin6d_git_dirty)
-        call this%attribute('kin6d_git_runtime_commit', commit)
-        call this%attribute('kin6d_git_runtime_tree', dirty)
-        call this%attribute('kin6d_source_directory', kin6d_source_path)
-        call this%attribute('kin6d_build_type', nonempty(kin6d_build_type))
-        call this%attribute('kin6d_build_flags', nonempty(kin6d_build_flags))
-        call this%attribute('kin6d_build_compiler', nonempty(kin6d_build_compiler))
+        call this%attribute('milca_schema', result_schema)
+        call this%attribute('milca_application', run%name)
+        call this%attribute('milca_command_line', run%command_line)
+        call this%attribute('milca_config_path', nonempty(run%config_path))
+        call this%attribute('milca_config_literal', nonempty(run%literal))
+        call this%attribute('milca_config_resolved', run%resolved)
+        call this%attribute('milca_git_commit', milca_git_commit)
+        call this%attribute('milca_git_tree', milca_git_dirty)
+        call this%attribute('milca_git_runtime_commit', commit)
+        call this%attribute('milca_git_runtime_tree', dirty)
+        call this%attribute('milca_source_directory', milca_source_path)
+        call this%attribute('milca_build_type', nonempty(milca_build_type))
+        call this%attribute('milca_build_flags', nonempty(milca_build_flags))
+        call this%attribute('milca_build_compiler', nonempty(milca_build_compiler))
         call this%attribute('compiler_version', compiler_version())
         call this%attribute('compiler_options', compiler_options())
-        call this%attribute('fortsym_revision', kin6d_fortsym_revision)
-        call this%attribute('fortnum_revision', kin6d_fortnum_revision)
-        call this%attribute('fortplot_revision', kin6d_fortplot_revision)
-        call this%attribute('fortio_revision', kin6d_fortio_revision)
-        call this%attribute('fortfem_revision', kin6d_fortfem_revision)
-        call this%attribute('fortsparse_revision', kin6d_fortsparse_revision)
-        call this%attribute('libneo_revision', kin6d_libneo_revision)
+        call this%attribute('fortsym_revision', milca_fortsym_revision)
+        call this%attribute('fortnum_revision', milca_fortnum_revision)
+        call this%attribute('fortplot_revision', milca_fortplot_revision)
+        call this%attribute('fortio_revision', milca_fortio_revision)
+        call this%attribute('fortfem_revision', milca_fortfem_revision)
+        call this%attribute('fortsparse_revision', milca_fortsparse_revision)
+        call this%attribute('libneo_revision', milca_libneo_revision)
         call this%attribute('created_utc', utc_timestamp())
     end subroutine
 
@@ -316,7 +316,7 @@ contains
         call check(nf90_put_att(this%ncid, varid, 'units', nonempty(units)), this%path)
         call check(nf90_put_att(this%ncid, varid, 'long_name', long_name), this%path)
         if (present(status)) call check(nf90_put_att(this%ncid, varid, &
-            'kin6d_status', status), this%path)
+            'milca_status', status), this%path)
         call check(nf90_enddef(this%ncid), this%path)
     end subroutine
 
@@ -350,7 +350,7 @@ contains
 
     subroutine fail(context, message)
         character(len=*), intent(in) :: context, message
-        error stop 'kin6d '//context//': '//message
+        error stop 'milca '//context//': '//message
     end subroutine
 
     function nonempty(text) result(value)
@@ -464,7 +464,7 @@ contains
         integer :: unit, ios, exit_status, changed
         commit = 'unavailable'; tree = 'unavailable'
         scratch = result_directory//'/.'//name//'.git-check'
-        source = "'"//kin6d_source_path//"'"
+        source = "'"//milca_source_path//"'"
         call execute_command_line('git -C '//source//' rev-parse HEAD > '//scratch// &
             ' 2>/dev/null && git -C '//source//' status --porcelain '// &
             '--untracked-files=no 2>/dev/null | wc -l >> '//scratch, &

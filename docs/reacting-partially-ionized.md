@@ -6,7 +6,7 @@ species/reaction/transport framework.
 
 ## Principle
 
-Weakly and partially ionized plasmas are not a separate KIN6D application.
+Weakly and partially ionized plasmas are not a separate MILCA application.
 They are configurations in which charged species, neutral gas, internal states,
 reactions, fields and surfaces have comparable importance.
 
@@ -175,7 +175,7 @@ provider.
 ## Adjacent-media coupling
 
 Plasma-liquid or detailed material applications use a conservative interface
-port rather than importing an entire liquid/solid solver into KIN6D.
+port rather than importing an entire liquid/solid solver into MILCA.
 
 The interface exchanges declared particle/species fluxes, current, heat,
 potential and reaction products. External media return boundary state and

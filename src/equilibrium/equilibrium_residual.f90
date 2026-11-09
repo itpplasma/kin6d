@@ -8,7 +8,7 @@ module milca_equilibrium_residual
     ! analytically (T(B) - T(B0)); the scale is
     !   sigma = <|b|^2>/mu0 + <|p|>,  b = B - B0  (volume means),
     ! never <B^2>. Displacements: axisymmetric xi = (xi_R, 0, xi_Z) in vector
-    ! P_k on a KIN6D triangulation, zero on its boundary nodes, with the norm
+    ! P_k on a MILCA triangulation, zero on its boundary nodes, with the norm
     ! ||xi||^2 = int |grad xi_R|^2 + |grad xi_Z|^2 dV. The reported residual is
     ! the dual norm sup R[xi]/||xi|| (Riesz representer, one sparse SPD
     ! factorisation) divided by sigma sqrt(V), V the volume of the mesh.

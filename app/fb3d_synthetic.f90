@@ -46,7 +46,7 @@ contains
 end module fb3d_synthetic_field
 
 program fb3d_synthetic
-    ! KIN6D 3D free boundary on the helical-axis curve chart for the public
+    ! MILCA 3D free boundary on the helical-axis curve chart for the public
     ! synthetic nfp = 3 modular-coil case (benchmarks/fb3d-synthetic): coils
     ! from the MAKEGRID file (libneo reader, one circuit, EXTCUR = 1), traces
     ! on the non-axisymmetric Gamma_c, field-period R2 exterior, Newton on the

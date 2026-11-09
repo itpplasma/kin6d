@@ -1,4 +1,4 @@
-! NN1 (vacuum, prescribed traces) on the common KIN6D/SPECTRE case: a circular annulus
+! NN1 (vacuum, prescribed traces) on the common MILCA/SPECTRE case: a circular annulus
 ! a_in < rho < a_out about (R0, 0); the traces and the harmonic F come from N helical closed
 ! polygonal filaments outside the domain (direct Biot-Savart is the shared oracle).
 ! Usage: nn1_spec_case case.nml grid.txt out_prefix nr nmodes [nphi]

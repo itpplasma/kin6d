@@ -21,7 +21,7 @@ They provide no launch schedule, transfers, sparse solver or automatic
 mixed-precision iterative refinement. Offload runtime performance was not tested.
 No new generic emitter feature was needed.
 
-[V] The previous KIN6D pin emitted overlong Fortran statements and general CUDA
+[V] The previous MILCA pin emitted overlong Fortran statements and general CUDA
 `pow` calls for negative integer powers in this consumer. Existing upstream
 fixes supply continued statements and typed reciprocal products. An isolated
 build of those fixes was required: the pre-existing FortSym build's linked
@@ -86,7 +86,7 @@ approximate frozen-source estimate, continuous certification unavailable).
 
 ## Native CPU follow-up, 2026-10-22
 
-[V] KIN6D 072d226 uses native supernodal LU with AMD for the map Newton/KKT
+[V] MILCA 072d226 uses native supernodal LU with AMD for the map Newton/KKT
 matrix (`src/mhd/ideal_map.f90`, `factor_masked`). The FortSparse pin now includes
 [the default scalar LDLT row-merge fix](https://github.com/lazy-fortran/fortsparse/pull/28),
 faa7b5348992dbb67eb2c8a2b60c33b17d211759. The historical stalled LDLT sample
@@ -255,7 +255,7 @@ solve, global mixed-precision convergence and ill-conditioned geometry are
 - [H] Resolve the measured native LDLT insertion/status-update cost in
   FortSparse before extrapolating full-solver GPU gains. Retain a focused
   factor/solve reproducer, unchanged residuals and an independent dense oracle;
-  do not duplicate the sparse algorithm in KIN6D. No upstream factorization
+  do not duplicate the sparse algorithm in MILCA. No upstream factorization
   repair or indefinite GPU factor was implemented in this bounded prototype.
 - [H] First port the complete map element action: geometry jets, chart chain,
   generated local HVP, test-function contractions and element gather/reduce.
@@ -263,7 +263,7 @@ solve, global mixed-precision convergence and ill-conditioned geometry are
   Existing `ideal_map_hessian` allocates scratch per element at line 1019;
   move that schedule allocation out of the loop before treating it as a target
   CPU performance reference. Generic basis/Piola kernels belong in FortFEM;
-  physics leaves stay in KIN6D `gen/`.
+  physics leaves stay in MILCA `gen/`.
 - [H] For GS, batch accepted cut-quadrature points and generated basis/source
   products across cells. Retain FP64 cut topology, acceptance quadrature and
   final residuals until a separate error analysis admits a lower precision.
@@ -289,19 +289,19 @@ solve, global mixed-precision convergence and ill-conditioned geometry are
 
 ## Reproduction
 
-[V] Regenerate from a KIN6D CMake tree configured with the pinned FortSym build:
+[V] Regenerate from a MILCA CMake tree configured with the pinned FortSym build:
 
 ```sh
 mkdir -p benchmarks/equilibrium-gpu/generated
 cmake --build build-dev-fast --target gen_ideal_map
 build-dev-fast/gen_ideal_map --gpu
-cmake -S benchmarks/equilibrium-gpu -B /tmp/kin6d-gpu -G Ninja \
+cmake -S benchmarks/equilibrium-gpu -B /tmp/milca-gpu -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120
-cmake --build /tmp/kin6d-gpu -j 8
-CUDA_VISIBLE_DEVICES=1 ctest --test-dir /tmp/kin6d-gpu -j 4 \
+cmake --build /tmp/milca-gpu -j 8
+CUDA_VISIBLE_DEVICES=1 ctest --test-dir /tmp/milca-gpu -j 4 \
   -R '^gpu_equilibrium_leaf_oracles$' --output-on-failure
 OMP_NUM_THREADS=8 OMP_WAIT_POLICY=passive CUDA_VISIBLE_DEVICES=1 \
-  /tmp/kin6d-gpu/benchmark_equilibrium_gpu 32768 21 > gpu.log
+  /tmp/milca-gpu/benchmark_equilibrium_gpu 32768 21 > gpu.log
 benchmarks/equilibrium-gpu/analyze.sh gpu.log
 ```
 
@@ -309,7 +309,7 @@ benchmarks/equilibrium-gpu/analyze.sh gpu.log
 same CTest and two sizes at 1/2/4/8 CPU threads. The T4 job uses sm_75 and
 GCC 11 with CUDA 11.8. Prototype build needs only CMake, Fortran/OpenMP, CUDA
 and the C++ runtime; no production backend configuration was designed.
-The top-level build offers `KIN6D_BUILD_CUDA_PRECISION_BENCHMARK=ON` with an
+The top-level build offers `MILCA_BUILD_CUDA_PRECISION_BENCHMARK=ON` with an
 explicit `CMAKE_CUDA_ARCHITECTURES`; the option defaults to OFF. The standalone
 build above also requires an explicit architecture. Production FP64 defaults
 remain unchanged. Submit `run_slurm.sh` from the dedicated snapshot root;

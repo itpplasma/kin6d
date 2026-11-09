@@ -75,9 +75,9 @@ program formal_krook_certificate
     path = 'output/ComputedKrook.lean'
     if (run%argument_count() > 0) call run%argument(1, path)
     open (newunit=unit, file=trim(path), status='replace')
-    write (unit, '(a)') 'import Kin6d'
+    write (unit, '(a)') 'import Milca'
     write (unit, '(a)') '-- Exact dyadic interpretation of the Fortran candidate bytes.'
-    write (unit, '(a)') 'namespace Kin6d.Computed'
+    write (unit, '(a)') 'namespace Milca.Computed'
     write (unit, '(a)') 'def candidate : Certificate := '
     write (unit, '(a)') '  { exactAmplitude := 1/2, candidateAmplitude := ' // &
         rational // ', residualBound := 0, radius := 0 }'
@@ -89,7 +89,7 @@ program formal_krook_certificate
     write (unit, '(a)') '      profile (candidate.exactAmplitude : Real) v x) ≤'
     write (unit, '(a)') '      (candidate.radius : Real) := candidate.sound accepted'
     write (unit, '(a)') '#print axioms continuous'
-    write (unit, '(a)') 'end Kin6d.Computed'
+    write (unit, '(a)') 'end Milca.Computed'
     close (unit)
     call execute_command_line('mkdir -p '//result_directory, exitstat=ios)
     if (ios /= 0) error stop 'cannot create result directory'

@@ -1,8 +1,8 @@
-import Kin6d
+import Milca
 
 set_option autoImplicit false
 
-namespace Kin6d.Test
+namespace Milca.Test
 
 /-- A coarse explicitly reconstructed candidate. -/
 def coarse : Certificate := ⟨1 / 2, 3 / 8, 3 / 16, 3 / 16⟩
@@ -36,12 +36,12 @@ theorem undersized_residual_false :
         forcing (1 / 2) 0 0| ≤ 1 / 32 := by
   norm_num [profile, weight, forcing]
 
-#print axioms Kin6d.periodic_transport_abs_bound
-#print axioms Kin6d.Certificate.sound
+#print axioms Milca.periodic_transport_abs_bound
+#print axioms Milca.Certificate.sound
 #print axioms coarse_continuous
 #print axioms fine_continuous
-#print axioms Kin6d.poisson_equation
-#print axioms Kin6d.potential_gauge
-#print axioms Kin6d.electric_energy
+#print axioms Milca.poisson_equation
+#print axioms Milca.potential_gauge
+#print axioms Milca.electric_energy
 
-end Kin6d.Test
+end Milca.Test

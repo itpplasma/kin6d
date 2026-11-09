@@ -1,0 +1,2 @@
+! Configured from CMakeLists.txt MILCA_FORTSYM_REVISION; do not edit.
+character(*), parameter :: fortsym_revision = '@MILCA_FORTSYM_REVISION@'

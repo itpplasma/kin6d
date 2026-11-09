@@ -79,7 +79,7 @@ straight in `theta + eta` and have the same iota.
   geometry never moves, which keeps the discretisation conforming: every
   discrete state is an admissible ideal state on the fixed (interpolated)
   domain, so the discrete energy stays an upper bound up to quadrature. The
-  sliding-node variant (kin6d#119) lacks this property, because there the
+  sliding-node variant (milca#119) lacks this property, because there the
   minimiser bulges the edges outwards.
 - **Gauge.** The `m = n = 0` constant is omitted. A rigid shift of `theta` leaves
   `b` unchanged, so it is an exact null. The toroidal labels stay physical

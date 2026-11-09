@@ -1,5 +1,5 @@
 module milca_tiago_island_mse
-    ! Fixed-wall synthetic inference; the physical closure stays in KIN6D.
+    ! Fixed-wall synthetic inference; the physical closure stays in MILCA.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int32
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_rng, only: rng_t, rng_normal

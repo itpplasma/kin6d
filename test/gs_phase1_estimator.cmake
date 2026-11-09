@@ -42,7 +42,7 @@ execute_process(COMMAND "${NCDUMP}" -h "${WORK}/output/gs_phase1.nc"
 if(NOT status EQUAL 0 OR NOT header MATCHES "majorant_method = \"equilibrated-rt\"" OR
    NOT header MATCHES "majorant_quadrature_status = \"approximate\"" OR
    NOT header MATCHES "integrated_psi_radius" OR
-   NOT header MATCHES "majorant:kin6d_status = \"practical-estimate\"")
+   NOT header MATCHES "majorant:milca_status = \"practical-estimate\"")
     message(FATAL_ERROR "NetCDF lost estimator status or goal result: ${header}")
 endif()
 # The represented affine polygon and fixed source also admit an independent
@@ -68,7 +68,7 @@ execute_process(COMMAND "${NCDUMP}" -h "${WORK}/output/gs_phase1.nc"
     OUTPUT_VARIABLE header RESULT_VARIABLE status)
 if(NOT status EQUAL 0 OR
    NOT header MATCHES "majorant_certification_status = \"certified-continuous\"" OR
-   NOT header MATCHES "majorant:kin6d_status = \"certified-continuous\"" OR
-   NOT header MATCHES "psi:kin6d_status = \"candidate\"")
+   NOT header MATCHES "majorant:milca_status = \"certified-continuous\"" OR
+   NOT header MATCHES "psi:milca_status = \"candidate\"")
     message(FATAL_ERROR "NetCDF omitted continuous audit status: ${header}")
 endif()
