@@ -15,6 +15,10 @@
 !!                   (m v^2/(2 e)) [(1 + xi^2) d + xi^2 d2], d = -(1/iota)
 !!                   (dB/ds)/(psi' B), d2 = 2 (I' + (q G)')/(psi' (G + iota I));
 !!                   without d2 it misses the shear contribution;
+!!   potential       with a quadratic potential profile (E_r shear) every orbit
+!!                   point carries the orbit's total energy with Phi taken from
+!!                   the profile, and a deeply trapped thin orbit precesses at
+!!                   -Phi'(s*)/(iota psi') - mu dB/ds/(Z e iota psi');
 !!   pitch_map       the pitch map returns the magnetic moment of the orbit at
 !!                   every point of it (mu is the stream function of the
 !!                   orbits at fixed s* and H), and mu B(s*, theta)/E tends to
@@ -24,7 +28,7 @@ program test_boozer_orbit
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, boozer_surface_t, &
         boozer_surface, BOOZER_OK
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_point, &
-        orbit_frequencies, orbit_state, orbit_pitch_point, ORBIT_OK
+        orbit_frequencies, orbit_state, orbit_pitch_point, orbit_set_potential, ORBIT_OK
     use fortnum_quadrature, only: gauss_legendre
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp), e = 1.602176634e-19_dp
@@ -46,6 +50,7 @@ program test_boozer_orbit
     case ('invariants'); ok = invariants()
     case ('pitch_map'); ok = pitch_map()
     case ('shear'); ok = shear()
+    case ('potential'); ok = potential()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -205,6 +210,42 @@ contains
                 close('precession with shear', oz, num/tau, 1e-4_dp)
         end do
     end function shear
+
+    !> Phi(s) = 1e3 (s - s*) + 4e4 (s - s*)^2 [V].
+    logical function potential() result(ok)
+        real(dp), parameter :: a = 4e4_dp, b1 = 1e3_dp
+        type(orbit_particle_t) :: p
+        type(orbit_point_t) :: pt
+        real(dp) :: grid(181), phi(181), b, b_s, g, i, g_s, i_s, iota, psi_prime, ob, oz, &
+            worst, th, want
+        logical :: trapped
+        integer :: k, st
+        grid = [(0.05_dp + 0.005_dp*k, k=0, 180)]
+        phi = b1*(grid - s_star) + a*(grid - s_star)**2
+        ok = .true.
+        p = particle(1.0_dp, 0.97_dp, 0.0_dp)
+        call orbit_set_potential(p, grid, phi, st)
+        worst = 0
+        do k = -4, 4
+            th = 0.1_dp*k
+            call orbit_point(bf, p, s_star, th, merge(1.0_dp, -1.0_dp, k >= 0), pt, st)
+            if (st /= ORBIT_OK) then
+                ok = .false.
+                return
+            end if
+            worst = max(worst, abs(p%mass*pt%v_par**2/2 + p%mu*pt%b + p%charge*(b1*(pt%s &
+                - s_star) + a*(pt%s - s_star)**2) - p%energy)/p%energy)
+        end do
+        print '(a,es10.2)', 'energy error with E_r shear', worst
+        ok = worst < 1e-9_dp
+        call orbit_state(bf, s_star, 0.0_dp, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+        p = particle(1e-4_dp, 0.9999_dp, 0.0_dp)
+        call orbit_set_potential(p, grid, phi, st)
+        call orbit_frequencies(bf, p, s_star, 1.0_dp, 64, ob, oz, trapped, st)
+        want = -b1/(iota*psi_prime) - p%mu*b_s/(p%charge*iota*psi_prime)
+        ok = ok .and. st == ORBIT_OK .and. trapped .and. close('precession with Phi(s)', oz, want, &
+            2e-3_dp)
+    end function potential
 
     logical function pitch_map() result(ok)
         type(orbit_particle_t) :: p, thin

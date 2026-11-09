@@ -14,16 +14,20 @@
 !!   zeta_dot = (H_rho (1 + rho I') - H_psi I)/D,
 !! exact at any orbit width within the model of the file (axisymmetric,
 !! no radial covariant component). The electrostatic potential is linear,
-!! dPhi/dpsi_p = -omega_e, so that omega_e is the E x B rotation frequency.
+!! dPhi/dpsi_p = -omega_e, so that omega_e is the E x B rotation frequency,
+!! unless the particle carries a potential profile Phi(s) [V] (orbit_set_potential),
+!! which then enters the energy and the radial derivative of H exactly
+!! (E_r shear and orbit squeezing).
 !! Lengths in m, fluxes in T m^2, energies in J (mu in J/T), times in s.
 module milca_boozer_orbit
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
+    use fortnum_cubic_spline, only: cubic_spline_t, cubic_spline_init, cubic_spline_eval
     use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, BOOZER_OK
     implicit none
     private
     public :: orbit_particle_t, orbit_point_t, orbit_state, orbit_point, orbit_frequencies, &
-        orbit_flux_p, orbit_pitch_point
+        orbit_flux_p, orbit_pitch_point, orbit_set_potential, orbit_potential
     integer, parameter, public :: ORBIT_OK = 0, ORBIT_BAD_INPUT = 1, ORBIT_NO_ROOT = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -35,6 +39,8 @@ module milca_boozer_orbit
     type :: orbit_particle_t
         real(dp) :: mass = 0, charge = 0, mu = 0, energy = 0
         real(dp) :: omega_e = 0, s_ref = 0
+        logical :: has_potential = .false.
+        type(cubic_spline_t) :: potential
     end type
 
     !> The orbit at one theta: s, rho [m], v_par [m/s], B [T], theta_dot and
@@ -45,6 +51,37 @@ module milca_boozer_orbit
     end type
 
 contains
+
+    !> Potential profile Phi(s) [V] on increasing s for particle p (cubic
+    !> spline); Phi then replaces the linear potential of omega_e.
+    subroutine orbit_set_potential(p, s, phi, status)
+        type(orbit_particle_t), intent(inout) :: p
+        real(dp), intent(in) :: s(:), phi(:)
+        integer, intent(out) :: status
+        call cubic_spline_init(s, reshape(phi, [size(phi), 1]), p%potential, status)
+        p%has_potential = status == 0
+    end subroutine orbit_set_potential
+
+    !> Phi(s) - Phi(s_ref) [V] and dPhi/ds of the particle's potential.
+    subroutine orbit_potential(bf, p, s, phi, phi_s)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s
+        real(dp), intent(out) :: phi, phi_s
+        real(dp) :: v(1), dv(1), ref(1), ref_s(1)
+        type(boozer_surface_t) :: surf
+        integer :: st
+        if (p%has_potential) then
+            call cubic_spline_eval(p%potential, s, v, dv)
+            call cubic_spline_eval(p%potential, p%s_ref, ref, ref_s)
+            phi = v(1) - ref(1)
+            phi_s = dv(1)
+        else
+            call boozer_surface(bf, s, surf, st)
+            phi = -p%omega_e*orbit_flux_p(bf, p%s_ref, s)
+            phi_s = -p%omega_e*surf%iota*surf%psi_prime
+        end if
+    end subroutine orbit_potential
 
     !> psi_p(s) - psi_p(s0) = psi' int_s0^s iota ds by 8-point Gauss-Legendre.
     function orbit_flux_p(bf, s0, s) result(dpsi_p)
@@ -172,7 +209,8 @@ contains
 
         real(dp) function potential(s)
             real(dp), intent(in) :: s
-            potential = -p%omega_e*orbit_flux_p(bf, p%s_ref, s)
+            real(dp) :: phi_s
+            call orbit_potential(bf, p, s, potential, phi_s)
         end function potential
 
         subroutine evaluate(s, q, st)
@@ -191,7 +229,7 @@ contains
         real(dp), intent(in) :: s_star, s, theta
         type(orbit_point_t), intent(out) :: q
         integer, intent(out) :: st
-        real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, h_psi, h_rho, d, rho
+        real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, h_psi, h_rho, d, rho, phi, phi_s
         call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
         if (st /= ORBIT_OK) return
         rho = orbit_flux_p(bf, s_star, s)/g
@@ -201,7 +239,8 @@ contains
         q%v_par = p%charge*rho*b/p%mass
         q%mu = p%mu
         ! Derivatives per unit psi (toroidal flux per radian) and per volt.
-        h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime - p%omega_e*iota
+        call orbit_potential(bf, p, s, phi, phi_s)
+        h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime + phi_s/psi_prime
         h_rho = p%charge*rho*b**2/p%mass
         d = g + iota*i + rho*(g*i_s - i*g_s)/psi_prime
         q%theta_dot = (h_psi*g - h_rho*(rho*g_s/psi_prime - iota))/d
@@ -300,8 +339,9 @@ contains
     contains
         real(dp) function speed(s)
             real(dp), intent(in) :: s
-            speed = sqrt(max(2*(p%energy + p%charge*p%omega_e*orbit_flux_p(bf, p%s_ref, s)) &
-                /p%mass, 0.0_dp))
+            real(dp) :: phi, phi_s
+            call orbit_potential(bf, p, s, phi, phi_s)
+            speed = sqrt(max(2*(p%energy - p%charge*phi)/p%mass, 0.0_dp))
         end function speed
 
         real(dp) function residual(s)
@@ -393,9 +433,10 @@ contains
         real(dp) function level(th, st)
             real(dp), intent(in) :: th
             integer, intent(out) :: st
-            real(dp) :: bb, b_s, g, i, g_s, i_s, iota, psi_prime
+            real(dp) :: bb, b_s, g, i, g_s, i_s, iota, psi_prime, phi, phi_s
             call orbit_state(bf, s_star, th, bb, b_s, g, i, g_s, i_s, iota, psi_prime, st)
-            level = p%mu*bb - p%charge*p%omega_e*orbit_flux_p(bf, p%s_ref, s_star) - p%energy
+            call orbit_potential(bf, p, s_star, phi, phi_s)
+            level = p%mu*bb + p%charge*phi - p%energy
         end function level
 
         !> First crossing of level = 0 going from inside (level < 0) at th_in
