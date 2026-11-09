@@ -668,28 +668,30 @@ equilibrium or MHD solvers.
 
 Order:
 
-1. **OT1, GORILLA-type polynomial pusher on the isoparametric mesh.** Each
-   curved cell (P2/P3 triangle in the reference plane times a \(\hat\varphi\)
-   interval between planes) is split into tetrahedra in its master coordinates,
-   with diagonals fixed by global vertex number so faces conform. The
-   guiding-centre quantities (covariant \(A^*_k\), \(h_k\), \(|B|\), \(\Phi\))
-   are interpolated linearly in master coordinates from MILCA's exact nodal
-   values; the curved geometry enters only through the metric at the vertices.
-   Each sub-cell then carries a linear ODE \(\dot z = Az + b\) with constant
-   \(A\), advanced by its truncated exponential series of order 2 to 4 with
-   Hamiltonian time tracing, and face crossings are polynomial roots. The
-   plasma boundary and \(\Gamma_c\) are cell faces, so no cell straddles a field
-   discontinuity. A prism with a bilinear interpolant is not affine and loses
-   the constant-matrix structure, hence the split; tensor-product quad and hex
-   cells (VRMHD phase 2) are split the same way. Oracles: exact invariants
-   (energy, \(\mu\), \(p_\varphi\) in axisymmetry), the analytic circular
-   tokamak, refinement in planes and cells, GORILLA itself on an exported
-   equilibrium, and SIMPLE.
-2. **OT1q, quadratic in-cell option.** A P2 interpolant makes the sub-cell ODE
-   nonlinear; it is advanced by a Taylor/Picard series with root-found face
-   crossings. It is promoted only if it beats refined OT1 in accuracy per cost
-   on a named observable, and the piecewise-linear symplecticity argument for
-   GORILLA does not carry over, so it needs its own structure test.
+1. **OT1, structure-preserving pusher on the native field (default).** It
+   works in the master coordinates of each curved cell on the exact
+   P2/P3 times Fourier field, without resampling: canonical-symplectic inside
+   the plasma (OT3), variational or discrete-gradient schemes in general. It is
+   the default for fast ions, wall loads and equilibrium-scale accuracy, and
+   later carries geometric PIC with compatible finite elements of any degree
+   (potential in \(H^1\), vector potential in \(H(\mathrm{curl})\), field in
+   \(H(\mathrm{div})\), deposition consistent with the discrete derivatives).
+2. **OT1L, GORILLA-type lowest-order pusher, paired with a lowest-order field.**
+   On a conforming tetrahedral cell complex (curved cells split in master
+   coordinates with diagonals fixed by global vertex number; prisms, quads and
+   hexes the same way), the particle pusher solves GORILLA's per-cell linear ODE
+   \(\dot z = Az + b\) by its truncated exponential series of order 2 to 4 with
+   Hamiltonian time tracing and polynomial face crossings, and the field comes
+   from a lowest-order compatible (Whitney) solver on the same tetrahedra, not
+   from a linear resampling of a high-order field. Exact in-cell paths give
+   exact current deposition per segment, hence charge-conserving coupling on
+   unstructured meshes. Its domain is where low order wins: thermal ions and
+   electrons, noisy or turbulent fields (node-wise data without spline
+   derivative amplification), Monte Carlo transport and the R10 edge code.
+   GORILLA interpolates covariant components at nodes, which is not a Whitney
+   form, so the coupled scheme needs its own structure proof and test. A
+   quadratic in-cell interpolant makes the ODE nonlinear and loses the
+   constant-matrix structure; it is not pursued as a GORILLA variant.
 3. **OT2, reference integrators.** Guiding centre and full orbit by FortNum
    RK45/DOP853 with event location, Boris and a variational full-orbit scheme.
 4. **OT3, canonical symplectic pushers.** Meiss–Hazeltine and Albert
@@ -704,6 +706,14 @@ Order:
    continuum solution with spatially varying coefficients.
 6. **OT5, boundary events.** First wall hits on STL/CAD meshes and on mesh
    faces, with hit point, facet and impact energy.
+
+Neither OT1 nor OT1L becomes a production choice before a cost-to-accuracy
+benchmark extending the benchmark-gorilla protocol: thermal-ion transport
+(\(D_{11}\)), thermal electrons, alpha losses and a noisy-field case, both
+variants against GORILLA and SIMPLE, each at the accuracy its observable needs
+(our AUG #30835 benchmark: GORILLA about 10 times cheaper than adequate ASCOT5
+for thermal electrons, 2.4 times for thermal ions, and inefficient for MeV
+alphas because of mesh diffusion).
 
 Promotion follows the milestone rules: tangent and adjoint of pushed states
 with respect to the field state, and smoothed observables where loss counts are
