@@ -8,7 +8,11 @@ plasma boundary, or G8. The full free-boundary work remains draft until G8
 passes on a qualified dependency revision.
 
 `nn_attach_exterior` retains the existing swept-meridian interface and coil
-construction using [FortFEM](https://github.com/lazy-fortran/fortfem).
+construction using [FortFEM](https://github.com/lazy-fortran/fortfem). It is
+compiled but not qualified: on the synthetic coil-driven vacuum pilot of #47
+it meets the Jacobian, weak-interface and seed-return gates, but its field
+differs from direct Biot-Savart by 5.1e-3 relative at every tested resolution
+(1-3 rings, 8-32 toroidal planes, 1-6 toroidal modes), against a 1e-3 gate.
 `nn_attach_exterior_operators` factors only its frozen algebra. Its caller
 supplies a qualified positive symmetric exterior energy matrix S, the full
 physical normal-moment map T, the coil normal moments g, and the interior
@@ -74,9 +78,11 @@ estimates, rigorous error bounds or GPU benchmarks.
 
 ## Fitted current and the vacuum shortcut
 
-An allocated frozen fit excludes the pure-vacuum elimination of pressure,
-Ohmic potential and loop voltage, even when its scalar and weak pressure loads
-vanish. The public harmonic regression uses B_phi=F/R and d_seed=0.37: zero
+An allocated frozen fit keeps the Ohmic potential and loop voltage live, even
+when its scalar and weak pressure loads vanish; only the exactly zero pressure
+block is eliminated (next paragraph). Without the fit check,
+`island_fitted_exterior` fails, because a fit can carry signed current at zero
+load. The public harmonic regression uses B_phi=F/R and d_seed=0.37: zero
 net toroidal current requires V=-2*pi*F*d_seed/g_par. This checks cancellation
 of the frozen drive by the Ohmic current, rather than reproduction of the
 original target lambda. At the exactly harmonic state the declared perturbation
