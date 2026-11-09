@@ -8,6 +8,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
 ## Project-level documents
 
 - [Scope and design principles](scope.md)
+- [Graph of plasma models](model-graph.md): every model, its reductions and status
 - [DESIGN.md](../DESIGN.md): canonical architecture
 - [ROADMAP.md](../ROADMAP.md): staged delivery plan
 - [Software engineering policy](software-engineering.md),
