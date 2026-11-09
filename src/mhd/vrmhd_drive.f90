@@ -7,6 +7,8 @@ module milca_vrmhd_drive
     implicit none
     private
     integer, parameter, public :: VRMHD_CURRENT_SOURCE = 1, VRMHD_LOOP_VOLTAGE = 2
+    !> Loop voltage together with a prescribed non-inductive current Js.
+    integer, parameter, public :: VRMHD_LOOP_VOLTAGE_SOURCE = 3
     public :: vrmhd_drive_build
 contains
     subroutine vrmhd_drive_build(op, convention, axial_period, voltage, js, &
@@ -32,6 +34,8 @@ contains
             source(:3, :, :) = js
         case (VRMHD_LOOP_VOLTAGE)
             source(:3, :, :) = 0
+        case (VRMHD_LOOP_VOLTAGE_SOURCE)
+            source(:3, :, :) = js
         case default
             return
         end select

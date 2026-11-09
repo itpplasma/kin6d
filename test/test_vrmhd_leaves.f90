@@ -74,10 +74,8 @@ contains
         real(dp) :: y, tensor(3, 3), identity(3, 3), b(3), g(3, 3), h(3, 3)
         integer :: i, shift
         select case (leaf)
-        case (1, 2)
-            y = x(1)*(x(3)/x(2))*sqrt(x(3)/x(2))
-        case (3)
-            y = x(1)*(x(2)/x(3))**2*sqrt(x(2)/x(3))
+        case (1, 2, 3)
+            y = x(1)*exp(x(4)*log(x(2)/x(3)))
         case (4)
             y = x(1)
         case (5)
@@ -211,12 +209,19 @@ contains
         theta%eta0 = 0.13_dp; theta%t0 = 0.8_dp
         theta%nu0 = 0.27_dp; theta%chi_parallel0 = [1.7_dp, 2.3_dp]
         temperature = 4*theta%t0
-        call vrmhd_eta(theta%eta0, temperature, theta%t0, value)
+        call vrmhd_eta(theta%eta0, temperature, theta%t0, theta%eta_exponent, value)
         call close (value, theta%eta0/8, 'Spitzer eta at four reference temperatures')
-        call vrmhd_nu(theta%nu0, temperature, theta%t0, value)
+        call vrmhd_nu(theta%nu0, temperature, theta%t0, theta%nu_exponent, value)
         call close (value, theta%nu0/8, 'viscosity closure')
-        call vrmhd_chi_parallel(theta%chi_parallel0(1), temperature, theta%t0, value)
+        call vrmhd_chi_parallel(theta%chi_parallel0(1), temperature, theta%t0, &
+            theta%chi_parallel_exponent, value)
         call close (value, 32*theta%chi_parallel0(1), 'parallel chi closure')
+        ! Prescribed constant coefficients, as in the JOREK comparisons.
+        call vrmhd_chi_parallel(theta%chi_parallel0(1), temperature, theta%t0, &
+            0.0_dp, value)
+        call close (value, theta%chi_parallel0(1), 'temperature-independent chi')
+        call vrmhd_nu(theta%nu0, temperature, theta%t0, 0.0_dp, value)
+        call close (value, theta%nu0, 'temperature-independent viscosity')
         pi = acos(-1.0_dp); volume = (2*pi)**3
         ampere_sum = 0; left = 0; right = 0
         ! A=(sin z,sin x,sin y); curl curl A=A, independently differentiated.

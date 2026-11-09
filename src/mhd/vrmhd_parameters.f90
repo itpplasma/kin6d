@@ -17,5 +17,11 @@ module milca_vrmhd_parameters
         real(dp) :: flux_limit(2) = 0.3_dp
         real(dp) :: electron_mass = 9.1093837139e-31_dp
         real(dp) :: gradient_floor(2) = 1.0e-30_dp
+        !> Power-law exponents in T/T0; defaults are the Spitzer/Braginskii scalings.
+        real(dp) :: eta_exponent = -1.5_dp, nu_exponent = -1.5_dp
+        real(dp) :: chi_parallel_exponent = 2.5_dp
+        !> Fraction of the Ohmic power deposited in the electrons; the remainder
+        !> leaves the system as an explicit ledger entry.
+        real(dp) :: ohmic_fraction = 1.0_dp
     end type
 end module milca_vrmhd_parameters

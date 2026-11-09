@@ -10,13 +10,13 @@ contains
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_eta(reference, temperature, t0, value)
+pure elemental subroutine vrmhd_eta(reference, temperature, t0, exponent, value)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0
+    real(dp), intent(in) :: reference, temperature, t0, exponent
     real(dp), intent(out) :: value
 
-    value = reference*(temperature/t0)**(-3.0_dp/2.0_dp)
+    value = reference*(temperature/t0)**exponent
 
 end subroutine vrmhd_eta
 
@@ -25,17 +25,19 @@ end subroutine vrmhd_eta
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_eta_jvp(reference, temperature, t0, dreference, dtemperature, dt0, &
-        dvalue)
+pure elemental subroutine vrmhd_eta_jvp(reference, temperature, t0, exponent, dreference, &
+        dtemperature, dt0, dexponent, dvalue)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0, dreference, dtemperature, dt0
+    real(dp), intent(in) :: reference, temperature, t0, exponent, dreference, dtemperature, dt0, &
+        dexponent
     real(dp), intent(out) :: dvalue
-    real(dp) :: t1
+    real(dp) :: t1, t2
 
     t1 = temperature/t0
-    dvalue = dreference*t1**(-3.0_dp/2.0_dp) - reference*t1**(-5.0_dp/2.0_dp)*(-dt0*temperature/ &
-        t0**2 + dtemperature/t0)*3.0_dp/2.0_dp
+    t2 = t1**exponent
+    dvalue = dreference*t2 + (dexponent*reference*t0*temperature*log(t1)*t2 - dt0*exponent* &
+        reference*temperature*t2 + dtemperature*exponent*reference*t0*t2)/t0/temperature
 
 end subroutine vrmhd_eta_jvp
 
@@ -44,19 +46,21 @@ end subroutine vrmhd_eta_jvp
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_eta_vjp(reference, temperature, t0, bvalue, greference, &
-        gtemperature, gt0)
+pure elemental subroutine vrmhd_eta_vjp(reference, temperature, t0, exponent, bvalue, greference, &
+        gtemperature, gt0, gexponent)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0, bvalue
-    real(dp), intent(out) :: greference, gtemperature, gt0
-    real(dp) :: t1, t2
+    real(dp), intent(in) :: reference, temperature, t0, exponent, bvalue
+    real(dp), intent(out) :: greference, gtemperature, gt0, gexponent
+    real(dp) :: t1, t2, t3
 
     t1 = temperature/t0
-    t2 = t1**(-5.0_dp/2.0_dp)
-    greference = bvalue*t1**(-3.0_dp/2.0_dp)
-    gtemperature = -bvalue*reference*t2*3.0_dp/2.0_dp/t0
-    gt0 = bvalue*reference*temperature*t2*3.0_dp/2.0_dp/t0**2
+    t2 = t1**exponent
+    t3 = t1**(exponent - 1)
+    greference = bvalue*t2
+    gtemperature = bvalue*exponent*reference*t3/t0
+    gt0 = -bvalue*exponent*reference*temperature*t3/t0**2
+    gexponent = bvalue*reference*log(t1)*t2
 
 end subroutine vrmhd_eta_vjp
 
@@ -65,13 +69,13 @@ end subroutine vrmhd_eta_vjp
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_nu(reference, temperature, t0, value)
+pure elemental subroutine vrmhd_nu(reference, temperature, t0, exponent, value)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0
+    real(dp), intent(in) :: reference, temperature, t0, exponent
     real(dp), intent(out) :: value
 
-    value = reference*(temperature/t0)**(-3.0_dp/2.0_dp)
+    value = reference*(temperature/t0)**exponent
 
 end subroutine vrmhd_nu
 
@@ -80,17 +84,19 @@ end subroutine vrmhd_nu
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_nu_jvp(reference, temperature, t0, dreference, dtemperature, dt0, &
-        dvalue)
+pure elemental subroutine vrmhd_nu_jvp(reference, temperature, t0, exponent, dreference, &
+        dtemperature, dt0, dexponent, dvalue)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0, dreference, dtemperature, dt0
+    real(dp), intent(in) :: reference, temperature, t0, exponent, dreference, dtemperature, dt0, &
+        dexponent
     real(dp), intent(out) :: dvalue
-    real(dp) :: t1
+    real(dp) :: t1, t2
 
     t1 = temperature/t0
-    dvalue = dreference*t1**(-3.0_dp/2.0_dp) - reference*t1**(-5.0_dp/2.0_dp)*(-dt0*temperature/ &
-        t0**2 + dtemperature/t0)*3.0_dp/2.0_dp
+    t2 = t1**exponent
+    dvalue = dreference*t2 + (dexponent*reference*t0*temperature*log(t1)*t2 - dt0*exponent* &
+        reference*temperature*t2 + dtemperature*exponent*reference*t0*t2)/t0/temperature
 
 end subroutine vrmhd_nu_jvp
 
@@ -99,19 +105,21 @@ end subroutine vrmhd_nu_jvp
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_nu_vjp(reference, temperature, t0, bvalue, greference, gtemperature, &
-        gt0)
+pure elemental subroutine vrmhd_nu_vjp(reference, temperature, t0, exponent, bvalue, greference, &
+        gtemperature, gt0, gexponent)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0, bvalue
-    real(dp), intent(out) :: greference, gtemperature, gt0
-    real(dp) :: t1, t2
+    real(dp), intent(in) :: reference, temperature, t0, exponent, bvalue
+    real(dp), intent(out) :: greference, gtemperature, gt0, gexponent
+    real(dp) :: t1, t2, t3
 
     t1 = temperature/t0
-    t2 = t1**(-5.0_dp/2.0_dp)
-    greference = bvalue*t1**(-3.0_dp/2.0_dp)
-    gtemperature = -bvalue*reference*t2*3.0_dp/2.0_dp/t0
-    gt0 = bvalue*reference*temperature*t2*3.0_dp/2.0_dp/t0**2
+    t2 = t1**exponent
+    t3 = t1**(exponent - 1)
+    greference = bvalue*t2
+    gtemperature = bvalue*exponent*reference*t3/t0
+    gt0 = -bvalue*exponent*reference*temperature*t3/t0**2
+    gexponent = bvalue*reference*log(t1)*t2
 
 end subroutine vrmhd_nu_vjp
 
@@ -120,13 +128,13 @@ end subroutine vrmhd_nu_vjp
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_chi_parallel(reference, temperature, t0, value)
+pure elemental subroutine vrmhd_chi_parallel(reference, temperature, t0, exponent, value)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0
+    real(dp), intent(in) :: reference, temperature, t0, exponent
     real(dp), intent(out) :: value
 
-    value = reference*(temperature/t0)**(5.0_dp/2.0_dp)
+    value = reference*(temperature/t0)**exponent
 
 end subroutine vrmhd_chi_parallel
 
@@ -135,17 +143,19 @@ end subroutine vrmhd_chi_parallel
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_chi_parallel_jvp(reference, temperature, t0, dreference, &
-        dtemperature, dt0, dvalue)
+pure elemental subroutine vrmhd_chi_parallel_jvp(reference, temperature, t0, exponent, dreference, &
+        dtemperature, dt0, dexponent, dvalue)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0, dreference, dtemperature, dt0
+    real(dp), intent(in) :: reference, temperature, t0, exponent, dreference, dtemperature, dt0, &
+        dexponent
     real(dp), intent(out) :: dvalue
-    real(dp) :: t1
+    real(dp) :: t1, t2
 
     t1 = temperature/t0
-    dvalue = dreference*t1**(5.0_dp/2.0_dp) + reference*t1**(3.0_dp/2.0_dp)*(-dt0*temperature/ &
-        t0**2 + dtemperature/t0)*5.0_dp/2.0_dp
+    t2 = t1**exponent
+    dvalue = dreference*t2 + (dexponent*reference*t0*temperature*log(t1)*t2 - dt0*exponent* &
+        reference*temperature*t2 + dtemperature*exponent*reference*t0*t2)/t0/temperature
 
 end subroutine vrmhd_chi_parallel_jvp
 
@@ -154,19 +164,21 @@ end subroutine vrmhd_chi_parallel_jvp
 ! Generator revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_chi_parallel_vjp(reference, temperature, t0, bvalue, greference, &
-        gtemperature, gt0)
+pure elemental subroutine vrmhd_chi_parallel_vjp(reference, temperature, t0, exponent, bvalue, &
+        greference, gtemperature, gt0, gexponent)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: reference, temperature, t0, bvalue
-    real(dp), intent(out) :: greference, gtemperature, gt0
-    real(dp) :: t1, t2
+    real(dp), intent(in) :: reference, temperature, t0, exponent, bvalue
+    real(dp), intent(out) :: greference, gtemperature, gt0, gexponent
+    real(dp) :: t1, t2, t3
 
     t1 = temperature/t0
-    t2 = t1**(3.0_dp/2.0_dp)
-    greference = bvalue*t1**(5.0_dp/2.0_dp)
-    gtemperature = bvalue*reference*t2*5.0_dp/2.0_dp/t0
-    gt0 = -bvalue*reference*temperature*t2*5.0_dp/2.0_dp/t0**2
+    t2 = t1**exponent
+    t3 = t1**(exponent - 1)
+    greference = bvalue*t2
+    gtemperature = bvalue*exponent*reference*t3/t0
+    gt0 = -bvalue*exponent*reference*temperature*t3/t0**2
+    gexponent = bvalue*reference*log(t1)*t2
 
 end subroutine vrmhd_chi_parallel_vjp
 

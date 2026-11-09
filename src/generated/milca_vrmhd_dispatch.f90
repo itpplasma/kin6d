@@ -11,22 +11,28 @@ real(dp), intent(out) :: y, dy
 select case(id)
 case(1)
 call vrmhd_eta( &
-x(1), x(2), x(3), y)
+x(1), x(2), x(3), x(4), &
+y)
 call vrmhd_eta_jvp( &
-x(1), x(2), x(3), dx(1), &
-dx(2), dx(3), dy)
+x(1), x(2), x(3), x(4), &
+dx(1), dx(2), dx(3), dx(4), &
+dy)
 case(2)
 call vrmhd_nu( &
-x(1), x(2), x(3), y)
+x(1), x(2), x(3), x(4), &
+y)
 call vrmhd_nu_jvp( &
-x(1), x(2), x(3), dx(1), &
-dx(2), dx(3), dy)
+x(1), x(2), x(3), x(4), &
+dx(1), dx(2), dx(3), dx(4), &
+dy)
 case(3)
 call vrmhd_chi_parallel( &
-x(1), x(2), x(3), y)
+x(1), x(2), x(3), x(4), &
+y)
 call vrmhd_chi_parallel_jvp( &
-x(1), x(2), x(3), dx(1), &
-dx(2), dx(3), dy)
+x(1), x(2), x(3), x(4), &
+dx(1), dx(2), dx(3), dx(4), &
+dy)
 case(4)
 call vrmhd_chi_perpendicular( &
 x(1), y)

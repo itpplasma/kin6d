@@ -106,7 +106,7 @@ program test_vrmhd_stationary
     use vrmhd_wall_oracle, only: current_wall_dofs
     use milca_vrmhd_boundary, only: vrmhd_current_lift
     use milca_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
-        VRMHD_LOOP_VOLTAGE
+        VRMHD_LOOP_VOLTAGE, VRMHD_LOOP_VOLTAGE_SOURCE
     use vrmhd_mms_leaves, only: mms_rotation, mms_screw
     use vrmhd_spd_extremes, only: spd_extremes
     use fortfem_mesh_2d, only: mesh_2d_t
@@ -486,6 +486,13 @@ contains
                 defect = maxval(abs(drive - expected))
                 print '(a,i3,es14.6)', 'independent harmonic voltage load ', kind, defect
                 call require(defect < 64*epsilon(1.0_dp), 'Cartesian harmonic load and sign')
+                call vrmhd_drive_build(op, VRMHD_LOOP_VOLTAGE_SOURCE, 2.3_dp, 0.41_dp, &
+                    js, h, source, drive, status)
+                call require(status == 0, 'voltage with non-inductive source')
+                call require(maxval(abs(source(:3, :, :) - js)) < epsilon(1.0_dp), &
+                    'non-inductive current retained with the voltage')
+                call require(maxval(abs(drive - expected)) < 64*epsilon(1.0_dp), &
+                    'same harmonic voltage load with the source')
                 call vrmhd_drive_build(op, VRMHD_CURRENT_SOURCE, 2.3_dp, 0.41_dp, js, &
                     h, source, drive, status)
                 call require(status /= 0, 'reject voltage in current-source convention')

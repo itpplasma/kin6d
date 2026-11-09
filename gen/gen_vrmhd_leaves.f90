@@ -11,7 +11,7 @@ program gen_vrmhd_leaves
     type(expr_t) :: v(3), vd(3), b(3), current(3), js(3), w(3), ck(3)
     type(expr_t) :: g(3), h(3), gv(3, 3), gw(3, 3), strain(3, 3)
     type(expr_t) :: stress(3, 3), norm2, trace, bbstrain, value, heating, transport
-    type(expr_t) :: mass, alpha, gpar, gfloor, chi, product_gradient(3)
+    type(expr_t) :: mass, alpha, gpar, gfloor, chi, product_gradient(3), expo
     character(16) :: vector_args(3)
     character(32) :: leaf_names(40), id_text
     integer :: i, j, leaf_id = 0
@@ -30,7 +30,7 @@ program gen_vrmhd_leaves
     call vector('j', current); call vector('js', js); call vector('w', w)
     call vector('curl_w', ck); call vector('grad_f', g); call vector('grad_q', h)
     call matrix('grad_v', gv); call matrix('grad_w', gw)
-    mass = sym('mass'); alpha = sym('alpha')
+    mass = sym('mass'); alpha = sym('alpha'); expo = sym('exponent')
     gpar = sym('gradient'); gfloor = sym('gradient_floor')
     call packed%open('gen_vrmhd_leaves', &
         'src/generated/milca_vrmhd_dispatch.f90')
@@ -56,12 +56,11 @@ program gen_vrmhd_leaves
     call writer%line('module milca_vrmhd_leaves')
     call writer%line('implicit none')
     call writer%line('contains')
-    call leaf('eta', 'reference temperature t0', &
-        coef*(t/t0)**rat(-3_int64, 2_int64))
-    call leaf('nu', 'reference temperature t0', &
-        coef*(t/t0)**rat(-3_int64, 2_int64))
-    call leaf('chi_parallel', 'reference temperature t0', &
-        coef*(t/t0)**rat(5_int64, 2_int64))
+    ! One power law per closure; the classical exponents are parameter defaults.
+    call leaf('eta', 'reference temperature t0 exponent', coef*(t/t0)**expo)
+    call leaf('nu', 'reference temperature t0 exponent', coef*(t/t0)**expo)
+    call leaf('chi_parallel', 'reference temperature t0 exponent', &
+        coef*(t/t0)**expo)
     call leaf('chi_perpendicular', 'reference', coef)
     call leaf('pressure', 'rho te ti mi', rho*(te + ti)/mi)
     call leaf('mass_density', 'rho_dot q', rd*q)

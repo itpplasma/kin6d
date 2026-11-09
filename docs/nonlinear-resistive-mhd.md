@@ -1,8 +1,16 @@
 # Nonlinear visco-resistive MHD: general 3D and symmetry-reduced 2D
 
-Status: design, decided 2026-11-02. Implemented: the RM0 fixed-boundary
-symmetry-reduced GS and the RM1a pointwise weak-form leaves; assembled nonlinear
-residuals and solvers remain milestones. This document owns the
+Status: design decided 2026-11-02; implementation state 2026-11-09.
+Implemented: RM0 (symmetry-reduced GS), RM1 (generated weak-form leaves, the
+invariant section residual, Jacobian and mass in rotation, translation and
+screw symmetry with manufactured, energy and spectral gates), the 2D
+stationary Newton wrapper with Coulomb gauge and current or loop-voltage
+drive, BDF2 evolution with supernodal direct factors, and, ahead of RM3, the
+linear and nonlinear Fourier operators about an invariant state including the
+closed helical coframe ([section contract](vrmhd-section.md)). Not yet
+implemented: the RM-B5 island rates, the RM-B8 JOREK and RM-B10 slow-manifold
+gates, the 3D boundary solves and time evolution, and the field-split
+preconditioner (RM4). This document owns the
 nonlinear visco-resistive part of [R12](../ROADMAP.md#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
 item 12; Hall/XMHD stays with R12. Scope: tokamak and stellarator core MHD on
 resistive time scales.

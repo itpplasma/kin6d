@@ -68,10 +68,10 @@ contains
         integer :: species, it
         zero = 0; value = 0; tangent = 0
         ! Transport coefficients and traces only for the rows that use them.
-        if (row == 3 .or. row == 5) call vrmhd_leaf(leaf_eta, [p%eta0, u(11), p%t0], &
-            [0.0_dp, du(11), 0.0_dp], eta, deta)
-        if (row == 2 .or. row == 6) call vrmhd_leaf(leaf_nu, [p%nu0, u(12), p%t0], &
-            [0.0_dp, du(12), 0.0_dp], nu, dnu)
+        if (row == 3 .or. row == 5) call vrmhd_leaf(leaf_eta, [p%eta0, u(11), p%t0, &
+            p%eta_exponent], [0.0_dp, du(11), 0.0_dp, 0.0_dp], eta, deta)
+        if (row == 2 .or. row == 6) call vrmhd_leaf(leaf_nu, [p%nu0, u(12), p%t0, &
+            p%nu_exponent], [0.0_dp, du(12), 0.0_dp, 0.0_dp], nu, dnu)
         if (row >= 5) call vrmhd_leaf(leaf_trace, [u(16), u(20), u(24)], [du(16), &
             du(20), du(24)], divv, ddivv)
         if (row == 2) call vrmhd_leaf(leaf_trace, [test(8), test(12), test(16)], &
@@ -137,8 +137,8 @@ contains
                     [0.0_dp, du(it), zero(:3), dbg, 0.0_dp], chi, dchi)
             else
                 call vrmhd_leaf(leaf_chi_parallel, [p%chi_parallel0(species), &
-                    u(it), p%t0], &
-                    [0.0_dp, du(it), 0.0_dp], chi, dchi)
+                    u(it), p%t0, p%chi_parallel_exponent], &
+                    [0.0_dp, du(it), 0.0_dp, 0.0_dp], chi, dchi)
             end if
             call add(leaf_mass_temperature, [u(1), ud(1), u(it), ud(it), p%mi, &
                 test(1)], &
@@ -156,7 +156,7 @@ contains
                 du(25 + 3*species:27 + 3*species), zero(:3)], 1.0_dp)
             if (species == 1) then
                 call add(leaf_ohmic, [eta, u(8:10), source(:3), test(1)], &
-                    [deta, du(8:10), zero(:4)], -1.0_dp)
+                    [deta, du(8:10), zero(:4)], -p%ohmic_fraction)
             else
                 call add(leaf_viscous_heat, [nu, p%nu_parallel, p%epsilon_b, &
                     u(25:27), u(16:24), test(1)], &

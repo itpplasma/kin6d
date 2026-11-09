@@ -8,7 +8,7 @@ program test_vrmhd_energy
     use vrmhd_wall_oracle, only: current_wall_dofs
     use milca_vrmhd_boundary, only: vrmhd_current_lift
     use milca_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
-        VRMHD_LOOP_VOLTAGE
+        VRMHD_LOOP_VOLTAGE, VRMHD_LOOP_VOLTAGE_SOURCE
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortsparse, only: csc_t
@@ -34,7 +34,7 @@ program test_vrmhd_energy
     end do
     call require(passed, 'closed hydrodynamic energy ledger exceeds 1e-12')
     do kind = GS_ROTATION, GS_SCREW
-        do convention = VRMHD_CURRENT_SOURCE, VRMHD_LOOP_VOLTAGE
+        do convention = VRMHD_CURRENT_SOURCE, VRMHD_LOOP_VOLTAGE_SOURCE
             call full_ledger(kind, convention, defect)
             passed = passed .and. defect <= 1.0e-12_dp
         end do
@@ -202,7 +202,7 @@ contains
         real(dp) :: density_port, source_port, diffusion_port, conduction, chi, g(3)
         real(dp) :: scale, solve_defect, ledger_defect, shift, voltage, h(3), eta, nu
         real(dp) :: skew(2), reaction_power, magnetic_balance, kinetic_balance
-        real(dp) :: internal_balance, energy_rate, external_power
+        real(dp) :: internal_balance, energy_rate, external_power, removed
         integer :: status, n0, n1, nf, j, i, q, t, info, a0, j0, l1, s
         interface
             subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
@@ -240,6 +240,11 @@ contains
         p%chi_perpendicular = [0.02_dp, 0.01_dp]
         p%d_parallel = 0.01_dp; p%d_perpendicular = 0.005_dp
         p%equilibration_rate = 0.02_dp
+        if (convention == VRMHD_LOOP_VOLTAGE_SOURCE) then
+            ! Non-classical closures and a partial Ohmic deposit, as in JOREK runs.
+            p%eta_exponent = -1; p%nu_exponent = 0.5_dp
+            p%chi_parallel_exponent = 1.5_dp; p%ohmic_fraction = 0.25_dp
+        end if
         allocate (u(op%ndof), ud(op%ndof), zero(op%ndof), r(op%ndof), &
             unused(op%ndof), active(op%ndof), &
             source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
@@ -266,7 +271,7 @@ contains
         source(4, :, :) = 0.003_dp
         source(5, :, :) = 0.001_dp; source(6, :, :) = -0.0003_dp
         voltage = 0
-        if (convention == VRMHD_LOOP_VOLTAGE) voltage = 0.004_dp
+        if (convention /= VRMHD_CURRENT_SOURCE) voltage = 0.004_dp
         call vrmhd_drive_build(op, convention, 1.7_dp, voltage, js, harmonic, &
             source, load, status)
         call require(status == 0, 'energy drive')
@@ -289,7 +294,7 @@ contains
             end do
         end do
         allocate (rhs(n1, 1))
-        if (convention == VRMHD_LOOP_VOLTAGE) then
+        if (convention /= VRMHD_CURRENT_SOURCE) then
             call current_wall_dofs(op, voltage_current, &
                 [real(kind, dp), voltage/p%eta0], rhs(:, 1))
         else
@@ -382,8 +387,8 @@ contains
                 b = v(25:27)/sqrt(sum(v(25:27)**2) + p%epsilon_b**2)
                 strain = (gv + transpose(gv))/2 - identity*divv/3
                 projector = spread(b, 2, 3)*spread(b, 1, 3) - identity*sum(b*b)/3
-                eta = p%eta0*(v(11)/p%t0)**(-1.5_dp)
-                nu = p%nu0*(v(12)/p%t0)**(-1.5_dp)
+                eta = p%eta0*(v(11)/p%t0)**p%eta_exponent
+                nu = p%nu0*(v(12)/p%t0)**p%nu_exponent
                 tau = 2*nu*strain + 3*p%nu_parallel*sum(projector*strain)*projector
                 flux = p%d_perpendicular*v(13:15) &
                     + (p%d_parallel - p%d_perpendicular)*b*dot_product(b, v(13:15))
@@ -420,7 +425,7 @@ contains
                     + weight*v(1)*dot_product(v(2:4), matmul(gv, v(2:4)))/2
                 do s = 1, 2
                     g = v(25 + 3*s:27 + 3*s)
-                    chi = p%chi_parallel0(s)*(v(10 + s)/p%t0)**2.5_dp
+                    chi = p%chi_parallel0(s)*(v(10 + s)/p%t0)**p%chi_parallel_exponent
                     conduction = conduction + weight*v(1)/p%mi &
                         *(p%chi_perpendicular(s)*sum(g*g) &
                         + (chi - p%chi_perpendicular(s))*dot_product(b, g)**2)
@@ -430,8 +435,9 @@ contains
         wall_power = sum(wall_terms)
         density_port = source_port + diffusion_port
         kinetic_balance = kinetic - pressure_work - lorentz + viscous - density_port
-        internal_balance = internal + pressure_work - viscous - ohmic &
-            + current_drive - heat_source
+        removed = (1 - p%ohmic_fraction)*(ohmic - current_drive)
+        internal_balance = internal + pressure_work - viscous &
+            - p%ohmic_fraction*(ohmic - current_drive) - heat_source
         magnetic_balance = magnetic - ideal + ohmic - current_drive - voltage_drive
         scale = 2*(abs(pressure_work) + abs(lorentz) + abs(viscous) + abs(ohmic)) &
             + sum(abs(skew)) + abs(source_port) + abs(diffusion_port) &
@@ -446,11 +452,16 @@ contains
         call require(ledger_defect < 1.0e-12_dp, 'independent full energy accounting')
         energy_rate = kinetic + internal + magnetic
         call require(abs(wall_power) > 1.0e-10_dp, 'nonzero independent wall power')
-        if (convention == VRMHD_LOOP_VOLTAGE) &
+        if (convention /= VRMHD_CURRENT_SOURCE) &
             call require(abs(voltage_drive) > 1.0e-10_dp, 'nonzero loop power')
-        external_power = density_port + heat_source + voltage_drive + wall_power
+        if (convention == VRMHD_LOOP_VOLTAGE_SOURCE) then
+            call require(abs(current_drive) > 1.0e-10_dp, 'nonzero source power')
+            call require(abs(removed) > 1.0e-10_dp, 'nonzero removed Ohmic power')
+        end if
+        external_power = density_port + heat_source + voltage_drive + wall_power &
+            - removed
         relative_defect = abs(energy_rate - external_power)/scale
-        print '(a,2i3)', 'full ledger symmetry, drive (1 current, 2 voltage): ', &
+        print '(a,2i3)', 'full ledger symmetry, drive (1 current, 2 voltage, 3 both): ', &
             kind, convention
         if (kind == GS_ROTATION) then
             print '(a)', 'power in W/rad; prescribed current wall power included'
@@ -473,6 +484,7 @@ contains
             conduction, 0.0_dp
         print '(a,3es24.16)', 'mass source / diffusion / total kinetic port: ', &
             source_port, diffusion_port, density_port
+        print '(a,es24.16)', 'Ohmic power removed from the electrons: ', removed
         print '(a,2es24.16)', 'loop-voltage / external heat power: ', &
             voltage_drive, heat_source
         print '(a,4es24.16)', 'wall rate / ideal / resistive / voltage power: ', wall_terms
