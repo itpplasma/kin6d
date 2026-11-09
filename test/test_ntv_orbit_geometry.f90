@@ -17,12 +17,13 @@ program test_ntv_orbit_geometry
     use milca_boozer_orbit, only: orbit_particle_t, orbit_state
     use milca_dk_hp, only: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_operator_t, &
         hp_ntv_kernel, HP_OK
-    use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry
+    use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
+        hp_orbit_perturbation
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp), e = 1.602176634e-19_dp
     real(dp), parameter :: md = 3.3435837768e-27_dp, s_star = 0.45_dp, b_ref = 2.3_dp
     character(*), parameter :: file = 'ntv_orbit_geometry.bc'
-    type(boozer_file_t), target :: bf
+    type(boozer_file_t), target :: bf, pert
     type(orbit_particle_t) :: p
     type(hp_orbit_geometry_t) :: g
     type(hp_field_t) :: f
@@ -88,7 +89,43 @@ program test_ntv_orbit_geometry
         abs(r_g/r_f - 1), ' orbit s ', real(t1 - t0, dp)/rate
     if (abs(r_g/r_f - 1) > 1e-3_dp) error stop 1
 
+    ! The drive taken along the orbit from a perturbation file whose m = 3
+    ! amplitude at s* equals the operator's: the same kernel for thin orbits.
+    call write_pert('ntv_orbit_pert.bc')
+    call load_boozer_file('ntv_orbit_pert.bc', pert, status)
+    if (status /= BOOZER_OK) error stop 'cannot read the perturbation file'
+    call hp_orbit_perturbation(g, pert, 3, b_ref)
+    op_g%c = [cmplx(1e-3_dp*b_ref*s_star**1.5_dp, 0.0_dp, dp)/b_ref]
+    op_g%m = [-3]
+    call hp_ntv_kernel(g, mesh_g, op_g, r_f, status)
+    if (status /= HP_OK) error stop 'orbit kernel with perturbation file failed'
+    g%pert => null()
+    call hp_ntv_kernel(g, mesh_g, op_g, r_g, status)
+    print '(a,2es20.11,a,es9.2)', 'R drive along orbit, drive at s* ', r_f, r_g, ' rel ', &
+        abs(r_f/r_g - 1)
+    if (abs(r_f/r_g - 1) > 1e-4_dp) error stop 1
+
 contains
+
+    !> One harmonic m = 3, n = 3 with amplitude 1e-3 b0 s^1.5.
+    subroutine write_pert(name)
+        character(*), intent(in) :: name
+        integer :: unit, k
+        real(dp) :: s
+        open (newunit=unit, file=name, status='replace', action='write')
+        write (unit, '(a)') 'CC synthetic test file'
+        write (unit, '(a)') ' m0b n0b nsurf nper flux/[Tm^2] a/[m] R/[m]'
+        write (unit, '(a)') ' 3 3 19 1 -1.3 0.5 1.7'
+        do k = 1, 19
+            s = 0.05_dp*k
+            write (unit, '(a)') ' s iota curr_pol/nper curr_tor pprime sqrt g(0,0)'
+            write (unit, '(a)') ' [A] [A] dp/ds,[Pa] (dV/ds)/nper'
+            write (unit, '(6es24.16)') s, 0.765_dp, -1.2e7_dp, 0.0_dp, 0.0_dp, 0.0_dp
+            write (unit, '(a)') ' m n r/[m] z/[m] (phib-phi)*nper/twopi bmn/[T]'
+            write (unit, '(2i5,4es24.16)') 3, 3, 0.0_dp, 0.0_dp, 0.0_dp, 1e-3_dp*b_ref*s**1.5_dp
+        end do
+        close (unit)
+    end subroutine write_pert
 
     subroutine write_file(name)
         character(*), intent(in) :: name

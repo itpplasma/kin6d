@@ -21,18 +21,23 @@
 !! Pitch-angle scattering acts at fixed psi* (first stage of collisions).
 module milca_ntv_orbit_geometry
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use milca_boozer_file, only: boozer_file_t
+    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_pitch_point, &
         orbit_state, orbit_potential, ORBIT_OK
     use milca_dk_hp, only: hp_geometry_t, hp_operator_t
     implicit none
     private
-    public :: hp_orbit_geometry_t, hp_orbit_geometry
+    public :: hp_orbit_geometry_t, hp_orbit_geometry, hp_orbit_perturbation
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
 
     type, extends(hp_geometry_t) :: hp_orbit_geometry_t
         type(boozer_file_t), pointer :: bf => null()
+        ! Perturbation file of the toroidal harmonic n_tor; when associated, the
+        ! drive is taken at the orbit point instead of from the operator.
+        type(boozer_file_t), pointer :: pert => null()
+        integer :: n_tor = 0
+        real(dp) :: pert_ref = 0
         type(orbit_particle_t) :: p
         real(dp) :: s_star = 0, b_ref = 0, e_star = 0, v_star = 0
     contains
@@ -41,6 +46,7 @@ module milca_ntv_orbit_geometry
         procedure :: point => orbit_point_coefficients
         procedure :: mu_hat
         procedure :: measure
+        procedure :: perturbation => orbit_perturbation
     end type
 
 contains
@@ -112,6 +118,52 @@ contains
             field = bb
         end function field
     end subroutine hp_orbit_geometry
+
+    !> Takes the drive of harmonic n_tor from pert at the orbit point; b_ref
+    !> normalises the amplitudes as the thin-orbit device does (c_m = (bmnc +
+    !> i bmns)/B_ref of mode -m).
+    subroutine hp_orbit_perturbation(g, pert, n_tor, b_ref)
+        type(hp_orbit_geometry_t), intent(inout) :: g
+        type(boozer_file_t), target, intent(in) :: pert
+        integer, intent(in) :: n_tor
+        real(dp), intent(in) :: b_ref
+        g%pert => pert
+        g%n_tor = n_tor
+        g%pert_ref = b_ref
+    end subroutine hp_orbit_perturbation
+
+    complex(dp) function orbit_perturbation(g, th, xi, op) result(src)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        type(orbit_point_t) :: pt
+        type(boozer_surface_t) :: ps
+        real(dp) :: mu
+        integer :: k, st
+        if (.not. associated(g%pert)) then
+            src = op_drive(op, th)
+            return
+        end if
+        mu = g%mu_hat(th, xi, pt, st)
+        call boozer_surface(g%pert, pt%s, ps, st)
+        src = 0
+        do k = 1, size(ps%m)
+            if (ps%n(k)*ps%nper /= g%n_tor) cycle
+            src = src + (0, 1)*op%n*cmplx(ps%bmn(k), ps%bma(k), dp)/g%pert_ref &
+                *exp(-(0, 1)*ps%m(k)*th)
+        end do
+    contains
+        complex(dp) function op_drive(o, t)
+            type(hp_operator_t), intent(in) :: o
+            real(dp), intent(in) :: t
+            integer :: j
+            op_drive = 0
+            if (.not. allocated(o%m)) return
+            do j = 1, size(o%m)
+                op_drive = op_drive + (0, 1)*o%n*o%c(j)*exp((0, 1)*o%m(j)*t)
+            end do
+        end function op_drive
+    end function orbit_perturbation
 
     real(dp) function mu_hat(g, th, xi, pt, status)
         class(hp_orbit_geometry_t), intent(in) :: g
