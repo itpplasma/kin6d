@@ -36,7 +36,9 @@ that owns the proposed change. In particular:
 - docs/differentiability.md and docs/adjoints-structure.md before derivative,
   sensitivity, optimization or goal-error work;
 - docs/certification.md before a rigorous-result claim;
-- docs/tooling.md before implementation or dependency changes.
+- docs/tooling.md before implementation or dependency changes;
+- docs/lessons/ before work in a physics area that has a lessons page, and
+  add to that page when a mismatch with a reference reveals a new cause.
 
 The first prescribed-field 1X1V slice already runs. Read
 docs/first-example.md before changing it or claiming broader evidence.
@@ -323,6 +325,10 @@ optimization. Planned scope is not implemented functionality.
   to multiple consumers. Physical-model residuals, equilibrium parameter
   adjoints, validated stationary solves and model-error bounds remain MILCA
   responsibilities.
+- Other codes are inspected for MILCA work only when they are open source.
+  Code under MIT, BSD or Apache licences may be studied freely. GPL code may
+  be studied, but no line of it is copied. Closed-source codes are not
+  inspected directly.
 - Preserve unrelated edits. One controller owns integration/promotion.
 - Never touch protected faepop* or faepcr* hosts without an explicit user
   request naming the host.
