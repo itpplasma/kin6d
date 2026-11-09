@@ -8,8 +8,9 @@ module milca_vrmhd_evolve
         vrmhd_section_jacobian
     use fortnum_ode_bdf, only: bdf_problem_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_matmul, &
-        csc_from_triplet, sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_free, sparse_solve_once, fortsparse_status_t, status_ok, &
+        csc_from_triplet, sparse_solver_t, sparse_factor, sparse_refactor, &
+        sparse_solve, &
+        sparse_free, fortsparse_status_t, status_ok, &
         FORTSPARSE_LU_SUPERNODAL
     implicit none
     private
@@ -153,9 +154,13 @@ contains
         status = 1
         call reduced_jacobian(self, self%u, self%ud, alpha, reduced, status)
         if (status /= 0) return
-        if (self%factored) call sparse_free(self%solver)
+        ! The reduced pattern is fixed: ordering and matching are analysed once.
+        if (self%factorizations > 0) then
+            call sparse_refactor(self%solver, reduced, st)
+        else
+            call sparse_factor(self%solver, reduced, st)
+        end if
         self%factored = .false.
-        call sparse_factor(self%solver, reduced, st)
         status = 1
         if (.not. status_ok(st)) return
         self%factored = .true.
@@ -281,7 +286,7 @@ contains
         if (.not. status_ok(st)) return
         rhs = -r
         where (problem%algebraic) rhs = 0
-        call sparse_solve_once(combined, rhs, ydot, st)
+        call direct_solve(combined, rhs, ydot, st)
         if (status_ok(st)) status = 0
     contains
         subroutine solve_current(status)
@@ -310,10 +315,27 @@ contains
             if (.not. status_ok(st)) return
             rhs = -pack(r, problem%algebraic)
             allocate (step(na))
-            call sparse_solve_once(ampere, rhs, step, st)
+            call direct_solve(ampere, rhs, step, st)
             if (.not. status_ok(st)) return
             y = unpack(pack(y, problem%algebraic) + step, problem%algebraic, y)
             status = 0
         end subroutine
+    end subroutine
+
+    subroutine direct_solve(matrix, rhs, x, st)
+        !! One supernodal solve; the scalar default is serial and far slower
+        !! for section systems of 1e5 unknowns.
+        type(csc_t), intent(in) :: matrix
+        real(dp), intent(in) :: rhs(:)
+        real(dp), intent(out) :: x(:)
+        type(fortsparse_status_t), intent(out) :: st
+        type(sparse_solver_t) :: solver
+        real(dp), allocatable :: b(:)
+        solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+        call sparse_factor(solver, matrix, st)
+        if (.not. status_ok(st)) return
+        b = rhs
+        call sparse_solve(solver, b, x, st)
+        call sparse_free(solver)
     end subroutine
 end module milca_vrmhd_evolve

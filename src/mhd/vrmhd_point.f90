@@ -1,7 +1,7 @@
 module milca_vrmhd_point
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_vrmhd_parameters, only: vrmhd_parameters_t
-    use milca_vrmhd_dispatch, only: vrmhd_leaf
+    use milca_vrmhd_dispatch, only: vrmhd_leaf, vrmhd_leaf_vjp
     use milca_vrmhd_leaf_ids, only: &
         leaf_ampere, leaf_chi_flux_limited, leaf_chi_parallel, &
         leaf_compression, leaf_conduction, leaf_density_advection, &
@@ -17,8 +17,9 @@ module milca_vrmhd_point
     private
     public :: vrmhd_point, vrmhd_point_matrix
     integer, parameter :: ntest(6) = [4, 12, 6, 6, 4, 4]
-    !> vrmhd_point evaluations of one vrmhd_point_matrix call.
-    integer, parameter, public :: VRMHD_POINT_MATRIX_CALLS = 45*sum(ntest)
+    !> Cost of one vrmhd_point_matrix call in vrmhd_point evaluations: one
+    !> reverse sweep, about two evaluations, per test slot.
+    integer, parameter, public :: VRMHD_POINT_MATRIX_CALLS = 2*sum(ntest)
     integer, parameter :: test_slots(12, 6) = reshape([ &
         1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, &
         5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, &
@@ -29,31 +30,181 @@ module milca_vrmhd_point
 
 contains
     ! Pointwise bilinear form of the JVP: kmat(:, j, row) is the tangent
-    ! against unit tests for unit trial data j (33 values, 12 rates).
+    ! against unit tests for unit trial data j (33 values, 12 rates). The
+    ! residual is linear in the test, so one reverse sweep per test slot gives
+    ! every trial column at once.
     subroutine vrmhd_point_matrix(p, v, vd, source, shift, kmat)
         type(vrmhd_parameters_t), intent(in) :: p
         real(dp), intent(in) :: v(33), vd(12), source(6), shift
         real(dp), intent(out) :: kmat(19, 45, 6)
-        real(dp) :: du(33), dud(12), test(19), value, tangent
-        integer :: row, it, j
+        real(dp) :: test(19), gu(33), gud(12)
+        integer :: row, it, slot
         kmat = 0
         do row = 1, 6
             do it = 1, ntest(row)
-                test = 0; test(test_slots(it, row)) = 1
-                do j = 1, 33
-                    du = 0; du(j) = 1; dud = 0
-                    call vrmhd_point(p, row, v, du, vd, dud, test, source, value, &
-                        tangent)
-                    kmat(test_slots(it, row), j, row) = tangent
-                end do
-                do j = 1, 12
-                    du = 0; dud = 0; dud(j) = shift
-                    call vrmhd_point(p, row, v, du, vd, dud, test, source, value, &
-                        tangent)
-                    kmat(test_slots(it, row), 33 + j, row) = tangent
-                end do
+                slot = test_slots(it, row)
+                test = 0; test(slot) = 1
+                call point_gradient(p, row, v, vd, test, source, gu, gud)
+                kmat(slot, :33, row) = gu
+                kmat(slot, 34:, row) = shift*gud
             end do
         end do
+    end subroutine
+
+    subroutine point_gradient(p, row, u, ud, test, source, gu, gud)
+        !! Gradient of the vrmhd_point value with respect to u and ud: the
+        !! reverse sweep of the same leaf composition, with generated VJPs.
+        type(vrmhd_parameters_t), intent(in) :: p
+        integer, intent(in) :: row
+        real(dp), intent(in) :: u(33), ud(12), test(19), source(6)
+        real(dp), intent(out) :: gu(33), gud(12)
+        integer, parameter :: KETA = 101, KNU = 102, KDIVV = 103, KPRESS = 104, &
+            KCHI = 105
+        real(dp) :: eta, nu, chi, pressure, divv, divw, bg, mass, unused
+        real(dp) :: geta, gnu, gchi, gpress, gdivv, gbg, gx(33)
+        real(dp) :: zero(24)
+        integer :: species, it, g1, i
+        integer :: m(33)
+        zero = 0; gu = 0; gud = 0
+        geta = 0; gnu = 0; gchi = 0; gpress = 0; gdivv = 0; gbg = 0
+        if (row == 3 .or. row == 5) call vrmhd_leaf(leaf_eta, [p%eta0, u(11), p%t0, &
+            p%eta_exponent], zero(:4), eta, unused)
+        if (row == 2 .or. row == 6) call vrmhd_leaf(leaf_nu, [p%nu0, u(12), p%t0, &
+            p%nu_exponent], zero(:4), nu, unused)
+        if (row >= 5) call vrmhd_leaf(leaf_trace, [u(16), u(20), u(24)], zero(:3), &
+            divv, unused)
+        if (row == 2) call vrmhd_leaf(leaf_trace, [test(8), test(12), test(16)], &
+            zero(:3), divw, unused)
+        select case (row)
+        case (1)
+            call add(leaf_mass_density, [ud(1), test(1)], [-1, 0], 1.0_dp)
+            call add(leaf_density_advection, [u(1:4), test(2:4)], &
+                [1, 2, 3, 4, 0, 0, 0], 1.0_dp)
+            call add(leaf_transport, [p%d_parallel, p%d_perpendicular, &
+                p%epsilon_b, u(25:27), u(13:15), test(2:4)], &
+                [0, 0, 0, 25, 26, 27, 13, 14, 15, 0, 0, 0], 1.0_dp)
+        case (2)
+            call add(leaf_mass_momentum, [u(1), ud(1), u(2:4), ud(2:4), test(5:7)], &
+                [1, -1, 2, 3, 4, -2, -3, -4, 0, 0, 0], 1.0_dp)
+            m = 0; m(:4) = [1, 2, 3, 4]; m(8:16) = [(i, i=16, 24)]
+            call add(leaf_momentum_advection, [u(1:4), test(5:7), u(16:24), &
+                test(8:16)], m(:25), 1.0_dp)
+            call add(leaf_momentum_mass_source, [source(4), u(2:4), test(5:7)], &
+                [0, 2, 3, 4, 0, 0, 0], 1.0_dp)
+            m = 0; m(4:12) = [25, 26, 27, 13, 14, 15, 2, 3, 4]
+            m(16:24) = [(i, i=16, 24)]
+            call add(leaf_momentum_density_diffusion, &
+                [p%d_parallel, p%d_perpendicular, p%epsilon_b, u(25:27), &
+                u(13:15), u(2:4), test(5:7), u(16:24), test(8:16)], m(:33), 1.0_dp)
+            call vrmhd_leaf(leaf_pressure, [u(1), u(11:12), p%mi], zero(:4), &
+                pressure, unused)
+            call add(leaf_pressure_work, [pressure, divw], [KPRESS, 0], 1.0_dp)
+            call add(leaf_lorentz, [u(8:10), u(25:27), test(5:7)], &
+                [8, 9, 10, 25, 26, 27, 0, 0, 0], -1.0_dp)
+            m = 0; m(1) = KNU; m(4:15) = [25, 26, 27, (i, i=16, 24)]
+            call add(leaf_viscosity, [nu, p%nu_parallel, p%epsilon_b, u(25:27), &
+                u(16:24), test(8:16)], m(:24), -1.0_dp)
+            call vrmhd_leaf_vjp(leaf_pressure, [u(1), u(11:12), p%mi], gpress, gx)
+            gu(1) = gu(1) + gx(1); gu(11:12) = gu(11:12) + gx(2:3)
+        case (3)
+            call add(leaf_mass_induction, [ud(5:7), test(5:7)], &
+                [-5, -6, -7, 0, 0, 0], 1.0_dp)
+            call add(leaf_induction_ideal, [u(2:4), u(25:27), test(5:7)], &
+                [2, 3, 4, 25, 26, 27, 0, 0, 0], -1.0_dp)
+            call add(leaf_induction_resistive, [eta, u(8:10), source(:3), &
+                test(5:7)], [KETA, 8, 9, 10, 0, 0, 0, 0, 0, 0], -1.0_dp)
+        case (4)
+            call add(leaf_ampere, [p%mu0, u(8:10), test(5:7), u(25:27), &
+                test(17:19)], [0, 8, 9, 10, 0, 0, 0, 25, 26, 27, 0, 0, 0], 1.0_dp)
+        case (5, 6)
+            species = row - 4; it = 10 + species; g1 = 25 + 3*species
+            if (p%flux_limited(species)) then
+                call vrmhd_leaf(leaf_parallel_gradient, [u(25:27), &
+                    u(g1:g1 + 2), p%epsilon_b], zero(:7), bg, unused)
+                mass = p%electron_mass
+                if (species == 2) mass = p%mi
+                call vrmhd_leaf(leaf_chi_flux_limited, [p%chi_parallel0(species), &
+                    u(it), p%t0, mass, p%flux_limit(species), bg, &
+                    p%gradient_floor(species)], zero(:7), chi, unused)
+            else
+                call vrmhd_leaf(leaf_chi_parallel, [p%chi_parallel0(species), &
+                    u(it), p%t0, p%chi_parallel_exponent], zero(:4), chi, unused)
+            end if
+            call add(leaf_mass_temperature, [u(1), ud(1), u(it), ud(it), p%mi, &
+                test(1)], [1, -1, it, -it, 0, 0], 1.0_dp)
+            call add(leaf_temperature_advection, [u(1), p%mi, u(it), u(2:4), &
+                test(2:4)], [1, 0, it, 2, 3, 4, 0, 0, 0], 1.0_dp)
+            call add(leaf_compression, [u(1), p%mi, u(it), divv, test(1)], &
+                [1, 0, it, KDIVV, 0], 1.0_dp)
+            call add(leaf_conduction, [u(1), p%mi, chi, &
+                p%chi_perpendicular(species), p%epsilon_b, u(25:27), &
+                u(g1:g1 + 2), test(2:4)], &
+                [1, 0, KCHI, 0, 0, 25, 26, 27, g1, g1 + 1, g1 + 2, 0, 0, 0], 1.0_dp)
+            if (species == 1) then
+                call add(leaf_ohmic, [eta, u(8:10), source(:3), test(1)], &
+                    [KETA, 8, 9, 10, 0, 0, 0, 0], -p%ohmic_fraction)
+            else
+                m = 0; m(1) = KNU; m(4:15) = [25, 26, 27, (i, i=16, 24)]
+                call add(leaf_viscous_heat, [nu, p%nu_parallel, p%epsilon_b, &
+                    u(25:27), u(16:24), test(1)], m(:16), -1.0_dp)
+            end if
+            call add(leaf_equipartition, [u(1), p%mi, p%equilibration_rate, &
+                u(11:12), test(1)], [1, 0, 0, 11, 12, 0], real(2*species - 3, dp))
+            gu(16) = gu(16) + gdivv; gu(20) = gu(20) + gdivv
+            gu(24) = gu(24) + gdivv
+            if (p%flux_limited(species)) then
+                call vrmhd_leaf_vjp(leaf_chi_flux_limited, &
+                    [p%chi_parallel0(species), u(it), p%t0, mass, &
+                    p%flux_limit(species), bg, p%gradient_floor(species)], &
+                    gchi, gx)
+                gu(it) = gu(it) + gx(2); gbg = gx(6)
+                call vrmhd_leaf_vjp(leaf_parallel_gradient, [u(25:27), &
+                    u(g1:g1 + 2), p%epsilon_b], gbg, gx)
+                gu(25:27) = gu(25:27) + gx(1:3)
+                gu(g1:g1 + 2) = gu(g1:g1 + 2) + gx(4:6)
+            else
+                call vrmhd_leaf_vjp(leaf_chi_parallel, &
+                    [p%chi_parallel0(species), u(it), p%t0, &
+                    p%chi_parallel_exponent], gchi, gx)
+                gu(it) = gu(it) + gx(2)
+            end if
+        end select
+        if (row == 3 .or. row == 5) then
+            call vrmhd_leaf_vjp(leaf_eta, [p%eta0, u(11), p%t0, p%eta_exponent], &
+                geta, gx)
+            gu(11) = gu(11) + gx(2)
+        end if
+        if (row == 2 .or. row == 6) then
+            call vrmhd_leaf_vjp(leaf_nu, [p%nu0, u(12), p%t0, p%nu_exponent], gnu, gx)
+            gu(12) = gu(12) + gx(2)
+        end if
+    contains
+        subroutine add(id, x, map, sign)
+            !! map(k) > 0: u(map(k)); < 0: ud(-map(k)); intermediate codes; 0: data.
+            integer, intent(in) :: id, map(:)
+            real(dp), intent(in) :: x(:), sign
+            real(dp) :: g(size(x))
+            integer :: k
+            call vrmhd_leaf_vjp(id, x, sign, g)
+            do k = 1, size(map)
+                select case (map(k))
+                case (1:33)
+                    gu(map(k)) = gu(map(k)) + g(k)
+                case (-12:-1)
+                    gud(-map(k)) = gud(-map(k)) + g(k)
+                case (KETA)
+                    geta = geta + g(k)
+                case (KNU)
+                    gnu = gnu + g(k)
+                case (KDIVV)
+                    gdivv = gdivv + g(k)
+                case (KPRESS)
+                    gpress = gpress + g(k)
+                case (KCHI)
+                    gchi = gchi + g(k)
+                end select
+            end do
+        end subroutine
     end subroutine
 
     subroutine vrmhd_point(p, row, u, du, ud, dud, test, source, value, tangent)

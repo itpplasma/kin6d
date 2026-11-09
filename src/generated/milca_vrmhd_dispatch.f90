@@ -348,4 +348,231 @@ case default
 error stop 'invalid VRMHD leaf'
 end select
 end subroutine
+subroutine vrmhd_leaf_vjp(id, x, w, gx)
+integer, intent(in) :: id
+real(dp), intent(in) :: x(:), w
+real(dp), intent(out) :: gx(:)
+select case(id)
+case(1)
+call vrmhd_eta_vjp( &
+x(1), x(2), x(3), x(4), &
+w, gx(1), gx(2), gx(3), &
+gx(4))
+case(2)
+call vrmhd_nu_vjp( &
+x(1), x(2), x(3), x(4), &
+w, gx(1), gx(2), gx(3), &
+gx(4))
+case(3)
+call vrmhd_chi_parallel_vjp( &
+x(1), x(2), x(3), x(4), &
+w, gx(1), gx(2), gx(3), &
+gx(4))
+case(4)
+call vrmhd_chi_perpendicular_vjp( &
+x(1), w, gx(1))
+case(5)
+call vrmhd_pressure_vjp( &
+x(1), x(2), x(3), x(4), &
+w, gx(1), gx(2), gx(3), &
+gx(4))
+case(6)
+call vrmhd_mass_density_vjp( &
+x(1), x(2), w, gx(1), &
+gx(2))
+case(7)
+call vrmhd_mass_momentum_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), w, &
+gx(1), gx(2), gx(3), gx(4), &
+gx(5), gx(6), gx(7), gx(8), &
+gx(9), gx(10), gx(11))
+case(8)
+call vrmhd_mass_temperature_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), w, gx(1), &
+gx(2), gx(3), gx(4), gx(5), &
+gx(6))
+case(9)
+call vrmhd_mass_induction_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), w, gx(1), &
+gx(2), gx(3), gx(4), gx(5), &
+gx(6))
+case(10)
+call vrmhd_ampere_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5), gx(6), &
+gx(7), gx(8), gx(9), gx(10), &
+gx(11), gx(12), gx(13))
+case(11)
+call vrmhd_density_advection_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), w, &
+gx(1), gx(2), gx(3), gx(4), &
+gx(5), gx(6), gx(7))
+case(12)
+call vrmhd_transport_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+w, gx(1), gx(2), gx(3), &
+gx(4), gx(5), gx(6), gx(7), &
+gx(8), gx(9), gx(10), gx(11), &
+gx(12))
+case(13)
+call vrmhd_conduction_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), w, gx(1), &
+gx(2), gx(3), gx(4), gx(5), &
+gx(6), gx(7), gx(8), gx(9), &
+gx(10), gx(11), gx(12), gx(13), &
+gx(14))
+case(14)
+call vrmhd_momentum_advection_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+x(25), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5), gx(6), &
+gx(7), gx(8), gx(9), gx(10), &
+gx(11), gx(12), gx(13), gx(14), &
+gx(15), gx(16), gx(17), gx(18), &
+gx(19), gx(20), gx(21), gx(22), &
+gx(23), gx(24), gx(25))
+case(15)
+call vrmhd_pressure_work_vjp( &
+x(1), x(2), w, gx(1), &
+gx(2))
+case(16)
+call vrmhd_lorentz_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5), gx(6), &
+gx(7), gx(8), gx(9))
+case(17)
+call vrmhd_induction_ideal_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5), gx(6), &
+gx(7), gx(8), gx(9))
+case(18)
+call vrmhd_induction_resistive_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), w, gx(1), &
+gx(2), gx(3), gx(4), gx(5), &
+gx(6), gx(7), gx(8), gx(9), &
+gx(10))
+case(19)
+call vrmhd_ohmic_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+w, gx(1), gx(2), gx(3), &
+gx(4), gx(5), gx(6), gx(7), &
+gx(8))
+case(20)
+call vrmhd_viscosity_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+w, gx(1), gx(2), gx(3), &
+gx(4), gx(5), gx(6), gx(7), &
+gx(8), gx(9), gx(10), gx(11), &
+gx(12), gx(13), gx(14), gx(15), &
+gx(16), gx(17), gx(18), gx(19), &
+gx(20), gx(21), gx(22), gx(23), &
+gx(24))
+case(21)
+call vrmhd_viscous_heat_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), x(15), x(16), &
+w, gx(1), gx(2), gx(3), &
+gx(4), gx(5), gx(6), gx(7), &
+gx(8), gx(9), gx(10), gx(11), &
+gx(12), gx(13), gx(14), gx(15), &
+gx(16))
+case(22)
+call vrmhd_temperature_advection_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5), gx(6), &
+gx(7), gx(8), gx(9))
+case(23)
+call vrmhd_compression_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5))
+case(24)
+call vrmhd_equipartition_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), w, gx(1), &
+gx(2), gx(3), gx(4), gx(5), &
+gx(6))
+case(25)
+call vrmhd_source_vjp( &
+x(1), x(2), w, gx(1), &
+gx(2))
+case(26)
+call vrmhd_chi_flux_limited_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), w, &
+gx(1), gx(2), gx(3), gx(4), &
+gx(5), gx(6), gx(7))
+case(27)
+call vrmhd_parallel_gradient_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), w, &
+gx(1), gx(2), gx(3), gx(4), &
+gx(5), gx(6), gx(7))
+case(28)
+call vrmhd_trace_vjp( &
+x(1), x(2), x(3), w, &
+gx(1), gx(2), gx(3))
+case(29)
+call vrmhd_momentum_mass_source_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), w, &
+gx(1), gx(2), gx(3), gx(4), &
+gx(5), gx(6), gx(7))
+case(30)
+call vrmhd_momentum_density_diffusion_vjp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+x(25), x(26), x(27), x(28), &
+x(29), x(30), x(31), x(32), &
+x(33), w, gx(1), gx(2), &
+gx(3), gx(4), gx(5), gx(6), &
+gx(7), gx(8), gx(9), gx(10), &
+gx(11), gx(12), gx(13), gx(14), &
+gx(15), gx(16), gx(17), gx(18), &
+gx(19), gx(20), gx(21), gx(22), &
+gx(23), gx(24), gx(25), gx(26), &
+gx(27), gx(28), gx(29), gx(30), &
+gx(31), gx(32), gx(33))
+case default
+error stop 'invalid VRMHD leaf'
+end select
+end subroutine
 end module milca_vrmhd_dispatch
