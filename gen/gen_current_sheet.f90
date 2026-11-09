@@ -5,7 +5,7 @@ program gen_current_sheet
     ! psi'' = k^2 psi, psi(0) = F(0 sigma) xi0, psi(a) = F(sigma a) delta_sigma.
     ! xi0 solves the Lagrangian total-pressure condition [[F^2 xi']] = 0.
     ! Nonlinear slab map (section 4, stage 2): the frozen-in energy of
-    ! kin6d_ideal_map for Y = Phi(X), X = (X1, X2, s3) z invariant, with the
+    ! milca_ideal_map for Y = Phi(X), X = (X1, X2, s3) z invariant, with the
     ! chart Phi = (x + (l0 + l1 x) G(y) + (m0 + m1 x) cos(k y), y), frozen
     ! b = (0, b2, b3) and p. G (interface shape) enters through its value gv
     ! and derivative gd at y = X2; the caller applies the chain rule in X2.

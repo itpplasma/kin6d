@@ -1,4 +1,4 @@
-module kin6d_nonnested_mapped
+module milca_nonnested_mapped
     ! Mapped NN1 operators (docs/nn1-mapped-3d.md). The same reference FEEC
     ! complex supports the retained phi-preserving R/Z displacement and an
     ! owned full Cartesian chart H(R,Z,phi). Incidence/curl are unchanged;
@@ -749,4 +749,4 @@ contains
             tr(2*n) = sin(n*phi)
         end do
     end subroutine
-end module kin6d_nonnested_mapped
+end module milca_nonnested_mapped

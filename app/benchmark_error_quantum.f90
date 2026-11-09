@@ -3,7 +3,7 @@ program benchmark_error_quantum
     use fortnum_interval, only: interval_t
     use kin6d_quantum_fock, only: assemble_jellium_pair_sector, fock_hamiltonian_t
     use kin6d_quantum_evolution
-    use kin6d_coulomb_encounter
+    use milca_coulomb_encounter
     use kin6d_packet_models
     use kin6d_fermion_ensemble
     use kin6d_fermi_gas

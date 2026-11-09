@@ -1,7 +1,7 @@
 program test_pp_fusion
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_pp_fusion
-    use kin6d_radial_dvr, only: radial_locate, radial_band_hamiltonian
+    use milca_radial_dvr, only: radial_locate, radial_band_hamiltonian
     use milca_pp_fusion_leaves, only: pp_reid, pp_reid_jvp, pp_reid_vjp
     use fortnum_special_coulomb, only: coulomb_fg0, coulomb_c0_squared
     implicit none

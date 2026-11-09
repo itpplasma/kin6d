@@ -1,4 +1,4 @@
-module kin6d_nonnested_beltrami
+module milca_nonnested_beltrami
     ! Taylor closure: <curl v,B> - mu <v,B> = <v,f>, B=curl A+h.
     ! Boundary tangential A fixes normal B. Only the n=0 gradient kernel
     ! needs a Coulomb multiplier; n>0 uses the exact R A_phi=0 gauge.
@@ -22,7 +22,7 @@ module kin6d_nonnested_beltrami
     use fortnum_eigen, only: lanczos, eigen_options_t, eigen_stats_t, &
         EIGEN_NEAREST, EIGEN_OK
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_divergence
-    use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, &
+    use milca_nonnested_mapped, only: nn_map_t, map_metric_t, &
         METRIC_IDENTITY, nn_harmonic_forms
     use fortfem_meridian_fourier_apply, only: meridian_fourier_op_t
     use fortnum_newton_mr, only: newton_mr_options_t, NEWTON_MR_MERIT_GRADIENT

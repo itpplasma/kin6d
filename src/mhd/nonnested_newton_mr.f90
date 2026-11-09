@@ -1,9 +1,9 @@
-module kin6d_nonnested_newton_mr
+module milca_nonnested_newton_mr
     ! Opt-in matrix-free Newton-MR for the mapped NN1 vacuum energy
     ! (docs/nn1-mapped-3d.md, docs/nonnested-newton-mr.md):
     !     W(A) = int |h + curl A|^2 / (2 mu0),   S = C^T M_2(K) C,
     ! with the boundary traces of data fixed. The default path,
-    ! kin6d_nonnested_mapped:nn_mapped_solve, assembles S (mode-dense element
+    ! milca_nonnested_mapped:nn_mapped_solve, assembles S (mode-dense element
     ! blocks) and solves by FGMRES with a factored mean-metric preconditioner.
     ! This path never assembles S: the Hessian action is FortFEM's
     ! sum-factorised meridian_fourier_curl_curl_apply (FFT in phi per
@@ -45,7 +45,7 @@ module kin6d_nonnested_newton_mr
         newton_mr_report_t, newton_mr_solve, NEWTON_MR_OK
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
-    use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, nn_harmonic_forms, &
+    use milca_nonnested_mapped, only: nn_map_t, map_metric_t, nn_harmonic_forms, &
         nn_mapped_report_t
     implicit none
     private
@@ -499,4 +499,4 @@ contains
         call system_clock(count, rate)
         clock = real(count, dp)/real(rate, dp)
     end function
-end module kin6d_nonnested_newton_mr
+end module milca_nonnested_newton_mr

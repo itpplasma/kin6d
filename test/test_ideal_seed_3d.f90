@@ -1,8 +1,8 @@
 program test_ideal_seed_3d
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
+    use milca_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh, ideal_seed_boundary_coefficients
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_rdof, ideal_map_energy, &
+    use milca_ideal_map, only: ideal_map_t, ideal_map_rdof, ideal_map_energy, &
         ideal_map_init, ideal_map_freeze, ideal_map_prolong, ideal_map_hessian, &
         ideal_map_expand, ideal_map_reduce
     use fortfem_element_to_csr, only: csr_matrix_t

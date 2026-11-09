@@ -23,12 +23,12 @@ program test_nonnested_force
     use nn_solovev_fixture, only: s_r0 => r0, s_a => minor, s_f => ftor, pp, &
         s_mapping => mapping, s_coordinates => coordinates, s_c => c
     use nn_vacuum_fixture, only: annulus_mesh
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve, nn_factor_t, nn_factor, nn_factor_solve_real, nn_factor_free
-    use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
+    use milca_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve
-    use kin6d_nonnested_force, only: nf_system_t, nf_report_t, nf_prepare, &
+    use milca_nonnested_force, only: nf_system_t, nf_report_t, nf_prepare, &
         nf_free, nf_load, nf_lorentz_load, nf_project, nf_potential_solve, &
         nf_l2_error, nf_deflate
     use milca_equilibrium_harness, only: equilibrium_floor_report_t, &

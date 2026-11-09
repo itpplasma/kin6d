@@ -1,4 +1,4 @@
-module kin6d_mhd_mesh
+module milca_mhd_mesh
     !! K-M1 (first stage): flux-aligned meridional meshes for the per-n linear
     !! response.  The mesh is a nest of rings around the magnetic axis.
     !!
@@ -554,4 +554,4 @@ contains
         end do
     end subroutine ring_labels_smooth
 
-end module kin6d_mhd_mesh
+end module milca_mhd_mesh

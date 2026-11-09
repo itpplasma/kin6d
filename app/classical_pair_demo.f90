@@ -5,7 +5,7 @@ program classical_pair_demo
         classical_pair_sample, classical_pair_wrap, classical_pair_state, &
         classical_pair_bin_center
     use milca_classical_pair_leaves, only: cp_statistic
-    use kin6d_nbody, only: nbody_step, nbody_energy, nbody_encounter_step
+    use milca_nbody, only: nbody_step, nbody_energy, nbody_encounter_step
     use fortplot, only: figure,figure_t,get_global_figure,subplot,scatter,plot, &
         errorbar,title,xlabel,ylabel,xlim,ylim,legend,tight_layout,savefig,suptitle
     use milca_demo_style, only: vermillion,black,movie_fps,hold_frames,num

@@ -32,10 +32,10 @@ module kin6d_packet_models
     use kin6d_gaussian_pair, only: gaussian_t, pair_rule_t, pair_rule_init, pair_elements, &
                                    gaussian_value, gaussian_norm2
     use milca_packet_models_leaves
-    use kin6d_coulomb_encounter, only: encounter_t, encounter_state, encounter_project, &
+    use milca_coulomb_encounter, only: encounter_t, encounter_state, encounter_project, &
                                        encounter_angular_bins, encounter_norm, in_sector, &
                                        SECTOR_PRODUCT, SECTOR_SINGLET, SECTOR_TRIPLET
-    use kin6d_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
+    use milca_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
     use fortnum_ode_cash_karp, only: cash_karp_step
     use milca_real_identity, only: same_real_value
     implicit none

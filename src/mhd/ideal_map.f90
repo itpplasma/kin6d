@@ -1,4 +1,4 @@
-module kin6d_ideal_map
+module milca_ideal_map
     ! Nonlinear 3D ideal equilibrium as frozen-in energy minimisation over maps
     ! (DESIGN 7.1, choice A). The unknown is a map from abstract coordinates
     ! s = (s1, s2, s3): (s1, s2) the master coordinates of each triangle of a
@@ -3324,4 +3324,4 @@ contains
             end do
         end do
     end subroutine
-end module kin6d_ideal_map
+end module milca_ideal_map

@@ -2,7 +2,7 @@ program microscopic_cloud_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use milca_microscopic_cloud, only: cloud_model_t, cloud_system, cloud_initialize
-    use kin6d_nbody, only: nbody_system_t, nbody_step, nbody_energy, &
+    use milca_nbody, only: nbody_system_t, nbody_step, nbody_energy, &
                            nbody_encounter_step
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, &
                   plot, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, &

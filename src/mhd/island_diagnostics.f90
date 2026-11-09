@@ -1,4 +1,4 @@
-module kin6d_island_diagnostics
+module milca_island_diagnostics
     ! Poincare diagnostics for any equilibrium_field_t. Angles are radians,
     ! section coordinates (R,Z) are metres. Estimates are tolerance/refinement
     ! indicators, never continuous enclosures. No global field or workspace.

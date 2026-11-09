@@ -4,16 +4,16 @@ module milca_equilibrium_3d_driver
     use milca_equilibrium_harness, only: equilibrium_case_t, equilibrium_resolution_t, &
         equilibrium_start_t, equilibrium_run_report_t, D8_OK, D8_BAD_INPUT, D8_BAD_REPORT
     use milca_equilibrium_state, only: equilibrium_state_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
+    use milca_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_energy, ideal_map_reduce
-    use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
+    use milca_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
-    use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
+    use milca_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
     use milca_map_3d_readback_leaves, only: map_3d_cartesian
     use milca_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
-    use kin6d_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
+    use milca_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
         NESTED_SEED_NFP, NESTED_SEED_OK
     implicit none
     private
@@ -37,7 +37,7 @@ module milca_equilibrium_3d_driver
 contains
     subroutine nested_integer_driver(oracle, mpol, ntor, driver, status)
         ! Only boundary and exact profiles/flux enter the initializer
-        ! (kin6d_nested_seed_input). Interior oracle fields are used
+        ! (milca_nested_seed_input). Interior oracle fields are used
         ! exclusively in error diagnostics. Only the integer family is
         ! admitted as a D8 case here.
         type(nested_oracle_t), intent(in) :: oracle

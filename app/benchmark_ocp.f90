@@ -8,8 +8,8 @@ program benchmark_ocp_app
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use milca_species, only: electron, species_t
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_step, &
+    use milca_ewald, only: ewald_parameters_t, ewald_select
+    use milca_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_step, &
                            nbody_step_jvp
     use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_units
     use milca_result_io, only: run_t, result_file_t

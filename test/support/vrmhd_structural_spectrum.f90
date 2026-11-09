@@ -1,9 +1,9 @@
 module vrmhd_structural_spectrum
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_jacobian, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_jacobian, &
         vrmhd_section_basis, vrmhd_section_residual
-    use kin6d_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_data, &
+    use milca_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_data, &
         vrmhd_fourier_jacobian
     use rm_mhd_oracles, only: uniform_waves, oracle_ok
     use fortfem_meridian_feec_n, only: meridian_qgrad

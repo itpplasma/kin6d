@@ -1,6 +1,6 @@
 # Frozen fitted profiles in the non-nested lane
 
-`kin6d_nonnested_profile` implements the I5a seed, fit, freeze, solve
+`milca_nonnested_profile` implements the I5a seed, fit, freeze, solve
 sequence of [the island design](island-equilibrium.md#b-prescribed-profiles-frozen-fitted-sources-then-projection).
 It supplies data to the existing NN2 A+D equations. It introduces neither a
 profile penalty nor a projected equilibrium solve. Numerical results remain

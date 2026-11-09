@@ -1,4 +1,4 @@
-module kin6d_response_toroidal_strip
+module milca_response_toroidal_strip
     !! Candidate full-pressure, non-rotating strip action in gauge A_phi = 0.
     !! Per-n convention exp(i n phi); physical components at phi = 0 are
     !! Cartesian (e_R, e_phi, e_Z). The caller supplies a regular mapped
@@ -11,8 +11,8 @@ module kin6d_response_toroidal_strip
         direct_fourier_plan_t, initialize_direct_fourier_plan, &
         direct_fourier_forward, direct_fourier_adjoint
     use fortsparse, only: fortsparse_status_t
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_response_fluid, only: &
+    use milca_mhd_ampere_n, only: mu0
+    use milca_response_fluid, only: &
         response_fluid_equilibrium_t, response_fluid_jet_t, &
         response_fluid_result_t, response_fluid_residual, response_fluid_adjoint, &
         response_fluid_stress, response_fluid_stress_adjoint
@@ -625,4 +625,4 @@ contains
             w = w/scales
         end subroutine matvec
     end subroutine toroidal_strip_solve
-end module kin6d_response_toroidal_strip
+end module milca_response_toroidal_strip

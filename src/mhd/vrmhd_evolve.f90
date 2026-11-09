@@ -1,10 +1,10 @@
-module kin6d_vrmhd_evolve
+module milca_vrmhd_evolve
     !! Weyl-gauge time evolution of the invariant MHD section as a FortNum
     !! BDF problem; see docs/vrmhd-section.md#time-evolution.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_finite
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_residual, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_residual, &
         vrmhd_section_jacobian
     use fortnum_ode_bdf, only: bdf_problem_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_matmul, &
@@ -316,4 +316,4 @@ contains
             status = 0
         end subroutine
     end subroutine
-end module kin6d_vrmhd_evolve
+end module milca_vrmhd_evolve

@@ -34,14 +34,14 @@ program test_nonnested_actions
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, exact
     use nn_action_data, only: zero_source, bad_source, negative_shape, conductivity
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, fortsparse_status_t, &
         status_ok
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_fixed, nc_reduce, nc_residual, nc_jacobian, nc_jvp, nc_vjp
-    use kin6d_island_closure, only: ISLAND_INVALID, ISLAND_UNSUPPORTED, &
+    use milca_island_closure, only: ISLAND_INVALID, ISLAND_UNSUPPORTED, &
         ISLAND_NULL_FIELD, ISLAND_BAD_DATA
     implicit none
     type(flux_mesh_t) :: mesh

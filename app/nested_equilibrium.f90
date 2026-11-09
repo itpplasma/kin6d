@@ -5,11 +5,11 @@ program nested_equilibrium
     ! state's global quantities for cross-code comparison.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
+    use milca_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
+    use milca_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_energy, ideal_map_reduce, ideal_map_prolong_correction
-    use kin6d_map_3d_equilibrium, only: map_3d_coordinates, map_3d_sample
+    use milca_map_3d_equilibrium, only: map_3d_coordinates, map_3d_sample
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use milca_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate

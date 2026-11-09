@@ -8,7 +8,7 @@
 ! Usage: packet_models_demo [--config FILE]   (namelist &packet_models)
 program packet_models_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use kin6d_coulomb_encounter
+    use milca_coulomb_encounter
     use kin6d_packet_models
     use kin6d_coulomb_encounter_leaves, only: ce_observable_radius
     use milca_result_io, only: run_t, result_file_t

@@ -1,9 +1,9 @@
-module kin6d_vrmhd_fourier_nonlinear
+module milca_vrmhd_fourier_nonlinear
     use, intrinsic :: iso_fortran_env, only: dp => real64, wp => real128
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_data
-    use kin6d_vrmhd_section, only: vrmhd_section_test
-    use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_data
+    use milca_vrmhd_section, only: vrmhd_section_test
+    use milca_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix
     use fortsparse, only: csc_t, csc_from_triplet, fortsparse_status_t, status_ok
     implicit none
     private
@@ -190,4 +190,4 @@ contains
             .and. size(source, 4) == op%section%fs%mm%topology%n_triangles &
             .and. any(op%harmonic == 0)
     end function
-end module kin6d_vrmhd_fourier_nonlinear
+end module milca_vrmhd_fourier_nonlinear

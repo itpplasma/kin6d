@@ -1,4 +1,4 @@
-module kin6d_vacuum_surfaces
+module milca_vacuum_surfaces
     !! L3: flux-surface geometry from a poloidal-flux grid psi(R, Z) (G-EQDSK)
     !! and the projection of a per-n field onto straight-field-line harmonics.
     !!

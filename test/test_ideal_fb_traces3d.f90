@@ -6,7 +6,7 @@ module ideal_fb_traces3d_test_support
     ! plasma chart of the nested-map lane (milca_equilibrium_chart), not a
     ! test extension of the cylindrical chart.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     use milca_equilibrium_chart, only: curve_chart_t
     implicit none
     private

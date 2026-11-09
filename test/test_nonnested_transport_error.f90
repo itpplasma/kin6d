@@ -145,12 +145,12 @@ program test_nonnested_transport_error
     !   helical: phi-dependent K with modes > 0 reaches the full-band wrapper.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nt_error_fixture
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_qgrad
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
-    use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
-    use kin6d_nonnested_error, only: NN_ERROR_OK, NN_ERROR_MODE_COUPLING, &
+    use milca_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
+    use milca_nonnested_error, only: NN_ERROR_OK, NN_ERROR_MODE_COUPLING, &
         nn_error_t, nt_axisymmetric_error
     implicit none
     logical :: ok

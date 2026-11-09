@@ -201,7 +201,7 @@ is not a convergence oracle beyond b=12; the instability of the continuum equili
 inferred from these discrete results, not proven.
 
 [V] The sheared-iota family (Landreman tau=0, eps=1.2, delta=0.14, iota 2.7996 at the
-axis to 2.8104 at the edge) reaches the map seed through `kin6d_nested_seed_input`.
+axis to 2.8104 at the edge) reaches the map seed through `milca_nested_seed_input`.
 Two findings stop it from serving as the stable 0.25 % reference. First, the seed's
 frozen form has a uniform toroidal-flux density in the reference angle, and the
 position gauge holds the wall nodes fixed in both directions (`ideal_map.f90`,

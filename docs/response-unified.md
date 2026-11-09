@@ -60,7 +60,7 @@ the per-n convention of `milca_coils_3d`. Derived in
 Static ideal outer region (rho w^2, nu, eta, s_2f -> 0, fluid P1): (R2)
 reduces to J_pl x B0 + J0 x B1 = grad p1 with B0.grad p1 = -p0' B1.grad psi and
 div J_pl = 0. This is exactly the MEPHIT-form closure already in
-`kin6d_mhd_ideal_n` (MDEs solved in the Fourier basis), so xi need not be
+`milca_mhd_ideal_n` (MDEs solved in the Fourier basis), so xi need not be
 carried there; off rationals p1 = -xi.grad p0 and div xi = 0, so Gamma does
 not enter. The MDE denominators (m - n q) are singular at every rational:
 each rational needs a layer treatment (below), never a raw MDE.
@@ -368,7 +368,7 @@ k_par damping (it is a layer width without a layer model).
 
 ## Full-pressure strip residual
 
-`kin6d_response_fluid` supplies the non-rotating, single-fluid point residual
+`milca_response_fluid` supplies the non-rotating, single-fluid point residual
 of (R2)-(R4), in Cartesian physical components and SI units. With
 `gamma = -i omega`, the supplied spatial jets give
 
@@ -400,7 +400,7 @@ differenced polynomials, batch linearity, and pressure/force JVP/VJP products.
 These are point-operator checks. No continuous or discrete error certificate
 is available, and no TC24 convergence or Glasser-layer result is claimed.
 
-`kin6d_response_toroidal_strip` adds a candidate mapped-annulus discretisation
+`milca_response_toroidal_strip` adds a candidate mapped-annulus discretisation
 at fixed nonzero toroidal n, in the outer operator's `A_phi = 0` gauge. Its six
 unknowns are `(A_R, A_Z, xi_R, xi_phi, xi_Z, Phi)`. A complete odd-size poloidal
 Fourier grid retains both signs of every represented harmonic; equilibrium and

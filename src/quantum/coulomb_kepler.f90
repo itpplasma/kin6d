@@ -7,10 +7,10 @@
 ! and fractional/full revivals follow from the represented spectrum; the
 ! independent oracle replaces every identified bound eigenvalue by the exact
 ! level E_n = -mu g^2/(2 hbar^2 n^2) in the autocorrelation sum.
-module kin6d_coulomb_kepler
+module milca_coulomb_kepler
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
+    use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
                                 radial_eigen_window, radial_locate
     use kin6d_coulomb_encounter_leaves, only: ce_outer_turning, &
         ce_kepler_width, ce_radial_packet, ce_hydrogen_level, ce_kepler, ce_phase, &
@@ -180,4 +180,4 @@ contains
             p(ib) = abs(sum(val*a(idx)))**2
         end do
     end subroutine kepler_radial_density
-end module kin6d_coulomb_kepler
+end module milca_coulomb_kepler

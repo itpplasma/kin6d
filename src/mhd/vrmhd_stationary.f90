@@ -1,7 +1,7 @@
-module kin6d_vrmhd_stationary
+module milca_vrmhd_stationary
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis, &
         vrmhd_section_residual, vrmhd_section_jacobian, vrmhd_section_gauge_basis
     use milca_vrmhd_section_leaves, only: vrmhd_pairing
     use fortsparse, only: csc_t, csc_from_triplet, csc_matvec, csc_transpose, &
@@ -157,4 +157,4 @@ contains
             status = 1
             if (status_ok(st)) status = 0
         end subroutine
-    end module kin6d_vrmhd_stationary
+    end module milca_vrmhd_stationary

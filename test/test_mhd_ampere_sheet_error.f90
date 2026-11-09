@@ -1,7 +1,7 @@
 module ampere_sheet_fixture
     ! Unit ring sheet of the per-n Ampere problem (ring_sheet_load form).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_sheet_density
+    use milca_mhd_response_n, only: ring_angles_t, ring_sheet_density
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: mode_n = 2, mode_m = 3
@@ -66,10 +66,10 @@ program test_mhd_ampere_sheet_error
     use ampere_sheet_fixture
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, ampere_n_build, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, ampere_n_build, &
         ampere_n_solve, ampere_n_error, ampere_n_coupled_error, ampere_n_free
-    use kin6d_mhd_response_n, only: ring_angles_set, ring_sheet_load, &
+    use milca_mhd_response_n, only: ring_angles_set, ring_sheet_load, &
         ring_sheet_edges
     use fortfem_equilibrated_hcurl_meridian_n, only: meridian_hcurl_edge_remainder
     implicit none

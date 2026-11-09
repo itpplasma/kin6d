@@ -8,8 +8,8 @@
 !> charge Q (electron charge -1, same sign) at the origin, compensated in the
 !> background; kappa = |Q|/(4 pi Lambda) = r_nl/lambda_D is its nonlinear
 !> radius |qQ|/(4 pi eps0 k_B T) in Debye lengths. Interactions: the shared
-!> N-body system with the particle-mesh Ewald action (kin6d_pme) and the
-!> encounter-resolved near/far step (kin6d_near_encounter). No softening,
+!> N-body system with the particle-mesh Ewald action (milca_pme) and the
+!> encounter-resolved near/far step (milca_near_encounter). No softening,
 !> screened potential or collision operator is imposed.
 module milca_ocp
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
@@ -19,9 +19,9 @@ module milca_ocp
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform, rng_normal, rng_split
     use milca_species, only: units_t, species_t, reduced_units, electron, &
         plasma_scales, plasma_scales_t, electron_mass_si, elementary_charge_si
-    use kin6d_pme, only: pme_parameters_t, pme_select
+    use milca_pme, only: pme_parameters_t, pme_select
     use milca_ocp_leaves, only: debye_image, debye_zero_mode, debye_shell_bound
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic_mesh, nbody_fix, &
+    use milca_nbody, only: nbody_system_t, nbody_periodic_mesh, nbody_fix, &
         nbody_step, nbody_step_jvp, nbody_set_encounter
     implicit none
     private
@@ -168,7 +168,7 @@ contains
 
     !> One step dt of the Hamiltonian dynamics: FortNum Strang composition
     !> of far kicks and the encounter-resolved near-pair flow
-    !> (kin6d_near_encounter); `clusters` reports the near clusters.
+    !> (milca_near_encounter); `clusters` reports the near clusters.
     subroutine ocp_advance(system, state, dt, status)
         type(nbody_system_t), intent(inout) :: system
         real(dp), intent(inout) :: state(:)

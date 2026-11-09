@@ -6,16 +6,16 @@
 ! psi(r) = sum_{l,m>=0} u_lm(r)/r P_lm(cos th) c_m cos(m phi), because the
 ! packet (centre (b,0,-z0), mean wave vector k z) is even in y. Every l evolves
 ! with H_l = -hbar^2/(2mu) d^2/dr^2 + V_l(r) on a radial FEM-DVR (see
-! kin6d_radial_dvr); H_l is independent of m. Evolution is exact in the
+! milca_radial_dvr); H_l is independent of m. Evolution is exact in the
 ! represented space: a(t) = V_l exp(-i E t/hbar) V_l^T a(0) with one banded
 ! symmetric eigendecomposition per l reused for every time. Exchange symmetry:
 ! Y_lm(-r) = (-1)^l Y_lm(r), so the spatial singlet keeps even l, the triplet
 ! odd l and the (distinguishable/product) preparation all l.
-module kin6d_coulomb_encounter
+module milca_coulomb_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_special_legendre, only: legendre_p_normalized_table
-    use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
+    use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
                                 radial_band_hamiltonian, radial_band_matvec, &
                                 radial_eigen_window, radial_locate
     use kin6d_coulomb_encounter_leaves
@@ -782,7 +782,7 @@ contains
     subroutine encounter_classical_ensemble(enc, nsample, seed, times, rel, cm, drift, ok)
         use fortnum_rng, only: rng_t, rng_seed, rng_normal
         use fortnum_status, only: fortnum_status_t
-        use kin6d_interaction_laboratory, only: interaction_state_t, init_interaction, &
+        use milca_interaction_laboratory, only: interaction_state_t, init_interaction, &
             step_interaction, sample_interaction
         use milca_interaction_leaves, only: interaction_energy
         use milca_species, only: units_t, species_t
@@ -1016,4 +1016,4 @@ contains
         call project_packet(enc, enc%lmax, enc%mmax, 0.0_dp, 1.0_dp, d0)
         grad(2) = 2*real(sum(conjg(mu0)*d0))
     end subroutine encounter_bin_vjp
-end module kin6d_coulomb_encounter
+end module milca_coulomb_encounter

@@ -6,7 +6,7 @@ module milca_tiago_island_mse
     use tiago_local_posterior, only: local_posterior_t
     use tiago_diagnostic_types, only: mse_channel_t
     use tiago_mse, only: mse_geometry, mse_angles
-    use kin6d_island_provider, only: island_provider_t, island_provider_solve, &
+    use milca_island_provider, only: island_provider_t, island_provider_solve, &
         island_provider_sample, island_provider_jvp, IP_OK, IP_EPSILON, IP_NTHETA
     implicit none
     private

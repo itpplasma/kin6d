@@ -11,8 +11,8 @@
 ! ensemble), seed/movie_seed (classical ensembles), movie.
 program coulomb_encounter_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use kin6d_coulomb_encounter
-    use kin6d_coulomb_kepler
+    use milca_coulomb_encounter
+    use milca_coulomb_kepler
     use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_free_width
     use milca_result_io, only: run_t, result_file_t
     use milca_animation_export, only: animation_export_t

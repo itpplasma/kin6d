@@ -9,7 +9,7 @@ program test_packet_models
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
     use kin6d_gaussian_pair
     use kin6d_packet_models
-    use kin6d_coulomb_encounter
+    use milca_coulomb_encounter
     use kin6d_coulomb_encounter_leaves, only: ce_free_width
     use fortnum_quadrature, only: gauss_legendre
     implicit none

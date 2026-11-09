@@ -4,13 +4,13 @@ program test_vrmhd_gs
         GS_CHART_RZ, GS_CHART_CARTESIAN
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data, &
         gs_element_jet, gs_linear_response
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_gauge_basis
-    use kin6d_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
+    use milca_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
         vrmhd_stationary_residual
     use vrmhd_wall_oracle, only: current_wall_dofs
-    use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
+    use milca_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use milca_vrmhd_gs_leaves, only: gs_lift_rotation, gs_lift_screw, &
         vrmhd_gs_flux_rotation, vrmhd_gs_flux_screw, &

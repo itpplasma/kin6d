@@ -1,7 +1,7 @@
 # NN1 on a phi-dependent domain (mapped 3D)
 
 Status: candidate. Source `src/mhd/nonnested_mapped.f90`
-(`kin6d_nonnested_mapped`), tests `test/test_nonnested_mapped.f90`. NN1 itself is
+(`milca_nonnested_mapped`), tests `test/test_nonnested_mapped.f90`. NN1 itself is
 described in [equilibrium-nonnested.md](equilibrium-nonnested.md).
 
 ## Purpose

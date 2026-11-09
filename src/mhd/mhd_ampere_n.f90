@@ -1,4 +1,4 @@
-module kin6d_mhd_ampere_n
+module milca_mhd_ampere_n
     !! L4 (first stage): per-n Ampere operator of a plasma-response field with
     !! the exact exterior.
     !!
@@ -610,4 +610,4 @@ contains
         if (allocated(amp%sinv)) deallocate (amp%sinv)
     end subroutine ampere_n_free
 
-end module kin6d_mhd_ampere_n
+end module milca_mhd_ampere_n

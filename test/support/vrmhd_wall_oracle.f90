@@ -1,7 +1,7 @@
 module vrmhd_wall_oracle
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_gs_symmetry, only: GS_ROTATION
-    use kin6d_vrmhd_section, only: vrmhd_section_t
+    use milca_vrmhd_section, only: vrmhd_section_t
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     implicit none

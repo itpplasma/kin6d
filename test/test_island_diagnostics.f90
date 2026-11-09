@@ -42,7 +42,7 @@ end module
 program test_island_diagnostics
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use island_diagnostic_fixture, only: pendulum_t, centre, is, shear
-    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+    use milca_island_diagnostics, only: island_trace_options_t, island_point_t, &
                        island_width_t, island_trace, island_periodic_point, island_width
     implicit none
     type(pendulum_t) :: field

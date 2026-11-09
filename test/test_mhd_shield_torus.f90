@@ -23,15 +23,15 @@ program test_mhd_shield_torus
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read, flux_ray_point, &
+    use milca_vacuum_surfaces, only: psi_grid_t, eqdsk_read, flux_ray_point, &
         surface_t, surface_build
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+    use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, ring_sheet_load, &
         ring_area, layer_closure_t, closure_shield_init, resonant_surfaces_missing
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+    use milca_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     implicit none
 

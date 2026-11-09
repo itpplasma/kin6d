@@ -1,6 +1,6 @@
 # Displacement energy: first D5 increment
 
-[V] `kin6d_ideal_xi` evaluates the plasma-volume second variation of the
+[V] `milca_ideal_xi` evaluates the plasma-volume second variation of the
 map lane's existing fixed-pressure (`gamma=0`) frozen-in energy. It accepts
 physical displacement gradients, without constructing a global matrix.
 It does not yet supply a global stability eigenproblem or a continuous bound.

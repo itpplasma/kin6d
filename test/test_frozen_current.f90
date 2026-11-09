@@ -23,7 +23,7 @@ program test_frozen_current
     ! The removed non-solenoidal fraction is printed at every resolution.
     ! ncore = 16 keeps the polar core cells close to isotropic.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_point
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use milca_frozen_current, only: fc_exterior_t, fc_report_t, fc_exterior, &

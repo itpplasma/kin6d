@@ -1,11 +1,11 @@
 program test_response_interfaces
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_response_fluid, only: response_fluid_equilibrium_t, &
+    use milca_mhd_ampere_n, only: mu0
+    use milca_response_fluid, only: response_fluid_equilibrium_t, &
         response_fluid_stress, response_fluid_stress_adjoint, &
         response_cut_balance, response_cut_balance_adjoint
-    use kin6d_response_toroidal_strip, only: toroidal_strip_t, toroidal_strip_work_t, &
+    use milca_response_toroidal_strip, only: toroidal_strip_t, toroidal_strip_work_t, &
         toroidal_strip_init, toroidal_strip_traces, toroidal_strip_traces_vjp, &
         toroidal_strip_domains
     implicit none

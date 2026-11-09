@@ -2,7 +2,7 @@ module estimator_consumer_data
     ! Constant heating is benchmark input; geometry uses the retained NN1 oracle.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_sheet_density
+    use milca_mhd_response_n, only: ring_angles_t, ring_sheet_density
     implicit none
     type, extends(meridian_fourier_source_t) :: heating_t
     contains
@@ -52,17 +52,17 @@ program benchmark_estimator_consumers
     use estimator_consumer_data, only: heating_t, angles, sheet_cells, sheet_ta, &
         sheet_tb, sheet, zero_current
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, coordinates, boundary
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
         nn_build, nn_solve
-    use kin6d_nonnested_error, only: nn_error_t, nn_axisymmetric_error, &
+    use milca_nonnested_error, only: nn_error_t, nn_axisymmetric_error, &
         nt_axisymmetric_error
-    use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, ampere_n_build, &
+    use milca_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, ampere_n_build, &
         ampere_n_solve, ampere_n_coupled_error, ampere_n_free
-    use kin6d_mhd_response_n, only: ring_angles_set, ring_sheet_load, ring_sheet_edges
+    use milca_mhd_response_n, only: ring_angles_set, ring_sheet_load, ring_sheet_edges
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
     use milca_gs_equilibrium, only: gs_equilibrium
     use milca_equilibrium_state, only: equilibrium_state_t

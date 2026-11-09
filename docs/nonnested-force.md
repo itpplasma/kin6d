@@ -1,7 +1,7 @@
 # Projected force, harmonic deflation and the residual floor
 
 Status: implemented (2026-10-28) in `src/mhd/nonnested_force.f90`
-(`kin6d_nonnested_force`) and `equilibrium_residual_floor` in
+(`milca_nonnested_force`) and `equilibrium_residual_floor` in
 `src/equilibrium/equilibrium_harness.f90`; oracles in
 `test/test_nonnested_force.f90`. Items 3 and 5 of
 [relaxation comparators](relaxation-comparators.md#algorithms-to-adopt).

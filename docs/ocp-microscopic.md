@@ -32,7 +32,7 @@ ion.
   used influence function. Each must be `<= tol/(2 sqrt 2)`; the factor 2
   covers the mesh self force, which is not estimated. The cost model picks
   among the admissible (order, cutoff, mesh) choices. The direct Ewald sum
-  of `kin6d_nbody` is the oracle.
+  of `milca_nbody` is the oracle.
 - `src/pairs/near_encounter.f90`: encounter-resolved near/far splitting. Fixed-step
   KDK with bare Coulomb heats an OCP at `Lambda = 100` by about 20% in
   `10/omega_p` (`dt = 0.05` and `0.01`; measured). This is the reason for

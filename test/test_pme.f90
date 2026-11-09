@@ -1,17 +1,17 @@
 program test_pme
     ! Particle-mesh Ewald against independent oracles: B-spline partition of
     ! unity and derivative identities, the converged direct Ewald sum
-    ! (kin6d_nbody, structure-factor reciprocal sum) for forces and energy,
+    ! (milca_nbody, structure-factor reciprocal sum) for forces and energy,
     ! the cell-list and all-pairs real-space paths, the energy-gradient
     ! identity and finite-difference force tangents, fixed particles.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
     use milca_species, only: units_t, species_t, reduced_units, electron
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_pme, only: pme_parameters_t, pme_select, pme_estimate
+    use milca_ewald, only: ewald_parameters_t, ewald_select
+    use milca_pme, only: pme_parameters_t, pme_select, pme_estimate
     use milca_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_periodic_mesh, &
+    use milca_nbody, only: nbody_system_t, nbody_periodic, nbody_periodic_mesh, &
         nbody_force, nbody_force_jvp, nbody_step, nbody_fix, nbody_set_encounter, &
         nbody_energy, nbody_step_jvp
     implicit none

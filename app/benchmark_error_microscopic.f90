@@ -3,8 +3,8 @@ program benchmark_error_microscopic
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
     use milca_species, only: electron, atomic_units, species_t
-    use kin6d_pme, only: pme_parameters_t, pme_select, pme_estimate
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic_mesh, nbody_force
+    use milca_pme, only: pme_parameters_t, pme_select, pme_estimate
+    use milca_nbody, only: nbody_system_t, nbody_periodic_mesh, nbody_force
     use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_sweep, mc_energy
     use milca_series_statistics, only: series_batch_means
     use milca_classical_cell, only: classical_cell_t, classical_mc_t, &

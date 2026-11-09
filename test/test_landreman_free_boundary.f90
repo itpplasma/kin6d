@@ -54,7 +54,7 @@ program test_landreman_free_boundary
     use milca_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
                                 landreman_project_surface, landreman_axisymmetric_jvp, &
                                       landreman_axisymmetric_vjp
-    use kin6d_landreman_benchmark, only: landreman_frozen_t, landreman_drive_t, &
+    use milca_landreman_benchmark, only: landreman_frozen_t, landreman_drive_t, &
                                          landreman_volume_boundary, LANDREMAN_DELTA
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
     use milca_gs_coils, only: gs_circuit_set_t, gs_coil_filaments

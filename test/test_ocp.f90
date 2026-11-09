@@ -16,7 +16,7 @@ program test_ocp
     use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
         ocp_advance_jvp, ocp_mode, ocp_displace, ocp_displace_tangent, &
         ocp_debye_green, ocp_kinetic_temperature
-    use kin6d_nbody, only: nbody_system_t, nbody_energy
+    use milca_nbody, only: nbody_system_t, nbody_energy
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     type(fortnum_status_t) :: status

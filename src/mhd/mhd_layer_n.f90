@@ -1,13 +1,13 @@
-module kin6d_mhd_layer_n
+module milca_mhd_layer_n
     !! L5: resistive closure of the per-n response at rational surfaces by
     !! matching to the resistive-inertial(-viscous) inner layer in a
     !! rotating plasma (the MARS-F single-fluid layer physics, Liu et al.,
     !! Phys. Plasmas 7 (2000) 3681, with the layer reduced to its matched
     !! asymptotic form).  The outer region is the ideal static response of
-    !! kin6d_mhd_ideal_n (D5: the shared per-n Ampere operator and the
+    !! milca_mhd_ideal_n (D5: the shared per-n Ampere operator and the
     !! MEPHIT-form volume current); this module only supplies the layer
     !! closure, a separate current model on the layer edge sheets of
-    !! kin6d_mhd_closure_n.
+    !! milca_mhd_closure_n.
     !!
     !! Layer equations.  Near q = m/n, x the normal distance, F(x) = k.B =
     !! F' x, a perturbation exp(i(n phi - omega t)) in a plasma rotating
@@ -44,7 +44,7 @@ module kin6d_mhd_layer_n
     !! scaled by the caller, e.g. 1 + 2 q^2).
     !!
     !! Closure.  On the two layer-edge sheets of an L6 layer
-    !! (kin6d_mhd_closure_n) the resistive constraints are
+    !! (milca_mhd_closure_n) the resistive constraints are
     !!     a1(in) - a1(out) = 0        (continuous reconnected flux),
     !!     J - Delta_psin (a1(in) + a1(out))/2 = 0,
     !! with a1 the large-solution coefficients of the outer fits and J =
@@ -52,11 +52,11 @@ module kin6d_mhd_layer_n
     !! layer (net layer current).  As Delta -> infinity (eta -> 0 at fixed
     !! rotation) both tend to the ideal L6 constraints a1 = 0.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
+    use milca_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
         psi_eval
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_mhd_response_n, only: layer_closure_t
-    use kin6d_mhd_closure_n, only: rational_layer_t
+    use milca_mhd_ampere_n, only: mu0
+    use milca_mhd_response_n, only: layer_closure_t
+    use milca_mhd_closure_n, only: rational_layer_t
     implicit none
     private
 
@@ -356,4 +356,4 @@ contains
         end do
     end subroutine resistive_closure
 
-end module kin6d_mhd_layer_n
+end module milca_mhd_layer_n

@@ -1,6 +1,6 @@
 program test_ideal_mhd_batch_ks3
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
-    use kin6d_ideal_xi, only: xi_bilinear_batch
+    use milca_ideal_xi, only: xi_bilinear_batch
     use milca_ideal_xi_leaves, only: xi_form_dp, xi_form_jvp_dp
     implicit none
     integer, parameter :: n = 257

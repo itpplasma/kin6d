@@ -1,4 +1,4 @@
-module kin6d_response_strip_preconditioner
+module milca_response_strip_preconditioner
     !! Fourier-diagonal radial-band approximation of the full strip action.
     !! Local normal/tangent components remove the rotating poloidal frame.
     !! Modes remain independent only in the preconditioner; FGMRES applies
@@ -8,7 +8,7 @@ module kin6d_response_strip_preconditioner
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c, &
         fortnum_fft_workspace_t, fft_workspace_init
     use fortnum_krylov, only: complex_fgmres_operator, KRYLOV_OK, KRYLOV_STAGNATION
-    use kin6d_response_toroidal_strip, only: toroidal_strip_t, &
+    use milca_response_toroidal_strip, only: toroidal_strip_t, &
         toroidal_strip_work_t, toroidal_strip_status_t, toroidal_strip_action, &
         toroidal_strip_vjp, toroidal_strip_defects
     implicit none

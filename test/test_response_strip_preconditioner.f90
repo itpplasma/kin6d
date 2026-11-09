@@ -1,11 +1,11 @@
 program test_response_strip_preconditioner
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, real128
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_response_fluid, only: response_fluid_equilibrium_t
-    use kin6d_response_toroidal_strip, only: toroidal_strip_t, &
+    use milca_mhd_ampere_n, only: mu0
+    use milca_response_fluid, only: response_fluid_equilibrium_t
+    use milca_response_toroidal_strip, only: toroidal_strip_t, &
         toroidal_strip_work_t, toroidal_strip_status_t, toroidal_strip_init, &
         toroidal_strip_action, toroidal_strip_solve, toroidal_strip_vjp
-    use kin6d_response_strip_preconditioner, only: strip_preconditioner_t, &
+    use milca_response_strip_preconditioner, only: strip_preconditioner_t, &
         strip_preconditioner_init, strip_preconditioner_apply, &
         strip_preconditioned_solve, strip_preconditioner_bytes
     implicit none

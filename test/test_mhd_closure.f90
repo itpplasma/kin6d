@@ -1,5 +1,5 @@
 program test_mhd_closure
-    !! V5: ideal closure at rational surfaces (kin6d_mhd_closure_n) against
+    !! V5: ideal closure at rational surfaces (milca_mhd_closure_n) against
     !! cylindrical tearing Delta'.
     !!
     !! A large-aspect-ratio torus (circular surfaces about (R0, 0), minor
@@ -32,7 +32,7 @@ program test_mhd_closure
     !!     (q = 2.2 (1 + r^2), edge current j(1) /= 0) against the cylinder
     !!     ODE with the edge-current jump (cyl_response.py S_edge_current =
     !!     2.2967, edge total/applied 0.6507) at ring ratios 2 and 3.
-    !! Argument "resistive" runs the L5 suite instead (kin6d_mhd_layer_n):
+    !! Argument "resistive" runs the L5 suite instead (milca_mhd_layer_n):
     !!  5. Scaled layer solver: constant-psi resistive-inertial limit 2 pi
     !!     Gamma(3/4)/Gamma(1/4) g^(5/4)/eps, resolution, g -> conj(g),
     !!     viscous-resistive scaling g P^(1/6)/eps.
@@ -52,25 +52,25 @@ program test_mhd_closure
     use fortnum_ode_cash_karp, only: cash_karp_step
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
         surface_t, surface_build, find_surface_q
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
         ring_labels_smooth
     use kin6d_gs_direct, only: gs_direct_available
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl, mu0
-    use kin6d_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
+    use milca_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
         ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
         ring_points
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+    use milca_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+    use milca_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
         layer_xmax, layer_fit_widths, layer_jump, layer_kink, layer_init, &
         layer_closure, layer_wmax, &
         layer_coefficients, layer_regular_slope, layer_large
-    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
+    use milca_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
-    use kin6d_response_strip, only: cyl_step_t, strip_options_t, strip_mesh, &
+    use milca_response_strip, only: cyl_step_t, strip_options_t, strip_mesh, &
         layer_width, step_fprime, step_delta_prime, step_rational, &
         strip_dirichlet_map, strip_growth_rate, strip_solution_t, &
         ri_dispersion_gamma
@@ -580,7 +580,7 @@ contains
 
     subroutine strip_suite()
         !! R-B2 first increment (docs/response-unified.md (B)): the resolved
-        !! resistive strip of kin6d_response_strip (single fluid, no
+        !! resistive strip of milca_response_strip (single fluid, no
         !! rotation, resonant harmonic resolved in the strip, cylinder-
         !! equivalent local equations) coupled to the FEEC torus outer region
         !! by trace continuity on the two strip edge rings: the strip's
@@ -1201,7 +1201,7 @@ contains
     subroutine fe_forced(sheet, ratio)
         !! Resonant-harmonic flux of the total field over that of the drive on
         !! the boundary ring (no rational surface in the plasma).
-        use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+        use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
             ring_flux_harmonic, ring_flux_from_values, ring_points
         logical, intent(in) :: sheet
         real(dp), intent(out) :: ratio
@@ -1878,7 +1878,7 @@ contains
         !! and prec returns the reconnected flux A/psi_vac (a1 average).
         !! dprime (or KIN6D_SHIELD_DPRIME) replaces the drive by unit large-
         !! solution targets; dpr returns r_s Delta' from the edge sheets.
-        use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+        use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
             ring_flux_harmonic
         real(dp), intent(in) :: delta, ratio, rs_cyl
         integer, intent(in) :: nrad
@@ -2071,7 +2071,7 @@ contains
 
     complex(dp) function drive_flux(fm, ring, rang, m)
         !! Resonant flux harmonic m of the vacuum drive on mesh ring ring.
-        use kin6d_mhd_response_n, only: ring_angles_t, ring_flux_from_values, &
+        use milca_mhd_response_n, only: ring_angles_t, ring_flux_from_values, &
             ring_points
         type(flux_mesh_t), intent(in) :: fm
         integer, intent(in) :: ring, m
@@ -2093,7 +2093,7 @@ contains
     ! ===================================================== L5 resistive layer
 
     subroutine resistive_suite()
-        !! L5: resistive closure with rotation (kin6d_mhd_layer_n).
+        !! L5: resistive closure with rotation (milca_mhd_layer_n).
         real(dp) :: rs, dprime, ejump, diffs(3), errc(4), fp, dfe(5), rfe_rho(5)
         complex(dp) :: rm(4), rb(4), dl(4), rfe(5), jfe(5), cfe(5), cen(4)
         complex(dp) :: rid, jid
@@ -2432,7 +2432,7 @@ contains
         !! diffusivities diffs, and the ideal L6 closure: Phi_s/Phi_vac
         !! (reconnected over drive resonant flux) and the layer jump of d Phi/
         !! d psin.
-        use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+        use milca_mhd_response_n, only: ring_angles_t, ring_angles_set, &
             ring_flux_from_values, ring_points
         real(dp), intent(in) :: diffs(:), rhos(:), rs_cyl
         complex(dp), intent(out) :: rfe(:), jfe(:), cfe(:), rid, jid

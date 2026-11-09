@@ -2,7 +2,7 @@
 module kin6d_pp_fusion
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, &
+    use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, &
         radial_band_hamiltonian, radial_coupled_hamiltonian, &
         radial_band_eigen_window, radial_band_matvec, radial_bound_response
     use milca_pp_fusion_leaves, only: pp_reid, pp_sfactor, &

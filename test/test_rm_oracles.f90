@@ -1,7 +1,7 @@
 program test_rm_oracles
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use rm_mhd_oracles
-    use kin6d_response_strip, only: cyl_step_t, step_delta_prime, &
+    use milca_response_strip, only: cyl_step_t, step_delta_prime, &
         ri_dispersion_gamma
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t

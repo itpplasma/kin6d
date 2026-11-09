@@ -18,7 +18,7 @@ module ocp_oscillation_app
     use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
         ocp_advance_jvp, ocp_thermostat, ocp_kinetic_temperature, ocp_mode, &
         ocp_displace, ocp_displace_tangent
-    use kin6d_nbody, only: nbody_system_t, nbody_energy
+    use milca_nbody, only: nbody_system_t, nbody_energy
     use milca_vlasov_response, only: landau_root, vlasov_density_response, &
         fit_damped_cosine
     use milca_pair_correlation, only: pair_counts, pair_distribution, structure_factor

@@ -14,18 +14,18 @@ program test_ideal_map_field_angle
     use milca_ideal_map_leaves, only: ideal_point_gradient_jets, &
         ideal_point_field_gradient_jets, ideal_point_field_jets, &
         ideal_axisymmetric_field
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_energy, ideal_map_hessian, &
+    use milca_ideal_map, only: ideal_map_t, ideal_map_energy, ideal_map_hessian, &
         ideal_map_parallel_mass, &
         ideal_map_reduce, ideal_map_expand, ideal_map_solve, &
         ideal_map_solve_report_t, ideal_map_point, ideal_map_angle_rdof, IDEAL_MAP_OK
-    use kin6d_ideal_seed_3d, only: toroidal_seed_t, toroidal_profile_t, &
+    use milca_ideal_seed_3d, only: toroidal_seed_t, toroidal_profile_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh, ideal_seed_3d_angle_density
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_SHEARED
-    use kin6d_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
+    use milca_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
         NESTED_SEED_OK
     use milca_grad_shafranov, only: gs_state_t
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
-    use kin6d_map_3d_equilibrium, only: map_3d_sample
+    use milca_map_3d_equilibrium, only: map_3d_sample
     use milca_equilibrium_state, only: EQ_VALUES
     use fortfem_element_to_csr, only: csr_matrix_t
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads

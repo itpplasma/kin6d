@@ -16,7 +16,7 @@ module milca_geqdsk_adapter
     use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_gs_nonlinear, only: solve_gs_cubic_profiles
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_grid_init
     implicit none
     private
     public :: geqdsk_data_t, geqdsk_import_t, export_geqdsk, import_geqdsk

@@ -10,8 +10,8 @@ program test_nbody
         sommerfeld_parameter, pair_coupling
     use milca_coulomb_leaves, only: coulomb_partial_wave, coulomb_pair, &
         coulomb_pair_vjp, coulomb_pair_jvp
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select, ewald_truncation_bound
-    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_periodic, &
+    use milca_ewald, only: ewald_parameters_t, ewald_select, ewald_truncation_bound
+    use milca_nbody, only: nbody_system_t, nbody_isolated, nbody_periodic, &
         nbody_add_source, nbody_set_sphere, nbody_force, nbody_force_jvp, &
         nbody_energy, nbody_step, nbody_step_jvp, nbody_encounter_step
     implicit none

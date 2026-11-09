@@ -1,8 +1,8 @@
-module kin6d_s0_volume
+module milca_s0_volume
     ! Element-local Galerkin assembly; topology and physical jets belong to caller.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_xi, only: xi_bilinear
+    use milca_ideal_xi, only: xi_bilinear
     use milca_s0_leaves, only: s0_mass_dp
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, &
         FORTSPARSE_OK, status_set, FORTSPARSE_INVALID_MATRIX
@@ -102,4 +102,4 @@ contains
         if (status%code /= FORTSPARSE_OK) return
         call csc_from_triplet(ndof,ndof,rows,cols,mval,mass,status)
     end subroutine s0_assemble_volume
-end module kin6d_s0_volume
+end module milca_s0_volume

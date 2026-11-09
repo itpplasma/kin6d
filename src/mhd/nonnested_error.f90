@@ -1,4 +1,4 @@
-module kin6d_nonnested_error
+module milca_nonnested_error
     ! Equilibrated-flux (Prager--Synge) energy bound for the N = 0 restriction
     ! of the NN1 free-B lane, nn_solve(field, 0, ...): on the meridian V0 space
     !   -div(grad psi / R) = mu0 p' R   (measure dR dZ),
@@ -420,4 +420,4 @@ contains
         if (any(order == 0)) return
         status = 0
     end subroutine
-end module kin6d_nonnested_error
+end module milca_nonnested_error

@@ -5,7 +5,7 @@ program test_island_vacuum_oracle
     use milca_coil_quadrature_field, only: coil_quadrature_field_t, &
                                            coil_quadrature_init
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
-    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+    use milca_island_diagnostics, only: island_trace_options_t, island_point_t, &
                     island_width_t, island_periodic_point, island_width, island_trace, &
                                         island_stability
     use fortnum_multiroot, only: multiroot_hybrids

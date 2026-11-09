@@ -1,9 +1,9 @@
 program test_s0
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
-    use kin6d_s0_volume, only: s0_assemble_volume
-    use kin6d_ideal_xi, only: xi_gradient_n, XI_OK
-    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+    use milca_s0_volume, only: s0_assemble_volume
+    use milca_ideal_xi, only: xi_gradient_n, XI_OK
+    use milca_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
     use milca_s0_leaves, only: s0_mass_dp, s0_mass_jvp_dp, s0_mass_vjp_dp, &
         s0_mass_sp, s0_alfven_dp, s0_alfven_sp, s0_kink_dp

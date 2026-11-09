@@ -1,4 +1,4 @@
-module kin6d_response_qualification
+module milca_response_qualification
     !! Frozen TC24 RULE.md gates. These are empirical qualification tests,
     !! never deterministic certificates or fitted ideal-limit estimates.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -129,4 +129,4 @@ contains
         if (gpec_ok .and. .not. mars_ok) result%verdict = 1
         if (mars_ok .and. .not. gpec_ok) result%verdict = 2
     end subroutine qualify_response
-end module kin6d_response_qualification
+end module milca_response_qualification

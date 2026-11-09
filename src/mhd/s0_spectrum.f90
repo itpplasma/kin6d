@@ -1,4 +1,4 @@
-module kin6d_s0_spectrum
+module milca_s0_spectrum
     ! S0 consumer of the existing MHD energy and physical inertia operators.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i8 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -185,4 +185,4 @@ contains
         pencil%inertia_status = FORTSPARSE_INERTIA_UNAVAILABLE
         pencil%stiffness_scale = 0; pencil%mass_scale = 0
     end subroutine s0_destroy
-end module kin6d_s0_spectrum
+end module milca_s0_spectrum
