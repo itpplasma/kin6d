@@ -8,12 +8,14 @@
 !!   species: density[m^-3] T[J] dn/ds dT/ds kappa[1/m]
 !! Prints per surface and species: s, species, K_11, K_12, dpsi_pol/dr,
 !! Gamma_psi, torque density [N m/m^3], factorisations, GMRES iterations,
-!! K_21, K_22, the energy flux [J Wb/(m^3 s)] and the offset rotation [rad/s].
+!! K_21, K_22, the energy flux [J Wb/(m^3 s)], the offset rotation [rad/s] and
+!! the status (0 solved, 2 solve failed, 3 GMRES did not converge; the row is
+!! then zero). The program ends with an error when any status is not 0.
 program ntv_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
     use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
-        ntv_species_result_t, ntv_device_profile, DEVICE_OK
+        ntv_species_result_t, ntv_device_profile, DEVICE_OK, DEVICE_SOLVE
     implicit none
     type(boozer_file_t) :: eq, pert
     type(ntv_species_t), allocatable :: species(:)
@@ -68,18 +70,23 @@ program ntv_profile
     call system_clock(c0, rate)
     call ntv_device_profile(eq, pert, n_tor, species, prof, res, result, status)
     call system_clock(c1)
-    if (status /= DEVICE_OK) then
+    if (status /= DEVICE_OK .and. status /= DEVICE_SOLVE) then
         write (error_unit, '(a,i0)') 'ntv_device_profile failed with status ', status
         error stop 1
     end if
     do i = 1, ns
         do a = 1, nsp
-            print '(f12.8,i3,5es18.9,2i8,4es18.9)', prof%s(i), a, result(i, a)%k11, &
+            print '(f12.8,i3,5es18.9,2i8,4es18.9,i3)', prof%s(i), a, result(i, a)%k11, &
                 result(i, a)%k12, result(i, a)%dpsi_dr, result(i, a)%gamma_psi, &
                 result(i, a)%torque, result(i, a)%factorisations, result(i, a)%iterations, &
                 result(i, a)%k21, result(i, a)%k22, result(i, a)%heat_flux, &
-                result(i, a)%offset_rotation
+                result(i, a)%offset_rotation, result(i, a)%status
         end do
     end do
     write (error_unit, '(a,f10.2)') 'wall s ', real(c1 - c0, dp)/rate
+    if (status /= DEVICE_OK) then
+        write (error_unit, '(a,i0,a)') 'ntv_device_profile: ', count(result%status /= DEVICE_OK), &
+            ' surface-species pairs failed; see the status column'
+        error stop 1
+    end if
 end program ntv_profile
