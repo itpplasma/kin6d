@@ -34,16 +34,16 @@ program test_boozer_orbit
     real(dp), parameter :: pi = 4*atan(1.0_dp), e = 1.602176634e-19_dp
     real(dp), parameter :: md = 3.3435837768e-27_dp, kev = 1e3_dp*e
     real(dp), parameter :: s_star = 0.45_dp
-    character(*), parameter :: file = 'boozer_orbit.bc'
     type(boozer_file_t) :: bf
     character(64) :: check
     logical :: ok
     integer :: status
 
-    call write_file(file)
-    call load_boozer_file(file, bf, status)
-    if (status /= BOOZER_OK) error stop 'cannot read the test file'
     call get_command_argument(1, check)
+    ! One file per check: ctest runs the checks concurrently in one directory.
+    call write_file('boozer_orbit_'//trim(check)//'.bc')
+    call load_boozer_file('boozer_orbit_'//trim(check)//'.bc', bf, status)
+    if (status /= BOOZER_OK) error stop 'cannot read the test file'
     select case (trim(check))
     case ('deeply_trapped'); ok = deeply_trapped()
     case ('thin_bounce'); ok = thin_bounce()

@@ -23,6 +23,16 @@
 !!   nu_ab = (3 sqrt(pi)/8) v_a kappa_a n_b Z_b^2/(n_a Z_a^2),
 !! with kappa_a = 2/(v_a tau_aa) the NEO-2 collisionality of the species.
 !!
+!! With orbit_width the monoenergetic R(x) comes from the finite-width
+!! kernel of milca_ntv_orbit_geometry instead: the orbits of psi* = s of the
+!! surface at the node's energy (canonical Maxwellian, exact guiding-centre
+!! orbits with the E x B rotation Omega_tE of the profile in their
+!! potential), the perturbation at the orbit point, pitch-angle scattering at
+!! fixed psi*, on the hp mesh of the resolution. It has neither of the two
+!! #192 sources: their sum is the first-order difference between the local
+!! and the canonical drive, which this kernel replaces, so its thin limit is
+!! the kernel with sources off.
+!!
 !! Work units (species, energy node, chunk of consecutive surfaces) run
 !! under OpenMP with dynamic scheduling. Each unit factorises its first
 !! surface and solves the following ones by GMRES preconditioned with that
@@ -36,6 +46,10 @@ module milca_ntv_device
     use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
         ntv_f10, ntv_energy_coefficients, ntv_axisymmetric_coefficients, NTV_OK, &
             NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
+    use milca_boozer_orbit, only: orbit_particle_t, orbit_set_potential, orbit_flux_p
+    use milca_dk_hp, only: hp_operator_t, hp_mesh_t, hp_default_mesh, hp_ntv_kernel, HP_OK
+    use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
+        hp_orbit_perturbation
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
         collop_nuhat, collop_vth, COLLOP_OK
     implicit none
@@ -79,6 +93,12 @@ module milca_ntv_device
         ! (0: n_x Gauss-Laguerre nodes). The E x B and precession resonance
         ! puts kinks into the integrand that fixed rules do not resolve.
         real(dp) :: x_tol = 0
+        ! Finite orbit width (monoenergetic Gauss-Laguerre path only) on the hp
+        ! mesh of hp_default_mesh: element order, columns, bulk rows and the
+        ! relative width of the layer at the separatrix.
+        logical :: orbit_width = .false.
+        integer :: hp_order = 4, hp_columns = 24, hp_rows = 8
+        real(dp) :: hp_delta = 1e-3_dp
     end type
 
     !> Per surface and species: K_1j and K_2j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
@@ -153,7 +173,7 @@ contains
     end function deflection_frequency
 
     subroutine ntv_device_profile(eq, pert, n_tor, species, prof, res, result, status)
-        type(boozer_file_t), intent(in) :: eq, pert
+        type(boozer_file_t), target, intent(in) :: eq, pert
         integer, intent(in) :: n_tor
         type(ntv_species_t), intent(in) :: species(:)
         type(ntv_profile_t), intent(in) :: prof
@@ -161,7 +181,8 @@ contains
         type(ntv_species_result_t), allocatable, intent(out) :: result(:, :)
         integer, intent(out) :: status
         type(ntv_surface_t), allocatable :: sf(:)
-        real(dp), allocatable :: x(:), w(:), r(:, :, :), j0(:), dpsi_dr(:), psi_pol_s(:)
+        real(dp), allocatable :: x(:), w(:), r(:, :, :), j0(:), dpsi_dr(:), psi_pol_s(:), &
+            b_ref(:), phi(:)
         integer, allocatable :: units(:, :), nfac(:, :, :), nits(:, :, :), ustat(:)
         ! Energies x of the resonance kinks per surface and species, from the
         ! panels the adaptive quadrature refined.
@@ -174,11 +195,19 @@ contains
         nsp = size(species)
         status = DEVICE_BAD_INPUT
         if (ns < 1 .or. nsp < 1 .or. res%n_x < 1 .or. res%chunk < 1) return
-        allocate (sf(ns), j0(ns), dpsi_dr(ns), psi_pol_s(ns))
+        if (res%orbit_width .and. (res%collisions /= 0 .or. res%x_tol > 0)) return
+        allocate (sf(ns), j0(ns), dpsi_dr(ns), psi_pol_s(ns), b_ref(ns), phi(ns))
         do i = 1, ns
             call surface(eq, pert, n_tor, prof%s(i), res, sf(i), j0(i), dpsi_dr(i), &
-                psi_pol_s(i), status)
+                psi_pol_s(i), status, b_ref=b_ref(i))
             if (status /= DEVICE_OK) return
+        end do
+        ! Potential of the profile, dPhi/dpsi_pol = Omega_tE along NEO-2's
+        ! toroidal direction (-phi of the file), by the trapezoidal rule.
+        phi(1) = 0
+        do i = 2, ns
+            phi(i) = phi(i - 1) + 0.5_dp*(prof%omega_te(i - 1) + prof%omega_te(i)) &
+                *orbit_flux_p(eq, prof%s(i - 1), prof%s(i))
         end do
         if (res%x_tol > 0) then
             allocate (result(ns, nsp), ustat(ns*nsp), kink(max_kinks, ns, nsp), &
@@ -260,6 +289,15 @@ contains
             integer :: i, ks
             logical :: fresh
             st = DEVICE_SOLVE
+            if (res%orbit_width) then
+                do i = first, last
+                    r(i, k, a) = orbit_r(i, a, x(k), ks)
+                    if (ks /= HP_OK) return
+                    nfac(i, k, a) = 1
+                end do
+                st = DEVICE_OK
+                return
+            end if
             fresh = .true.
             do i = first, last
                 v = sqrt(2*prof%temperature(i, a)/species(a)%mass*x(k))
@@ -287,6 +325,45 @@ contains
             end do
             st = DEVICE_OK
         end subroutine sweep
+
+        !> R of species a on surface i at x = v^2/v_th^2 with finite orbit width.
+        real(dp) function orbit_r(i, a, xv, st) result(rv)
+            integer, intent(in) :: i, a
+            real(dp), intent(in) :: xv
+            integer, intent(out) :: st
+            type(orbit_particle_t) :: p
+            type(hp_orbit_geometry_t) :: g
+            type(hp_operator_t) :: op
+            type(hp_mesh_t) :: mesh
+            real(dp) :: v
+            rv = 0
+            v = sqrt(2*prof%temperature(i, a)/species(a)%mass*xv)
+            p%mass = species(a)%mass
+            p%charge = species(a)%z*elementary
+            p%energy = p%mass*v*v/2
+            p%s_ref = prof%s(i)
+            p%omega_e = -prof%omega_te(i)
+            if (ns >= 4) then
+                call orbit_set_potential(p, prof%s, phi - phi(i), st)
+                if (st /= 0) return
+            end if
+            call hp_orbit_geometry(eq, p, prof%s(i), b_ref(i), g, st)
+            if (st /= 0) return
+            call hp_orbit_perturbation(g, pert, n_tor, b_ref(i))
+            op%k = g%kappa
+            op%k_power = 1
+            op%q = sf(i)%q
+            op%n = n_tor
+            op%m = sf(i)%m
+            op%c = sf(i)%c
+            op%v = v
+            op%wsign = 1
+            op%nu = deflection_frequency(species, prof%density(i, :), &
+                prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
+            call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
+                res%hp_delta, 0.3_dp, mesh)
+            call hp_ntv_kernel(g, mesh, op, rv, st)
+        end function orbit_r
 
         !> R of species a on surface i at x = v^2/v_th^2.
         real(dp) function kernel_r(i, a, xv, st) result(rv)
@@ -475,6 +552,8 @@ contains
 
     !> Reads the ntv_profile input: equilibrium and perturbation paths, then
     !> n_tor n_theta n_leg n_x chunk max_iterations sources(0|1), an optional
+    !> line 'orbit_width [order columns rows delta]' for the finite-width
+    !> kernel, an optional
     !> line collision model x_max elements order [x_tol], the species (Z,
     !> mass [kg]) and per surface s Omega_tE [rad/s] with one line per
     !> species: density [m^-3] T [J] dn/ds dT/ds kappa [1/m].
@@ -494,6 +573,12 @@ contains
             sources
         res%sources = sources /= 0
         read (u, '(a)') line
+        if (index(adjustl(line), 'orbit_width') == 1) then
+            res%orbit_width = .true.
+            read (line(index(line, 'orbit_width') + 11:), *, iostat=status) res%hp_order, &
+                res%hp_columns, res%hp_rows, res%hp_delta
+            read (u, '(a)') line
+        end if
         read (line, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order, &
             res%x_tol
         if (status /= 0) read (line, *, iostat=status) res%collisions, res%x_max, &
@@ -827,7 +912,7 @@ contains
     !> harmonics of toroidal number n_tor resolved by the theta grid, and the
     !> flux-function factors of the torque.
     subroutine surface(eq, pert, n_tor, s, res, sf, j0, dpsi_dr, psi_pol_s, status, g_cov, &
-            b2_avg, g_phi, eps)
+            b2_avg, g_phi, eps, b_ref)
         type(boozer_file_t), intent(in) :: eq, pert
         integer, intent(in) :: n_tor
         real(dp), intent(in) :: s
@@ -835,7 +920,7 @@ contains
         type(ntv_surface_t), intent(out) :: sf
         real(dp), intent(out) :: j0, dpsi_dr, psi_pol_s
         integer, intent(out) :: status
-        real(dp), intent(out), optional :: g_cov, b2_avg, g_phi, eps
+        real(dp), intent(out), optional :: g_cov, b2_avg, g_phi, eps, b_ref
         type(boozer_surface_t) :: es, ps
         type(ntv_boozer_line_t) :: line
         real(dp) :: theta, bmod, grad_s, b2, bmin, bmax
@@ -897,6 +982,7 @@ contains
         ! the covariant field is -G of the file (ITER TC24 and AUG 30835).
         if (present(g_phi)) g_phi = -es%g_cov
         if (present(b2_avg)) b2_avg = b2
+        if (present(b_ref)) b_ref = line%bref
         status = DEVICE_OK
     end subroutine surface
 

@@ -4,7 +4,8 @@
 !! a second solve at the reported offset rotation carries no flux, and a
 !! surface that fails leaves the other surfaces of the profile intact, and the
 !! radial force balance returns the Omega_tE of the rotation it was solved for;
-!! the orbit-width indicators match the concentric-circle geometry of the file.
+!! the orbit-width indicators match the concentric-circle geometry of the file,
+!! and the finite-width kernel reproduces the thin kernel for thin orbits.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -25,6 +26,7 @@ program test_ntv_device
     call failed_surface()
     call force_balance()
     call indicators()
+    call orbit_width_thin()
     if (failures > 0) error stop 'FAIL'
     print '(a)', 'All tests passed!'
 
@@ -160,7 +162,7 @@ contains
     !> the offset, and the second solve there must carry almost no flux.
     subroutine offset_rotation()
         character(*), parameter :: eq_name = 'ntv_offset_eq.bc', pert_name = 'ntv_offset_pert.bc'
-        type(boozer_file_t) :: eq, pert
+        type(boozer_file_t), target :: eq, pert
         type(ntv_species_t) :: sp(1)
         type(ntv_profile_t) :: prof
         type(ntv_resolution_t) :: res
@@ -293,7 +295,7 @@ contains
     subroutine indicators()
         character(*), parameter :: eq_name = 'ntv_ind_eq.bc', pert_name = 'ntv_ind_pert.bc'
         real(dp), parameter :: mu0 = 1.25663706212e-6_dp, elementary = 1.602176634e-19_dp
-        type(boozer_file_t) :: eq, pert
+        type(boozer_file_t), target :: eq, pert
         type(ntv_species_t) :: sp(1)
         type(ntv_profile_t) :: prof
         type(ntv_resolution_t) :: res
@@ -336,6 +338,54 @@ contains
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.
+    !> Deuterons with the temperature and the rotation scaled by 1e-4 (orbit
+    !> width and poloidal Mach number by 1e-2, precession and Doppler shift
+    !> in the same ratio): the finite-width profile equals the thin one
+    !> without the two sources, whose sum the canonical drive replaces, to
+    !> first order in the width. The rotation enters the thin kernel as
+    !> -Omega_tE and the orbits through their potential, so a sign error
+    !> between the two shows here.
+    subroutine orbit_width_thin()
+        character(*), parameter :: eq_name = 'ntv_orbit_eq.bc', pert_name = 'ntv_orbit_pert.bc'
+        type(boozer_file_t), target :: eq, pert
+        type(ntv_species_t) :: sp(1)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_species_result_t), allocatable :: thin(:, :), wide(:, :)
+        real(dp), parameter :: factor = 1e-4_dp
+        integer :: status, i
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        prof%s = [0.45_dp, 0.5_dp]
+        prof%omega_te = [3e4_dp, 2e4_dp]*factor
+        allocate (prof%density(2, 1), prof%temperature(2, 1), prof%density_s(2, 1), &
+            prof%temperature_s(2, 1), prof%kappa(2, 1))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev*factor
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -1*kev*factor
+        prof%kappa = 3e-4_dp
+        res%n_theta = 65
+        res%n_leg = 300
+        res%n_x = 2
+        res%sources = .false.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, thin, status)
+        call check('thin profile', status == DEVICE_OK)
+        res%orbit_width = .true.
+        res%hp_columns = 16
+        res%hp_rows = 6
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, wide, status)
+        call check('finite-width profile', status == DEVICE_OK)
+        if (failures > 0) return
+        do i = 1, 2
+            call close_to('K11 thin orbits', wide(i, 1)%k11, thin(i, 1)%k11, 2e-3_dp)
+            call close_to('torque thin orbits', wide(i, 1)%torque, thin(i, 1)%torque, 2e-3_dp)
+        end do
+    end subroutine orbit_width_thin
+
     subroutine write_file(name, perturbation)
         character(*), intent(in) :: name
         logical, intent(in) :: perturbation

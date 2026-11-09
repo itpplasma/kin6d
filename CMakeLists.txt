@@ -370,7 +370,8 @@ target_link_libraries(milca_gs_reference_test PUBLIC milca)
 target_compile_options(milca_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(milca_equilibrium PRIVATE src/generated/milca_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
 target_sources(milca_equilibrium PRIVATE src/generated/milca_boozer_file_leaves.f90
-    src/equilibrium/boozer_file.f90 src/equilibrium/boozer_orbit.f90)
+    src/equilibrium/boozer_file.f90 src/generated/milca_boozer_orbit_leaves.f90
+    src/equilibrium/boozer_orbit.f90)
 target_sources(milca_equilibrium PRIVATE src/generated/milca_gs_inverse_leaves.f90
     src/equilibrium/gs_inverse.f90 src/equilibrium/gs_prescribed_q.f90)
 set_source_files_properties(src/generated/milca_gs_inverse_leaves.f90
@@ -1398,7 +1399,7 @@ if(MILCA_FORTSYM_BUILD)
             landreman nested_oracles
             response_strip_jets
             response_fluid
-            gs_coarea gs_inverse boozer_file dk_pitch dk_mono dk_hp dk_ntv dk_collop ntv_boozer
+            gs_coarea gs_inverse boozer_file boozer_orbit dk_pitch dk_mono dk_hp dk_ntv dk_collop ntv_boozer
             gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
@@ -1433,6 +1434,14 @@ if(MILCA_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_leaf_regeneration.cmake)
     milca_test_labels(dk_hp_leaf_regeneration fast CLASSES continuum
         TARGETS gen_dk_hp)
+    add_test(NAME boozer_orbit_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_boozer_orbit>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_boozer_orbit_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/boozer-orbit-regeneration
+        -DLEAF=milca_boozer_orbit_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_leaf_regeneration.cmake)
+    milca_test_labels(boozer_orbit_leaf_regeneration fast CLASSES equilibrium
+        TARGETS gen_boozer_orbit)
     add_test(NAME ntv_boozer_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ntv_boozer>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ntv_boozer_leaves.f90

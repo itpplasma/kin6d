@@ -179,10 +179,12 @@ plan of step 3). POTATO is collisionless, so the first stage meets it in the lim
 Checks of the formulation (in addition to the gate of step 3):
 - rho* -> 0 by scaling the mass at fixed thermal speed reproduces the thin-orbit kernel, with
   corrections linear in rho*;
-- Z e v_d . grad psi = p_phi_dot - m d_t(v_par G/B), so to first order in rho* the drive differs
-  from the thin-orbit drive by a total time derivative, which is the parallel-derivative source of
-  the thin-orbit kernel: the orbit-width drive at small rho* reproduces the kernel with that source
-  on, not off;
+- Z e v_d . grad psi = p_phi_dot - m d_t(v_par G/B), so to first order in rho* the canonical drive
+  differs from the local one by a total time derivative. In the thin-orbit kernel that difference
+  is the sum of its two sources, the parallel-derivative drift and the perturbed operator on f_10,
+  so the finite-width kernel without an f_10 counterpart reproduces the thin kernel with both
+  sources off (checked to 2e-7 on AUG 30835 at s = 0.5 with the mass scaled by 1e-3; both sources
+  on change the thin torque there by 0.2 %, the parallel-derivative source alone by 6 %);
 - bounce and precession frequencies along psi* against POTATO's frequency scans and their thin
   limit (energy and E_r scaled down) on the shared AUG equilibria;
 - the moments of F_c over the orbits give n(psi) from n(psi*) and back.
@@ -228,7 +230,7 @@ POTATO (collisionless resonant torque with finite orbit width):
 |---|---|
 | exact guiding-centre orbits, canonical frequencies | covered: Boozer orbit module; thin limit within 1 % of POTATO, trapped orbits at physical width within 4 to 9 % on AUG 30835 with a Boozer file whose geometry and field disagree by up to 10 %; a self-consistent Boozer file (libneo EQDSK converter) decides the rest |
 | canonical Maxwellian drive, E_r profile in the orbits | covered: the orbit geometry of the hp solver (finite-width kernel equals the thin kernel to 1e-7 for thin orbits), potential profile Phi(s), perturbation at the orbit point |
-| finite-width resonant torque profile on psi* | open: energy integral of the finite-width kernel per psi*, tabulated orbit map for speed, then AUG 30835 against POTATO (physical width and thin-orbit scaling) |
+| finite-width resonant torque profile on psi* | in progress: `orbit_width` switch of the device profile (energy integral of the finite-width kernel per psi*); AUG 30835 thermal deuterons at s = 0.5 lose 15 % of the thin torque to the orbit width; next the profile against POTATO (physical width and thin-orbit scaling) |
 
 rabe (stellarator bootstrap coefficients): with NEO-2-PAR above.
 
