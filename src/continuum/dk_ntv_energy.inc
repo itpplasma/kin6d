@@ -187,11 +187,12 @@
     !> (geometry of mono_coefficients_3d). Same drives, responses and units as
     !> the axisymmetric matrix, which an axisymmetric b reproduces; local is
     !> (n_theta n_zeta, ns, ns, 3), theta fastest. pairs (default all) is the
-    !> number of lowest pair blocks factorised with the full speed and species
-    !> coupling; with fewer, GMRES on the operator is right-preconditioned by
-    !> the direct block factorisation of every speed node and species for the
-    !> others, which keeps the memory per node at that of the
-    !> monoenergetic surface problem.
+    !> number of lowest pair blocks factorised exactly, with the full speed and
+    !> species coupling; with fewer, GMRES on the operator is right-
+    !> preconditioned by them and, above them, by one direct block
+    !> factorisation per collision mode (factor_modal), whose memory is that
+    !> of the monoenergetic surface problem. pairs = 1 makes l <= 1, with
+    !> density, momentum and energy conservation, exact.
     subroutine ntv_surface_coefficients(b, nper, q, i_over_g, kappa, species, &
             lnlambda, grid, model, n_leg, d, iterations, status, local, pairs)
         real(dp), intent(in) :: b(:, :), q, i_over_g, kappa
@@ -269,11 +270,7 @@
     ! banana regime. By default every pair block therefore carries its full
     ! speed and species coupling, which makes the block factorisation the
     ! inverse.
-    if (pairs == 0) then
-        call factor_modal(e, lu, st)
-    else
-        call factor_hybrid(e, lu, st, pairs)
-    end if
+    call factor_hybrid(e, lu, st, pairs, modal=pairs < e%nb)
     if (st /= NTV_OK) return
     b = 2/(3*g%source)
     gf = g
@@ -467,7 +464,9 @@
         f%m3 = e%m3(k:k, k:k)
         f%m4 = e%m4(k:k, k:k)
         f%row = e%row(k:k, :)
-        f%pre = e%pre(k:k, k:k, :, :, :)
+        ! Explicit bounds: a section would start the degree index at 1, not 0.
+        allocate (f%pre(1, 1, e%ns, e%ns, 0:ubound(e%pre, 5)))
+        f%pre(1, 1, :, :, :) = e%pre(k, k, :, :, :)
         f%coupled = .false.
     end function node_system
 
@@ -545,14 +544,22 @@
 
     !> pairs: the number of lowest pair blocks factorised densely with the
     !> full speed coupling (default low_pairs); the others per node.
-    subroutine factor_hybrid(e, h, status, pairs)
+    subroutine factor_hybrid(e, h, status, pairs, modal)
         type(energy_system_t), intent(inout) :: e
         type(hybrid_t), intent(out) :: h
         integer, intent(out) :: status
         integer, intent(in), optional :: pairs
+        ! Chain above the dense blocks per collision mode instead of per node.
+        logical, intent(in), optional :: modal
         complex(dp), allocatable :: m(:, :)
         integer :: j, a, k, info, n2, off
-        call factor_nodes(e, h%sys, h%node, status)
+        h%modal = .false.
+        if (present(modal)) h%modal = modal
+        if (h%modal) then
+            call factor_modal(e, h, status)
+        else
+            call factor_nodes(e, h%sys, h%node, status)
+        end if
         if (status /= NTV_OK) return
         h%j0 = min(low_pairs, e%nb)
         if (present(pairs)) h%j0 = min(pairs, e%nb)
@@ -563,7 +570,9 @@
         status = NTV_SINGULAR
         do j = h%j0 - 1, 0, -1
             m = full_block(e, j, j)
-            if (j == h%j0 - 1 .and. h%j0 < e%nb) then
+            if (j == h%j0 - 1 .and. h%j0 < e%nb .and. h%modal) then
+                call subtract_modal_coupling(e, h, j, m)
+            else if (j == h%j0 - 1 .and. h%j0 < e%nb) then
                 do a = 1, e%ns
                     do k = 1, e%nx
                         off = (a - 1)*e%nn + (k - 1)*n2
@@ -598,6 +607,10 @@
         integer, intent(out) :: status
         complex(dp), allocatable :: z(:, :, :, :), t(:, :, :)
         integer :: a, k, j, info
+        if (h%modal) then
+            call modal_hybrid_solve(e, h, rhs, x, status)
+            return
+        end if
         allocate (z, mold=x)
         allocate (t(2*e%n, e%nx, e%ns))
         status = NTV_SINGULAR
@@ -648,6 +661,89 @@
         status = NTV_OK
     end subroutine hybrid_solve
 
+    !> hybrid_solve with the chain above the dense blocks per collision mode:
+    !> modal coordinates V^-1 R^-1 rhs for pair blocks j >= j0, the dense
+    !> blocks j < j0 in speed and species, joined through R V at the boundary.
+    subroutine modal_hybrid_solve(e, h, rhs, x, status)
+        type(energy_system_t), intent(in) :: e
+        type(hybrid_t), intent(in) :: h
+        complex(dp), intent(in) :: rhs(:, :, 0:, :)
+        complex(dp), intent(out) :: x(:, :, 0:, :)
+        integer, intent(out) :: status
+        complex(dp), allocatable :: zm(:, :, :), ym(:, :, :), u(:, :), t(:, :), xd(:, :, :)
+        integer :: m, j, info, nm, n2, bad, j0
+        nm = e%nx*e%ns
+        n2 = 2*e%n
+        j0 = h%j0
+        allocate (zm(n2, j0:e%nb - 1, nm), ym(n2, j0:e%nb - 1, nm), u(n2, nm), &
+            t(n2, nm), xd(n2, nm, 0:max(j0 - 1, 0)))
+        do j = j0, e%nb - 1
+            zm(:, j, :) = matmul(reshape(rhs(:, :, j, :), [n2, nm]), transpose(h%vinv))
+        end do
+        bad = 0
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(m, j, info) &
+        !$omp reduction(+:bad)
+        do m = 1, nm
+            associate (f => h%node(m, 1), s => h%sys(m))
+                do j = e%nb - 1, j0, -1
+                    if (j < e%nb - 1) zm(:, j:j, m) = zm(:, j:j, m) &
+                        - offdiag_apply(s, 1, j, j + 1, zm(:, j + 1:j + 1, m))
+                    call zgetrs('N', n2, 1, f%s_lu(:, :, j), n2, f%piv(:, j), &
+                        zm(:, j, m), n2, info)
+                    if (info /= 0) bad = bad + 1
+                end do
+            end associate
+        end do
+        !$omp end parallel do
+        status = NTV_SINGULAR
+        if (bad > 0) return
+        ! Dense blocks j < j0, the boundary coupled through (I x R V).
+        do j = j0 - 1, 0, -1
+            t = reshape(rhs(:, :, j, :), [n2, nm])
+            if (j == j0 - 1 .and. j0 < e%nb) then
+                do m = 1, nm
+                    u(:, m:m) = offdiag_apply(h%sys(m), 1, j, j + 1, zm(:, j + 1:j + 1, m))
+                end do
+                t = t - matmul(u, transpose(h%rv))
+            else if (j < j0 - 1) then
+                do m = 1, e%ns
+                    t(:, (m - 1)*e%nx + 1:m*e%nx) = t(:, (m - 1)*e%nx + 1:m*e%nx) &
+                        - offdiag_apply(e, m, j, j + 1, xd(:, (m - 1)*e%nx + 1:m*e%nx, j + 1))
+                end do
+            end if
+            call zgetrs('N', h%nf, 1, h%s_lu(:, :, j), h%nf, h%piv(:, j), t, h%nf, info)
+            if (info /= 0) return
+            xd(:, :, j) = t
+        end do
+        do j = 1, j0 - 1
+            xd(:, :, j) = xd(:, :, j) - reshape(matmul(h%y(:, :, j), &
+                reshape(xd(:, :, j - 1), [h%nf])), [n2, nm])
+        end do
+        ! Modal back substitution; at j0 the dense x_{j0-1} in modal coordinates.
+        if (j0 > 0) then
+            u = matmul(xd(:, :, j0 - 1), transpose(h%vu))
+            do m = 1, nm
+                ym(:, j0, m) = zm(:, j0, m) - matmul(h%node(m, 1)%y(:, :, j0), u(:, m))
+            end do
+        else
+            ym(:, 0, :) = zm(:, 0, :)
+        end if
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(m, j)
+        do m = 1, nm
+            do j = j0 + 1, e%nb - 1
+                ym(:, j, m) = zm(:, j, m) - matmul(h%node(m, 1)%y(:, :, j), ym(:, j - 1, m))
+            end do
+        end do
+        !$omp end parallel do
+        do j = 0, j0 - 1
+            x(:, :, j, :) = reshape(xd(:, :, j), [n2, e%nx, e%ns])
+        end do
+        do j = j0, e%nb - 1
+            x(:, :, j, :) = reshape(matmul(ym(:, j, :), transpose(h%v)), [n2, e%nx, e%ns])
+        end do
+        status = NTV_OK
+    end subroutine modal_hybrid_solve
+
     !> GMRES on the operator, right-preconditioned node by node.
     subroutine solve_any(e, lu, rhs, x, iterations, status)
         type(energy_system_t), intent(in) :: e
@@ -658,54 +754,55 @@
         call coupled_solve(e, lu, rhs, x, iterations, status)
     end subroutine solve_any
 
-    !> Modal preconditioner of the n = 0 system. After the row scaling the
-    !> operator is S x R - I x C_l: streaming S per unit speed, R the diagonal
-    !> ratio of lumped to Galerkin speed mass of each node, C_l the
+    !> Collision-mode chain of the n = 0 preconditioner. After the row scaling
+    !> the operator is S x R - I x C_l: streaming S per unit speed, R the
+    !> diagonal ratio of lumped to Galerkin speed mass of each node, C_l the
     !> speed-species collision rows of degree l. In the eigenvectors V of
     !> R^-1 C_1 the l = 1 rows, which carry momentum conservation, are
     !> diagonal, so each mode m is a monoenergetic surface problem with the
-    !> rates diag(V^-1 R^-1 C_l V)_m, factorised directly; GMRES supplies the
-    !> off-diagonal rest at l /= 1. Requires a real spectrum of R^-1 C_1,
-    !> which holds where C is self-adjoint in the Maxwellian-weighted product.
+    !> rates diag(V^-1 R^-1 C_l V)_m, factorised directly over all pair
+    !> blocks. Requires a real spectrum of R^-1 C_1, which holds where C is
+    !> self-adjoint in the Maxwellian-weighted product. vinv holds V^-1 R^-1,
+    !> vu V^-1 and rv R V.
     subroutine factor_modal(e, h, status)
         type(energy_system_t), intent(in) :: e
-        type(hybrid_t), intent(out) :: h
+        type(hybrid_t), intent(inout) :: h
         integer, intent(out) :: status
         real(dp), allocatable :: c(:, :), w(:, :), wr(:), wi(:), work(:), vl(:, :), &
             chat(:, :)
         integer, allocatable :: piv(:), mode_status(:)
-        integer :: nm, l, info, m, a, k
+        integer :: nm, l, info, m, a, k, q
         nm = e%nx*e%ns
         status = NTV_SINGULAR
         allocate (c(nm, nm), w(nm, nm), wr(nm), wi(nm), work(8*nm), vl(1, 1), &
-            h%v(nm, nm), h%vinv(nm, nm), piv(nm), chat(nm, 0:2*e%nb - 1))
+            h%v(nm, nm), h%vinv(nm, nm), h%vu(nm, nm), h%rv(nm, nm), piv(nm), &
+            chat(nm, 0:2*e%nb - 1))
         c = collision_matrix(e, 1)
         w = c
         call dgeev('N', 'V', nm, w, nm, wr, wi, vl, 1, h%v, nm, work, size(work), info)
         if (info /= 0) return
         if (any(abs(wi) > 1e-10_dp*maxval(abs(wr)))) return
         w = h%v
-        h%vinv = 0
+        h%vu = 0
         do m = 1, nm
-            h%vinv(m, m) = 1
+            h%vu(m, m) = 1
         end do
-        call dgesv(nm, nm, w, nm, piv, h%vinv, nm, info)
+        call dgesv(nm, nm, w, nm, piv, h%vu, nm, info)
         if (info /= 0) return
         do l = 0, 2*e%nb - 1
-            w = matmul(h%vinv, matmul(collision_matrix(e, l), h%v))
+            w = matmul(h%vu, matmul(collision_matrix(e, l), h%v))
             do m = 1, nm
                 chat(m, l) = w(m, m)
             end do
         end do
-        ! The modal right-hand side is V^-1 R^-1 rhs.
         do a = 1, e%ns
             do k = 1, e%nx
-                h%vinv(:, (a - 1)*e%nx + k) = &
-                    h%vinv(:, (a - 1)*e%nx + k)/stream_ratio(e, k, a)
+                q = (a - 1)*e%nx + k
+                h%vinv(:, q) = h%vu(:, q)/stream_ratio(e, k, a)
+                h%rv(q, :) = stream_ratio(e, k, a)*h%v(q, :)
             end do
         end do
         h%modal = .true.
-        h%j0 = 0
         allocate (h%sys(nm), h%node(nm, 1), mode_status(nm))
         !$omp parallel do schedule(dynamic, 1) default(shared) private(m)
         do m = 1, nm
@@ -715,6 +812,37 @@
         !$omp end parallel do
         status = merge(NTV_OK, NTV_SINGULAR, all(mode_status == NTV_OK))
     end subroutine factor_modal
+
+    !> m = m - (I x R V) [U_m Y_m] (I x V^-1) at the boundary pair block j of
+    !> the dense part, U_m Y_m the coupling of mode m to the chain above.
+    subroutine subtract_modal_coupling(e, h, j, m)
+        type(energy_system_t), intent(in) :: e
+        type(hybrid_t), intent(in) :: h
+        integer, intent(in) :: j
+        complex(dp), intent(inout) :: m(:, :)
+        complex(dp), allocatable :: w(:, :, :)
+        integer :: nm, n2, mm, q, qc
+        nm = e%nx*e%ns
+        n2 = 2*e%n
+        allocate (w(n2, n2, nm))
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(mm)
+        do mm = 1, nm
+            w(:, :, mm) = matmul(energy_block(h%sys(mm), 1, j, j + 1), &
+                h%node(mm, 1)%y(:, :, j + 1))
+        end do
+        !$omp end parallel do
+        !$omp parallel do collapse(2) schedule(static) default(shared) private(q, qc, mm)
+        do qc = 1, nm
+            do q = 1, nm
+                do mm = 1, nm
+                    m((q - 1)*n2 + 1:q*n2, (qc - 1)*n2 + 1:qc*n2) = &
+                        m((q - 1)*n2 + 1:q*n2, (qc - 1)*n2 + 1:qc*n2) &
+                        - h%rv(q, mm)*h%vu(mm, qc)*w(:, :, mm)
+                end do
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine subtract_modal_coupling
 
     !> Scaled collision rows of degree l over (node, species), node fastest.
     function collision_matrix(e, l) result(c)
@@ -758,50 +886,6 @@
         f%pre(1, 1, 1, 1, :) = rate
         f%coupled = .false.
     end function mode_system
-
-    !> x = P^-1 rhs with the modal preconditioner; arrays (2 n, nx, 0:nb-1, ns).
-    subroutine modal_solve(e, h, rhs, x, status)
-        type(energy_system_t), intent(in) :: e
-        type(hybrid_t), intent(in) :: h
-        complex(dp), intent(in) :: rhs(:, :, 0:, :)
-        complex(dp), intent(out) :: x(:, :, 0:, :)
-        integer, intent(out) :: status
-        complex(dp), allocatable :: z(:, :, :), y(:, :, :)
-        integer :: m, j, info, nm, n2, bad
-        nm = e%nx*e%ns
-        n2 = 2*e%n
-        ! z(row, block, mode) = V^-1 rhs over the speed-species index.
-        allocate (z(n2, 0:e%nb - 1, nm), y(n2, 0:e%nb - 1, nm))
-        do j = 0, e%nb - 1
-            z(:, j, :) = matmul(reshape(rhs(:, :, j, :), [n2, nm]), transpose(h%vinv))
-        end do
-        bad = 0
-        !$omp parallel do schedule(dynamic, 1) default(shared) private(m, j, info) &
-        !$omp reduction(+:bad)
-        do m = 1, nm
-            associate (f => h%node(m, 1), s => h%sys(m))
-                do j = e%nb - 1, 0, -1
-                    if (j < e%nb - 1) z(:, j:j, m) = z(:, j:j, m) &
-                        - offdiag_apply(s, 1, j, j + 1, z(:, j + 1:j + 1, m))
-                    call zgetrs('N', n2, 1, f%s_lu(:, :, j), n2, f%piv(:, j), &
-                        z(:, j, m), n2, info)
-                    if (info /= 0) bad = bad + 1
-                end do
-                y(:, 0, m) = z(:, 0, m)
-                do j = 1, e%nb - 1
-                    y(:, j, m) = z(:, j, m) - matmul(f%y(:, :, j), y(:, j - 1, m))
-                end do
-            end associate
-        end do
-        !$omp end parallel do
-        status = NTV_SINGULAR
-        if (bad > 0) return
-        do j = 0, e%nb - 1
-            x(:, :, j, :) = reshape(matmul(y(:, j, :), transpose(h%v)), &
-                [n2, e%nx, e%ns])
-        end do
-        status = NTV_OK
-    end subroutine modal_solve
 
     !> The perturbed-operator sources of f_10 (module header of dk_ntv) per
     !> node: the mirror force on the streaming mass, 1.5 source stream sdb
@@ -1045,11 +1129,7 @@
             integer :: st
             v = reshape(input, shape(rhs))
             allocate (y, mold=v)
-            if (lu%modal) then
-                call modal_solve(e, lu, v, y, st)
-            else
-                call hybrid_solve(e, lu, v, y, st)
-            end if
+            call hybrid_solve(e, lu, v, y, st)
             if (st /= NTV_OK) status = st
             output = reshape(y, [ntot])
         end subroutine precondition
