@@ -39,6 +39,7 @@ module milca_dk_mono
     ! collisions: factorisation, bordered solve, operator action, drives.
     public :: mono_point_t, mono_factor_t, mono_factor, mono_solve, mono_apply, mono_drives
     public :: mono_coupling, mono_coefficients_3d, mono_surface_operators
+    public :: mono_surface_point, mono_factor_rates
     integer, parameter, public :: MONO_OK = 0, MONO_BAD_INPUT = 1, &
         MONO_SINGULAR = 2
 
@@ -90,6 +91,13 @@ module milca_dk_mono
             real(dp), intent(inout) :: b(ldb, *)
             integer, intent(out) :: info
         end subroutine dgetrs
+        subroutine dgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+            import :: dp
+            character, intent(in) :: transa, transb
+            integer, intent(in) :: m, n, k, lda, ldb, ldc
+            real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+            real(dp), intent(inout) :: c(ldc, *)
+        end subroutine dgemm
     end interface
 
 contains
@@ -230,27 +238,28 @@ contains
         f%p%weight_sum = sum(weight)
         f%p%weight = weight/f%p%weight_sum
 
-        call factor_blocks(f, nu, status)
+        call factor_blocks(f, lorentz_rates(nu, f%lmax), status)
     end subroutine mono_factor
 
-    !> Block elimination of the operator from the highest Legendre degree
-    !> down and the bordered l = 0 system, for the points and derivative of f.
-    subroutine factor_blocks(f, nu, status)
+    !> Block elimination of the operator with the diagonal rate(l) in degree l
+    !> (nu l (l + 1)/2 for pitch-angle scattering) from the highest degree
+    !> down, and the bordered l = 0 system, for the points and derivative of f.
+    subroutine factor_blocks(f, rate, status)
         type(mono_factor_t), intent(inout) :: f
-        real(dp), intent(in) :: nu
+        real(dp), intent(in) :: rate(0:)
         integer, intent(out) :: status
         integer :: n, l, j, info
         real(dp), allocatable :: s(:, :), up(:, :)
 
         n = f%n
-        ! S_lmax = nu lmax (lmax + 1)/2, S_l = Di_l - Up_l Y_{l+1}.
+        ! S_lmax = rate(lmax), S_l = rate(l) - Up_l Y_{l+1}.
         allocate (f%s_lu(n, n, f%lmax), f%s_piv(n, f%lmax), f%y(n, n, f%lmax), &
             s(n, n), up(n, n))
         status = MONO_SINGULAR
         do l = f%lmax, 1, -1
             s = 0
             do j = 1, n
-                s(j, j) = nu*l*(l + 1)/2.0_dp
+                s(j, j) = rate(l)
             end do
             if (l < f%lmax) then
                 up = upper(f%d, f%p, l)
@@ -263,16 +272,39 @@ contains
             call dgetrs('N', n, n, s, n, f%s_piv(:, l), f%y(:, :, l), n, info)
         end do
 
-        ! l = 0: S_0 = -Up_0 Y_1, bordered by the density source and <w g_0>.
+        ! l = 0: S_0 = rate(0) - Up_0 Y_1, bordered by the density source and
+        ! <w g_0>.
         allocate (f%border_lu(n + 1, n + 1), f%border_piv(n + 1))
         f%border_lu = 0
         f%border_lu(1:n, 1:n) = -matmul(upper(f%d, f%p, 0), f%y(:, :, 1))
+        do j = 1, n
+            f%border_lu(j, j) = f%border_lu(j, j) + rate(0)
+        end do
         f%border_lu(1:n, n + 1) = 1
         f%border_lu(n + 1, 1:n) = f%p%weight
         call dgetrf(n + 1, n + 1, f%border_lu, n + 1, f%border_piv, info)
         if (info /= 0) return
         status = MONO_OK
     end subroutine factor_blocks
+
+    !> Factorise the surface of f (from mono_surface_point) with the diagonal
+    !> rate(0:lmax) per Legendre degree in place of pitch-angle scattering.
+    subroutine mono_factor_rates(f, rate, status)
+        type(mono_factor_t), intent(inout) :: f
+        real(dp), intent(in) :: rate(0:)
+        integer, intent(out) :: status
+        status = MONO_BAD_INPUT
+        if (ubound(rate, 1) < f%lmax) return
+        call factor_blocks(f, rate, status)
+    end subroutine mono_factor_rates
+
+    pure function lorentz_rates(nu, lmax) result(rate)
+        real(dp), intent(in) :: nu
+        integer, intent(in) :: lmax
+        real(dp) :: rate(0:lmax)
+        integer :: l
+        rate = [(nu*l*(l + 1)/2.0_dp, l=0, lmax)]
+    end function lorentz_rates
 
     !> Monoenergetic coefficients on a 3D surface in Boozer angles: b(i, j) =
     !! B/B0 on n_theta x n_zeta (both odd) uniform points of theta in
@@ -287,18 +319,37 @@ contains
         type(mono_coefficients_t), intent(out) :: c
         integer, intent(out) :: status
         type(mono_factor_t) :: f
-        real(dp), allocatable :: g(:, :, :), bv(:), b_par(:), b_drift(:), weight(:), &
-            scratch(:, :)
+        real(dp), allocatable :: g(:, :, :)
+
+        status = MONO_BAD_INPUT
+        if (nu <= 0) return
+        call mono_surface_point(b, nper, q, i_over_g, kappa, n_leg, f, status)
+        if (status /= MONO_OK) return
+        f%nu = nu
+        call factor_blocks(f, lorentz_rates(nu, f%lmax), status)
+        if (status /= MONO_OK) return
+        call drive_solutions(f, g, c%border, status)
+        if (status /= MONO_OK) return
+        c = functionals(f%p, g, c%border)
+    end subroutine mono_coefficients_3d
+
+    !> Surface points and parallel derivative of a 3D surface (arguments of
+    !> mono_coefficients_3d) in f, not yet factorised.
+    subroutine mono_surface_point(b, nper, q, i_over_g, kappa, n_leg, f, status)
+        real(dp), intent(in) :: b(:, :), q, i_over_g, kappa
+        integer, intent(in) :: nper, n_leg
+        type(mono_factor_t), intent(out) :: f
+        integer, intent(out) :: status
+        real(dp), allocatable :: bv(:), b_par(:), b_drift(:), weight(:), scratch(:, :)
         integer :: n
 
         status = MONO_BAD_INPUT
-        if (n_leg < 3 .or. nu <= 0) return
+        if (n_leg < 3) return
         call mono_surface_operators(b, nper, q, i_over_g, f%d, b_par, b_drift, status)
         if (status /= MONO_OK) return
         n = size(b)
         f%n = n
         f%lmax = n_leg - 1
-        f%nu = nu
         allocate (weight(n), scratch(5, n))
         bv = reshape(b, [n])
         call allocate_point(f%p, n)
@@ -308,12 +359,7 @@ contains
             f%p%drift0, f%p%drift2, scratch(5, :), weight)
         f%p%weight_sum = sum(weight)
         f%p%weight = weight/f%p%weight_sum
-        call factor_blocks(f, nu, status)
-        if (status /= MONO_OK) return
-        call drive_solutions(f, g, c%border, status)
-        if (status /= MONO_OK) return
-        c = functionals(f%p, g, c%border)
-    end subroutine mono_coefficients_3d
+    end subroutine mono_surface_point
 
     !> Collocation operators of a 3D surface in Boozer angles, b(i, j) on
     !! n_theta x n_zeta (both odd) uniform points of theta in [0, 2 pi) and
@@ -379,25 +425,45 @@ contains
         status = MONO_SINGULAR
         do l = f%lmax, 1, -1
             r = rhs(:, l, :)
-            if (l < f%lmax) r = r - matmul(upper(f%d, f%p, l), z(:, :, l + 1))
+            if (l < f%lmax) call subtract_upper(f, l, z(:, :, l + 1), r)
             call dgetrs('N', n, m, f%s_lu(:, :, l), n, f%s_piv(:, l), r, n, info)
             if (info /= 0) return
             z(:, :, l) = r
         end do
-        b0(1:n, :) = rhs(:, 0, :) - matmul(upper(f%d, f%p, 0), z(:, :, 1))
+        r = rhs(:, 0, :)
+        call subtract_upper(f, 0, z(:, :, 1), r)
+        b0(1:n, :) = r
         b0(n + 1, :) = constraint
         call dgetrs('N', n + 1, m, f%border_lu, n + 1, f%border_piv, b0, n + 1, info)
         if (info /= 0) return
         z(:, :, 0) = b0(1:n, :)
         mu = b0(n + 1, :)
         do l = 1, f%lmax
-            z(:, :, l) = z(:, :, l) - matmul(f%y(:, :, l), z(:, :, l - 1))
+            call dgemm('N', 'N', n, m, n, -1.0_dp, f%y(:, :, l), n, z(:, :, l - 1), n, &
+                1.0_dp, z(:, :, l), n)
         end do
         do l = 0, f%lmax
             x(:, l, :) = z(:, :, l)
         end do
         status = MONO_OK
     end subroutine mono_solve
+
+    !> r = r - Up_l z without forming Up_l: the streaming row stream (l + 1)/
+    !> (2l + 3) times d z and the mirror term (as in upper).
+    subroutine subtract_upper(f, l, z, r)
+        type(mono_factor_t), intent(in) :: f
+        integer, intent(in) :: l
+        real(dp), intent(in) :: z(:, :)
+        real(dp), intent(inout) :: r(:, :)
+        real(dp) :: dz(size(z, 1), size(z, 2))
+        integer :: j
+        call dgemm('N', 'N', f%n, size(z, 2), f%n, 1.0_dp, f%d, f%n, z, f%n, 0.0_dp, dz, &
+            f%n)
+        do j = 1, size(z, 2)
+            r(:, j) = r(:, j) - f%p%stream*(l + 1)/real(2*l + 3, dp)*dz(:, j) &
+                + f%p%mirror*(l + 1)*(l + 2)/real(2*l + 3, dp)*z(:, j)
+        end do
+    end subroutine subtract_upper
 
     !> A x without the border, with deflection frequency nu per unit length.
     pure function mono_apply(f, nu, x) result(y)

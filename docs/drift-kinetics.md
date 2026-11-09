@@ -225,6 +225,35 @@ The change falls twentyfold per doubling. Cost at 20, 40, 80 Legendre:
 849, 1950, 3136 GMRES iterations, 140, 441, 1116 s, 5.0, 6.6, 8.0 GB on a
 shared 28-core Apple M3 Ultra node (12 threads).
 
+Real-arithmetic solver (`surface_transport`, test `ntv_surface_real`): the
+same operator, drives and units in real arithmetic (the n = 0 problem has no
+complex part), the unknowns h(point, degree, speed-species mode), streaming
+applied to all speed nodes at once by two dense surface matrices per degree
+(BLAS), and FGMRES (relative residual 1e-10) right-preconditioned by one
+`dk_mono` block factorisation of real n x n blocks per degree for each
+eigenmode of R^-1 C_4, with the diagonal of V^-1 R^-1 C_l V as the rate of
+degree l; the density null space of each speed node is bordered as in
+`dk_mono`. No block couples surface points with speed nodes, so memory grows
+like n^2 per mode instead of (2 n n_x n_s)^2. The eigenmode degree was
+chosen by measurement (iterations on the case below: degree 1: 2402,
+2: 1184, 3: 1231, 4: 857, 6: 1073, 9: 917). Against the direct solve
+`ntv_surface_coefficients` it agrees to 1e-15 (pitch-angle scattering) and
+1e-10 (full operator, two species).
+
+Same case as above at s = 0.06 (16 speed nodes, 40 Legendre, collisionality
+0.01/m, deuterium and electrons, 12 threads on the loaded node):
+
+| surface points | solver | FGMRES iterations | wall | peak memory |
+|---|---|---|---|---|
+| 15 x 9 | complex, exact l <= 1 | 1950 | 441 s | 6.6 GB |
+| 15 x 9 | real, modal | 586 | 30 s | 0.75 GB |
+| 23 x 15 | complex, exact l <= 1 | 1784 | 3364 s | 30.7 GB |
+| 23 x 15 | real, modal | 574 | 734 s | 3.4 GB |
+
+The iteration count does not grow with the surface grid. The cost per
+iteration is the memory traffic of the preconditioner (about 3 n^2 values
+per degree and mode per application, single right-hand side).
+
 Checks (one species, deuterium 2 keV):
 
 | check | oracle | agreement |

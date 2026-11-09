@@ -28,6 +28,10 @@
 !!   iterative      GMRES right-preconditioned by the collision-mode
 !!                  factorisations, without (pairs = 0) and with (pairs = 1)
 !!                  the exact l <= 1 block, reproduces the direct solve;
+!!   real           surface_transport, the real-arithmetic solver with the
+!!                  dk_mono factorisation per collision mode, equals the direct
+!!                  solve (pairs = all) for pitch-angle scattering (1e-8) and the
+!!                  full operator of deuterium and electrons (1e-6);
 !!   exact          with pitch-angle scattering every preconditioner is the
 !!                  inverse, so each GMRES solve converges in one iteration:
 !!                  the modal chain with 0 and 1 exact pair blocks here, and
@@ -39,6 +43,7 @@ program test_ntv_surface
                             ntv_surface_coefficients, ntv_energy_coefficients, NTV_OK, &
                             NTV_WEIGHT_FULL
     use milca_dk_mono, only: mono_coefficients_t, mono_coefficients_3d, MONO_OK
+    use milca_dk_surface, only: surface_transport, SURFACE_OK
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
                         collop_nuhat, collop_vth, COLLOP_OK, COLLOP_LORENTZ, COLLOP_FULL
     implicit none
@@ -58,6 +63,7 @@ program test_ntv_surface
     case ('ambipolar'); ok = ambipolar()
     case ('iterative'); ok = iterative()
     case ('exact'); ok = exact()
+    case ('real'); ok = real_solver()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -302,6 +308,62 @@ contains
         print '(a,i0)', 'NTV kernel, per-node chain: iterations ', its
         ok = ok .and. st == NTV_OK .and. its == 2
     end function exact
+
+    logical function real_solver() result(ok)
+        integer, parameter :: nt = 9, nz = 5
+        type(collop_species_t) :: sp(2)
+        type(collop_grid_t) :: grid
+        real(dp) :: lnl(2, 2), d(2, 2, 3, 3), dr(2, 2, 3, 3), l1(1, 1), d1(1, 1, 3, 3), &
+            dr1(1, 1, 3, 3)
+        integer :: its, st, a
+        call plasma(1e-1_dp, sp(1:1), l1, grid)
+        call ntv_surface_coefficients(helical(nt, nz), 1, q, ig, 1/(q*rmajor), sp(1:1), l1, &
+                                      grid, COLLOP_LORENTZ, 12, d1, its, st)
+        ok = st == NTV_OK
+        call surface_transport(helical(nt, nz), 1, q, ig, 1/(q*rmajor), sp(1:1), l1, grid, &
+                               COLLOP_LORENTZ, 12, dr1, its, st)
+        ok = ok .and. st == SURFACE_OK
+        if (.not. ok) return
+        ok = matrix_close('real solver, pitch-angle scattering', dr1(1, 1, :, :), &
+                          d1(1, 1, :, :), 1e-8_dp)
+        sp(2) = collop_species_t(9.1093837015e-31_dp, -1.0_dp, 3e19_dp, 2*kev)
+        do a = 1, 2
+            lnl(a, :) = 3*sqrt(pi)/8*collop_vth(sp(a))*1e-1_dp/collop_nuhat(sp(a), sp(a), &
+                                                                          1.0_dp)
+        end do
+        call ntv_surface_coefficients(helical(nt, nz), 1, q, ig, 1/(q*rmajor), sp, lnl, &
+                                      grid, COLLOP_FULL, 12, d, its, st)
+        ok = ok .and. st == NTV_OK
+        call surface_transport(helical(nt, nz), 1, q, ig, 1/(q*rmajor), sp, lnl, grid, &
+                               COLLOP_FULL, 12, dr, its, st)
+        ok = ok .and. st == SURFACE_OK
+        if (.not. ok) return
+        print '(a,i0)', 'FGMRES iterations: ', its
+        do a = 1, 2
+            ok = matrix_close('real solver, full operator, diagonal species block', &
+                              dr(a, a, :, :), d(a, a, :, :), 1e-6_dp) .and. ok
+        end do
+        ok = cross_close(dr, d, 1e-6_dp) .and. ok
+    end function real_solver
+
+    !> Off-diagonal species blocks against the diagonal entries of each pair.
+    logical function cross_close(got, want, rtol) result(ok)
+        real(dp), intent(in) :: got(2, 2, 3, 3), want(2, 2, 3, 3), rtol
+        real(dp) :: err
+        integer :: i, j
+        err = 0
+        do j = 1, 3
+            do i = 1, 3
+                err = max(err, abs(got(1, 2, i, j) - want(1, 2, i, j)) &
+                          /sqrt(abs(want(1, 1, i, i)*want(2, 2, j, j))), &
+                          abs(got(2, 1, i, j) - want(2, 1, i, j)) &
+                          /sqrt(abs(want(2, 2, i, i)*want(1, 1, j, j))))
+            end do
+        end do
+        ok = err <= rtol
+        print '(a,es10.2,a,l2)', 'real solver, cross-species blocks: largest error ', err, &
+            ' pass', ok
+    end function cross_close
 
     !> G(x) = (erf(x) - 2 x exp(-x^2)/sqrt(pi))/(2 x^2).
     real(dp) function chandrasekhar(x)
