@@ -34,7 +34,7 @@ module milca_dk_hp
     use fortsparse, only: csc_t, csc_z_t, csc_from_triplet, sparse_solver_t, sparse_factor, &
         sparse_solve_op, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_OP_NORMAL, FORTSPARSE_OP_TRANSPOSE, FORTSPARSE_BACKEND_NATIVE, &
-        FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_LU_SCALAR, FORTSPARSE_ORDER_AMD
+        FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
     use milca_dk_hp_leaves, only: dk_hp_point, dk_hp_stream, dk_hp_ntv
     use milca_dk_mono, only: mono_coefficients_t
     implicit none
@@ -455,14 +455,7 @@ contains
         sys%solver%options%ordering = FORTSPARSE_ORDER_AMD
         sys%solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         call sparse_factor(sys%solver, sys%a, st)
-        if (.not. status_ok(st)) then
-            call sparse_destroy(sys%solver)
-            sys%solver%backend_id = FORTSPARSE_BACKEND_NATIVE
-            sys%solver%options%ordering = FORTSPARSE_ORDER_AMD
-            sys%solver%options%lu_method = FORTSPARSE_LU_SCALAR
-            call sparse_factor(sys%solver, sys%a, st)
-            if (.not. status_ok(st)) return
-        end if
+        if (.not. status_ok(st)) return
         sys%factored = .true.
         status = HP_OK
     end subroutine hp_factor
@@ -721,16 +714,7 @@ contains
         solver%options%ordering = FORTSPARSE_ORDER_AMD
         solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         call sparse_factor(solver, scaled, st)
-        if (.not. status_ok(st)) then
-            ! Static pivots of the supernodal LU can still break down on wide
-            ! orbits at high energy; threshold pivoting does not.
-            call sparse_destroy(solver)
-            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
-            solver%options%ordering = FORTSPARSE_ORDER_AMD
-            solver%options%lu_method = FORTSPARSE_LU_SCALAR
-            call sparse_factor(solver, scaled, st)
-            if (.not. status_ok(st)) return
-        end if
+        if (.not. status_ok(st)) return
         allocate (x(sys%n), dx(sys%n))
         res = rs*sys%drive(:, 3)
         call sparse_solve_op(solver, res, x, FORTSPARSE_OP_NORMAL, st)
