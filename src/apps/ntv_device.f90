@@ -99,10 +99,17 @@ module milca_ntv_device
     !> Axisymmetric transport matrix of one surface: d(a, b, i, j) of
     !> ntv_axisymmetric_coefficients (responses i = particle, energy, parallel
     !> flow of species a to the drives j = A_1, A_2, parallel field of species
-    !> b), b.grad theta/b (kappa), q, dpsi_pol/dr [Wb/m] and the status.
+    !> b), b.grad theta/b (kappa), q, dpsi_pol/dr [Wb/m], dpsi_pol/ds [Wb], the
+    !> covariant toroidal field G [T m], <B^2> [T^2], the parallel flow <u_par B>
+    !> of each species [T m/s], the bootstrap current <j_par B> [T A/m^2] and
+    !> the status. With D_3j = -2 kappa q G d(a, b, 3, j) [m^2/s T per unit A_j],
+    !> <u_par B>_a = -sum_b (D_31 A_1 + D_32 A_2) of species b; momentum-conserving
+    !> self-collisions give D_31 = G T/(Z e) for a single species: A_1 drives
+    !> the rigid rotation alone.
     type :: ntv_axisymmetric_result_t
-        real(dp), allocatable :: d(:, :, :, :)
-        real(dp) :: kappa = 0, q = 0, dpsi_dr = 0
+        real(dp), allocatable :: d(:, :, :, :), flow(:)
+        real(dp) :: kappa = 0, q = 0, dpsi_dr = 0, psi_pol_s = 0, g_cov = 0, b2 = 0, &
+            bootstrap = 0
         integer :: status = DEVICE_OK
     end type
 
@@ -511,7 +518,7 @@ contains
         integer, intent(out) :: status
         type(ntv_surface_t), allocatable :: sf(:)
         type(collop_grid_t) :: grid
-        real(dp) :: j0, psi_pol_s
+        real(dp) :: j0
         integer :: ns, nsp, i, st
         ns = size(prof%s)
         nsp = size(species)
@@ -522,7 +529,7 @@ contains
         allocate (sf(ns), result(ns))
         do i = 1, ns
             call surface(eq, pert, n_tor, prof%s(i), res, sf(i), j0, result(i)%dpsi_dr, &
-                psi_pol_s, status)
+                result(i)%psi_pol_s, status, result(i)%g_cov, result(i)%b2)
             if (status /= DEVICE_OK) return
         end do
         !$omp parallel do schedule(dynamic, 1) default(shared) private(i)
@@ -552,8 +559,29 @@ contains
             if (ks /= NTV_OK) then
                 result(i)%status = DEVICE_SOLVE
                 result(i)%d = 0
+                return
             end if
+            call flows(result(i), i)
         end subroutine axisymmetric_surface
+
+        subroutine flows(r, i)
+            type(ntv_axisymmetric_result_t), intent(inout) :: r
+            integer, intent(in) :: i
+            real(dp) :: a1(nsp), a2(nsp), conv
+            integer :: a
+            do a = 1, nsp
+                a2(a) = prof%temperature_s(i, a)/(prof%temperature(i, a)*r%psi_pol_s)
+                a1(a) = prof%density_s(i, a)/(prof%density(i, a)*r%psi_pol_s) &
+                    + species(a)%z*elementary/prof%temperature(i, a)*prof%omega_te(i) &
+                    - 1.5_dp*a2(a)
+            end do
+            conv = -2*r%kappa*r%q*r%g_cov
+            allocate (r%flow(nsp))
+            do a = 1, nsp
+                r%flow(a) = -conv*(sum(r%d(a, :, 3, 1)*a1) + sum(r%d(a, :, 3, 2)*a2))
+            end do
+            r%bootstrap = sum(species%z*elementary*prof%density(i, :)*r%flow)
+        end subroutine flows
     end subroutine ntv_device_axisymmetric
 
     !> Energy-coupled kernel per surface (one OpenMP unit per surface), with
@@ -705,7 +733,8 @@ contains
     !> Kernel surface of label s: the equilibrium line, the perturbation
     !> harmonics of toroidal number n_tor resolved by the theta grid, and the
     !> flux-function factors of the torque.
-    subroutine surface(eq, pert, n_tor, s, res, sf, j0, dpsi_dr, psi_pol_s, status)
+    subroutine surface(eq, pert, n_tor, s, res, sf, j0, dpsi_dr, psi_pol_s, status, g_cov, &
+            b2_avg)
         type(boozer_file_t), intent(in) :: eq, pert
         integer, intent(in) :: n_tor
         real(dp), intent(in) :: s
@@ -713,6 +742,7 @@ contains
         type(ntv_surface_t), intent(out) :: sf
         real(dp), intent(out) :: j0, dpsi_dr, psi_pol_s
         integer, intent(out) :: status
+        real(dp), intent(out), optional :: g_cov, b2_avg
         type(boozer_surface_t) :: es, ps
         type(ntv_boozer_line_t) :: line
         real(dp) :: theta, bmod, grad_s, b2
@@ -755,6 +785,8 @@ contains
         psi_pol_s = es%iota*es%psi_prime
         call boozer_average(es, 2*res%n_theta, 1, grad_s, b2)
         dpsi_dr = psi_pol_s*grad_s
+        if (present(g_cov)) g_cov = es%g_cov
+        if (present(b2_avg)) b2_avg = b2
         status = DEVICE_OK
     end subroutine surface
 

@@ -6,7 +6,10 @@
 !! Prints per surface and species pair (a, b): s, a, b, d(a, b, i, j) for
 !! i = 1..3 (particle and energy coefficients in the units of the NTV K_1j,
 !! K_2j, then the parallel flow) and j = 1..3 (A_1, A_2, parallel field of
-!! species b), b.grad theta/b, q, dpsi_pol/dr [Wb/m] and the status.
+!! species b), b.grad theta/b, q, dpsi_pol/dr [Wb/m], dpsi_pol/ds [Wb], G [T m],
+!! <B^2> [T^2] and the status; then per surface a line 'flows' with s, the
+!! parallel flow <u_par B> of every species [T m/s] and the bootstrap current
+!! <j_par B> [T A/m^2] for the gradients and Omega_tE of the input.
 program ntv_axisymmetric_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -41,15 +44,18 @@ program ntv_axisymmetric_profile
         do a = 1, size(species)
             do b = 1, size(species)
                 if (result(i)%status == DEVICE_OK) then
-                    print '(f12.8,2i3,12es18.9,i3)', prof%s(i), a, b, &
+                    print '(f12.8,2i3,15es18.9,i3)', prof%s(i), a, b, &
                         result(i)%d(a, b, :, :), result(i)%kappa, result(i)%q, &
-                        result(i)%dpsi_dr, result(i)%status
+                        result(i)%dpsi_dr, result(i)%psi_pol_s, result(i)%g_cov, &
+                        result(i)%b2, result(i)%status
                 else
-                    print '(f12.8,2i3,12es18.9,i3)', prof%s(i), a, b, spread(0.0_dp, 1, 12), &
+                    print '(f12.8,2i3,15es18.9,i3)', prof%s(i), a, b, spread(0.0_dp, 1, 15), &
                         result(i)%status
                 end if
             end do
         end do
+        if (result(i)%status == DEVICE_OK) print '(a,f12.8,*(es18.9))', 'flows ', prof%s(i), &
+            result(i)%flow, result(i)%bootstrap
     end do
     write (error_unit, '(a,f10.2)') 'wall s ', real(c1 - c0, dp)/rate
     if (status /= DEVICE_OK) error stop 1
