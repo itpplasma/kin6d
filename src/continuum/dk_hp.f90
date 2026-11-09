@@ -57,6 +57,10 @@ module milca_dk_hp
         integer :: k_power = 0, n = 0
         integer, allocatable :: m(:)
         complex(dp), allocatable :: c(:)
+        ! The two further NEO-2-QL sources of milca_dk_ntv (thin fields only):
+        ! the parallel-derivative part of the perturbed radial drift and the
+        ! perturbed operator acting on the axisymmetric solution f_10.
+        logical :: source_dpar = .false., source_dlf10 = .false.
     end type
 
     !> The orbit geometry of the mesh: on the (theta, xi) cylinder of one
@@ -224,13 +228,15 @@ contains
     !> Element matrices, loads and the map of local nodes to unknowns:
     !! periodic in theta, the trapped nodes on theta_x (the X point) one
     !! unknown. mat holds each element matrix column major.
-    subroutine elements(f, mesh, op, sys, mat, status)
+    subroutine elements(f, mesh, op, sys, mat, status, f10)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         type(hp_system_t), intent(inout) :: sys
         complex(dp), allocatable, intent(out) :: mat(:, :)
         integer, intent(out) :: status
+        ! f_10 per unit speed on the unknowns of the same mesh (source_dlf10).
+        real(dp), intent(in), optional :: f10(:)
         integer :: p, n_col, n_row, n_lev, n_th, n_jr, ec, er, e, i, j, a1, a2, &
             n_loc, j_lo, j_hi, n_el
         integer, allocatable :: dof(:, :), curve_kind(:)
@@ -278,8 +284,13 @@ contains
                         (er - 1)*p + a2)
                 end do
             end do
-            call element(f, mesh, op, curve_kind(er:er + 1), curve_val(er:er + 1), &
-                ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e))
+            if (present(f10)) then
+                call element(f, mesh, op, curve_kind(er:er + 1), curve_val(er:er + 1), &
+                    ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e), f10(sys%loc(:, e)))
+            else
+                call element(f, mesh, op, curve_kind(er:er + 1), curve_val(er:er + 1), &
+                    ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e))
+            end if
         end do
         !$omp end parallel do
         allocate (sys%drive(sys%n, 4), sys%density(sys%n))
@@ -339,7 +350,7 @@ contains
     !> Galerkin matrix of one element by tensor Gauss quadrature, column
     !> major in s, with its loads (radial and parallel drive, NTV drive and
     !> torque functional) and density weights.
-    subroutine element(f, mesh, op, kinds, vals, ec, load, dens, s)
+    subroutine element(f, mesh, op, kinds, vals, ec, load, dens, s, f10)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
@@ -347,12 +358,14 @@ contains
         integer, intent(in) :: kinds(2), ec
         complex(dp), intent(out) :: load(:, :), s(:)
         real(dp), intent(out) :: dens(:)
+        real(dp), intent(in), optional :: f10(:)
         integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc, j
         real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), dphi(:, :), &
             b_ab(:), d_ab(:), da(:), db_(:), psi(:, :)
         real(dp) :: th, th_a, xi_lo, xi_hi, d_lo, d_hi, xi, xi_b, &
             col, dr, de, den, ww, psi_a, psi_b, phase, precess, drive, torque
-        complex(dp) :: loc_term, src
+        complex(dp) :: loc_term, src, s_dpar, s_dlf, s_db
+        real(dp) :: bb, bb_t, f10_xi
 
         p = mesh%p
         n_loc = (p + 1)**2
@@ -412,6 +425,21 @@ contains
                 load(:, 1) = load(:, 1) + ww*dr*b_ab
                 load(:, 2) = load(:, 2) + ww*de*b_ab
                 load(:, 3) = load(:, 3) + ww*drive*src/op%v*b_ab
+                if (op%source_dpar .or. present(f10)) then
+                    call field_value(f, th, bb, bb_t)
+                    call perturbed_sources(op, th, bb_t/bb, s_dpar, s_dlf, s_db)
+                    if (op%source_dpar) load(:, 3) = load(:, 3) + ww*drive*s_dpar/op%v*b_ab
+                    if (present(f10)) then
+                        ! Mirror force of the perturbed parallel gradient on
+                        ! f_10, (k/b) s_dlf (1 - xi^2)/2 d_xi f_10, and minus
+                        ! the perturbed collision term, (dB/B)(nu/2) L f_10
+                        ! with L = -d_xi (1 - xi^2) d_xi, by parts in xi.
+                        f10_xi = sum(f10*d_ab)
+                        load(:, 3) = load(:, 3) + ww*den*(op%k*bb**op%k_power/bb)*s_dlf &
+                            *(1 - xi*xi)/2*f10_xi*b_ab &
+                            + ww*den*(s_db/bb)*op%nu/2*(1 - xi*xi)*f10_xi*d_ab
+                    end if
+                end if
                 load(:, 4) = load(:, 4) + ww*torque*conjg(src)*b_ab
                 dens = dens + ww*den*b_ab
             end do
@@ -633,7 +661,33 @@ contains
 
         status = HP_BAD_INPUT
         if (op%n == 0 .or. .not. allocated(op%m)) return
-        call elements(f, mesh, op, sys, mat, status)
+        if (op%source_dlf10) then
+            ! f_10 of the axisymmetric problem on this mesh, in the kernel's
+            ! normalisation per unit speed (milca_dk_ntv ntv_f10).
+            block
+                type(hp_system_t) :: ax
+                real(dp), allocatable :: f10(:)
+                real(dp) :: mu
+                select type (f)
+                class is (hp_field_t)
+                class default
+                    return
+                end select
+                if (op%q == 0 .or. f%kappa == 0) return
+                call hp_assemble(f, mesh, op%nu, ax, status)
+                if (status /= HP_OK) return
+                call hp_factor(ax, status)
+                if (status /= HP_OK) return
+                allocate (f10(ax%n))
+                call hp_solve(ax, real(ax%drive(:, 1), dp), f10, mu, status)
+                call hp_free(ax)
+                if (status /= HP_OK) return
+                f10 = -2/(op%v*op%q*f%kappa)*f10
+                call elements(f, mesh, op, sys, mat, status, f10)
+            end block
+        else
+            call elements(f, mesh, op, sys, mat, status)
+        end if
         if (status /= HP_OK) return
         if (present(n_dof)) n_dof = sys%n
         status = HP_BAD_INPUT
@@ -799,6 +853,39 @@ contains
     !> The drive of one toroidal harmonic at (theta, xi), i n sum_m c_m
     !> exp(i m theta) from the operator's amplitudes; a geometry whose orbits
     !> leave the surface overrides it with the amplitudes at the orbit point.
+    !> b and db/dtheta of a thin field (zero slope otherwise).
+    subroutine field_value(f, th, b, b_t)
+        class(hp_geometry_t), intent(in) :: f
+        real(dp), intent(in) :: th
+        real(dp), intent(out) :: b, b_t
+        select type (f)
+        class is (hp_field_t)
+            b = field_b(f, th)
+            b_t = field_db(f, th)
+        class default
+            b = 1
+            b_t = 0
+        end select
+    end subroutine field_value
+
+    !> At theta with d_theta ln b = slope: the parallel-derivative source
+    !> sum_m (i (m - n q) - 2 slope)/q c_m e^{i m theta}, the f_10 mirror
+    !> factor sum_m (i (m - n q) - slope) c_m e^{i m theta} and dB/B.
+    pure subroutine perturbed_sources(op, th, slope, s_dpar, s_dlf, s_db)
+        type(hp_operator_t), intent(in) :: op
+        real(dp), intent(in) :: th, slope
+        complex(dp), intent(out) :: s_dpar, s_dlf, s_db
+        complex(dp) :: e
+        integer :: j
+        s_dpar = 0; s_dlf = 0; s_db = 0
+        do j = 1, size(op%m)
+            e = op%c(j)*exp((0, 1)*op%m(j)*th)
+            s_dpar = s_dpar + ((0, 1)*(op%m(j) - op%n*op%q) - 2*slope)/op%q*e
+            s_dlf = s_dlf + ((0, 1)*(op%m(j) - op%n*op%q) - slope)*e
+            s_db = s_db + e
+        end do
+    end subroutine perturbed_sources
+
     complex(dp) function op_perturbation(g, th, xi, op) result(src)
         class(hp_geometry_t), intent(in) :: g
         real(dp), intent(in) :: th, xi
