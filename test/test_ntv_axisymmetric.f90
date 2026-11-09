@@ -7,6 +7,9 @@
 !!   momentum       a single species with momentum-conserving self-collisions:
 !!                  A_1 drives only the rigid rotation, so the flow response
 !!                  is -(T/(Z e))/(2 k q) exactly (D_31 = G T/(Z e));
+!!   local          the local flow response, whose Boozer surface average is
+!!                  the flow coefficient, is a + c b^2 over the surface
+!!                  (u_par B = omega G + K B^2, from particle conservation);
 !!   collisionless  with pitch-angle scattering every speed node solves the
 !!                  problem of dk_mono, driven by (T/(Z e)) x r times its radial
 !!                  drift, r = -2/(k q). As nu -> 0 the parallel-flow response
@@ -36,6 +39,7 @@ program test_ntv_axisymmetric
     select case (trim(check))
     case ('onsager'); ok = onsager()
     case ('momentum'); ok = momentum()
+    case ('local'); ok = local_flow()
     case ('collisionless'); ok = collisionless()
     case default
         print '(a)', 'unknown check '//trim(check)
@@ -93,6 +97,47 @@ contains
                 .and. close('d23 = -d32', d(1, 1, 2, 3), -d(1, 1, 3, 2), 1e-6_dp)
         end do
     end function onsager
+
+    !> Fit a + c b^2 to the local A_1 and A_2 flow responses with the full
+    !> operator; the residual and the average must close. Particle
+    !> conservation of the discrete operator holds to the speed quadrature
+    !> (2e-7 for A_2), hence the tolerance.
+    logical function local_flow() result(ok)
+        type(collop_species_t) :: sp(1)
+        type(collop_grid_t) :: grid
+        real(dp) :: lnl(1, 1), d(1, 1, 3, 3), loc(n_theta, 1, 1, 3), theta(n_theta), &
+            b(n_theta), w(n_theta), m(n_theta, 2), coef(2), resid
+        integer :: status, its, i, j
+        sp(1) = collop_species_t(3.3435837768e-27_dp, 1.0_dp, 3e19_dp, 2*kev)
+        lnl = 3*sqrt(pi)/8*collop_vth(sp(1))*1e-3_dp/collop_nuhat(sp(1), sp(1), 1.0_dp)
+        call collop_make_grid(5.0_dp, 6, 5, grid, status)
+        call ntv_axisymmetric_coefficients(surface(), sp, lnl, grid, COLLOP_FULL, n_theta, &
+            n_leg, d, its, status, local=loc)
+        ok = status == NTV_OK
+        if (.not. ok) return
+        theta = [(2*pi*(i - 1)/n_theta, i=1, n_theta)]
+        b = 1 - eps*cos(theta)
+        w = 1/b**2
+        w = w/sum(w)
+        do j = 1, 2
+            m(:, 1) = 1
+            m(:, 2) = b**2
+            coef = least_squares(m, loc(:, 1, 1, j))
+            resid = maxval(abs(matmul(m, coef) - loc(:, 1, 1, j)))/maxval(abs(loc(:, 1, 1, j)))
+            ok = ok .and. close('local flow average', sum(w*loc(:, 1, 1, j)), d(1, 1, 3, j), &
+                1e-12_dp) .and. resid < 1e-6_dp
+            print '(a,es10.2)', 'residual of a + c b^2', resid
+        end do
+    end function local_flow
+
+    function least_squares(m, y) result(c)
+        real(dp), intent(in) :: m(:, :), y(:)
+        real(dp) :: c(2), a(2, 2), r(2), det
+        a = matmul(transpose(m), m)
+        r = matmul(transpose(m), y)
+        det = a(1, 1)*a(2, 2) - a(1, 2)*a(2, 1)
+        c = [a(2, 2)*r(1) - a(1, 2)*r(2), a(1, 1)*r(2) - a(2, 1)*r(1)]/det
+    end function least_squares
 
     logical function momentum() result(ok)
         real(dp) :: d(1, 1, 3, 3)
