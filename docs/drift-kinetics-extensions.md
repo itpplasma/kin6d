@@ -213,7 +213,7 @@ NEO-2-PAR (stellarator transport, relativistic operator):
 | Feature | Status |
 |---|---|
 | monoenergetic and energy-coupled transport coefficients of a 3D surface, ripple trapping | in progress: monoenergetic D11, D31, D33 (`mono_coefficients_3d`) and the full-operator transport matrix of a 3D surface at E_r = 0 (`ntv_surface_coefficients`), exact against the axisymmetric solver under quasisymmetry; open: ICNTS, MONKES and NEO-2-PAR comparisons, E_r, see K1 in [drift-kinetics.md](drift-kinetics.md) |
-| bootstrap coefficient of stellarators, against rabe and the Shaing-Callen limit | open, with K1 |
+| bootstrap coefficient of stellarators, against rabe and the Shaing-Callen limit | in progress: monoenergetic D31 against rabe on the Landreman-Paul QH equilibrium within 0.2 % at nu* = 1e-3 to 1e-2 and MONKES on W7-X (K1 in [drift-kinetics.md](drift-kinetics.md)); open: lower nu*, ICNTS published values, thermal coefficients |
 | relativistic Braams-Karney operator and the generalised Spitzer function (current drive) | open |
 
 NEO-RT (thin-orbit resonant transport in action-angle variables):

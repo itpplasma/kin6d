@@ -220,6 +220,46 @@ truncation applied to MILCA's input the three coefficients agree to 3e-10 at
 nu = 1e-3 to 1. A rational iota (5/11) is a poor benchmark: both codes'
 D11 then converge only once the resonant harmonic is resolved.
 
+Published fields (evidence runs; the field files stay outside the
+repository, scripts and numbers in the PR):
+
+- W7-X standard configuration (EIM), s = 0.2, the Boozer file and MONKES
+  database distributed with MONKES (30 x 60 points per period, 160 Legendre):
+  with the normalisation above, MILCA at 25 x 25 points per period and 160
+  Legendre agrees to 2e-10 (nu = 0.1/m) and 4e-9 (nu = 0.01/m) in D11, D31
+  and D33. At nu = 1e-3/m, where D31 changes sign, 25 x 25 points give
+  D31 to 3e-3 and 33 x 33 points to 4e-5 (D11 1e-6, D33 2e-7).
+- Bootstrap coefficient against rabe (Grassler et al. 2026,
+  [doi:10.1063/5.0332431](https://doi.org/10.1063/5.0332431)) on the
+  quasi-helically symmetric Landreman-Paul (2022) reactor-scale equilibrium
+  shipped with rabe, s = 0.5 (iota = -1.2435, B ~ B(theta + 4 zeta)). rabe's
+  asymptotic coefficient is lambda_bB = lambda_LC + Lambda_S sqrt(nu*) +
+  Lambda_A/sqrt(nu*) + Lambda_B/nu*, nu* = pi R nu, with the Landreman-Catto
+  limit lambda_LC proportional to the trapped fraction f_t. Normalised by that
+  limit, D31/(f_t iota/(3 (iota + 4))) (f_t = 0.4888 from the same surface)
+  against lambda_bB/lambda_LC:
+
+  | nu* | MILCA | rabe | MILCA grid (theta x zeta per period, Legendre) |
+  |---|---|---|---|
+  | 1e-2 | 0.85069 | 0.85193 | 25 x 31 and 33 x 41, 160 to 240 (same to 1e-6) |
+  | 1e-3 | 0.95084 | 0.95261 | 41 x 51, 240 (33 x 41: 0.95092; 25 x 31: 0.95167) |
+
+  The slope in sqrt(nu*) between nu* = 1e-3 and 1e-2, -1.465, is within
+  1 % of rabe's Lambda_S/lambda_LC = -1.480; the converged values lie 0.12
+  to 0.19 % below rabe, a difference not resolved further here. rabe's
+  non-omnigenous
+  remainder proxy (-4.4 % of lambda_LC at this s) is not borne out: the
+  MILCA values extrapolate to the Landreman-Catto limit within 0.2 %.
+  Resolution in theta and zeta, not in the Legendre index, limits the low
+  nu* end, as on the axisymmetric surface: at nu* = 1e-3, 160 and 320
+  Legendre polynomials agree to 1e-8, while nu* = 1e-4 still changes by
+  7e-3 between 25 x 31 and 33 x 41 points and is open.
+
+ICNTS (Beidler et al. 2011) publishes its coefficients as figures for
+device fields that were exchanged within the collaboration; a comparison
+with its published values needs those field files and digitised curves and
+is open.
+
 ### K2: global steady distributions and quasineutrality
 
 Retain v_d.grad(psi) partial_psi f on the unknown over a radial domain, where
