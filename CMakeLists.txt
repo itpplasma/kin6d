@@ -94,7 +94,9 @@ target_sources(milca_mhd PRIVATE src/generated/milca_vrmhd_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
     src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
     src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90 src/mhd/vrmhd_fourier.f90
-    src/mhd/vrmhd_fourier_nonlinear.f90)
+    src/mhd/vrmhd_fourier_nonlinear.f90
+    src/generated/milca_vrmhd_cylinder_leaves.f90 src/mhd/vrmhd_cylinder.f90
+    src/mhd/vrmhd_steady.f90)
 add_library(milca_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
 target_link_libraries(milca_vrmhd_wall_test PUBLIC milca_mhd)
 add_library(milca_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
@@ -132,6 +134,16 @@ foreach(gate energy decay waves steady)
         PROCESSORS 8 TIMEOUT 300
         ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_executable(test_vrmhd_cylinder test/test_vrmhd_cylinder.f90)
+target_link_libraries(test_vrmhd_cylinder PRIVATE milca_mhd)
+add_test(NAME vrmhd_cylinder_profiles COMMAND test_vrmhd_cylinder profiles)
+add_test(NAME vrmhd_cylinder_stationary COMMAND test_vrmhd_cylinder stationary
+    rings=12 degree=2 dtau=10 cluster=3 chi_ratio=1 beta_p=0.01 check=1)
+add_test(NAME vrmhd_cylinder_linear COMMAND test_vrmhd_cylinder linear
+    rings=24 degree=2 dtau=10 cluster=3 chi_ratio=1 check=1)
+set_tests_properties(vrmhd_cylinder_profiles vrmhd_cylinder_stationary
+    vrmhd_cylinder_linear PROPERTIES LABELS rm-b8 PROCESSORS 8
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_island test/test_vrmhd_island.f90
     test/support/vrmhd_island_leaves.f90)
 target_link_libraries(test_vrmhd_island PRIVATE milca_vrmhd_slab_test)
@@ -1330,6 +1342,15 @@ if(MILCA_FORTSYM_BUILD)
         -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_nonlinear_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_mms_nonlinear_regeneration PROPERTIES LABELS rm3b)
+    add_executable(gen_vrmhd_cylinder gen/gen_vrmhd_cylinder.f90)
+    target_link_libraries(gen_vrmhd_cylinder PRIVATE milca_gen_support)
+    add_test(NAME vrmhd_cylinder_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_cylinder>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_vrmhd_cylinder_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-cylinder-regeneration
+        -DLEAF=milca_vrmhd_cylinder_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_cylinder_regeneration PROPERTIES LABELS rm2)
     add_executable(gen_vrmhd_gs gen/gen_vrmhd_gs.f90)
     target_link_libraries(gen_vrmhd_gs PRIVATE milca_gen_support)
     add_test(NAME vrmhd_gs_regeneration COMMAND ${CMAKE_COMMAND}

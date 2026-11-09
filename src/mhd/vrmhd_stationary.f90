@@ -106,7 +106,7 @@ contains
         end subroutine
 
         subroutine vrmhd_stationary_jacobian(op, steady, p, u, boundary, source, &
-                jac, status)
+                jac, status, shift)
             type(vrmhd_section_t), intent(in) :: op
             type(vrmhd_stationary_t), intent(in) :: steady
             type(vrmhd_parameters_t), intent(in) :: p
@@ -114,16 +114,21 @@ contains
             real(dp), intent(in) :: source(6, op%fs%nq, op%fs%mm%topology%n_triangles)
             type(csc_t), intent(out) :: jac
             integer, intent(out) :: status
+            !> Adds shift times the time mass, for pseudo-transient continuation.
+            real(dp), intent(in), optional :: shift
             type(csc_t) :: volume
             type(fortsparse_status_t) :: st
             integer, allocatable :: rows(:), cols(:)
             real(dp), allocatable :: values(:)
             real(dp) :: trial(op%ndof), zero(op%ndof)
             integer :: i, j, k, pos, capacity, n
+            real(dp) :: mass_shift
             n = op%ndof; trial = u(:n); zero = 0
             where (op%fixed) trial = boundary
-            call vrmhd_section_jacobian(op, p, trial, zero, source, 0.0_dp, volume, &
-                status)
+            mass_shift = 0
+            if (present(shift)) mass_shift = shift
+            call vrmhd_section_jacobian(op, p, trial, zero, source, mass_shift, &
+                volume, status)
             if (status /= 0) return
             capacity = size(volume%val) + 2*size(steady%gradient%val) + count(op%fixed)
             allocate (rows(capacity), cols(capacity), values(capacity))

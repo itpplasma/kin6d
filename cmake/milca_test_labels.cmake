@@ -946,6 +946,7 @@ milca_test_labels(vrmhd_stationary_gauge slow CLASSES mhd
     TARGETS test_vrmhd_stationary)
 milca_test_labels(vrmhd_gs_consistency fast CLASSES mhd TARGETS test_vrmhd_gs)
 milca_test_labels(vrmhd_gs_regeneration fast CLASSES mhd TARGETS gen_vrmhd_gs)
+milca_test_labels(vrmhd_cylinder_regeneration fast CLASSES mhd TARGETS gen_vrmhd_cylinder)
 
 milca_test_labels(vrmhd_section_regeneration fast CLASSES mhd TARGETS gen_vrmhd_section)
 
@@ -1002,6 +1003,9 @@ foreach(family equal mixed)
             TARGETS test_vrmhd_island)
     endforeach()
 endforeach()
+milca_test_labels(vrmhd_cylinder_profiles fast CLASSES mhd TARGETS test_vrmhd_cylinder)
+milca_test_labels(vrmhd_cylinder_stationary slow CLASSES mhd TARGETS test_vrmhd_cylinder)
+milca_test_labels(vrmhd_cylinder_linear slow CLASSES mhd TARGETS test_vrmhd_cylinder)
 milca_test_labels(vrmhd_island_induction_mixed fast CLASSES mhd
     TARGETS test_vrmhd_island)
 milca_test_labels(vrmhd_island_regeneration fast CLASSES mhd
