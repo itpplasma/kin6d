@@ -257,7 +257,7 @@ contains
         options%max_step = dt_out
         call bdf_init(state, 0.0_dp, y, options, st, derivative=derivative)
         call require(st%code == FORTNUM_OK, 'BDF start')
-        print '(a)', 'time, q(0.1) [Bz=1], q(0.1), E_B(m>=1), E_K(m>=1), '// &
+        print '(a)', 'time, q(0.1) [Bz=1], q(0.1), E_B(m=1), E_K(m=1), '// &
             'steps, newton, factorizations, wall seconds'
         newton = 0; steps = 0
         call system_clock(t0, rate)
@@ -315,7 +315,7 @@ contains
                 (edges(b) + edges(b + 1))/2, q(:, b), &
                 1/(c%r0*vrmhd_cylinder_value_at(prof, (edges(b) + edges(b + 1))/2))
         end do
-        print '(a,2es12.4)', '  energy of the theta-dependent part (B, v): ', energy
+        print '(a,2es12.4)', '  energy of the m = 1 part (B, v): ', energy
     end subroutine
 
     real(dp) function vrmhd_cylinder_value_at(prof, r) result(btheta_over_r)

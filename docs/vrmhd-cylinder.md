@@ -133,5 +133,6 @@ on an unaligned mesh.
 `evolve` mode solves the stationary state, seeds BDF2 with its unstable
 `m = 1` eigenvector scaled to a peak velocity `seed`, and prints `q` at
 `r = 0.1` (annulus 0.09-0.11, from the mean of `B_theta/r`) and the magnetic
-and kinetic energy of the `m >= 1` part. These trajectories are candidates;
-the comparison with the reduced model and with JOREK is not a registered gate.
+and kinetic energy of the `m = 1` part (Fourier projection on 400 annuli).
+These trajectories are candidates; the comparison with the reduced model and
+with JOREK is not a registered gate.

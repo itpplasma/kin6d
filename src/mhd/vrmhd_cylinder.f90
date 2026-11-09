@@ -416,8 +416,9 @@ contains
         !! Annulus averages over the section quadrature: q = r Bz/(R0 B_theta)
         !! of the averaged field with Bz = 1 (the reduced-model convention) and
         !! with the averaged Bz in the annuli between `edges` (edges > 0), and
-        !! the magnetic and kinetic energy per unit length of the theta-dependent
-        !! part (all m >= 1), from the polar-component means on 400 equal annuli.
+        !! the magnetic and kinetic energy per unit length of the m = 1 part,
+        !! sum_annuli |integral f exp(-i theta) dA|^2/area over 400 equal annuli
+        !! of the polar components (density taken as one in the kinetic part).
         type(vrmhd_section_t), intent(in) :: op
         real(dp), intent(in) :: r0, u(:), edges(:)
         real(dp), intent(out) :: q(2, size(edges) - 1), energy(2)
@@ -425,21 +426,22 @@ contains
         integer, parameter :: nfine = 400
         real(dp) :: basis(36, op%nlocal), x(2), weight, v(36), radius, polar(6)
         real(dp) :: area(size(edges) - 1), mean(7, size(edges) - 1)
-        real(dp) :: fine_area(nfine), fine_mean(6, nfine), total(2)
+        real(dp) :: fine_area(nfine)
+        complex(dp) :: harmonic(6, nfine), phase
         integer :: t, q_point, bin, nbin
         nbin = size(edges) - 1
-        area = 0; mean = 0; fine_area = 0; fine_mean = 0; total = 0
+        area = 0; mean = 0; fine_area = 0; harmonic = 0
         do t = 1, op%fs%mm%topology%n_triangles
             do q_point = 1, op%fs%nq
                 call vrmhd_section_basis(op, t, q_point, x, weight, basis, status)
                 if (status /= 0) return
                 v = matmul(basis, u(op%map(:, t)))
                 call polar_components(x, v, polar)
-                total = total + weight*[sum(v(25:27)**2), v(1)*sum(v(2:4)**2)]/2
                 radius = norm2(x)
+                phase = cmplx(x(1), -x(2), dp)/max(radius, tiny(1.0_dp))
                 bin = min(nfine, int(radius*nfine) + 1)
                 fine_area(bin) = fine_area(bin) + weight
-                fine_mean(:, bin) = fine_mean(:, bin) + weight*polar
+                harmonic(:, bin) = harmonic(:, bin) + weight*polar*phase
                 do bin = 1, nbin
                     if (radius < edges(bin) .or. radius >= edges(bin + 1)) cycle
                     area(bin) = area(bin) + weight
@@ -450,11 +452,11 @@ contains
         end do
         status = 1
         if (any(area <= 0)) return
-        energy = total
+        energy = 0
         do bin = 1, nfine
             if (fine_area(bin) <= 0) cycle
-            energy = energy - [sum(fine_mean(1:3, bin)**2), &
-                sum(fine_mean(4:6, bin)**2)]/(2*fine_area(bin))
+            energy = energy + [sum(abs(harmonic(1:3, bin))**2), &
+                sum(abs(harmonic(4:6, bin))**2)]/fine_area(bin)
         end do
         do bin = 1, nbin
             ! B_theta/r is regular on the axis, so its annulus mean has no
