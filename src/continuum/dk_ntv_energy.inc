@@ -623,7 +623,7 @@
         call complex_gmres_operator(operator, b, u, energy_tolerance, 1000, 200, info, &
             iterations, residual)
         if (status /= NTV_OK) return
-        status = NTV_SINGULAR
+        status = NTV_NO_CONVERGENCE
         if (info /= KRYLOV_OK) return
         status = NTV_OK
         call precondition(u, w)

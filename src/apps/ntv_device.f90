@@ -34,14 +34,15 @@ module milca_ntv_device
         boozer_average, BOOZER_OK
     use milca_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
     use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
-        ntv_f10, ntv_energy_coefficients, NTV_OK, NTV_WEIGHT_FULL
+        ntv_f10, ntv_energy_coefficients, NTV_OK, NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
         collop_nuhat, collop_vth, COLLOP_OK
     implicit none
     private
     public :: ntv_species_t, ntv_profile_t, ntv_resolution_t, ntv_species_result_t
     public :: ntv_device_profile, deflection_frequency
-    integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2
+    integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2, &
+        DEVICE_NO_CONVERGENCE = 3
 
     real(dp), parameter :: pi = 4*atan(1.0_dp), elementary = 1.602176634e-19_dp
 
@@ -84,11 +85,13 @@ module milca_ntv_device
     !> offset rotation is the Omega_tE at which Gamma_psi of the species
     !> vanishes with the coefficients held at their values for the given
     !> Omega_tE; in the 1/nu regime, where they do not depend on Omega_tE, it is
-    !> the rotation the torque relaxes to.
+    !> the rotation the torque relaxes to. status is DEVICE_OK, or the failure
+    !> of this surface and species, whose other fields are then zero; the
+    !> profile status is DEVICE_SOLVE when any of them failed.
     type :: ntv_species_result_t
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
             heat_flux = 0, torque = 0, offset_rotation = 0
-        integer :: factorisations = 0, iterations = 0
+        integer :: factorisations = 0, iterations = 0, status = DEVICE_OK
     end type
 
 contains
@@ -149,12 +152,16 @@ contains
                 call adaptive((u - 1)/nsp + 1, mod(u - 1, nsp) + 1, ustat(u))
             end do
             !$omp end parallel do
-            status = DEVICE_SOLVE
-            if (any(ustat /= DEVICE_OK)) return
-            status = DEVICE_OK
             ! The full operator puts speed-element edges at the kinks found here.
             if (res%collisions /= 0) call energy_profile(eq, n_tor, species, prof, res, sf, &
                 psi_pol_s, dpsi_dr, result, status, kink, nkink)
+            do u = 1, ns*nsp
+                associate (r => result((u - 1)/nsp + 1, mod(u - 1, nsp) + 1))
+                    if (ustat(u) /= DEVICE_OK) r = ntv_species_result_t(status=ustat(u))
+                end associate
+            end do
+            if (any(ustat /= DEVICE_OK)) status = DEVICE_SOLVE
+            if (res%collisions == 0 .and. all(ustat == DEVICE_OK)) status = DEVICE_OK
             return
         end if
         if (res%collisions /= 0) then
@@ -188,8 +195,6 @@ contains
                 min(units(3, u) + res%chunk - 1, ns), ustat(u))
         end do
         !$omp end parallel do
-        status = DEVICE_SOLVE
-        if (any(ustat /= DEVICE_OK)) return
 
         allocate (result(ns, nsp))
         do a = 1, nsp
@@ -197,7 +202,14 @@ contains
                 call assemble(i, a)
             end do
         end do
-        status = DEVICE_OK
+        ! A failed unit voids its species on every surface of its chunk.
+        do u = 1, nunit
+            if (ustat(u) == DEVICE_OK) cycle
+            do i = units(3, u), min(units(3, u) + res%chunk - 1, ns)
+                result(i, units(1, u)) = ntv_species_result_t(status=ustat(u))
+            end do
+        end do
+        status = merge(DEVICE_OK, DEVICE_SOLVE, all(ustat == DEVICE_OK))
 
     contains
 
@@ -457,9 +469,10 @@ contains
             call energy_surface(i, ustat(i))
         end do
         !$omp end parallel do
-        status = DEVICE_SOLVE
-        if (any(ustat /= DEVICE_OK)) return
-        status = DEVICE_OK
+        do i = 1, ns
+            if (ustat(i) /= DEVICE_OK) result(i, :) = ntv_species_result_t(status=ustat(i))
+        end do
+        status = merge(DEVICE_OK, DEVICE_SOLVE, all(ustat == DEVICE_OK))
     contains
         subroutine energy_surface(i, st)
             integer, intent(in) :: i
@@ -487,6 +500,7 @@ contains
             end if
             call ntv_energy_coefficients(local, sp, lnl, local_grid, res%collisions, &
                 -prof%omega_te(i), res%n_theta, res%n_leg, kk, its, ks, qq)
+            if (ks == NTV_NO_CONVERGENCE) st = DEVICE_NO_CONVERGENCE
             if (ks /= NTV_OK) return
             do a = 1, nsp
                 a2(a) = prof%temperature_s(i, a)/(prof%temperature(i, a)*psi_pol_s(i))
