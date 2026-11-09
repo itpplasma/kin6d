@@ -23,10 +23,10 @@ program test_ideal_map_field_angle
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_SHEARED
     use kin6d_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
         NESTED_SEED_OK
-    use kin6d_grad_shafranov, only: gs_state_t
+    use milca_grad_shafranov, only: gs_state_t
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use kin6d_map_3d_equilibrium, only: map_3d_sample
-    use kin6d_equilibrium_state, only: EQ_VALUES
+    use milca_equilibrium_state, only: EQ_VALUES
     use fortfem_element_to_csr, only: csr_matrix_t
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
     implicit none

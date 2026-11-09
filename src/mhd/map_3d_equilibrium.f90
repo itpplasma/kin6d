@@ -3,9 +3,9 @@ module kin6d_map_3d_equilibrium
     ! Retain the frozen form; never Fourier-fit B from a sampled candidate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
+    use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
                       EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
     use kin6d_ideal_seed_3d, only: toroidal_seed_t, ideal_seed_3d_angle_density
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES

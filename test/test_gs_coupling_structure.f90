@@ -11,9 +11,9 @@ program test_gs_coupling_structure
     !!    energy of the vacuum solution equals int_Gamma_c psi d_nu psi ds.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
                            gs_coupled_matrix, gs_coupling_coil_load, gs_coupled_solve, &
                            gs_coupling_energies, gs_coupling_edge_points, GS_COUPLING_OK
     use fortnum_quadrature, only: gauss_legendre

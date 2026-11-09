@@ -1,14 +1,14 @@
 program test_gs_profile_newton
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
+    use milca_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load, &
                  solve_gs_cubic_profiles, apply_gs_profile_jacobian, gs_profile_response, &
                  gs_normalize_current
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
-    use kin6d_gs_majorant, only: gs_functional_majorant
-    use kin6d_gs_certificate, only: gs_fixed_certifier_t
-    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium
+    use milca_gs_majorant, only: gs_functional_majorant
+    use milca_gs_certificate, only: gs_fixed_certifier_t
+    use milca_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
                                              EQ_CLAIM_RESIDUAL, EQ_CLAIM_PRACTICAL
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none

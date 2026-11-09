@@ -112,7 +112,7 @@ program nn1_spec_case
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve, nn_vacuum_mode, nn_point
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     implicit none
     type(flux_mesh_t) :: fm
     type(mesh_2d_t) :: topo

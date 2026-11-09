@@ -1,4 +1,4 @@
-module kin6d_equilibrium_geometry
+module milca_equilibrium_geometry
     ! Kinetic geometry view of the D7 evaluator (docs/equilibrium-core.md, D7).
     ! For an axisymmetric nested state it reads one flux surface psi = psi_0
     ! through the batched evaluator only (B, p, psi, grad psi); it carries no
@@ -31,7 +31,7 @@ module kin6d_equilibrium_geometry
     ! b x grad B/B^2 per unit factor. Curvature at finite beta is not included.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
+    use milca_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
         labelled_field_t, EQ_BR, EQ_BZ, EQ_BPHI, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, &
         EQ_VALUES
     implicit none
@@ -569,4 +569,4 @@ contains
         if (any(active)) return
         status = 0
     end subroutine
-end module kin6d_equilibrium_geometry
+end module milca_equilibrium_geometry

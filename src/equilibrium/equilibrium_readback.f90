@@ -1,4 +1,4 @@
-module kin6d_equilibrium_readback
+module milca_equilibrium_readback
     ! One readback for every lane (docs/equilibrium-core.md, D7, migration
     ! M2). An axisymmetric nested state is read through its evaluator and its
     ! label primitives only:
@@ -18,9 +18,9 @@ module kin6d_equilibrium_readback
     ! The flux values reported are absolute in the state's gauge.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
-    use kin6d_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
+    use milca_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
         labelled_field_t, flux_labelled_field_t, EQ_BPHI, EQ_PSI, EQ_PSI_R, EQ_VALUES
-    use kin6d_equilibrium_bulk_leaves, only: equilibrium_bulk_normalize
+    use milca_equilibrium_bulk_leaves, only: equilibrium_bulk_normalize
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
@@ -330,4 +330,4 @@ contains
         if (.not. all(ieee_is_finite(rbphi))) return
         status = 0
     end subroutine
-end module kin6d_equilibrium_readback
+end module milca_equilibrium_readback

@@ -1,8 +1,8 @@
-module kin6d_gs_field_readback
+module milca_gs_field_readback
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_element_jet, sample_gs
-    use kin6d_gs_symmetry, only: gs_reduced_field
+    use milca_grad_shafranov, only: gs_state_t, gs_element_jet, sample_gs
+    use milca_gs_symmetry, only: gs_reduced_field
     use delaunay_types, only: mesh_t, point_t
     use geometric_predicates, only: orientation, ORIENTATION_CCW, ORIENTATION_CW
     use point_location, only: locate_point, LOCATION_INSIDE, LOCATION_NOT_FOUND

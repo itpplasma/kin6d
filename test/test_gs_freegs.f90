@@ -9,17 +9,17 @@ program test_gs_freegs
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_multiroot, only: multiroot_hybrid
     use fortnum_status, only: fortnum_status_t, status_ok
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data, sample_gs
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_read_coil_table
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data, sample_gs
+    use milca_gs_coils, only: gs_circuit_set_t, gs_read_coil_table
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, &
                                       gs_fb_eval_t, gs_fb_history_t, &
                                       gs_fb_setup, gs_fb_newton, &
                                       gs_fb_evaluate, gs_fb_lcfs_levels, &
                                       gs_fb_trace_lcfs, GS_FB_XPOINT
-    use kin6d_gs_free_boundary, only: gs_fb_law_tangent
-    use kin6d_gs_equilibrium, only: gs_equilibrium
-    use kin6d_equilibrium_state, only: equilibrium_state_t, labelled_field_t
+    use milca_gs_free_boundary, only: gs_fb_law_tangent
+    use milca_gs_equilibrium, only: gs_equilibrium
+    use milca_equilibrium_state, only: equilibrium_state_t, labelled_field_t
     implicit none
 
     real(dp), parameter :: pi = acos(-1.0_dp)

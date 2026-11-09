@@ -11,8 +11,8 @@ module gs_coupling_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_green, gs_mu0, gs_rect_coil_t
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
-    use kin6d_gs_coils, only: gs_coil_t, gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
+    use milca_gs_coils, only: gs_coil_t, gs_circuit_set_t, gs_circuit_flux_vectors
     implicit none
     private
 

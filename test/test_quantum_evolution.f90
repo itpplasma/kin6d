@@ -8,7 +8,7 @@ program test_quantum_evolution
         quantum_evolution_accepted, solve_quantum_evolution_tangent, &
         sample_quantum_evolution_tangent, quantum_evolution_vjp, &
         quantum_hamiltonian_action
-    use kin6d_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_jvp, &
+    use milca_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_jvp, &
                                               qe_rhs_term_vjp
     implicit none
     type(quantum_evolution_t) :: state, plus, minus, coarse, invalid

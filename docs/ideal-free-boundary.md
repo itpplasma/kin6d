@@ -474,7 +474,7 @@ Measured numerical evidence (GNU Fortran, Release, two OpenMP threads):
 | ψ-lane interior poloidal field error | 3.2e-4 → 3.3e-5 |
 | ψ-lane interior pressure error (μ0-scaled) | 4.8e-5 → 4.9e-6 |
 
-The same test also runs `kin6d_gs_free_boundary` on both meshes with the
+The same test also runs `milca_gs_free_boundary` on both meshes with the
 fitted rings as ordinary filament coils. Its χ = −ψ convention requires
 p′ = 2/μ0 and FF′ = 2, and circuit current scale 1/μ0 for the dimensionless
 ring coefficients. The target-mean boundary functional sets χ_b on S0.

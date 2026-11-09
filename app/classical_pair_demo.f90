@@ -4,7 +4,7 @@ program classical_pair_demo
     use milca_classical_pair, only: classical_pair_model_t, initialize_classical_pair, &
         classical_pair_sample, classical_pair_wrap, classical_pair_state, &
         classical_pair_bin_center
-    use kin6d_classical_pair_leaves, only: cp_statistic
+    use milca_classical_pair_leaves, only: cp_statistic
     use kin6d_nbody, only: nbody_step, nbody_energy, nbody_encounter_step
     use fortplot, only: figure,figure_t,get_global_figure,subplot,scatter,plot, &
         errorbar,title,xlabel,ylabel,xlim,ylim,legend,tight_layout,savefig,suptitle

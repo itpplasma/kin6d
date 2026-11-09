@@ -1,23 +1,23 @@
 program gs_phase1_main
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, input_unit, output_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         write_gs_mesh, read_gs_mesh, sample_gs
-    use kin6d_gs_field_readback, only: sample_gs_many
-    use kin6d_gs_ampere_loop, only: gs_boundary_current, gs_weak_boundary_current
+    use milca_gs_field_readback, only: sample_gs_many
+    use milca_gs_ampere_loop, only: gs_boundary_current, gs_weak_boundary_current
     use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
         curve_value
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
         gs_readback_resolution, gs_readback_q
-    use kin6d_gs_certificate, only: gs_fixed_certifier_t
-    use kin6d_gs_error_control, only: gs_linear_goal_t, gs_fixed_linear_goal
+    use milca_gs_certificate, only: gs_fixed_certifier_t
+    use milca_gs_error_control, only: gs_linear_goal_t, gs_fixed_linear_goal
     use kin6d_grad_shafranov_leaves, only: gs_source
-    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, &
+    use milca_equilibrium_certificate, only: equilibrium_certificate_t, &
         certify, claim_name
-    use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
+    use milca_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
         write_gs_profile_law, gs_law_sources, gs_law_primitives
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
-    use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
+    use milca_gs_prescribed_q, only: solve_gs_prescribed_q
     use milca_result_io, only: run_t, result_file_t, runtime_git
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, gs_timer_event_count, gs_timer_event_get, &

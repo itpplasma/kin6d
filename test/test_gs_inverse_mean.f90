@@ -3,7 +3,7 @@ program test_gs_inverse_mean
     use kin6d_gs_inverse_leaves, only: gs_profile_mean_last, &
         gs_profile_mean_last_jvp, gs_profile_mean_last_vjp
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_gs_inverse, only: gs_inverse_result_t, gs_inverse_f, gs_inverse_profile_status
+    use milca_gs_inverse, only: gs_inverse_result_t, gs_inverse_f, gs_inverse_profile_status
     implicit none
     type(gs_inverse_result_t)::profile
     real(dp)::f

@@ -1,7 +1,7 @@
 program test_gs_readback_order
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_readback_q
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_readback_q
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = 0.62_dp, f = 32.86_dp
     real(dp), parameter :: c = f/(12*r0**3)

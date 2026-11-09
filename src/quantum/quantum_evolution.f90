@@ -10,7 +10,7 @@ module kin6d_quantum_evolution
     use fortnum_sampled_norm, only: sampled_norm_upper
     use fortnum_ode_residual_certificate, only: hermite_cubic_enclosure, &
         linear_residual_bound, residual_radius_step
-    use kin6d_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_interval, &
+    use milca_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_interval, &
         qe_rhs_term_vjp, qe_add, qe_add_interval, qe_scale, qe_hermite, &
         qe_evaluate, qe_evaluate_interval, qe_square_add_interval, &
         qe_norm_interval, qe_radius, qe_band_interval, &

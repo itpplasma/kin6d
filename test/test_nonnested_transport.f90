@@ -1,7 +1,7 @@
 module nn_transport_fixture
     ! Analytic fields and sources for the NN2 anisotropic transport oracles.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     use kin6d_nonnested_leaves, only: anisotropic_conductivity

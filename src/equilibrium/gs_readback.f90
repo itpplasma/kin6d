@@ -1,14 +1,14 @@
-module kin6d_gs_readback
+module milca_gs_readback
     ! psi-lane entry to the core readback (docs/equilibrium-core.md, D7): the
     ! state is wrapped by the psi adapter and read by read_equilibrium.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_equilibrium_readback, only: gs_readback_t => equilibrium_readback_t, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_readback, only: gs_readback_t => equilibrium_readback_t, &
         read_equilibrium, gs_readback_q => readback_q
-    use kin6d_gs_equilibrium, only: gs_equilibrium, gs_profile_f, &
+    use milca_gs_equilibrium, only: gs_equilibrium, gs_profile_f, &
         gs_readback_resolution
     implicit none
     private
@@ -57,4 +57,4 @@ contains
         call read_equilibrium(eq, radial_points, angular_points, result, status, &
                               rho_grid, bulk_quantities)
     end subroutine
-end module kin6d_gs_readback
+end module milca_gs_readback

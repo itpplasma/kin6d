@@ -24,8 +24,8 @@ module kin6d_quantum_pair_cell
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
-    use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
-    use kin6d_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
+    use milca_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
+    use milca_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
         jc_shell_average
     implicit none
     private

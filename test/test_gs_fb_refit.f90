@@ -14,11 +14,11 @@ program test_gs_fb_refit
     !! manufactured solution as test_gs_fb_manufactured: the nodal load `extra`
     !! is rebuilt after every mesh change.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-  use kin6d_gs_coupling, only: gs_coupling_source_load, gs_coupled_apply, GS_COUPLING_OK
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_coupling, only: gs_coupling_source_load, gs_coupled_apply, GS_COUPLING_OK
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
              gs_fb_refit_config_t, gs_fb_refit_report_t, gs_fb_history_t, gs_fb_setup, &
   gs_fb_evaluate, gs_fb_jacobian_apply, gs_fb_newton, gs_fb_refit_solve, gs_fb_locate, &
                                       gs_fb_trace_lcfs, &

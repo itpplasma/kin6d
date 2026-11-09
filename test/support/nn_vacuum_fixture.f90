@@ -5,9 +5,9 @@ module nn_vacuum_fixture
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
                                            nn_build, nn_solve, nn_vacuum_mode
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_nonnested_leaves, only: segment_potential, vacuum_gauge
-    use kin6d_equilibrium_state, only: equilibrium_field_t
+    use milca_equilibrium_state, only: equilibrium_field_t
     use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
                            island_trace, island_symmetry_point, island_periodic_point, &
                                         island_stability, island_libration_edge

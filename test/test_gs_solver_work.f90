@@ -2,7 +2,7 @@ program test_gs_solver_work
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_krylov, only: KRYLOV_OK, KRYLOV_MAX_ITERATIONS
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs, &
         gs_linear_response
     implicit none
     type(gs_state_t) :: state

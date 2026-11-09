@@ -1,4 +1,4 @@
-module kin6d_grad_shafranov
+module milca_grad_shafranov
    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
    use triangle_compat, only: tc_result_t, triangulate_compat
@@ -29,7 +29,7 @@ module kin6d_grad_shafranov
        curve_value, boundary_curve, triangle_shapes, triangle_locate
    use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
    use milca_real_identity, only: same_real_value
-   use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
+   use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
       GS_SCREW, GS_UNSUPPORTED_SYMMETRY, gs_reduced_field
    use kin6d_gs_symmetry_leaves, only: gs_screw_bilinear, &
       gs_translation_source, gs_screw_source
@@ -2730,4 +2730,4 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       end do
       close (unit)
    end subroutine write_gs_mesh
-end module kin6d_grad_shafranov
+end module milca_grad_shafranov

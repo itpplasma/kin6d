@@ -1,7 +1,7 @@
 program benchmark_cpu_solve
     ! Prototype consumer of the owning fwprec API; no private solver.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs
     use kin6d_gs_csr, only: gs_csr_spd_matrix
     use fortnum_precision, only: precision_policy_t, precision_pair_t, &
                             precision_preset, FP64, FP32, FP16, BF16, STAGE_PRECONDITION

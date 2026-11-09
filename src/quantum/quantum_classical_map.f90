@@ -25,7 +25,7 @@ module kin6d_quantum_classical_map
         jellium_spectrum_t, jellium_sector, jellium_sector_momenta
     use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_matvec, fock_rdm3_entries, &
         fock_rdm2_entries
-    use kin6d_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
+    use milca_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
         jc_shell_average
     use kin6d_fermion_ensemble, only: fermion_spectrum_t, canonical_state_t, &
         box_spectrum, box_cutoff, box_parameters, solve_canonical, same_spin_pair

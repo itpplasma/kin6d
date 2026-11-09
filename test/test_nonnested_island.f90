@@ -28,9 +28,9 @@ program test_nonnested_island
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use kin6d_equilibrium_nonnested, only: nn_report_t, nn_build, nn_solve, &
         nn_vacuum_mode, nn_point
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_P
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_P
     use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
         island_periodic_point
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &

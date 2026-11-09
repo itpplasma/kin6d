@@ -1,7 +1,7 @@
 program test_curve_chart
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_quiet_nan
-    use kin6d_equilibrium_chart, only: curve_chart_t, cylindrical_chart_t
+    use milca_equilibrium_chart, only: curve_chart_t, cylindrical_chart_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     type(curve_chart_t) :: chart

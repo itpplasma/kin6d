@@ -2,7 +2,7 @@ module kin6d_quantum_fock
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, ipoint, entire
-    use kin6d_quantum_fock_leaves, only: &
+    use milca_quantum_fock_leaves, only: &
         qf_accumulate, &
         qf_accumulate_interval, &
         qf_accumulate_jvp, &

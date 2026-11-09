@@ -1,4 +1,4 @@
-module kin6d_gs_equilibrated
+module milca_gs_equilibrated
     !! Equilibrated-flux energy bound for the fixed-boundary GS problem
     !! -div(grad psi / R) = f, psi = 0 on the boundary, on affine or
     !! isoparametric P1--P3 cells. FortFEM builds sigma ~ grad psi / R with
@@ -11,15 +11,15 @@ module kin6d_gs_equilibrated
     !! arithmetic remain approximate until an independent checker encloses them.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_triangle_basis, only: triangle_bernstein_controls
     use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
         gs_error_friedrichs
-    use kin6d_gs_majorant, only: gs_point_source_fn
+    use milca_gs_majorant, only: gs_point_source_fn
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
+    use milca_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_equilibrated_majorant, equilibrated_flux_estimate_t
@@ -119,4 +119,4 @@ contains
         status = GS_EQ_OK
     end subroutine gs_equilibrated_majorant
 
-end module kin6d_gs_equilibrated
+end module milca_gs_equilibrated

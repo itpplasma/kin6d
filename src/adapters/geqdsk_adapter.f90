@@ -9,13 +9,13 @@ module milca_geqdsk_adapter
     use math_constants, only: length_si_to_cgs, magneticflux_si_to_cgs, &
                           magneticfield_si_to_cgs, current_si_to_cgs, pressure_si_to_cgs
     use milca_real_identity, only: same_real_value
-    use kin6d_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
+    use milca_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
                                        EQ_PSI, EQ_VALUES
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
-    use kin6d_gs_equilibrium, only: gs_field_t, gs_equilibrium
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_gs_equilibrium, only: gs_field_t, gs_equilibrium
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_gs_nonlinear, only: solve_gs_cubic_profiles
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init
     implicit none
     private

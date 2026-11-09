@@ -7,7 +7,7 @@ module kin6d_ideal_free_boundary_bem3d
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
                                           bem_pair_report_t, build_p2_trace_connectivity
     use fortfem_generated_bem_frame, only: bem_frame
-    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
+    use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
         gamma_c_3d_build_periodic

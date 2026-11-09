@@ -1,6 +1,6 @@
 module fitted_profile_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
                                        EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     use kin6d_nonnested_profile, only: nn_profile_t

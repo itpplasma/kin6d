@@ -1,4 +1,4 @@
-module kin6d_makegrid_circuits
+module milca_makegrid_circuits
     !! Circuits of a MAKEGRID coils file, read with the libneo reader
     !! (neo_makegrid_coils, https://github.com/itpplasma/libneo). Coil c becomes
     !! a closed coils_3d polygon in circuit(c) = its MAKEGRID group (the EXTCUR
@@ -71,4 +71,4 @@ contains
         status = 0
     end subroutine
 
-end module kin6d_makegrid_circuits
+end module milca_makegrid_circuits

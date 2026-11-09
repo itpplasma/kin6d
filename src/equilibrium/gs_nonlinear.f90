@@ -1,14 +1,14 @@
-module kin6d_gs_nonlinear
+module milca_gs_nonlinear
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
+    use milca_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
                                     gs_cell_data, gs_axis_candidate, &
                                     gs_linear_response, gs_factor_ready, &
                                     gs_apply_inverse, gs_requested_device, &
                                     GS_UNSUPPORTED_DEVICE
     use kin6d_gs_csr, only: gs_csr_dirichlet_apply, gs_csr_fill_masked
     use kin6d_gs_options, only: gs_use_csr
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
+    use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
                                   gs_law_c1, gs_law_sources_batch
     use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
                                       gs_cut_discriminant, gs_cut_quadratic_discriminant
@@ -31,9 +31,9 @@ module kin6d_gs_nonlinear
                                GS_T_LOAD_CELLS, GS_T_JAC_CG, GS_T_JAC_GMRES, &
                                GS_T_PRECOND_CG
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_gs_symmetry, only: GS_ROTATION, GS_SCREW, &
+    use milca_gs_symmetry, only: GS_ROTATION, GS_SCREW, &
         GS_UNSUPPORTED_SYMMETRY, gs_reduced_source
-    use kin6d_gs_profile_law, only: gs_law_primitives
+    use milca_gs_profile_law, only: gs_law_primitives
     implicit none
     private
     public :: gs_forcing_t, gs_normalize_current

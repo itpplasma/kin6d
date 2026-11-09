@@ -3,8 +3,8 @@
 Status: P8 (outer refit loop) and P11 (application) of the free-boundary design.
 The formulation (FEM-BEM coupling on a fixed curve Gamma_c, cut-cell source with
 exact interface Jacobian, Newton on the coupled operator) is in the P6/P7 modules
-`kin6d_gs_coupling` and `kin6d_gs_free_boundary`; the coil-current inverse is
-`kin6d_gs_coil_inverse` (P9). This note covers what P8 and P11 add.
+`milca_gs_coupling` and `milca_gs_free_boundary`; the coil-current inverse is
+`milca_gs_coil_inverse` (P9). This note covers what P8 and P11 add.
 
 ## Refit loop (`gs_fb_refit_solve`, `src/equilibrium/gs_free_boundary.f90`)
 
@@ -318,7 +318,7 @@ as `gs_phase1 --evaluate`; psi is absolute when `psi_bound` is given. B_T = F / 
 with F from the law inside the plasma and `F_edge` outside it. Points outside
 Gamma_c give NaN. `--evaluate-stream` serves repeated requests until EOF.
 
-Flux surfaces. `read_gs_equilibrium` (`kin6d_gs_readback`) takes the optional
+Flux surfaces. `read_gs_equilibrium` (`milca_gs_readback`) takes the optional
 `psi_bound` and `plasma_cell`: it reads back on the sub-mesh of the plasma cells
 with the flux measured from psi_b, so the same contour code gives q and the
 toroidal flux (contour integral of F |dpsi| / (R |grad psi|)) up to the cut level.

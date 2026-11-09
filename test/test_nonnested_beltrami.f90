@@ -8,7 +8,7 @@ program test_nonnested_beltrami
         beltrami_constraint, BELTRAMI_RESONANT, beltrami_mr_options_t
     use fortfem_meridian_feec_n, only: meridian_load, meridian_lagrange_nodes, &
         meridian_error_norm
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6.0_dp, mu = 1.1_dp
     type(flux_mesh_t) :: mesh

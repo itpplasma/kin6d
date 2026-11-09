@@ -3,9 +3,9 @@ module kin6d_s0_gs_space
     ! The fields are sampled exclusively through the solved core-state evaluator.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_s0_gs_space_leaves, only: s0_polar_geometry, s0_polar_jet
     use kin6d_ideal_xi, only: xi_gradient_n, XI_OK
     use kin6d_s0_volume, only: s0_assemble_volume

@@ -1,6 +1,6 @@
 module equilibrium_harness_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BZ, EQ_PSI, EQ_PSI_R
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BZ, EQ_PSI, EQ_PSI_R
     implicit none
     type, extends(equilibrium_field_t) :: uniform_field_t
         real(dp) :: bz = 1
@@ -25,12 +25,12 @@ end module
 program test_equilibrium_harness
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_equilibrium_harness, only: equilibrium_case_t, &
+    use milca_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
         equilibrium_case, equilibrium_start, run_equilibrium_case, &
         D8_BAD_INPUT, D8_BAD_REPORT
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use equilibrium_harness_fixture, only: uniform_field_t
     implicit none
     type(equilibrium_state_t) :: equilibrium

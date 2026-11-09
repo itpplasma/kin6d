@@ -1,7 +1,7 @@
 program test_gs_cuda_picard
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs_profiles, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs_profiles, &
         gs_profile_load, gs_profile_value, gs_profile_integral, apply_gs, &
         gs_requested_device, gs_factor_ready
     use kin6d_grad_shafranov_leaves, only: gs_source

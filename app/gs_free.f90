@@ -5,30 +5,30 @@ program gs_free_main
     !! docs/gs-free-boundary.md for the namelist and the output contract.
     use, intrinsic :: iso_fortran_env, only: dp => real64, input_unit, output_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, write_gs_mesh, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, write_gs_mesh, &
                                     read_gs_mesh
-    use kin6d_gs_field_readback, only: sample_gs_many
+    use milca_gs_field_readback, only: sample_gs_many
     use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
                                      curve_value
-    use kin6d_gs_readback, only: gs_profile_f, gs_readback_t, read_gs_equilibrium
-    use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
+    use milca_gs_readback, only: gs_profile_f, gs_readback_t, read_gs_equilibrium
+    use milca_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
                                     write_gs_profile_law, gs_law_primitives, &
                                     gs_law_sources
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_read_coil_table, &
+    use milca_gs_coils, only: gs_circuit_set_t, gs_read_coil_table, &
                               gs_circuit_flux_vectors
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
         gs_fb_refit_config_t, gs_fb_refit_report_t, gs_fb_setup, gs_fb_newton, &
         gs_fb_evaluate, gs_fb_refit_solve, gs_fb_refit_mesh, gs_fb_chain_movement, &
         gs_fb_trace_lcfs, GS_FB_OK, GS_FB_XPOINT, GS_FB_LIMITER, GS_FB_TARGET_MEAN
-    use kin6d_gs_coil_inverse, only: gs_ci_row_t, gs_ci_model_t, gs_ci_config_t, &
+    use milca_gs_coil_inverse, only: gs_ci_row_t, gs_ci_model_t, gs_ci_config_t, &
         gs_ci_result_t, gs_ci_build_model, gs_ci_fit, GS_CI_ISOFLUX_PAIR, &
         GS_CI_XPOINT_BR, GS_CI_XPOINT_BZ, GS_CI_PSI_POINT, GS_CI_ISOFLUX_LCFS, &
         GS_CI_PSI_BOUND, GS_CI_UNCONSTRAINED, GS_CI_BOUNDED, GS_CI_FIXED_AT_LIMIT, &
         GS_CI_OK, GS_CI_NOT_CONVERGED
-    use kin6d_gs_majorant, only: gs_coupled_estimator_t, gs_coupled_estimator_build, &
+    use milca_gs_majorant, only: gs_coupled_estimator_t, gs_coupled_estimator_build, &
         gs_coupled_estimator_free, GS_CM_OK
-    use kin6d_gs_certificate, only: gs_fb_certifier_t
-    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+    use milca_gs_certificate, only: gs_fb_certifier_t
+    use milca_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
         claim_name
     use milca_result_io, only: run_t, result_file_t, runtime_git
     use fortnum_polynomial, only: lagrange_weights

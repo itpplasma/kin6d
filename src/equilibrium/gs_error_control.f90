@@ -1,17 +1,17 @@
-module kin6d_gs_error_control
+module milca_gs_error_control
     !! Continuous fixed-Dirichlet GS error-control composition. The verified
     !! single-polynomial coercivity path uses outward interval arithmetic;
     !! sampled residual/goal integrals retain their independent status.
     !! Physical boundary/model errors remain separate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
+    use milca_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
                                     gs_linear_response
     use kin6d_triangle_basis, only: triangle_bernstein_controls
-    use kin6d_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_profile_law, only: gs_profile_law_t
     use kin6d_grad_shafranov_leaves, only: gs_cubic_jvp
-    use kin6d_gs_majorant, only: gs_point_source_fn, gs_goal_weight_fn
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_gs_majorant, only: gs_point_source_fn, gs_goal_weight_fn
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
                                      equilibrated_flux_estimate_t, GS_EQ_OK
     use kin6d_gs_error_leaves, only: gs_error_friedrichs_squared, &
                         gs_error_source_lipschitz, gs_error_coercivity, gs_error_goal, &
@@ -409,4 +409,4 @@ contains
             f = weight(r, zz) + 0.0_dp*(cell + p)
         end function
     end subroutine
-end module kin6d_gs_error_control
+end module milca_gs_error_control

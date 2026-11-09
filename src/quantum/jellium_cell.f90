@@ -23,9 +23,9 @@ module kin6d_jellium_cell
         prepare_fock_hamiltonian, get_fock_integrals, fock_matvec, &
         fock_matvec_between, fock_matvec_between_interval, fock_pair_indices, &
         fock_rdms, fock_transition_rdms, fock_rdm3_entries, fock_basis_info
-    use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
+    use milca_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
     use kin6d_quantum_correlations, only: quantum_cumulant_norms
-    use kin6d_jellium_cell_leaves, only: jc_lindhard_term, jc_rpa, jc_boltzmann, &
+    use milca_jellium_cell_leaves, only: jc_lindhard_term, jc_rpa, jc_boltzmann, &
         jc_fermi, jc_shell_moment, jc_shell_moment_series, jc_shell_average, jc_pair_correlation, jc_susceptibility, &
         jc_half, jc_kick_response, jc_thermal_term, jc_truncation_interval
     use milca_sort_keys, only: sort_key_order

@@ -12,9 +12,9 @@ module kin6d_ideal_seed_3d
         ideal_map_angle_value
     use kin6d_ideal_map_leaves, only: ideal_reference_form
     use kin6d_ideal_field_angle_leaves, only: field_angle_form
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
         seed_horner, seed_toroidal_form, seed_disk_coordinates, seed_disk_boundary, &
         seed_primitive_coefficient, seed_primitive_finish

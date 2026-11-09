@@ -6,7 +6,7 @@ program test_quantum_reference_gallery
         prepare_quantum_observables, sample_quantum_observables, &
         quantum_initial_norm, quantum_matrix_defect, quantum_physical_radius, &
         prepare_quantum_pair_sector
-    use kin6d_quantum_reference_gallery_leaves, only: qgallery_fourier, &
+    use milca_quantum_reference_gallery_leaves, only: qgallery_fourier, &
         qgallery_fourier_jvp, qgallery_fourier_vjp
     implicit none
     type(quantum_observable_packet_t) :: packet

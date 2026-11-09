@@ -3,7 +3,7 @@ program complete_shield_torus_fixture
     use geqdsk_tools, only: geqdsk_t, geqdsk_write
     use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read, psi_eval, &
                               profiles_of_psin, surface_t, surface_build, flux_ray_point
-    use kin6d_grad_shafranov, only: gs_axis_safety_factor
+    use milca_grad_shafranov, only: gs_axis_safety_factor
     implicit none
     type(psi_grid_t) :: grid
     type(geqdsk_t) :: g

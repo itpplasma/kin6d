@@ -2,7 +2,7 @@ program test_gs_synthetic_law_readback
     ! A synthetic zero crossing has a tiny rounded knot mismatch relative to
     ! cancelling million-sized terms. A value-scaled continuity check fails.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
+    use milca_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
         write_gs_profile_law
     implicit none
     type(gs_profile_law_t) :: law, again

@@ -2,7 +2,7 @@ program test_gs_coils
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_rect_coil_t, &
         gs_rect_coil_flux, gs_rect_coil_flux_converged
-    use kin6d_gs_coils
+    use milca_gs_coils
     implicit none
     integer :: failures
 

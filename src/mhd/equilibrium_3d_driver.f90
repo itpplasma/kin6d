@@ -1,16 +1,16 @@
 module kin6d_equilibrium_3d_driver
     ! D8 consumer of the boundary/profile initializer and native map Newton.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_harness, only: equilibrium_case_t, equilibrium_resolution_t, &
+    use milca_equilibrium_harness, only: equilibrium_case_t, equilibrium_resolution_t, &
         equilibrium_start_t, equilibrium_run_report_t, D8_OK, D8_BAD_INPUT, D8_BAD_REPORT
-    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use milca_equilibrium_state, only: equilibrium_state_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
         ideal_map_energy, ideal_map_reduce
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
     use kin6d_map_3d_readback_leaves, only: map_3d_cartesian
-    use kin6d_grad_shafranov, only: gs_state_t
+    use milca_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
     use kin6d_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &

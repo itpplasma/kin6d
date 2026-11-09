@@ -1,4 +1,4 @@
-module kin6d_equilibrium_chart
+module milca_equilibrium_chart
     ! Chart of the common equilibrium state (docs/equilibrium-core.md, D1):
     ! X = H(q) from chart coordinates q into Cartesian space, with the jet H,
     ! dH, d2H, d3H. Lanes see the chart only through `jet`; a curve-following
@@ -283,4 +283,4 @@ contains
                 t(78), t(79), t(80), t(81))
         end subroutine
     end subroutine
-end module kin6d_equilibrium_chart
+end module milca_equilibrium_chart

@@ -7,9 +7,9 @@ program test_gs_fb_jacobian
     !! term must be visible). The flux is analytic bumps sampled at the nodes,
     !! so no equilibrium is needed.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+    use milca_grad_shafranov, only: gs_state_t
+    use milca_gs_profile_law, only: gs_profile_law_t
+    use milca_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
       gs_fb_factor_t, gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply, gs_fb_factor, &
                     gs_fb_solve, gs_fb_solve_block, gs_fb_release, GS_FB_OK, &
                     GS_FB_XPOINT, GS_FB_LIMITER, &

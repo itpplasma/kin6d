@@ -17,7 +17,7 @@ program test_vrmhd_evolve
     use kin6d_vrmhd_section, only: vrmhd_section_jacobian, VRMHD_EDGE_SECOND
     use vrmhd_spectrum_support, only: spectrum, block_dofs
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
+    use milca_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
     use kin6d_vrmhd_section, only: vrmhd_section_build
     use kin6d_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
         vrmhd_stationary_residual, vrmhd_stationary_jacobian

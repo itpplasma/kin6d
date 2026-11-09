@@ -4,7 +4,7 @@ module milca_coil_quadrature_field
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_coils_3d, only: coil_set_t, coil_mu0
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_island_leaves, only: biot_savart_integrand
     use fortnum_quadrature, only: gauss_legendre
     implicit none

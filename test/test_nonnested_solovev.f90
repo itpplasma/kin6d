@@ -7,11 +7,11 @@ program test_nonnested_solovev
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
         nn_build, nn_solve, nn_export
     use kin6d_nonnested_residual, only: nn_residual
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
+    use milca_equilibrium_residual, only: equilibrium_residual_t
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
         EQ_BR, EQ_BZ, EQ_PSI, EQ_P
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
-    use kin6d_gs_equilibrium, only: gs_equilibrium
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use milca_gs_equilibrium, only: gs_equilibrium
     implicit none
     type(flux_mesh_t) :: fm
     type(free_b_field_t) :: field, varied

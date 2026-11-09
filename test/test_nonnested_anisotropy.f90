@@ -1,7 +1,7 @@
 module nn_anisotropy_fixture
     ! Independent analytical data for the Sovinec diagnostic, not production leaves.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, EQ_BR, EQ_BZ
+    use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, EQ_BR, EQ_BZ
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)

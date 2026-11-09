@@ -37,15 +37,15 @@ end module
 
 program test_map_equilibrium
     use map_equilibrium_oracle
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_gs_equilibrium, only: gs_geometry_view
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_gs_equilibrium, only: gs_geometry_view
+    use milca_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze
     use kin6d_map_equilibrium, only: map_equilibrium
-    use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
+    use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
                  EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_UNAVAILABLE
-    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
-    use kin6d_equilibrium_residual, only: equilibrium_residual_t, equilibrium_residual
+    use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use milca_equilibrium_residual, only: equilibrium_residual_t, equilibrium_residual
     use kin6d_ideal_map_leaves, only: ideal_axisymmetric_field, &
                               ideal_axisymmetric_field_jvp, ideal_axisymmetric_field_vjp
     use omp_lib, only: omp_set_num_threads, omp_get_wtime

@@ -2,11 +2,11 @@ program test_gs_checked_source_remainder
     !! Independent manufactured quartic, rational source numerator approximated
     !! by a Taylor polynomial of degree p+3 with an explicit geometric remainder.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_linear_response, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs, gs_linear_response, &
         gs_cell_data
-    use kin6d_gs_equilibrated, only: gs_equilibrated_majorant, &
+    use milca_gs_equilibrated, only: gs_equilibrated_majorant, &
         equilibrated_flux_estimate_t
-    use kin6d_gs_quadrature_budget, only: gs_checked_fixed_source_majorant
+    use milca_gs_quadrature_budget, only: gs_checked_fixed_source_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_verified_bernstein_products, only: verified_bernstein_affine_product, &
         verified_bernstein_elevate

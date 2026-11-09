@@ -13,7 +13,7 @@ module kin6d_nonnested_mapped
         meridian_fourier_curl_curl, meridian_fourier_curl, meridian_fourier_gradient
     use fortfem_tetra_piola_maps, only: map_tetra_nedelec_covariant
     use fortnum_linalg, only: det3
-    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
+    use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_from_triplet, &
         fortsparse_status_t, status_ok
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK

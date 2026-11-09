@@ -12,7 +12,7 @@ module milca_equilibrium_boundary
     !                 (cached per curve, kind, n and flux degree) and on the
     !                 FEM trace, S_trace = R^T S_n R;
     !   the coils     one coil interface (axisymmetric circuits of
-    !                 kin6d_gs_coils, 3D polylines of milca_coils_3d) that
+    !                 milca_gs_coils, 3D polylines of milca_coils_3d) that
     !                 returns per unit circuit current the toroidal harmonics
     !                 of B and, where the set has one, the poloidal flux;
     !   the traces    the per-n traces of a coil field on Gamma_c.
@@ -36,9 +36,9 @@ module milca_equilibrium_boundary
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_gs_timers, only: gs_phase_tick
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use milca_coils_3d, only: coil_set_t, coil_set_modes
-    use kin6d_equilibrium_state, only: EQ_UNAVAILABLE
+    use milca_equilibrium_state, only: EQ_UNAVAILABLE
     use milca_real_identity, only: same_real_value
     implicit none
     private

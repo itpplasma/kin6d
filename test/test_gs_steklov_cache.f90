@@ -5,7 +5,7 @@ program test_gs_steklov_cache
     !! assembly; a different curve is not served from the cache.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t
-    use kin6d_gs_coupling, only: gs_coupling_steklov, gs_coupling_steklov_cache_clear
+    use milca_gs_coupling, only: gs_coupling_steklov, gs_coupling_steklov_cache_clear
     implicit none
 
     integer, parameter :: np = 10, nn = 2*np, degree = 2

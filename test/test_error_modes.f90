@@ -6,7 +6,7 @@ program test_error_modes
     use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, fp_indicator
     use fortnum_rng, only: rng_t, rng_seed
     use fortnum_status, only: fortnum_status_t
-    use kin6d_quantum_evolution_leaves, only: qe_action_allowance, &
+    use milca_quantum_evolution_leaves, only: qe_action_allowance, &
         qe_action_allowance_jvp, qe_action_allowance_vjp
     implicit none
     type(quantum_evolution_t) :: state

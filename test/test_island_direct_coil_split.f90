@@ -8,7 +8,7 @@ program test_island_direct_coil_split
     use nn_vacuum_fixture, only: pi, field, make_coil, direct_field, solve_vacuum
     use island_a_fixture, only: island_a_sample_points
     use kin6d_equilibrium_nonnested, only: nn_point
-    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
+    use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     implicit none
     integer, parameter :: nq = 128, nmax = 3
     ! TIAGO's assigned polarization-angle uncertainty in the island benchmark.

@@ -3,11 +3,11 @@ module ideal_fb_traces3d_test_support
     ! chart and pulled back to the normal plane (q1, q2) = (Z, R - 3) of an
     ! nfp = 3 helical-axis curve chart, so that the coupling surface
     ! H(gamma x [0, 2 pi)) is not axisymmetric. The curve chart is the real
-    ! plasma chart of the nested-map lane (kin6d_equilibrium_chart), not a
+    ! plasma chart of the nested-map lane (milca_equilibrium_chart), not a
     ! test extension of the cylindrical chart.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_equilibrium_chart, only: curve_chart_t
+    use milca_equilibrium_chart, only: curve_chart_t
     implicit none
     private
     public :: helical_chart
@@ -87,8 +87,8 @@ program test_ideal_fb_traces3d
     !                 differences, with a frozen R2 exterior and coil traces.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     !$ use omp_lib, only: omp_set_num_threads, omp_get_max_threads, omp_get_wtime
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
+    use milca_grad_shafranov, only: gs_state_t, initialize_gs
+    use milca_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
         ideal_chart_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
@@ -106,7 +106,7 @@ program test_ideal_fb_traces3d
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
     use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0, segment_b
-    use kin6d_makegrid_circuits, only: makegrid_circuits_read
+    use milca_makegrid_circuits, only: makegrid_circuits_read
     use neo_biotsavart, only: coils_t, compute_magnetic_field, clight
     use neo_makegrid_coils, only: makegrid_coils_t, read_makegrid_coils, &
         makegrid_to_biotsavart
