@@ -34,13 +34,15 @@ module milca_ntv_device
         boozer_average, BOOZER_OK
     use milca_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK
     use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_factor_t, ntv_kernel, &
-        ntv_f10, ntv_energy_coefficients, NTV_OK, NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
+        ntv_f10, ntv_energy_coefficients, ntv_axisymmetric_coefficients, NTV_OK, &
+            NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
         collop_nuhat, collop_vth, COLLOP_OK
     implicit none
     private
     public :: ntv_species_t, ntv_profile_t, ntv_resolution_t, ntv_species_result_t
-    public :: ntv_device_profile, deflection_frequency
+    public :: ntv_device_profile, deflection_frequency, ntv_read_input, &
+        ntv_device_axisymmetric, ntv_axisymmetric_result_t
     integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2, &
         DEVICE_NO_CONVERGENCE = 3
 
@@ -92,6 +94,16 @@ module milca_ntv_device
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
             heat_flux = 0, torque = 0, offset_rotation = 0
         integer :: factorisations = 0, iterations = 0, status = DEVICE_OK
+    end type
+
+    !> Axisymmetric transport matrix of one surface: d(a, b, i, j) of
+    !> ntv_axisymmetric_coefficients (responses i = particle, energy, parallel
+    !> flow of species a to the drives j = A_1, A_2, parallel field of species
+    !> b), b.grad theta/b (kappa), q, dpsi_pol/dr [Wb/m] and the status.
+    type :: ntv_axisymmetric_result_t
+        real(dp), allocatable :: d(:, :, :, :)
+        real(dp) :: kappa = 0, q = 0, dpsi_dr = 0
+        integer :: status = DEVICE_OK
     end type
 
 contains
@@ -435,6 +447,114 @@ contains
         end subroutine assemble
 
     end subroutine ntv_device_profile
+
+    !> Reads the ntv_profile input: equilibrium and perturbation paths, then
+    !> n_tor n_theta n_leg n_x chunk max_iterations sources(0|1), an optional
+    !> line collision model x_max elements order [x_tol], the species (Z,
+    !> mass [kg]) and per surface s Omega_tE [rad/s] with one line per
+    !> species: density [m^-3] T [J] dn/ds dT/ds kappa [1/m].
+    subroutine ntv_read_input(path, eq_path, pert_path, n_tor, species, prof, res)
+        character(*), intent(in) :: path
+        character(*), intent(out) :: eq_path, pert_path
+        integer, intent(out) :: n_tor
+        type(ntv_species_t), allocatable, intent(out) :: species(:)
+        type(ntv_profile_t), intent(out) :: prof
+        type(ntv_resolution_t), intent(out) :: res
+        character(1024) :: line
+        integer :: u, nsp, ns, i, a, status, sources
+        open (newunit=u, file=path, status='old', action='read')
+        read (u, '(a)') eq_path
+        read (u, '(a)') pert_path
+        read (u, *) n_tor, res%n_theta, res%n_leg, res%n_x, res%chunk, res%max_iterations, &
+            sources
+        res%sources = sources /= 0
+        read (u, '(a)') line
+        read (line, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order, &
+            res%x_tol
+        if (status /= 0) read (line, *, iostat=status) res%collisions, res%x_max, &
+            res%nelem, res%order
+        if (status == 0) then
+            read (u, *) nsp
+        else
+            res%collisions = 0
+            read (line, *) nsp
+        end if
+        allocate (species(nsp))
+        do a = 1, nsp
+            read (u, *) species(a)%z, species(a)%mass
+        end do
+        read (u, *) ns
+        allocate (prof%s(ns), prof%omega_te(ns), prof%density(ns, nsp), &
+            prof%temperature(ns, nsp), prof%density_s(ns, nsp), &
+            prof%temperature_s(ns, nsp), prof%kappa(ns, nsp))
+        do i = 1, ns
+            read (u, *) prof%s(i), prof%omega_te(i)
+            do a = 1, nsp
+                read (u, *) prof%density(i, a), prof%temperature(i, a), &
+                    prof%density_s(i, a), prof%temperature_s(i, a), prof%kappa(i, a)
+            end do
+        end do
+        close (u)
+    end subroutine ntv_read_input
+
+    !> Axisymmetric transport matrix on every surface of the profile with
+    !> the collision model res%collisions (nonzero) on the speed grid of res;
+    !> the perturbation file only completes the surface geometry. One OpenMP
+    !> unit per surface; a failed surface keeps its status and the others.
+    subroutine ntv_device_axisymmetric(eq, pert, n_tor, species, prof, res, result, status)
+        type(boozer_file_t), intent(in) :: eq, pert
+        integer, intent(in) :: n_tor
+        type(ntv_species_t), intent(in) :: species(:)
+        type(ntv_profile_t), intent(in) :: prof
+        type(ntv_resolution_t), intent(in) :: res
+        type(ntv_axisymmetric_result_t), allocatable, intent(out) :: result(:)
+        integer, intent(out) :: status
+        type(ntv_surface_t), allocatable :: sf(:)
+        type(collop_grid_t) :: grid
+        real(dp) :: j0, psi_pol_s
+        integer :: ns, nsp, i, st
+        ns = size(prof%s)
+        nsp = size(species)
+        status = DEVICE_BAD_INPUT
+        if (ns < 1 .or. nsp < 1 .or. res%collisions == 0) return
+        call collop_make_grid(res%x_max, res%nelem, res%order, grid, st)
+        if (st /= COLLOP_OK) return
+        allocate (sf(ns), result(ns))
+        do i = 1, ns
+            call surface(eq, pert, n_tor, prof%s(i), res, sf(i), j0, result(i)%dpsi_dr, &
+                psi_pol_s, status)
+            if (status /= DEVICE_OK) return
+        end do
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(i)
+        do i = 1, ns
+            call axisymmetric_surface(i)
+        end do
+        !$omp end parallel do
+        status = merge(DEVICE_OK, DEVICE_SOLVE, all(result%status == DEVICE_OK))
+    contains
+        subroutine axisymmetric_surface(i)
+            integer, intent(in) :: i
+            type(collop_species_t) :: sp(nsp)
+            real(dp) :: lnl(nsp, nsp)
+            integer :: a, its, ks
+            do a = 1, nsp
+                sp(a) = collop_species_t(species(a)%mass, species(a)%z, prof%density(i, a), &
+                    prof%temperature(i, a))
+            end do
+            do a = 1, nsp
+                lnl(a, :) = 3*sqrt(pi)/8*collop_vth(sp(a))*prof%kappa(i, a) &
+                    /collop_nuhat(sp(a), sp(a), 1.0_dp)
+            end do
+            allocate (result(i)%d(nsp, nsp, 3, 3))
+            result(i)%q = sf(i)%q
+            call ntv_axisymmetric_coefficients(sf(i), sp, lnl, grid, res%collisions, &
+                res%n_theta, res%n_leg, result(i)%d, its, ks, result(i)%kappa)
+            if (ks /= NTV_OK) then
+                result(i)%status = DEVICE_SOLVE
+                result(i)%d = 0
+            end if
+        end subroutine axisymmetric_surface
+    end subroutine ntv_device_axisymmetric
 
     !> Energy-coupled kernel per surface (one OpenMP unit per surface), with
     !> the species coupled through the collision operator:

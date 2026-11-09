@@ -36,92 +36,26 @@
         integer, intent(out) :: iterations, status
         real(dp), intent(out), optional :: q(:, :, :)
     type(energy_system_t) :: e, e0
-    type(ntv_surface_t) :: base
     type(ntv_system_t) :: g, gf, t
     type(hybrid_t) :: lu, lu0
-    type(collop_t) :: op
     complex(dp), allocatable :: angular(:, :), angular0(:, :), rhs(:, :, :, :), &
         x(:, :, :, :), h10(:, :, :, :)
-    real(dp), allocatable :: galerkin(:, :), moment(:), zero10(:, :), b(:), &
-        lorentz(:, :, :, :, :)
+    real(dp), allocatable :: b(:)
     real(dp) :: j0
     integer :: a, sb, jf, st, its, kk
     logical :: sources10
 
     status = NTV_BAD_INPUT
     iterations = 0
-    e%ns = size(species)
-    ! Nodes 2..n: h = 0 at x = 0, exact for l >= 1 by regularity and of
-    ! zero weight in every drive and flux for l = 0.
-    e%nx = grid%n - 1
-    if (e%ns < 1 .or. size(lnlambda, 1) /= e%ns .or. size(lnlambda, 2) /= e%ns) return
-    if (size(k, 1) /= e%ns .or. size(k, 2) /= e%ns .or. size(k, 3) /= 2) return
+    if (size(k, 1) /= size(species) .or. size(k, 2) /= size(species) .or. size(k, 3) /= 2) &
+        return
     if (present(q)) then
         if (any(shape(q) /= shape(k))) return
     end if
     sources10 = sf%source_dlf10
-    base = sf
-    allocate (zero10(2*n_theta, n_leg/2))
-    zero10 = 0
-    call factor(base, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, n_theta, n_leg, g, st, &
-        f10=zero10, assemble_only=.true.)
+    call energy_build(sf, species, lnlambda, grid, model, omega_e, n_theta, n_leg, e, g, st)
     if (st /= NTV_OK) return
-    e%n = g%n
-    e%nb = g%nblock
-    e%nn = 2*g%n*e%nx
-    e%gs = g
-    e%gs%nu = 0; e%gs%omega = 0; e%gs%precess = 0
-    e%go = g
-    e%go%stream = 0; e%go%mirror = 0; e%go%nu = 0; e%go%precess = 0
-    e%go%omega = omega_e
-    e%gp = g
-    e%gp%stream = 0; e%gp%mirror = 0; e%gp%nu = 0; e%gp%omega = 0
-    call cache_blocks(e)
-    allocate (e%d4(e%nx), e%d6(e%nx))
-    ! Kinetic terms with the speed masses lumped at the GLL nodes (the
-    ! spectral-element mass), so that only the collision rows couple nodes.
-    allocate (galerkin(grid%n, grid%n), moment(grid%n))
-    call collop_moments(grid, 3, 6, galerkin, moment)
-    allocate (e%vt(e%ns), e%tz(e%ns), e%row(e%nx, e%ns), e%m2(e%nx, e%nx), &
-        e%m3(e%nx, e%nx), e%m4(e%nx, e%nx))
-    do a = 1, e%ns
-        e%vt(a) = collop_vth(species(a))
-        e%tz(a) = species(a)%t/(species(a)%z*charge)
-        do kk = 1, e%nx
-            e%row(kk, a) = 1/(e%vt(a)*galerkin(kk + 1, kk + 1))
-        end do
-    end do
-    e%m2 = 0; e%m3 = 0; e%m4 = 0
-    do kk = 1, e%nx
-        associate (x => grid%x(kk + 1), w => grid%w(kk + 1))
-            e%m2(kk, kk) = w*x**2*exp(-x**2)
-            e%m3(kk, kk) = w*x**3*exp(-x**2)
-            e%m4(kk, kk) = w*x**4*exp(-x**2)
-        end associate
-    end do
-    e%d4 = grid%w(2:)*grid%x(2:)**4*exp(-grid%x(2:)**2)
-    e%d6 = grid%w(2:)*grid%x(2:)**6*exp(-grid%x(2:)**2)
-
     status = NTV_SINGULAR
-    e%coupled = model == COLLOP_FULL
-    call collop_build(species, lnlambda, grid, merge(COLLOP_TEST_PARTICLE, model, &
-        e%coupled), n_leg - 1, op, st)
-    if (st /= COLLOP_OK) return
-    call scaled_rows(e, op, species, e%pre)
-    if (e%coupled) then
-        call collop_build(species, lnlambda, grid, model, n_leg - 1, op, st)
-        if (st /= COLLOP_OK) return
-        call scaled_rows(e, op, species, e%full)
-    end if
-    ! Pitch-angle scattering lumped like the kinetic masses: nu_D at the
-    ! nodes in place of its Galerkin matrix.
-    call collop_build(species, lnlambda, grid, COLLOP_LORENTZ, n_leg - 1, op, st)
-    if (st /= COLLOP_OK) return
-    call scaled_rows(e, op, species, lorentz)
-    call lump_lorentz(e, species, lnlambda, grid, lorentz)
-    e%pre = e%pre - lorentz
-    if (e%coupled) e%full = e%full - lorentz
-
     call factor_hybrid(e, lu, st)
     if (st /= NTV_OK) return
     if (sources10) then
@@ -192,6 +126,206 @@
     end do
     status = NTV_OK
     end subroutine ntv_energy_coefficients
+
+    !> Axisymmetric transport matrix of the surface with the energy-coupled
+    !> operator (n = 0: streaming, mirror and collisions, bordered by the
+    !> density null space). Drives of species b, at each speed node:
+    !>   j = 1, 2  the radial drift (1 + xi^2) S/b with S = b'/q (the f_10 drive)
+    !>             times (T_b/(Z_b e)) d_k, d = d4, d6 for A_1, A_2;
+    !>   j = 3     the parallel electric drive xi b times v_b d3_k.
+    !> Responses of species a, i = 1, 2, 3: the radial particle and energy
+    !> coefficients in the units of the NTV coefficients k and q,
+    !>   T_a/(Z_a e sqrt(pi) 2 J_0) sum_k d4_k (d6_k) R(h_ak),
+    !> and the parallel flow v_a/(sqrt(pi) 2 J_0) sum_k d3_k U(h_ak), U the
+    !> functional of xi b with the weight of R, so that the matrix is
+    !> symmetric under d(a, b, 1, 3) = -d(b, a, 3, 1) for a self-adjoint
+    !> operator. U is proportional to <B u_par>: its weight is
+    !> measure b^2 = 2/b, the Boozer surface weight 1/b^2 times b. kappa is
+    !> b.grad theta/b; with pitch-angle scattering each node then solves the
+    !> problem of dk_mono driven by (T/(Z e)) x (-2/(kappa q)) times its drift,
+    !> so (3/4) (T/(Z e)) (-2/(kappa q)) relates the flow response to A_1 to
+    !> the energy average of the monoenergetic D31.
+    subroutine ntv_axisymmetric_coefficients(sf, species, lnlambda, grid, model, n_theta, &
+            n_leg, d, iterations, status, kappa)
+        type(ntv_surface_t), intent(in) :: sf
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model, n_theta, n_leg
+        real(dp), intent(out) :: d(:, :, :, :)
+        integer, intent(out) :: iterations, status
+        real(dp), intent(out), optional :: kappa
+    type(energy_system_t) :: e
+    type(ntv_system_t) :: g, gf
+    type(hybrid_t) :: lu
+    complex(dp), allocatable :: radial(:, :), parallel(:, :), rhs(:, :, :, :), x(:, :, :, :)
+    real(dp), allocatable :: b(:), d3(:)
+    real(dp) :: j0
+    integer :: a, sb, jf, st, kk
+
+    status = NTV_BAD_INPUT
+    iterations = 0
+    if (any(shape(d) /= [size(species), size(species), 3, 3])) return
+    call energy_build(sf, species, lnlambda, grid, model, 0.0_dp, n_theta, n_leg, e, g, st)
+    if (st /= NTV_OK) return
+    status = NTV_SINGULAR
+    e%gs%nq = 0
+    e%go%omega = 0
+    e%gp%precess = 0
+    e%border = .true.
+    nullify (e%cs, e%co, e%cp)
+    call cache_blocks(e)
+    ! Without rotation and precession only collisions damp the parallel-field
+    ! response (~1/nu), and GMRES on the hybrid preconditioner stalls in the
+    ! banana regime. Every pair block therefore carries its full speed and
+    ! species coupling, which makes the block factorisation the inverse.
+    call factor_hybrid(e, lu, st, e%nb)
+    if (st /= NTV_OK) return
+    b = 2/(3*g%source)
+    if (present(kappa)) kappa = g%stream(1)/b(1)
+    gf = g
+    gf%dpar = .false.
+    gf%dlf10 = .false.
+    gf%s = log_b_slope(g)*b/sf%q
+    call drive(gf, 1.0_dp, radial)
+    allocate (parallel, mold=radial)
+    parallel = 0
+    parallel(e%n + 1:2*e%n, 0) = b
+    j0 = 2*pi/g%n*sum((1.5_dp*g%source)**2)
+    d3 = diag(e%m3)
+    allocate (rhs(e%n*2, e%nx, 0:e%nb - 1, e%ns))
+    do sb = 1, e%ns
+        do jf = 1, 3
+            rhs = 0
+            do kk = 1, e%nx
+                if (jf < 3) then
+                    rhs(:, kk, :, sb) = e%row(kk, sb)*e%tz(sb) &
+                        *merge(e%d4(kk), e%d6(kk), jf == 1)*radial
+                else
+                    rhs(:, kk, :, sb) = e%row(kk, sb)*e%vt(sb)*d3(kk)*parallel
+                end if
+                rhs(1:e%n, kk, 0, sb) = rhs(1:e%n, kk, 0, sb) - sum(rhs(1:e%n, kk, 0, sb))/e%n
+            end do
+            if (.not. allocated(x)) allocate (x, mold=rhs)
+            call hybrid_solve(e, lu, rhs, x, st)
+            if (st /= NTV_OK) return
+            do a = 1, e%ns
+                d(a, sb, :, jf) = 0
+                do kk = 1, e%nx
+                    d(a, sb, 1, jf) = d(a, sb, 1, jf) + e%d4(kk)*flux(gf, x(:, kk, :, a))
+                    d(a, sb, 2, jf) = d(a, sb, 2, jf) + e%d6(kk)*flux(gf, x(:, kk, :, a))
+                    d(a, sb, 3, jf) = d(a, sb, 3, jf) + d3(kk)*flow(x(:, kk, :, a))
+                end do
+                d(a, sb, 1:2, jf) = e%tz(a)/(sqrt(pi)*2*j0)*d(a, sb, 1:2, jf)
+                d(a, sb, 3, jf) = e%vt(a)/(sqrt(pi)*2*j0)*d(a, sb, 3, jf)
+            end do
+        end do
+    end do
+    status = NTV_OK
+    contains
+        !> 2 pi/n sum measure b^2 int xi h dxi, int xi P_1 dxi = 2/3.
+        real(dp) function flow(h)
+            complex(dp), intent(in) :: h(:, 0:)
+            flow = 2*pi/g%n*sum(g%measure*b**2*2/3.0_dp*real(h(e%n + 1:2*e%n, 0), dp))
+        end function flow
+
+        pure function diag(m) result(v)
+            real(dp), intent(in) :: m(:, :)
+            real(dp) :: v(size(m, 1))
+            integer :: i
+            v = [(m(i, i), i=1, size(m, 1))]
+        end function diag
+    end subroutine ntv_axisymmetric_coefficients
+
+    !> The energy-coupled system of one surface, assembled but not factorised:
+    !> streaming, rotation and precession blocks, the lumped kinetic masses,
+    !> the drive moments d4 and d6, and the collision rows (test-particle
+    !> preconditioner rows in pre, the full operator in full when coupled).
+    subroutine energy_build(sf, species, lnlambda, grid, model, omega_e, n_theta, n_leg, &
+            e, g, status)
+        type(ntv_surface_t), intent(in) :: sf
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :), omega_e
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model, n_theta, n_leg
+        type(energy_system_t), intent(out) :: e
+        type(ntv_system_t), intent(out) :: g
+        integer, intent(out) :: status
+    type(ntv_surface_t) :: base
+    type(collop_t) :: op
+    real(dp), allocatable :: galerkin(:, :), moment(:), zero10(:, :), &
+        lorentz(:, :, :, :, :)
+    integer :: a, st, kk
+
+    status = NTV_BAD_INPUT
+    e%ns = size(species)
+    ! Nodes 2..n: h = 0 at x = 0, exact for l >= 1 by regularity and of
+    ! zero weight in every drive and flux for l = 0.
+    e%nx = grid%n - 1
+    if (e%ns < 1 .or. size(lnlambda, 1) /= e%ns .or. size(lnlambda, 2) /= e%ns) return
+    base = sf
+    allocate (zero10(2*n_theta, n_leg/2))
+    zero10 = 0
+    call factor(base, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, n_theta, n_leg, g, st, &
+        f10=zero10, assemble_only=.true.)
+    if (st /= NTV_OK) return
+    e%n = g%n
+    e%nb = g%nblock
+    e%nn = 2*g%n*e%nx
+    e%gs = g
+    e%gs%nu = 0; e%gs%omega = 0; e%gs%precess = 0
+    e%go = g
+    e%go%stream = 0; e%go%mirror = 0; e%go%nu = 0; e%go%precess = 0
+    e%go%omega = omega_e
+    e%gp = g
+    e%gp%stream = 0; e%gp%mirror = 0; e%gp%nu = 0; e%gp%omega = 0
+    call cache_blocks(e)
+    allocate (e%d4(e%nx), e%d6(e%nx))
+    ! Kinetic terms with the speed masses lumped at the GLL nodes (the
+    ! spectral-element mass), so that only the collision rows couple nodes.
+    allocate (galerkin(grid%n, grid%n), moment(grid%n))
+    call collop_moments(grid, 3, 6, galerkin, moment)
+    allocate (e%vt(e%ns), e%tz(e%ns), e%row(e%nx, e%ns), e%m2(e%nx, e%nx), &
+        e%m3(e%nx, e%nx), e%m4(e%nx, e%nx))
+    do a = 1, e%ns
+        e%vt(a) = collop_vth(species(a))
+        e%tz(a) = species(a)%t/(species(a)%z*charge)
+        do kk = 1, e%nx
+            e%row(kk, a) = 1/(e%vt(a)*galerkin(kk + 1, kk + 1))
+        end do
+    end do
+    e%m2 = 0; e%m3 = 0; e%m4 = 0
+    do kk = 1, e%nx
+        associate (x => grid%x(kk + 1), w => grid%w(kk + 1))
+            e%m2(kk, kk) = w*x**2*exp(-x**2)
+            e%m3(kk, kk) = w*x**3*exp(-x**2)
+            e%m4(kk, kk) = w*x**4*exp(-x**2)
+        end associate
+    end do
+    e%d4 = grid%w(2:)*grid%x(2:)**4*exp(-grid%x(2:)**2)
+    e%d6 = grid%w(2:)*grid%x(2:)**6*exp(-grid%x(2:)**2)
+
+    status = NTV_SINGULAR
+    e%coupled = model == COLLOP_FULL
+    call collop_build(species, lnlambda, grid, merge(COLLOP_TEST_PARTICLE, model, &
+        e%coupled), n_leg - 1, op, st)
+    if (st /= COLLOP_OK) return
+    call scaled_rows(e, op, species, e%pre)
+    if (e%coupled) then
+        call collop_build(species, lnlambda, grid, model, n_leg - 1, op, st)
+        if (st /= COLLOP_OK) return
+        call scaled_rows(e, op, species, e%full)
+    end if
+    ! Pitch-angle scattering lumped like the kinetic masses: nu_D at the
+    ! nodes in place of its Galerkin matrix.
+    call collop_build(species, lnlambda, grid, COLLOP_LORENTZ, n_leg - 1, op, st)
+    if (st /= COLLOP_OK) return
+    call scaled_rows(e, op, species, lorentz)
+    call lump_lorentz(e, species, lnlambda, grid, lorentz)
+    e%pre = e%pre - lorentz
+    if (e%coupled) e%full = e%full - lorentz
+    status = NTV_OK
+    end subroutine energy_build
 
     !> The system of one speed node: the node-diagonal part of the operator,
     !> including the diagonal of the energy scattering.
@@ -284,15 +418,19 @@
         c = rows(kk)
     end function collision_rows_entry
 
-    subroutine factor_hybrid(e, h, status)
+    !> pairs: the number of lowest pair blocks factorised densely with the
+    !> full speed coupling (default low_pairs); the others per node.
+    subroutine factor_hybrid(e, h, status, pairs)
         type(energy_system_t), intent(inout) :: e
         type(hybrid_t), intent(out) :: h
         integer, intent(out) :: status
+        integer, intent(in), optional :: pairs
         complex(dp), allocatable :: m(:, :)
         integer :: j, a, k, info, n2, off
         call factor_nodes(e, h%sys, h%node, status)
         if (status /= NTV_OK) return
         h%j0 = min(low_pairs, e%nb)
+        if (present(pairs)) h%j0 = min(pairs, e%nb)
         h%nf = e%nn*e%ns
         n2 = 2*e%n
         allocate (h%s_lu(h%nf, h%nf, 0:h%j0 - 1), h%y(h%nf, h%nf, h%j0 - 1), &
