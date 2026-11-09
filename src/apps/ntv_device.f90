@@ -49,7 +49,7 @@ module milca_ntv_device
     use milca_boozer_orbit, only: orbit_particle_t, orbit_set_potential, orbit_flux_p
     use milca_dk_hp, only: hp_operator_t, hp_mesh_t, hp_default_mesh, hp_ntv_kernel, HP_OK
     use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
-        hp_orbit_perturbation
+        hp_orbit_perturbation, hp_orbit_confined
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
         collop_nuhat, collop_vth, COLLOP_OK
     implicit none
@@ -93,7 +93,7 @@ module milca_ntv_device
         ! (0: n_x Gauss-Laguerre nodes). The E x B and precession resonance
         ! puts kinks into the integrand that fixed rules do not resolve.
         real(dp) :: x_tol = 0
-        ! Finite orbit width (monoenergetic Gauss-Laguerre path only) on the hp
+        ! Finite orbit width (monoenergetic paths only) on the hp
         ! mesh of hp_default_mesh: element order, columns, bulk rows and the
         ! relative width of the layer at the separatrix.
         logical :: orbit_width = .false.
@@ -195,7 +195,7 @@ contains
         nsp = size(species)
         status = DEVICE_BAD_INPUT
         if (ns < 1 .or. nsp < 1 .or. res%n_x < 1 .or. res%chunk < 1) return
-        if (res%orbit_width .and. (res%collisions /= 0 .or. res%x_tol > 0)) return
+        if (res%orbit_width .and. res%collisions /= 0) return
         allocate (sf(ns), j0(ns), dpsi_dr(ns), psi_pol_s(ns), b_ref(ns), phi(ns))
         do i = 1, ns
             call surface(eq, pert, n_tor, prof%s(i), res, sf(i), j0(i), dpsi_dr(i), &
@@ -213,7 +213,9 @@ contains
             allocate (result(ns, nsp), ustat(ns*nsp), kink(max_kinks, ns, nsp), &
                 nkink(ns, nsp))
             nkink = 0
-            !$omp parallel do schedule(dynamic, 1) default(shared) private(u)
+            ! The finite-width kernel parallelises inside; the units then run in turn.
+            !$omp parallel do schedule(dynamic, 1) default(shared) private(u) &
+            !$omp if(.not. res%orbit_width)
             do u = 1, ns*nsp
                 call adaptive((u - 1)/nsp + 1, mod(u - 1, nsp) + 1, ustat(u))
             end do
@@ -255,7 +257,8 @@ contains
         r = 0
         nfac = 0
         nits = 0
-        !$omp parallel do schedule(dynamic, 1) default(shared) private(u)
+        !$omp parallel do schedule(dynamic, 1) default(shared) private(u) &
+        !$omp if(.not. res%orbit_width)
         do u = 1, nunit
             call sweep(units(1, u), units(2, u), units(3, u), &
                 min(units(3, u) + res%chunk - 1, ns), ustat(u))
@@ -291,6 +294,12 @@ contains
             st = DEVICE_SOLVE
             if (res%orbit_width) then
                 do i = first, last
+                    ! The node sum stops where the adaptive panels do: beyond
+                    ! x = 25 lie 1e-8 of the K11 and 4e-7 of the K22 weight.
+                    if (x(k) > 25) then
+                        r(i, k, a) = 0
+                        cycle
+                    end if
                     r(i, k, a) = orbit_r(i, a, x(k), ks)
                     if (ks /= HP_OK) return
                     nfac(i, k, a) = 1
@@ -350,6 +359,9 @@ contains
             call hp_orbit_geometry(eq, p, prof%s(i), b_ref(i), g, st)
             if (st /= 0) return
             call hp_orbit_perturbation(g, pert, n_tor, b_ref(i))
+            ! Orbits leaving the file are outside the model: the surface fails.
+            st = DEVICE_SOLVE
+            if (.not. hp_orbit_confined(g, 32, 32)) return
             op%k = g%kappa
             op%k_power = 1
             op%q = sf(i)%q
@@ -373,6 +385,10 @@ contains
             type(ntv_kernel_t) :: kern
             real(dp), allocatable :: f10(:, :)
             real(dp) :: v, nu
+            if (res%orbit_width) then
+                rv = orbit_r(i, a, xv, st)
+                return
+            end if
             rv = 0
             v = sqrt(2*prof%temperature(i, a)/species(a)%mass*xv)
             nu = deflection_frequency(species, prof%density(i, :), prof%temperature(i, :), &
