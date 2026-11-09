@@ -83,7 +83,7 @@ module milca_dk_ntv
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
-    public :: ntv_f10, ntv_factor_t, ntv_energy_coefficients
+    public :: ntv_f10, ntv_factor_t, ntv_energy_coefficients, ntv_axisymmetric_coefficients
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2, &
         NTV_NO_CONVERGENCE = 3
     integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1

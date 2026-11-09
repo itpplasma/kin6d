@@ -15,7 +15,7 @@ program ntv_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
     use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
-        ntv_species_result_t, ntv_device_profile, DEVICE_OK, DEVICE_SOLVE
+        ntv_species_result_t, ntv_device_profile, ntv_read_input, DEVICE_OK, DEVICE_SOLVE
     implicit none
     type(boozer_file_t) :: eq, pert
     type(ntv_species_t), allocatable :: species(:)
@@ -23,45 +23,14 @@ program ntv_profile
     type(ntv_resolution_t) :: res
     type(ntv_species_result_t), allocatable :: result(:, :)
     character(1024) :: path, eq_path, pert_path
-    integer :: u, n_tor, nsp, ns, i, a, status, sources
+    integer :: n_tor, nsp, ns, i, a, status
     integer(8) :: c0, c1, rate
 
     if (command_argument_count() /= 1) error stop 'usage: ntv_profile INPUT'
     call get_command_argument(1, path)
-    open (newunit=u, file=trim(path), status='old', action='read')
-    read (u, '(a)') eq_path
-    read (u, '(a)') pert_path
-    read (u, *) n_tor, res%n_theta, res%n_leg, res%n_x, res%chunk, res%max_iterations, &
-        sources
-    res%sources = sources /= 0
-    ! Optional line: collision model (0 monoenergetic, else dk_collop model),
-    ! x_max, elements, order of the speed grid.
-    read (u, '(a)') path
-    read (path, *, iostat=status) res%collisions, res%x_max, res%nelem, res%order, res%x_tol
-    if (status /= 0) read (path, *, iostat=status) res%collisions, res%x_max, res%nelem, &
-        res%order
-    if (status == 0) then
-        read (u, *) nsp
-    else
-        res%collisions = 0
-        read (path, *) nsp
-    end if
-    allocate (species(nsp))
-    do a = 1, nsp
-        read (u, *) species(a)%z, species(a)%mass
-    end do
-    read (u, *) ns
-    allocate (prof%s(ns), prof%omega_te(ns), prof%density(ns, nsp), &
-        prof%temperature(ns, nsp), prof%density_s(ns, nsp), prof%temperature_s(ns, nsp), &
-        prof%kappa(ns, nsp))
-    do i = 1, ns
-        read (u, *) prof%s(i), prof%omega_te(i)
-        do a = 1, nsp
-            read (u, *) prof%density(i, a), prof%temperature(i, a), prof%density_s(i, a), &
-                prof%temperature_s(i, a), prof%kappa(i, a)
-        end do
-    end do
-    close (u)
+    call ntv_read_input(trim(path), eq_path, pert_path, n_tor, species, prof, res)
+    nsp = size(species)
+    ns = size(prof%s)
 
     call load_boozer_file(trim(eq_path), eq, status)
     if (status /= BOOZER_OK) error stop 'cannot read the equilibrium file'
