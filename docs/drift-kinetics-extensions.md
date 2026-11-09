@@ -220,9 +220,9 @@ NEO-RT (thin-orbit resonant transport in action-angle variables):
 
 | Feature | Status |
 |---|---|
-| bounce and precession frequencies, resonances | covered by the orbit module in the thin limit (exact precession with shear and E x B) |
-| collisionless resonant torque: transit, bounce and superbanana-plateau resonances | covered in principle by the kernel at nu -> 0 (superbanana-plateau limit checked); profile comparison on AUG 30835 open |
-| nonlinear attenuation Theta(D) of an isolated resonance | open: the indicator D per resonance, then Theta(D) as NEO-RT applies it, as the parity model; the direct nonlinear solve is beyond parity |
+| bounce and precession frequencies, resonances | covered: the orbit module in its thin limit matches NEO-RT's bounce frequency to 1e-4 and magnetic precession to 1e-5 over the trapped pitches on AUG 30835 (s = 0.29, v = 1.5 v_th) |
+| collisionless resonant torque: transit, bounce and superbanana-plateau resonances | open: the kernel reaches its nu -> 0 limit (1 to 2 % between 1e-2 and 1e-3 of the collisionality) on identical input files, but differs from NEO-RT: on AUG 30835 the deuteron torque ratio scatters 0.80 to 1.46 (median 1.0) over 20 surfaces, and on a circular tokamak with one harmonic D_12/D_11 agrees within 4 % for M_t >= 0.02 while the Mach dependence of D_11 differs by up to 30 %. Next: monoenergetic R(v) per resonance against NEO-RT's resonance-line integrand |
+| nonlinear attenuation Theta(D) of an isolated resonance | open: needs the resonance decomposition of the kernel (bounce harmonic and pitch of each resonance), then the indicator D per resonance and Theta(D) as NEO-RT applies it, computed from MILCA's own isolated-resonance solve rather than a table; the direct nonlinear solve is beyond parity |
 
 POTATO (collisionless resonant torque with finite orbit width):
 
@@ -230,7 +230,7 @@ POTATO (collisionless resonant torque with finite orbit width):
 |---|---|
 | exact guiding-centre orbits, canonical frequencies | covered: Boozer orbit module; thin limit within 1 % of POTATO, trapped orbits at physical width within 4 to 9 % on AUG 30835 with a Boozer file whose geometry and field disagree by up to 10 %; a self-consistent Boozer file (libneo EQDSK converter) decides the rest |
 | canonical Maxwellian drive, E_r profile in the orbits | covered: the orbit geometry of the hp solver (finite-width kernel equals the thin kernel to 1e-7 for thin orbits), potential profile Phi(s), perturbation at the orbit point |
-| finite-width resonant torque profile on psi* | in progress: `orbit_width` switch of the device profile (energy integral of the finite-width kernel per psi*); AUG 30835 thermal deuterons at s = 0.5 lose 15 % of the thin torque to the orbit width; next the profile against POTATO (physical width and thin-orbit scaling) |
+| finite-width resonant torque profile on psi* | in progress: `orbit_width` switch of the device profile, thin limit to 3e-5 at width 1e-3 for both signs of E x B; energies whose orbits leave the file count as lost (`lost_weight`); thermal AUG deuterons at s = 0.5 lose 15 % of the thin torque to the orbit width. Open: lost-orbit boundary and potato orbits near the axis, the profile against POTATO rung 4 |
 
 rabe (stellarator bootstrap coefficients): with NEO-2-PAR above.
 
