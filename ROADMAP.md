@@ -1126,8 +1126,9 @@ Vertical layers (a layer uses only layers below it):
 
 | Layer | Target | Content |
 |---|---|---|
+| F | `milca_field` | charts, triangle bases, field point kernels (free-boundary shell); FortNum only, the target clients link |
 | L0 | `milca_core` | intervals, ODE, species, sort keys, series statistics, laboratory, identity helpers |
-| L1 | `milca_fem2d` | FortFEM slice, triangle/curved bases, CSR and direct solvers, GS options, timers, load batches |
+| L1 | `milca_fem2d` | FortFEM slice, curved triangles, CSR and direct solvers, GS options, timers, load batches |
 | L1 | `milca_pairs` | Ewald, near encounter, PME, N-body, pair laws, radial DVR, quantum collision kernels |
 | L2 | model classes | `milca_equilibrium` (GS, equilibrium, 3D coils, equilibrated bounds); `milca_mhd` (MHD, ideal, response, vacuum surfaces, nonnested; may use equilibrium); `milca_classical`; `milca_quantum`; `milca_continuum` |
 | L3 | apps | applications, demos, animation export; only L3 links plotting and graphics IO |

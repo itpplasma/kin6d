@@ -63,6 +63,7 @@ module milca_ideal_free_boundary
     use milca_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
         fold_barrier_hessian
     use milca_triangle_basis, only: triangle_basis_jet
+    use milca_field_shell, only: field_shell_eval, field_shell_locate
     use milca_sort_keys, only: sort_key_order
     use milca_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
@@ -4625,150 +4626,26 @@ contains
 
     subroutine ideal_fb_shell_field(fb, e, xi, phi_hat, x, b, status)
         ! Physical point x = (R, Z, phi) and cylindrical field (B_R, B_phi,
-        ! B_Z) of the vacuum potential at master point xi of shell cell e,
-        ! for any chart (cylindrical: x = q exactly, as before).
+        ! B_Z) of the vacuum potential at master point xi of shell cell e.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: e
         real(dp), intent(in) :: xi(2), phi_hat
         real(dp), intent(out) :: x(3), b(3)
         integer, intent(out) :: status
-        real(dp) :: shape(10), grad(2, 10), q(3), qd(3, 3), gt(3)
-        real(dp) :: dg(2, 2), y(2), gg(3), cart(3), d1(3, 3), d2(3, 3, 3), dx(3, 3)
-        real(dp) :: d3(3, 3, 3, 3), inv(3, 3), bc(3), det
-        status = 1
-        call shell_point_jet(fb, e, xi, phi_hat, q, qd, gt)
-        call triangle_basis_jet(xi, shape(:fb%nloc), grad(:, :fb%nloc))
-        y = matmul(fb%reference(:, fb%conn(:, e)), shape(:fb%nloc))
-        dg = matmul(fb%reference(:, fb%conn(:, e)), transpose(grad(:, :fb%nloc)))
-        gg = gt + fb%f_vac*qd(3, :) + fb%circulation*[matmul(transpose(dg), &
-            theta_gradient(fb, y)), 0.0_dp]
-        call fb%plasma%chart%jet(q, cart, d1, d2, d3)
-        dx = matmul(d1, qd)
-        call inverse3(dx, inv, det)
-        if (.not. abs(det) > 0) return
-        ! Cartesian B = DX^{-T} g, then cylindrical components at q.
-        bc = matmul(transpose(inv), gg)
-        select type (chart => fb%plasma%chart)
-        type is (cylindrical_chart_t)
-            b(1) = bc(1)*cos(q(3)) + bc(2)*sin(q(3))
-            b(2) = -bc(1)*sin(q(3)) + bc(2)*cos(q(3))
-            b(3) = bc(3)
-            x = q([1, 2, 3])
-        class default
-            ! Any other chart: cylindrical coordinates of the Cartesian point,
-            ! the angle unwrapped to the branch nearest the chart angle q3.
-            x(3) = atan2(cart(2), cart(1))
-            x(3) = x(3) + 2*pi*nint((q(3) - x(3))/(2*pi))
-            x(1) = hypot(cart(1), cart(2)); x(2) = cart(3)
-            b(1) = bc(1)*cos(x(3)) + bc(2)*sin(x(3))
-            b(2) = -bc(1)*sin(x(3)) + bc(2)*cos(x(3))
-            b(3) = bc(3)
-        end select
-        status = 0
-    end subroutine
-
-    subroutine shell_point_jet(fb, e, xi, phi_hat, q, qd, gt)
-        ! Chart point q of shell cell e at (xi, phi_hat), its derivatives
-        ! qd(:, j) along (xi1, xi2, phi_hat) and the gradient gt of the
-        ! single-valued potential part in the same master coordinates.
-        type(ideal_fb_t), intent(in) :: fb
-        integer, intent(in) :: e
-        real(dp), intent(in) :: xi(2), phi_hat
-        real(dp), intent(out) :: q(3), qd(3, 3), gt(3)
-        real(dp) :: shape(10), grad(2, 10), t, dt, nn
-        integer :: a, m, node, k
-        call triangle_basis_jet(xi, shape(:fb%nloc), grad(:, :fb%nloc))
-        q = 0; qd = 0; gt = 0
-        do a = 1, fb%nloc
-            node = fb%conn(a, e)
-            do m = 1, fb%nmode
-                k = harmonic(m); nn = k*fb%nfp
-                if (m == 1) then
-                    t = 1; dt = 0
-                else if (mod(m, 2) == 0) then
-                    t = cos(nn*phi_hat); dt = -nn*sin(nn*phi_hat)
-                else
-                    t = sin(nn*phi_hat); dt = nn*cos(nn*phi_hat)
-                end if
-                q = q + fb%xs(:, m, node)*shape(a)*t
-                qd(:, 1) = qd(:, 1) + fb%xs(:, m, node)*grad(1, a)*t
-                qd(:, 2) = qd(:, 2) + fb%xs(:, m, node)*grad(2, a)*t
-                qd(:, 3) = qd(:, 3) + fb%xs(:, m, node)*shape(a)*dt
-                gt(1) = gt(1) + fb%phi(m, node)*grad(1, a)*t
-                gt(2) = gt(2) + fb%phi(m, node)*grad(2, a)*t
-                gt(3) = gt(3) + fb%phi(m, node)*shape(a)*dt
-            end do
-        end do
-        q(3) = q(3) + phi_hat; qd(3, 3) = qd(3, 3) + 1
+        call field_shell_eval(fb%plasma%chart, fb%nfp, fb%conn(:, e), fb%reference, &
+            fb%xs, fb%phi, fb%f_vac, fb%circulation, fb%theta_centre, xi, phi_hat, &
+            x, b, status)
     end subroutine
 
     subroutine ideal_fb_shell_locate(fb, x, seed, e, xi, phi_hat, status)
         ! Shell cell e and master coordinates (xi, phi_hat) of the physical
-        ! point x = (R, Z, phi). Newton on the Cartesian position, trying the
-        ! cells in order of the distance of their centroid image at phi from
-        ! x, starting with seed when it is a valid cell. status 0 found, 1 the
-        ! point lies outside the shell (plasma, beyond Gamma_c or a fold).
+        ! point x = (R, Z, phi); status 0 found, 1 outside the shell.
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: x(3)
         integer, intent(in) :: seed
         integer, intent(out) :: e, status
         real(dp), intent(out) :: xi(2), phi_hat
-        integer, parameter :: tries = 8
-        real(dp) :: target(3), q(3), qd(3, 3), gt(3), cart(3), d1(3, 3)
-        real(dp) :: d2(3, 3, 3), d3(3, 3, 3, 3), dx(3, 3), inv(3, 3), det
-        real(dp) :: residual(3), step(3), scale
-        real(dp), allocatable :: dist(:)
-        integer :: attempt, iteration, c
-        status = 1; e = 0; xi = 0; phi_hat = x(3)
-        if (fb%ncell < 1 .or. .not. x(1) > 0) return
-        target = [x(1)*cos(x(3)), x(1)*sin(x(3)), x(2)]
-        scale = max(1.0_dp, x(1), abs(x(2)))
-        allocate (dist(fb%ncell))
-        do c = 1, fb%ncell
-            call shell_point_jet(fb, c, [1.0_dp, 1.0_dp]/3, x(3), q, qd, gt)
-            call fb%plasma%chart%jet(q, cart, d1, d2, d3)
-            dist(c) = sum((cart - target)**2)
-            if (c == seed) dist(c) = -1
-        end do
-        do attempt = 1, min(tries, fb%ncell)
-            c = minloc(dist, 1); dist(c) = huge(1.0_dp)
-            xi = 1.0_dp/3; phi_hat = x(3)
-            do iteration = 1, 30
-                call shell_point_jet(fb, c, xi, phi_hat, q, qd, gt)
-                call fb%plasma%chart%jet(q, cart, d1, d2, d3)
-                residual = cart - target
-                if (maxval(abs(residual)) < 1.0e-12_dp*scale) then
-                    if (minval([xi, 1 - sum(xi)]) >= -1.0e-10_dp) then
-                        e = c; status = 0; return
-                    end if
-                    exit
-                end if
-                dx = matmul(d1, qd)
-                call inverse3(dx, inv, det)
-                if (.not. abs(det) > 0) exit
-                step = matmul(inv, residual)
-                if (.not. all(ieee_is_finite(step))) exit
-                step = step/max(1.0_dp, maxval(abs(step(:2))))
-                xi = xi - step(:2); phi_hat = phi_hat - step(3)
-                if (minval(xi) < -2 .or. maxval(xi) > 3) exit
-            end do
-        end do
-        e = 0
-    end subroutine
-
-    pure subroutine inverse3(a, inv, det)
-        real(dp), intent(in) :: a(3, 3)
-        real(dp), intent(out) :: inv(3, 3), det
-        inv(1, 1) = a(2, 2)*a(3, 3) - a(2, 3)*a(3, 2)
-        inv(1, 2) = a(1, 3)*a(3, 2) - a(1, 2)*a(3, 3)
-        inv(1, 3) = a(1, 2)*a(2, 3) - a(1, 3)*a(2, 2)
-        inv(2, 1) = a(2, 3)*a(3, 1) - a(2, 1)*a(3, 3)
-        inv(2, 2) = a(1, 1)*a(3, 3) - a(1, 3)*a(3, 1)
-        inv(2, 3) = a(1, 3)*a(2, 1) - a(1, 1)*a(2, 3)
-        inv(3, 1) = a(2, 1)*a(3, 2) - a(2, 2)*a(3, 1)
-        inv(3, 2) = a(1, 2)*a(3, 1) - a(1, 1)*a(3, 2)
-        inv(3, 3) = a(1, 1)*a(2, 2) - a(1, 2)*a(2, 1)
-        det = a(1, 1)*inv(1, 1) + a(1, 2)*inv(2, 1) + a(1, 3)*inv(3, 1)
-        if (abs(det) > 0) inv = inv/det
+        call field_shell_locate(fb%plasma%chart, fb%nfp, fb%conn, fb%xs, x, seed, &
+            e, xi, phi_hat, status)
     end subroutine
 end module milca_ideal_free_boundary

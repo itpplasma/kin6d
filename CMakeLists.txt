@@ -338,15 +338,22 @@ add_library(milca_spatial ${MILCA_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/elements/tetra_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
-    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
-    ${fortfem_SOURCE_DIR}/src/generated/fortfem_lagrange_product_jets.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/estimators/bem_residual_energy.f90)
-target_link_libraries(milca_spatial PUBLIC milca_ode milca_intervals)
+target_link_libraries(milca_spatial PUBLIC milca_ode milca_intervals milca_field)
+# Field layer: what a client needs to evaluate a MILCA field at physical points
+# (charts, triangle bases, free-boundary shell kernels). FortNum only.
+target_sources(milca_field PRIVATE
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_lagrange_product_jets.f90
+    src/generated/milca_segment_leaves.f90 src/fem2d/triangle_basis.f90
+    src/generated/milca_equilibrium_core_leaves.f90
+    src/generated/milca_curve_chart_leaves.f90
+    src/equilibrium/equilibrium_chart.f90 src/field/field_shell.f90)
 # The upstream BEM assembly (panel-pair colouring) is threaded with OpenMP.
 if(MILCA_ENABLE_OPENMP)
     target_link_libraries(milca_spatial PUBLIC OpenMP::OpenMP_Fortran)
@@ -544,6 +551,9 @@ set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
 add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
 add_test(NAME ideal_fb_vertical_newton COMMAND test_ideal_free_boundary vertical)
+add_executable(test_field_shell test/test_field_shell.f90)
+target_link_libraries(test_field_shell PRIVATE milca_field)
+add_test(NAME field_shell_locate_exact COMMAND test_field_shell)
 foreach(k 2 3)
     add_test(NAME ideal_fb_vacuum_exact_n0_p${k} COMMAND test_ideal_free_boundary vacuum ${k})
 endforeach()
@@ -782,8 +792,7 @@ add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
 target_link_libraries(test_gs_fb_large_aspect PRIVATE milca)
 add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
 set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
-target_sources(milca_fem2d PRIVATE src/fem2d/curved_triangle.f90
-    src/generated/milca_segment_leaves.f90 src/fem2d/triangle_basis.f90)
+target_sources(milca_fem2d PRIVATE src/fem2d/curved_triangle.f90)
 target_sources(milca_equilibrium PRIVATE src/equilibrium/gs_majorant.f90 src/equilibrium/gs_profile_law.f90 src/equilibrium/gs_nonlinear.f90
     src/equilibrium/gs_equilibrated.f90 src/generated/milca_gs_error_leaves.f90)
 target_sources(milca_equilibrium PRIVATE src/equilibrium/gs_quadrature_budget.f90)
@@ -2102,9 +2111,7 @@ add_test(NAME ideal_xi_hessian_and_analytic_limits COMMAND test_ideal_xi)
 set_tests_properties(ideal_xi_hessian_and_analytic_limits PROPERTIES
     ENVIRONMENT "OMP_NUM_THREADS=2" PROCESSORS 2)
 target_sources(milca_mhd PRIVATE src/mhd/map_equilibrium.f90)
-target_sources(milca_equilibrium PRIVATE src/generated/milca_equilibrium_core_leaves.f90
-    src/generated/milca_curve_chart_leaves.f90
-    src/equilibrium/equilibrium_chart.f90 src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
+target_sources(milca_equilibrium PRIVATE src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
     src/equilibrium/equilibrium_residual.f90 src/equilibrium/equilibrium_readback.f90
     src/equilibrium/equilibrium_certificate.f90 src/equilibrium/gs_certificate.f90
     src/equilibrium/equilibrium_boundary.f90 src/equilibrium/equilibrium_geometry.f90)

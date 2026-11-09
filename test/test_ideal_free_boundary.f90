@@ -1366,9 +1366,14 @@ contains
         logical, intent(in) :: exact
         real(dp) :: x(3), y(3), b(3), be(2), psi, xi(2), xj(2), u(3), phi
         real(dp) :: worst, miss
-        integer :: i, e, f, st, seed
+        integer :: i, e, f, st, seed, nseed
+        integer, allocatable :: put(:)
         worst = 0; miss = 0; seed = 0
-        do i = 1, 200
+        ! Fixed stream: gfortran seeds random_number differently on every run.
+        call random_seed(size=nseed)
+        put = [(104729*i + 17, i = 1, nseed)]
+        call random_seed(put=put)
+        do i = 1, 2000
             call random_number(u)
             e = 1 + int(u(1)*fb%ncell)
             xi = [u(2), u(3)*(1 - u(2))]

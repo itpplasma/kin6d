@@ -1,5 +1,7 @@
 # Layered MILCA libraries (ROADMAP "Build structure and fast development loop").
 #
+#   F   milca_field        charts, triangle bases, field point kernels (FortNum only);
+#                          the target a client links to evaluate MILCA fields
 #   L0  milca_core         intervals, ODE, species, sort keys, statistics, laboratory
 #   L1  milca_fem2d        FortFEM slice, triangle bases, CSR/direct solvers, GS options
 #   L1  milca_pairs        Ewald, PME, N-body, pair laws, radial DVR, collision kernels
@@ -13,7 +15,7 @@
 # milca_layering test checks the Fortran use graph against that assignment.
 # `milca` is the umbrella INTERFACE target for consumers that want everything.
 
-set(MILCA_LAYER_CLASSES core fem2d pairs equilibrium mhd classical quantum continuum)
+set(MILCA_LAYER_CLASSES field core fem2d pairs equilibrium mhd classical quantum continuum)
 # Test labels: the layer classes plus apps for application-only tests.
 set(MILCA_TEST_CLASSES ${MILCA_LAYER_CLASSES} apps)
 set(MILCA_LAYER_LIBRARIES)
@@ -21,7 +23,8 @@ foreach(layer IN LISTS MILCA_LAYER_CLASSES)
     add_library(milca_${layer})
     list(APPEND MILCA_LAYER_LIBRARIES milca_${layer})
 endforeach()
-target_link_libraries(milca_core PUBLIC milca_intervals milca_ode)
+target_link_libraries(milca_field PUBLIC fortnum)
+target_link_libraries(milca_core PUBLIC milca_intervals milca_ode milca_field)
 target_link_libraries(milca_fem2d PUBLIC milca_core)
 target_link_libraries(milca_pairs PUBLIC milca_core)
 target_link_libraries(milca_equilibrium PUBLIC milca_fem2d)

@@ -6,13 +6,14 @@ cmake_minimum_required(VERSION 3.22)
 #     only modules of its own layer or of a lower layer; among the L2 model
 #     classes only mhd uses equilibrium; no layer uses an application module;
 #  2. that every registered test carries one class label and one tier label.
-set(rank_core 0)
-set(rank_fem2d 1)
-set(rank_pairs 1)
+set(rank_field 0)
+set(rank_core 1)
+set(rank_fem2d 2)
+set(rank_pairs 2)
 foreach(class equilibrium mhd classical quantum continuum)
-    set(rank_${class} 2)
+    set(rank_${class} 3)
 endforeach()
-set(rank_apps 3)
+set(rank_apps 4)
 set(sideways_mhd equilibrium)
 
 file(STRINGS "${PARTITION}" entries)

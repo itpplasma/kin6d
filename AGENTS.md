@@ -340,6 +340,7 @@ optimization. Planned scope is not implemented functionality.
 ## Build layers and development loop
 
 - Library sources belong to one layer target (`cmake/milca_layers.cmake`):
+  F `milca_field` (FortNum only: what clients link to evaluate MILCA fields);
   L0 `milca_core`; L1 `milca_fem2d`, `milca_pairs`; L2 `milca_equilibrium`,
   `milca_mhd`, `milca_classical`, `milca_quantum`, `milca_continuum`; L3
   applications and `milca_io`. A source uses only its own or lower layers; of
