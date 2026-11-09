@@ -50,7 +50,8 @@ program test_nonnested_exterior
     logical, allocatable :: fixed(:)
     integer :: nr, modes, nphi, degree, k, j, i, status, counts(npc + 1)
     character(32) :: arg
-    nr = 1; modes = 1; nphi = 8; degree = 12
+    ! The remote coil has 4.3e-3 of its field in n = 2-6; one mode leaves 5.1e-3.
+    nr = 1; modes = 6; nphi = 24; degree = 12
     if (command_argument_count() >= 1) then
         call get_command_argument(1, arg); read (arg, *) nr
     end if
