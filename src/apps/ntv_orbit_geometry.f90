@@ -23,7 +23,7 @@ module milca_ntv_orbit_geometry
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_pitch_point, &
-        orbit_state, orbit_flux_p, ORBIT_OK
+        orbit_state, orbit_potential, ORBIT_OK
     use milca_dk_hp, only: hp_geometry_t, hp_operator_t
     implicit none
     private
@@ -56,7 +56,7 @@ contains
         type(hp_orbit_geometry_t), intent(out) :: g
         integer, intent(out) :: status
         integer, parameter :: n = 2048
-        real(dp) :: b, b_s, gg, i, g_s, i_s, iota, psi_prime, th, b_max
+        real(dp) :: b, b_s, gg, i, g_s, i_s, iota, psi_prime, th, b_max, phi, phi_s
         integer :: k
         g%bf => bf
         g%p = p
@@ -98,8 +98,9 @@ contains
         end block
         g%lambda_c = b_ref/b_max
         g%kappa = iota*b_ref/(gg + iota*i)
-        ! Kinetic energy at s*: H - Z e Phi(s*), Phi = -omega_e (psi_p - psi_p(s_ref)).
-        g%e_star = p%energy + p%charge*p%omega_e*orbit_flux_p(bf, p%s_ref, s_star)
+        ! Kinetic energy at s*: H - Z e Phi(s*).
+        call orbit_potential(bf, p, s_star, phi, phi_s)
+        g%e_star = p%energy - p%charge*phi
         g%v_star = sqrt(2*g%e_star/p%mass)
         status = ORBIT_OK
     contains
