@@ -51,6 +51,7 @@ program test_boozer_orbit
     case ('pitch_map'); ok = pitch_map()
     case ('shear'); ok = shear()
     case ('potential'); ok = potential()
+    case ('pitch_bracket'); ok = pitch_bracket()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -296,6 +297,32 @@ contains
 
     !> Concentric circles r = 0.5 sqrt(s) around R = 1.7 m, B = 2.3 (1 - 0.1
     !> sqrt(s) cos(theta)) T, iota = 0.9 - 0.3 s, constant poloidal current.
+    !> Raising the energy at fixed local pitch moves the orbit point outwards
+    !> until it leaves the file (s in [0.05, 0.95]): the last root found must
+    !> lie at the file's end, not at the last doubled bracket step before it
+    !> (s* + 0.41 = 0.86 for the outward leg).
+    logical function pitch_bracket() result(ok)
+        type(orbit_particle_t) :: p
+        type(orbit_point_t) :: pt
+        real(dp) :: f, s_last, xi
+        integer :: k, st, side
+        ok = .true.
+        do side = 1, 2
+            xi = merge(0.9_dp, -0.9_dp, side == 1)
+            s_last = s_star
+            do k = 0, 400
+                f = 1.05_dp**k
+                p = particle(1.0_dp, 0.5_dp, 0.0_dp)
+                p%energy = p%energy*f
+                call orbit_pitch_point(bf, p, s_star, 0.0_dp, xi, pt, st)
+                if (st /= ORBIT_OK) exit
+                s_last = pt%s
+            end do
+            print '(a,f6.2,a,f9.5)', 'xi ', xi, ' last root s ', s_last
+            ok = ok .and. (abs(s_last - 0.95_dp) < 0.02_dp .or. abs(s_last - 0.05_dp) < 0.02_dp)
+        end do
+    end function pitch_bracket
+
     subroutine write_file(name)
         character(*), intent(in) :: name
         integer :: unit, k

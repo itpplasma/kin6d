@@ -151,8 +151,9 @@ contains
         real(dp), intent(in) :: s_star, theta, sigma
         type(orbit_point_t), intent(out) :: pt
         integer, intent(out) :: status
-        real(dp) :: lo, hi, mid, f_lo, f_hi, f_mid, step, dir, df
+        real(dp) :: lo, hi, mid, f_lo, f_hi, f_mid, step, dir, df, edge
         integer :: it
+        logical :: last
         status = ORBIT_BAD_INPUT
         if (p%mass <= 0 .or. p%charge == 0) return
         dir = sigma*sign(1.0_dp, leg_sign())
@@ -169,14 +170,18 @@ contains
             return
         end if
         step = 1e-3_dp
+        ! As in orbit_pitch_point: the last step is clamped to the file's end.
+        edge = merge(bf%d%s(size(bf%d%s)), bf%d%s(1), dir > 0) - dir*1e-9_dp
         do it = 1, 60
             hi = s_star + dir*step
-            if (hi <= 0 .or. hi >= 1) then
+            last = (hi - edge)*dir >= 0
+            if (last) hi = edge
+            f_hi = residual(hi)
+            if (f_hi > 0) exit
+            if (last) then
                 status = ORBIT_NO_ROOT
                 return
             end if
-            f_hi = residual(hi)
-            if (f_hi > 0) exit
             lo = hi
             f_lo = f_hi
             step = 2*step
@@ -288,7 +293,8 @@ contains
         integer, intent(out) :: status
         type(orbit_particle_t) :: q
         real(dp) :: lo, hi, f_lo, f_hi, s, f, f_s, step, dir, b, b_s, g, i, g_s, i_s, &
-            iota, psi_prime, iota_star, psi_prime_star, phi, phi_s, r_xi, mu, mu_s, mu_xi
+            iota, psi_prime, iota_star, psi_prime_star, phi, phi_s, r_xi, mu, mu_s, mu_xi, edge
+        logical :: last
         integer :: it
         status = ORBIT_BAD_INPUT
         if (p%mass <= 0 .or. p%charge == 0 .or. abs(xi) > 1) return
@@ -304,14 +310,21 @@ contains
             dir = sign(1.0_dp, f_lo*iota_star*psi_prime_star)
             lo = s_star
             step = 1e-4_dp
+            ! A doubled step beyond the file is clamped to its end, so that roots
+            ! between the last step and the end are found.
+            edge = merge(bf%d%s(size(bf%d%s)), bf%d%s(1), dir > 0)
+            edge = edge - dir*1e-9_dp
             do it = 1, 60
                 hi = s_star + dir*step
-                if (hi <= bf%d%s(1) .or. hi >= bf%d%s(size(bf%d%s))) then
+                last = (hi - edge)*dir >= 0
+                if (last) hi = edge
+                call residual(hi, f_hi, f_s)
+                if (status /= ORBIT_OK) return
+                if (f_hi*f_lo <= 0) exit
+                if (last) then
                     status = ORBIT_NO_ROOT
                     return
                 end if
-                call residual(hi, f_hi, f_s)
-                if (f_hi*f_lo <= 0) exit
                 lo = hi
                 f_lo = f_hi
                 step = 2*step
