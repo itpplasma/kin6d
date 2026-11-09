@@ -917,6 +917,53 @@ optional charts nor a DOF reduction establishes either gate.
 | I10 | W7-X vacuum 5/5 EIM, then 5/4, 5/6, edge-island candidates, then finite beta | I9 and prior required gates including I7 full 3D BEM/DtN, G10 per case; public currents, synthetic/private filaments outside public repo |
 | I11 | Full-torus LHD helix plus n=1 RMP and sidebands | I9 and prior required gates plus calibrated RMP coil set owned by LHD lane, G10 with K≥24,32,48 extended as needed; no symmetry reduction to nfp=10 |
 
+### Execution order and status, 9 November 2026
+
+[V] Status: I1, I2 (single volume), I3 and I5a are on main. The I6
+island width/phase diagnostics are on main (#63). For I7, the frozen exterior
+composition is merged (#349); the full BEM attachment `nn_attach_exterior`
+compiles, but its coil-driven pilot ([draft #350](https://github.com/itpplasma/milca/pull/350))
+misses the 1e-3 Biot-Savart field gate at 5.1e-3, independent of resolution.
+I4, I5b, I8-I11 are open.
+
+[H] Work proceeds in this order. Each step is one or more bounded PRs with the
+gate named in the table above; a failed gate is reported, not relaxed.
+
+1. **I7 qualification.** Locate the systematic 5.1e-3 field error of #350
+   (BEM quadrature/degree, trace moments, volume coil load or harmonic
+   reference), then add G8: virtual-casing comparison, interface defect, and a
+   geometrically displaced seed.
+2. **Classical-stellarator benchmark** of [S11] Sec. X.B: N_p = 3, analytic
+   boundary (S11 eq. 10.1), <beta> about 1e-4, no net current, islands at
+   iota = 1/2 (m = 6) and 3/5 (m = 5). Fixed boundary, so it does not wait
+   for step 1. Run the NN1 vacuum and NN2 low-beta lanes, SIESTA and SPECTRE
+   on the same VMEC seed; compare island O/X points, widths and phases, and
+   cost. The published comparison is by Poincare plot only, with the
+   pressure profile and SIESTA resistivity unstated.
+3. **Ideal limit (G6/G9).** At finite beta on the step-2 case, a measured
+   sequence chi_par/chi_perp -> infinity, eta -> 0 against SIESTA, with
+   residual-floor reporting; branch tracking by continuation.
+4. **I5b profile prescription**, so cases can be posed with given p and
+   current profiles as for VMEC/SIESTA.
+5. **I4 and IH1/IH3** to machine resolution, with measured memory and time
+   against SPECTRE at matched island observables.
+6. **I10 W7-X vacuum 5/5 (EIM)**, then finite beta for the 2022 control-coil
+   programmes, cross-checked against SPECTRE.
+7. **Stochastic regions:** connection-length and Lyapunov diagnostics next to
+   the island diagnostics; benchmark a stochastic edge (HINT CFQS cases, also
+   reported by NTEC) and the LHD ergodic layer.
+8. **Open field lines:** wall/sheath boundary data for pressure where field
+   lines reach the wall; needed for W7-X edge islands and the LHD ergodic
+   layer.
+9. **Shielding and penetration:** static A+D has no flow, so a driven
+   resonant field is not screened. Flow screening, diamagnetic and viscous
+   effects come from the nonlinear visco-resistive lane
+   ([nonlinear-resistive-mhd.md](nonlinear-resistive-mhd.md)) coupled to the
+   same exterior; bootstrap current and its loss inside islands follow the
+   kinetic closures. I8 (stepped-pressure regions) is only needed to
+   reproduce SPECTRE exactly and stays last.
+10. **I11 LHD** n = 1 island with calibrated LID coils.
+
 [H] Open mathematical risks are the smooth ideal limit at dense resonances,
 closed-line/chaotic averaging without a uniform finite trace bound, and loss
 of invertibility near bifurcations. Open computational risks are anisotropy-
