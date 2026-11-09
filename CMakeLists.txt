@@ -259,6 +259,7 @@ target_sources(milca_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/milca_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
     src/generated/milca_dk_pitch_leaves.f90 src/continuum/dk_pitch.f90
     src/generated/milca_dk_mono_leaves.f90 src/continuum/dk_mono.f90
+    src/continuum/dk_mono_thermal.f90
     src/generated/milca_dk_hp_leaves.f90 src/continuum/dk_hp.f90
     src/generated/milca_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
     src/generated/milca_dk_collop_leaves.f90 src/continuum/dk_collop.f90
@@ -1101,6 +1102,13 @@ endforeach()
 add_test(NAME dk_collop_neo2_matrix COMMAND test_dk_collop neo2_matrix
     ${CMAKE_SOURCE_DIR}/test/data/neo2_collop_aug30835.txt)
 milca_test_labels(dk_collop_neo2_matrix fast CLASSES continuum TARGETS test_dk_collop)
+add_executable(test_dk_mono_thermal test/test_dk_mono_thermal.f90)
+target_link_libraries(test_dk_mono_thermal PRIVATE milca)
+foreach(check symmetric ambipolar onsager)
+    add_test(NAME dk_mono_thermal_${check} COMMAND test_dk_mono_thermal ${check})
+    milca_test_labels(dk_mono_thermal_${check} fast CLASSES continuum
+        TARGETS test_dk_mono_thermal)
+endforeach()
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE milca)
 foreach(check collisionless banana pfirsch_schlueter plateau onsager jvp estimate
