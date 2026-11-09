@@ -226,7 +226,8 @@ contains
     !> against the Legendre-Fourier kernel milca_dk_ntv on the circular
     !> stage-1 surface b = 1 - eps cos theta.
     logical function ntv_reference() result(ok)
-        use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
+        use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK, &
+            NTV_WEIGHT_FULL
         use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k1
@@ -254,6 +255,17 @@ contains
             if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
             ok = close_to('R', r, k1%r, 1e-6_dp) .and. ok
         end do
+        ! Boozer streaming k b with the full drift weight: the torque carries
+        ! the surface measure 1/b of that streaming.
+        sf%boozer_stream = .true.; sf%weight = NTV_WEIGHT_FULL
+        op%k_power = 1; op%wsign = 1; op%nu = 1e-3_dp; op%pre = 1e-4_dp; op%omega_e = 0
+        call ntv_kernel(sf, 1.0_dp, op%nu, 0.0_dp, op%pre, 65, 80, k1, status, &
+            indicators=.false.)
+        if (status /= NTV_OK) error stop 'ntv_kernel failed'
+        call hp_default_mesh(f, 6, 16, 8, 1e-4_dp, 0.3_dp, mesh)
+        call hp_ntv_kernel(f, mesh, op, r, status)
+        if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
+        ok = close_to('R boozer', r, k1%r, 1e-6_dp) .and. ok
     end function ntv_reference
 
     !> The stage-1 harmonic (eps 0.05, q 2.2, n 3, m 6) with the operator of

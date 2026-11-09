@@ -829,6 +829,9 @@ contains
         k = op%k*bb**op%k_power
         call dk_hp_point(bb, field_db(g, th), xi, k, op%nu, collide, drive_r, drive_e, density)
         call dk_hp_ntv(bb, xi, k, cos(th), op%offset, op%wsign, phase, precess, drive, torque)
+        ! The flux is weighted with the surface measure, which streaming
+        ! b.grad theta = k b**k_power divides by b**k_power (Boozer: 2/b^3).
+        torque = torque/bb**op%k_power
     end subroutine field_point
 
     !> xi_c^2 = 1 - b/b_max.
