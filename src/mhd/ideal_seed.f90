@@ -25,7 +25,7 @@ module milca_ideal_seed
     ! det DY > 0 on a polar grid.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_ideal_map, only: ideal_frozen_t
-    use kin6d_curved_triangle, only: boundary_curve
+    use milca_curved_triangle, only: boundary_curve
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_fft, only: fft_c2c
     implicit none

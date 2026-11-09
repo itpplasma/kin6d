@@ -29,7 +29,7 @@
 !> represented by the lifted/projected asymptotes), so no near force is
 !> counted twice; the far zone b > b_s stays classical. The naive diagnostic
 !> (rotate v at r_det) double counts the outer-leg deflection and is reported.
-module kin6d_hybrid_encounter
+module milca_hybrid_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
@@ -512,4 +512,4 @@ contains
             end do
         end do
     end subroutine hybrid_beam_step
-end module kin6d_hybrid_encounter
+end module milca_hybrid_encounter

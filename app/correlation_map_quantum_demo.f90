@@ -3,7 +3,7 @@
 !> periodic cube, neutralizing background, density and temperature, over a
 !> (r_s, Theta) grid (docs/quantum-classical-correlations.md).
 !>
-!> N = 2: exact relative-coordinate quantum cell (kin6d_quantum_pair_cell)
+!> N = 2: exact relative-coordinate quantum cell (milca_quantum_pair_cell)
 !> vs classical quadrature of the Boltzmann factor, Q3 ideal fermions,
 !> Wigner--Kirkwood + leading exchange prediction, Kelbg and Kelbg+Pauli
 !> pair models, and the Theta derivative. N = 3, 4: Q4 cell, every sector
@@ -13,10 +13,10 @@ program correlation_map_quantum_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use milca_result_io, only: run_t, result_file_t
     use milca_classical_cell
-    use kin6d_quantum_pair_cell
-    use kin6d_quantum_classical_map
-    use kin6d_jellium_cell
-    use kin6d_quantum_fock, only: fock_hamiltonian_t
+    use milca_quantum_pair_cell
+    use milca_quantum_classical_map
+    use milca_jellium_cell
+    use milca_quantum_fock, only: fock_hamiltonian_t
     use fortplot, only: figure, subplot, plot, title, suptitle, xlabel, ylabel, &
         xlim, ylim, legend, tight_layout, savefig, pcolormesh, colorbar, xscale, &
         yscale

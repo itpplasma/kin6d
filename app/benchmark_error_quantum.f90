@@ -1,15 +1,15 @@
 program benchmark_error_quantum
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_interval, only: interval_t
-    use kin6d_quantum_fock, only: assemble_jellium_pair_sector, fock_hamiltonian_t
-    use kin6d_quantum_evolution
+    use milca_quantum_fock, only: assemble_jellium_pair_sector, fock_hamiltonian_t
+    use milca_quantum_evolution
     use milca_coulomb_encounter
-    use kin6d_packet_models
-    use kin6d_fermion_ensemble
-    use kin6d_fermi_gas
-    use kin6d_jellium_cell
-    use kin6d_mean_field_cell
-    use kin6d_screening_hierarchy
+    use milca_packet_models
+    use milca_fermion_ensemble
+    use milca_fermi_gas
+    use milca_jellium_cell
+    use milca_mean_field_cell
+    use milca_screening_hierarchy
     use error_benchmark_support
     implicit none
     integer :: trial

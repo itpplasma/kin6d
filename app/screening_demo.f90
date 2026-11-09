@@ -6,7 +6,7 @@ program screening_demo
     use fortplot, only: figure, subplot, plot, title, suptitle, xlabel, ylabel, &
         xlim, ylim, legend, tight_layout, savefig, set_xscale, set_yscale
     use milca_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
-    use kin6d_screening_hierarchy
+    use milca_screening_hierarchy
     use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -153,7 +153,7 @@ program screening_demo
     call result%create(run)
     call result%write('theta', theta, '1', 'T/T_F of the k_s scan', dims='theta')
     call result%write('ks_over_kd_fermi_gas', ks_kd, '1', &
-        'finite-T Fermi screening k_s/k_D (kin6d_fermi_gas candidate)', dims='theta', &
+        'finite-T Fermi screening k_s/k_D (milca_fermi_gas candidate)', dims='theta', &
         status='candidate inside fermi_gas certified enclosure')
     call result%write('ks_over_kd_lindhard', lind_kd, '1', &
         'sqrt(G(q->0)) of the Maldague route over k_D', dims='theta', &

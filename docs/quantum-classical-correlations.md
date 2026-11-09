@@ -44,11 +44,11 @@ a function of `Theta` alone.
   `pi/L`) are kept. `kmax2` makes the cutoff kinetic energy at least
   `tau kT` at the largest Theta (tau = 36). The cutoff indicator repeats the
   calculation with tau = 25.
-- Q4 cell for N = 3, 4 (`kin6d_jellium_cell`): every `(S_z, K)` sector is
+- Q4 cell for N = 3, 4 (`milca_jellium_cell`): every `(S_z, K)` sector is
   diagonalized densely (`jellium_full_spectrum`), so the canonical ensemble
   has no thermal truncation. The plane-wave cutoff (`|n|^2 <= c`) stays the
   limiting approximation.
-- Ideal fermions: Q3 `kin6d_fermion_ensemble` with fixed-N_sigma states,
+- Ideal fermions: Q3 `milca_fermion_ensemble` with fixed-N_sigma states,
   combined over all `S_z` with weights `Z_{N_up} Z_{N-N_up}`. The same Q4
   cell at coupling 0 serves as the ideal reference for three-body moments.
 

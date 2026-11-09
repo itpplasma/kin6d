@@ -2,7 +2,7 @@ program test_quantum_correlations
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval
-    use kin6d_quantum_correlations, only: quantum_wick_pair, quantum_wick_pair_jvp, &
+    use milca_quantum_correlations, only: quantum_wick_pair, quantum_wick_pair_jvp, &
         quantum_wick_pair_vjp, quantum_wick_pair_interval, quantum_cumulant_pair, &
         quantum_cumulant_pair_jvp, quantum_cumulant_pair_vjp, &
         quantum_cumulant_pair_interval, quantum_pauli, &

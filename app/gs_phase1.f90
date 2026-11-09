@@ -5,7 +5,7 @@ program gs_phase1_main
         write_gs_mesh, read_gs_mesh, sample_gs
     use milca_gs_field_readback, only: sample_gs_many
     use milca_gs_ampere_loop, only: gs_boundary_current, gs_weak_boundary_current
-    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
+    use milca_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
         curve_value
     use milca_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
         gs_readback_resolution, gs_readback_q
@@ -19,11 +19,11 @@ program gs_phase1_main
     use milca_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
     use milca_gs_prescribed_q, only: solve_gs_prescribed_q
     use milca_result_io, only: run_t, result_file_t, runtime_git
-    use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
+    use milca_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, gs_timer_event_count, gs_timer_event_get, &
         gs_timer_reset, gs_progress_set, gs_progress, GS_T_ASSEMBLY, GS_T_FIXED_CG, &
         GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, GS_T_FACTOR, GS_T_DIRECT, GS_T_LOAD_CELLS
-    use kin6d_gs_options, only: gs_options_text
+    use milca_gs_options, only: gs_options_text
     use fortplot_system_runtime, only: create_directory_runtime
     !$ use omp_lib, only: omp_get_max_threads
     implicit none

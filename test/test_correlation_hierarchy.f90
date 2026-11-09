@@ -23,7 +23,7 @@ program test_correlation_hierarchy
     use milca_correlation_hierarchy
     use milca_ocp_hnc
     use milca_series_statistics
-    use kin6d_correlation_hierarchy_leaves, only: ch_ocp_energy_fit, &
+    use milca_correlation_hierarchy_leaves, only: ch_ocp_energy_fit, &
         ch_ocp_energy_fit_jvp, ch_debye_hueckel_energy, ch_debye_wavenumber
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp

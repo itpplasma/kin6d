@@ -1,8 +1,8 @@
 ! Pionless EFT threshold pp fusion. Natural lengths: fm; energies: MeV.
-module kin6d_pp_fusion_eft
+module milca_pp_fusion_eft
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_pp_fusion, only: pp_hc, pp_hbar, pp_alpha, pp_mp, pp_mn, &
+    use milca_pp_fusion, only: pp_hc, pp_hbar, pp_alpha, pp_mp, pp_mn, &
         pp_phase_space, axial, ft0
     use milca_pp_fusion_leaves, only: pp_sfactor, pp_sfactor_jvp
     use milca_pp_fusion_eft_leaves, only: eft_scales, eft_scales_jvp, &

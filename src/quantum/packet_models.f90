@@ -26,10 +26,10 @@
 ! integral by trapezoid of sampled ||r_h||). The continuum statement adds the
 ! reference's discretization error and the model projection defect (both
 ! reported, neither bounded).
-module kin6d_packet_models
+module milca_packet_models
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_gaussian_pair, only: gaussian_t, pair_rule_t, pair_rule_init, pair_elements, &
+    use milca_gaussian_pair, only: gaussian_t, pair_rule_t, pair_rule_init, pair_elements, &
                                    gaussian_value, gaussian_norm2
     use milca_packet_models_leaves
     use milca_coulomb_encounter, only: encounter_t, encounter_state, encounter_project, &
@@ -879,4 +879,4 @@ contains
         nm = encounter_norm(enc, a - da, sector); pm = pq(1)*nm
         dpv = ((pp - pm)/2 - p*(np - nm)/2)/encounter_norm(enc, a, sector)
     end subroutine packet_bin_jvp
-end module kin6d_packet_models
+end module milca_packet_models

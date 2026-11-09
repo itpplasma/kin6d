@@ -4,12 +4,12 @@ program quantum_reference_demo
         compiler_options
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval
-    use kin6d_quantum_fock, only: assemble_jellium_pair_sector
+    use milca_quantum_fock, only: assemble_jellium_pair_sector
     use milca_species, only: units_t, periodic_pair_units
-    use kin6d_quantum_evolution, only: quantum_evolution_t, &
+    use milca_quantum_evolution, only: quantum_evolution_t, &
         initialize_quantum_evolution, solve_quantum_evolution, &
         sample_quantum_evolution
-    use kin6d_quantum_reference_gallery, only: quantum_observable_packet_t, &
+    use milca_quantum_reference_gallery, only: quantum_observable_packet_t, &
         prepare_quantum_pair_sector, &
         sample_quantum_observables, &
         quantum_occupation_bands, quantum_initial_norm, quantum_matrix_defect, &

@@ -1,7 +1,7 @@
 program test_nested_oracles
     ! Independent complex formulas, spatial differences and volume integration.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
+    use milca_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
     use milca_nested_oracle_leaves, only: nested_integer_averages, &
                                    nested_sheared_field_jvp, nested_sheared_field_vjp, &
                          nested_sheared_field_interval, nested_integer_field_interval, &

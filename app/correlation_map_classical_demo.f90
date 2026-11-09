@@ -15,7 +15,7 @@ program correlation_map_classical_demo
     use milca_ocp_hnc
     use milca_series_statistics
     use milca_pair_correlation, only: pair_counts, pair_distribution, structure_factor
-    use kin6d_correlation_hierarchy_leaves, only: ch_debye_wavenumber, &
+    use milca_correlation_hierarchy_leaves, only: ch_debye_wavenumber, &
         ch_debye_hueckel_g, ch_debye_hueckel_linear_g, ch_debye_hueckel_energy, &
         ch_energy_fluctuation_derivative
     use milca_result_io, only: run_t, result_file_t

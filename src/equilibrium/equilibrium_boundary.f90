@@ -35,7 +35,7 @@ module milca_equilibrium_boundary
     use fortfem_toroidal_mode_boundary_operators_2d, only: tm_bem_assemble, &
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_gs_timers, only: gs_phase_tick
+    use milca_gs_timers, only: gs_phase_tick
     use milca_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use milca_coils_3d, only: coil_set_t, coil_set_modes
     use milca_equilibrium_state, only: EQ_UNAVAILABLE

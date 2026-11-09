@@ -64,12 +64,12 @@ module milca_gs_free_boundary
     use fortnum_multiroot, only: argsort
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use milca_gs_separatrix_leaves, only: gs_lcfs_ray_jet
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
                                GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &
                                GS_DIRECT_ORDER_ND
     use milca_sort_keys, only: sort_key_order
-    use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
+    use milca_gs_timers, only: gs_phase_tick, gs_profile_value
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
                                   gs_requested_device
     use milca_gs_coils, only: gs_circuit_set_t
@@ -77,10 +77,10 @@ module milca_gs_free_boundary
                                  gs_coupling_coil_load, GS_COUPLING_OK
     use milca_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t
     use milca_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
+    use milca_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
                                     cubic_segment_stationary, &
                                     triangle_bernstein_controls
-    use kin6d_curved_triangle, only: triangle_locate, boundary_curve
+    use milca_curved_triangle, only: triangle_locate, boundary_curve
     implicit none
     private
 

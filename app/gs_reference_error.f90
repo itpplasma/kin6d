@@ -3,7 +3,7 @@ program gs_reference_error
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval, interval_pi, sqrt, &
         operator(+), operator(*), operator(/)
-    use kin6d_gs_reference_error, only: gs_reference_parameters_t, &
+    use milca_gs_reference_error, only: gs_reference_parameters_t, &
         enclose_gs_reference_cell
     implicit none
     type(gs_reference_parameters_t) :: parameters

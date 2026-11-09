@@ -4,7 +4,7 @@ module milca_grad_shafranov
    use triangle_compat, only: tc_result_t, triangulate_compat
    use basis_p1_2d_module, only: basis_p1_2d_t
    use basis_p2_2d_module, only: basis_p2_2d_t
-   use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_stationary, &
+   use milca_triangle_basis, only: triangle_basis_jet, cubic_segment_stationary, &
        triangle_node_powers, TRIANGLE_MAX_DEGREE, TRIANGLE_MAX_NODES
    use fortfem_triangle_level_quadrature, only: triangle_level_workspace_t, &
        initialize_triangle_level_workspace, integrate_triangle_levels, &
@@ -12,12 +12,12 @@ module milca_grad_shafranov
    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
    use fortnum_krylov, only: real_conjugate_gradient_operator, real_gmres_operator, &
        KRYLOV_OK, KRYLOV_MAX_ITERATIONS
-   use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, GS_T_FIXED_CG, GS_T_FACTOR, &
+   use milca_gs_timers, only: gs_wall_s, gs_timer_add, GS_T_FIXED_CG, GS_T_FACTOR, &
        GS_T_DIRECT
-   use kin6d_gs_options, only: gs_use_csr, gs_use_direct
-   use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_dirichlet_apply, &
+   use milca_gs_options, only: gs_use_csr, gs_use_direct
+   use milca_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_dirichlet_apply, &
        gs_csr_spd_matrix
-   use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+   use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
        gs_direct_solve, gs_direct_free
    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
        lagrange_combined_jvp, &
@@ -25,7 +25,7 @@ module milca_grad_shafranov
    use milca_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
       gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
-   use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
+   use milca_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
        curve_value, boundary_curve, triangle_shapes, triangle_locate
    use milca_gs_inverse_leaves, only: gs_normalized_profile_response
    use milca_real_identity, only: same_real_value
@@ -997,7 +997,7 @@ contains
       ! Absolute norm of source - apply_gs(state, response) for the returned
       ! response; huge when no response is produced.
       real(dp), intent(out), optional :: residual_norm
-      ! Phase-timer slot for this solve (kin6d_gs_timers); 0 or absent: untimed.
+      ! Phase-timer slot for this solve (milca_gs_timers); 0 or absent: untimed.
       integer, intent(in), optional :: timer_kind
       real(dp) :: residual, tolerance, clock
       real(dp), allocatable :: action(:)

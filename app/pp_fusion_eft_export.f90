@@ -2,9 +2,9 @@
 program pp_fusion_eft_export
     use, intrinsic :: iso_fortran_env, only: dp => real64, compiler_version, &
         compiler_options
-    use kin6d_pp_fusion_eft, only: pp_eft_config_t, pp_eft_result_t, pp_eft_evaluate, &
+    use milca_pp_fusion_eft, only: pp_eft_config_t, pp_eft_result_t, pp_eft_evaluate, &
         pp_eft_lattice_errors, pp_eft_input_errors
-    use kin6d_pp_fusion, only: pp_fusion_config_t, pp_fusion_result_t, &
+    use milca_pp_fusion, only: pp_fusion_config_t, pp_fusion_result_t, &
         pp_fusion_solve, &
         pp_vector_coupling, pp_hc, pp_mp, pp_mn, pp_alpha, axial, ft0
     use milca_result_io, only: run_t, result_file_t, runtime_git

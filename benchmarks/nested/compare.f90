@@ -4,7 +4,7 @@ program benchmark_nested_reference
     ! s is normalized toroidal flux; only the integer family is admitted.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_nested_oracles, only: nested_oracle_t
+    use milca_nested_oracles, only: nested_oracle_t
     implicit none
     type(nested_oracle_t) :: oracle
     real(dp) :: row(14), exact(20), force(3), sums(6), label_error

@@ -12,7 +12,7 @@ module milca_coulomb_kepler
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
                                 radial_eigen_window, radial_locate
-    use kin6d_coulomb_encounter_leaves, only: ce_outer_turning, &
+    use milca_coulomb_encounter_leaves, only: ce_outer_turning, &
         ce_kepler_width, ce_radial_packet, ce_hydrogen_level, ce_kepler, ce_phase, &
         ce_state_bound
     use milca_species_leaves, only: species_pair_scales

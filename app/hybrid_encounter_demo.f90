@@ -16,7 +16,7 @@ program hybrid_encounter_demo
         save_animation
     use milca_species, only: atomic_units, electron
     use milca_quantum_collision_kernel
-    use kin6d_hybrid_encounter, single_encounter => hybrid_encounter
+    use milca_hybrid_encounter, single_encounter => hybrid_encounter
     use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)

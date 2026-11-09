@@ -2,7 +2,7 @@
 program pp_fusion_export
     use, intrinsic :: iso_fortran_env, only: dp => real64, compiler_version, &
         compiler_options
-    use kin6d_pp_fusion, only: pp_fusion_config_t, pp_fusion_result_t, &
+    use milca_pp_fusion, only: pp_fusion_config_t, pp_fusion_result_t, &
         pp_fusion_solve, &
         pp_hc, pp_mp, pp_alpha, pp_vector_coupling
     use milca_result_io, only: run_t, result_file_t, runtime_git

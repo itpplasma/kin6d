@@ -17,13 +17,13 @@ program test_quantum_classical
     use milca_nbody, only: nbody_force
     use milca_coulomb_leaves, only: ewald_background
     use milca_classical_cell
-    use kin6d_quantum_pair_cell
+    use milca_quantum_pair_cell
     use milca_quantum_classical_leaves
-    use kin6d_jellium_cell
-    use kin6d_quantum_classical_map
+    use milca_jellium_cell
+    use milca_quantum_classical_map
     use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, &
         mc_energy
-    use kin6d_quantum_fock, only: fock_matvec, fock_hamiltonian_t
+    use milca_quantum_fock, only: fock_matvec, fock_hamiltonian_t
     use milca_quantum_fock_leaves, only: qf_kinetic
     use fortnum_symmetric_eigen, only: symmetric_eigen
     implicit none

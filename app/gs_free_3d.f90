@@ -101,7 +101,7 @@ program gs_free_3d_main
     use milca_gs_coils, only: gs_circuit_set_t, gs_read_coil_table, &
         gs_circuit_flux_vectors
     use milca_gs_free_boundary, only: gs_fb_trace_lcfs
-    use kin6d_curved_triangle, only: initialize_periodic_curve, periodic_curve_t, &
+    use milca_curved_triangle, only: initialize_periodic_curve, periodic_curve_t, &
         curve_value
     use milca_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
         coil_set_modes

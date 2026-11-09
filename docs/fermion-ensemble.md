@@ -1,6 +1,6 @@
 # Finite-N ideal fermion ensembles (Q3)
 
-`kin6d_fermion_ensemble` is a microscopic statistical reference for
+`milca_fermion_ensemble` is a microscopic statistical reference for
 noninteracting spin-1/2 fermions at fixed particle number. It shows where the
 same-spin exchange hole, Fermi pressure and degenerate occupations come from
 without any Coulomb interaction. It does not claim that ideal electrons form a

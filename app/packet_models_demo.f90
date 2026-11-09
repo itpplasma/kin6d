@@ -9,8 +9,8 @@
 program packet_models_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use milca_coulomb_encounter
-    use kin6d_packet_models
-    use kin6d_coulomb_encounter_leaves, only: ce_observable_radius
+    use milca_packet_models
+    use milca_coulomb_encounter_leaves, only: ce_observable_radius
     use milca_result_io, only: run_t, result_file_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, title, &
         xlabel, ylabel, xlim, ylim, legend, savefig, pcolormesh, tight_layout, &

@@ -56,7 +56,7 @@ module milca_nonnested_coupled
         fft_c2c_plan_init, fft_workspace_init, fft_c2c
     use milca_island_closure, only: island_closure_t, island_closure_check, &
         ISLAND_INVALID, ISLAND_NULL_FIELD, ISLAND_BAD_DATA, ISLAND_DELEGATE_B
-    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
+    use milca_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use milca_nonnested_profile, only: nn_fitted_source_t
     use milca_nonnested_leaves, only: coupled_current, coupled_current_jvp, &

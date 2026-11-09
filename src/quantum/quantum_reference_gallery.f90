@@ -1,4 +1,4 @@
-module kin6d_quantum_reference_gallery
+module milca_quantum_reference_gallery
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, is_empty, mag, iadd, isub, &
@@ -504,4 +504,4 @@ contains
         if (.not. ieee_is_finite(value%hi)) return
         valid_interval = value%lo <= value%hi
     end function
-end module kin6d_quantum_reference_gallery
+end module milca_quantum_reference_gallery

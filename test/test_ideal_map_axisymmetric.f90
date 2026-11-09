@@ -34,7 +34,7 @@ program test_ideal_map_axisymmetric
         ideal_map_prolong_correction, &
         IDEAL_MAP_FACTOR_SPD_LU, IDEAL_MAP_FACTOR_LDLT
     use fortfem_element_to_csr, only: csr_matrix_t
-    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
+    use milca_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
         triangle_bernstein_controls, TRIANGLE_MAX_NODES
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use milca_ideal_map, only: ideal_frozen_t

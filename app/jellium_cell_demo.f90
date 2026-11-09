@@ -90,9 +90,9 @@ end module milca_jellium_movie
 !> response, cumulant size, kicked density-mode history).
 program jellium_cell_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_model_info, &
+    use milca_quantum_fock, only: fock_hamiltonian_t, fock_model_info, &
         fock_rdms
-    use kin6d_jellium_cell
+    use milca_jellium_cell
     use milca_result_io, only: run_t, result_file_t
     use milca_jellium_movie, only: plot_kick_movie
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &

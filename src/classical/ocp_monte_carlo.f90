@@ -34,7 +34,7 @@ module milca_ocp_monte_carlo
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
     use milca_coulomb_leaves, only: ewald_real_pair, ewald_reciprocal_weight, &
                                     ewald_self, ewald_background
-    use kin6d_correlation_hierarchy_leaves, only: ch_ewald_real_potential
+    use milca_correlation_hierarchy_leaves, only: ch_ewald_real_potential
     use milca_ewald, only: ewald_parameters_t, ewald_select
     use milca_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
     use milca_pair_law, only: pair_law_t, pair_law_excess, pair_coulomb

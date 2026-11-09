@@ -13,7 +13,7 @@ module milca_ideal_seed_3d
     use milca_ideal_map_leaves, only: ideal_reference_form
     use milca_ideal_field_angle_leaves, only: field_angle_form
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
+    use milca_triangle_basis, only: TRIANGLE_MAX_DEGREE
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
         seed_horner, seed_toroidal_form, seed_disk_coordinates, seed_disk_boundary, &

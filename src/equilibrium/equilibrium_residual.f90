@@ -28,10 +28,10 @@ module milca_equilibrium_residual
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_curved_triangle, only: triangle_geometry
-    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls
-    use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_spd_matrix
-    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+    use milca_curved_triangle, only: triangle_geometry
+    use milca_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls
+    use milca_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_spd_matrix
+    use milca_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
     use milca_equilibrium_state, only: equilibrium_state_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_P, EQ_VALUES

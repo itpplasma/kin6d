@@ -2,7 +2,7 @@ program test_fermi_gas
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_finite
     use fortnum_interval, only: interval_t, interval
-    use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
+    use milca_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si, &
         occupation_fermi_gas, fermi_gas_jvp, fermi_gas_vjp
     use milca_fermi_gas_leaves, only: fermi_positive, fermi_negative, &

@@ -7,7 +7,7 @@ module milca_gs_error_control
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
                                     gs_linear_response
-    use kin6d_triangle_basis, only: triangle_bernstein_controls
+    use milca_triangle_basis, only: triangle_bernstein_controls
     use milca_gs_profile_law, only: gs_profile_law_t
     use milca_grad_shafranov_leaves, only: gs_cubic_jvp
     use milca_gs_majorant, only: gs_point_source_fn, gs_goal_weight_fn

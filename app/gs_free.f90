@@ -8,7 +8,7 @@ program gs_free_main
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, write_gs_mesh, &
                                     read_gs_mesh
     use milca_gs_field_readback, only: sample_gs_many
-    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
+    use milca_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
                                      curve_value
     use milca_gs_readback, only: gs_profile_f, gs_readback_t, read_gs_equilibrium
     use milca_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &

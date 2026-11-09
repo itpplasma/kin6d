@@ -64,7 +64,7 @@ program benchmark_gll
     use gll_benchmark_context
     use milca_landreman_benchmark, only: landreman_frozen_t
     use milca_landreman_leaves, only: landreman_surface
-    use kin6d_nested_oracles, only: nested_oracle_t
+    use milca_nested_oracles, only: nested_oracle_t
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze, &

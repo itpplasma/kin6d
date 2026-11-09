@@ -27,7 +27,7 @@ module milca_nonnested_error
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_equilibrium_nonnested, only: free_b_field_t
-    use kin6d_triangle_basis, only: triangle_bernstein_controls
+    use milca_triangle_basis, only: triangle_bernstein_controls
     use milca_gs_error_leaves, only: gs_error_coefficient, gs_error_flux, &
         gs_error_friedrichs
     use milca_grad_shafranov_leaves, only: gs_source

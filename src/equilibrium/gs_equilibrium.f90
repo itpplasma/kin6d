@@ -18,8 +18,8 @@ module milca_gs_equilibrium
     use milca_gs_ampere_loop, only: gs_boundary_current
     use milca_equilibrium_bulk_leaves, only: equilibrium_bulk_density
     use milca_gs_axis_recovery, only: gs_magnetic_axis
-    use kin6d_curved_triangle, only: triangle_geometry
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use milca_curved_triangle, only: triangle_geometry
+    use milca_triangle_basis, only: triangle_basis_jet
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
     use milca_equilibrium_state, only: labelled_field_t, equilibrium_state_t, &

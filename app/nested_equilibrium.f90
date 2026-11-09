@@ -12,7 +12,7 @@ program nested_equilibrium
     use milca_map_3d_equilibrium, only: map_3d_coordinates, map_3d_sample
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use milca_grad_shafranov, only: gs_state_t
-    use kin6d_curved_triangle, only: triangle_locate
+    use milca_curved_triangle, only: triangle_locate
     use milca_result_io, only: run_t, result_file_t
     use fortnum_quadrature, only: gauss_legendre
     implicit none

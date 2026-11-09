@@ -17,7 +17,7 @@
 module milca_ocp_hnc
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
-    use kin6d_correlation_hierarchy_leaves, only: ch_hnc_closure, &
+    use milca_correlation_hierarchy_leaves, only: ch_hnc_closure, &
         ch_hnc_long_fourier, ch_hnc_short_potential, ch_oz_indirect, &
         ch_excess_energy_density
     implicit none

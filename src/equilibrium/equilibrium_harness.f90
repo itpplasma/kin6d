@@ -6,7 +6,7 @@ module milca_equilibrium_harness
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_equilibrium_state, only: equilibrium_state_t
-    use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
+    use milca_triangle_basis, only: TRIANGLE_MAX_DEGREE
     implicit none
     private
     public :: equilibrium_case_t, equilibrium_resolution_t, equilibrium_start_t

@@ -1,7 +1,7 @@
-module kin6d_curved_triangle
+module milca_curved_triangle
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use fortfem_geometry_jet_2d, only: transform_scalar_jet_2d
     implicit none
     private

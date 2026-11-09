@@ -8,7 +8,7 @@ module milca_map_3d_equilibrium
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_ideal_map, only: ideal_map_t, ideal_frozen_t
     use milca_ideal_seed_3d, only: toroidal_seed_t, ideal_seed_3d_angle_density
-    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
+    use milca_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use milca_curve_chart_leaves, only: curve_fourier_mode
     use milca_ideal_map_leaves, only: ideal_reference_form
     use milca_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &

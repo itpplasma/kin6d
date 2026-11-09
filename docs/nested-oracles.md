@@ -1,6 +1,6 @@
 # Exact nested three-dimensional equilibrium references
 
-[V] `kin6d_nested_oracles` evaluates both families in
+[V] `milca_nested_oracles` evaluates both families in
 [Landreman, arXiv:2609.26742v1](https://arxiv.org/html/2609.26742v1) and their
 extensions in [Issan et al., arXiv:2610.07304v1](https://arxiv.org/html/2610.07304v1).
 The common parameter `tau=0` selects Landreman; nonzero `tau` selects Issan.

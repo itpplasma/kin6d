@@ -19,7 +19,7 @@ module milca_boozer_file
     use bc_file, only: bc_data_t, read_bc_file
     use fortnum_cubic_spline, only: cubic_spline_t, cubic_spline_init, &
         cubic_spline_eval
-    use kin6d_boozer_file_leaves, only: boozer_axis_factor, boozer_metric
+    use milca_boozer_file_leaves, only: boozer_axis_factor, boozer_metric
     implicit none
     private
     public :: boozer_file_t, boozer_surface_t, boozer_point_t

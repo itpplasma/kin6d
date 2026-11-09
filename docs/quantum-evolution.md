@@ -138,7 +138,7 @@ and physical RDM representability are not inferred from arbitrary amplitudes.
 
 ## API and result status
 
-The module is `kin6d_quantum_evolution`, with private `quantum_evolution_t`.
+The module is `milca_quantum_evolution`, with private `quantum_evolution_t`.
 
 - Initialize with `(state,Hre,Him,psi_re,psi_im,steps,h,hbar,ok[,budget])`.
 - Solve with `(state,ok[,certify,error_mode])`; candidate-only calls clear bounded status.

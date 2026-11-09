@@ -33,7 +33,7 @@ module milca_quantum_collision_kernel
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
-    use kin6d_coulomb_encounter_leaves, only: ce_mott
+    use milca_coulomb_encounter_leaves, only: ce_mott
     use milca_quantum_collision_leaves
     implicit none
     private

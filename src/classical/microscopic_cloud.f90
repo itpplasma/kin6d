@@ -7,7 +7,7 @@ module milca_microscopic_cloud
     use milca_species, only: units_t, species_t, atomic_units, electron
     use milca_nbody, only: nbody_system_t, nbody_isolated, nbody_set_sphere, &
                            nbody_add_source
-    use kin6d_cloud_leaves, only: cloud_initial_position, cloud_initial_velocity
+    use milca_cloud_leaves, only: cloud_initial_position, cloud_initial_velocity
     implicit none
     private
     public :: cloud_model_t, cloud_system, cloud_initialize

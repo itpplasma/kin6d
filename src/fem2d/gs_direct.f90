@@ -1,4 +1,4 @@
-module kin6d_gs_direct
+module milca_gs_direct
     ! Cached sparse Cholesky factor of the Grad--Shafranov stiffness matrix
     ! through native FortSparse factors (CPU by default, explicit SPD CUDA).
     ! One factor
