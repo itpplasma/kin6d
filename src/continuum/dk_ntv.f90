@@ -74,16 +74,18 @@ module milca_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     use fortnum_fourier, only: fourier_derivative
-    use milca_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp
+    use milca_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp, dk_ntv_surface_point
     use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_t, collop_build, &
         collop_moments, collop_vth, collop_nuhat, COLLOP_OK, COLLOP_FULL, &
         COLLOP_TEST_PARTICLE, COLLOP_LORENTZ
-    use milca_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, MONO_OK
+    use milca_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, &
+        mono_surface_operators, MONO_OK
     implicit none
     private
     public :: ntv_surface_t, ntv_kernel_t, ntv_kernel, ntv_line_t, ntv_circular_line_t
     public :: ntv_f10, ntv_factor_t, ntv_energy_coefficients, ntv_axisymmetric_coefficients
+    public :: ntv_surface_coefficients
     integer, parameter, public :: NTV_OK = 0, NTV_BAD_INPUT = 1, NTV_SINGULAR = 2, &
         NTV_NO_CONVERGENCE = 3
     integer, parameter, public :: NTV_WEIGHT_MU = 0, NTV_WEIGHT_FULL = 1
@@ -203,6 +205,21 @@ module milca_dk_ntv
             complex(dp), intent(inout) :: b(ldb, *)
             integer, intent(out) :: info
         end subroutine zgetrs
+        subroutine dgeev(jobvl, jobvr, n, a, lda, wr, wi, vl, ldvl, vr, ldvr, work, &
+                lwork, info)
+            import :: dp
+            character, intent(in) :: jobvl, jobvr
+            integer, intent(in) :: n, lda, ldvl, ldvr, lwork
+            real(dp), intent(inout) :: a(lda, *)
+            real(dp), intent(out) :: wr(*), wi(*), vl(ldvl, *), vr(ldvr, *), work(*)
+            integer, intent(out) :: info
+        end subroutine dgeev
+        subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+            import :: dp
+            integer, intent(in) :: n, nrhs, lda, ldb
+            real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+            integer, intent(out) :: ipiv(*), info
+        end subroutine dgesv
     end interface
 
 
@@ -228,6 +245,10 @@ module milca_dk_ntv
         type(energy_system_t), allocatable :: sys(:)
         complex(dp), allocatable :: s_lu(:, :, :), y(:, :, :)
         integer, allocatable :: piv(:, :)
+        ! Modal form: node(m, 1) and sys(m) belong to the collision eigenmodes
+        ! m of the l = 1 rows, v their speed-species vectors and vinv = v^-1.
+        logical :: modal = .false.
+        real(dp), allocatable :: v(:, :), vinv(:, :)
     end type
 
     ! Pair blocks factorised densely: degrees l < 2 low_pairs.
