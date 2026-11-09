@@ -149,12 +149,17 @@ species, and separately for particle diffusion,
 ```
 Ks = chi_parallel(Ts) b tensor b + chi_perpendicular (I - b tensor b)
 D  = D_parallel b tensor b + D_perpendicular (I - b tensor b)
-eta(Te) = eta0 (Te/T0)^(-3/2)
-nu(Ti)  = nu0 (Ti/T0)^(-3/2)
-chi_parallel(Ts) = chi_parallel0_s (Ts/T0)^(5/2).
+eta(Te) = eta0 (Te/T0)^a_eta
+nu(Ti)  = nu0 (Ti/T0)^a_nu
+chi_parallel(Ts) = chi_parallel0_s (Ts/T0)^a_chi.
 ```
 
 `I` is the Cartesian identity. Each perpendicular coefficient is constant.
+The exponents default to the Spitzer and Braginskii scalings
+`a_eta = a_nu = -3/2` and `a_chi = 5/2`. Benchmarks that prescribe a
+temperature-independent viscosity or parallel conductivity, as the JOREK
+cylinder runs do, set `a_nu = 0` or `a_chi = 0`; a run states its exponents
+with its closure.
 For the viscous stress, define the symmetric traceless velocity strain `S`
 and a regularized traceless magnetic tensor `P`:
 
@@ -173,7 +178,9 @@ remaining inputs. Leaves do not clamp invalid states.
 
 `vrmhd_parameters_t` holds `mi, mu0, t0, eta0, nu0`, electron/ion arrays
 `chi_parallel0, chi_perpendicular` (electron first), `d_parallel,
-d_perpendicular, nu_parallel, equilibration_rate, epsilon_b`. The caller must
+d_perpendicular, nu_parallel, equilibration_rate, epsilon_b`, the exponents
+`eta_exponent, nu_exponent, chi_parallel_exponent` and `ohmic_fraction`
+(see the energy exchange below). The caller must
 set `mi` and `mu0`; dissipative coefficients and rate default to zero,
 `T0` to one joule and `epsilon_B` to 1e-12 T.
 
@@ -253,6 +260,13 @@ heating, treating it as net nonideal electrical work; it can be negative.
 A prescribed drive's separate power deposition, if desired, belongs in the
 heat-source inputs. Weak Ampère's law has no boundary contribution for the
 periodic or compatible ideal-wall tests just specified.
+
+`ohmic_fraction = f`, default one, multiplies the Ohmic term of `He`. With
+`f < 1` the power `(1 - f) integral eta J.(J - Js) dx` leaves the system: it is
+an explicit sink of the energy ledger, not a change of the induction or
+Lorentz terms. Reduced models without Ohmic heating of the temperature, such
+as the JOREK cylinder runs (`eta_ohmic = 0`) and the single-helicity toy model
+of the flux-pumping study, correspond to `f = 0`.
 
 The viscous force contribution is `-tau:grad w`, so with `w = v` it cancels
 the ion heating `tau:grad v`. Both use the same stress, and its dissipation

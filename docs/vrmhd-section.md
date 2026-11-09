@@ -246,10 +246,12 @@ balance Ohmic heating; the ideal and prescribed-current conventions keep `Qe=0`.
 Discrete harmonic coefficients must be edge integrals of the multivalued
 coordinate, divided by its period, with `curl_h h=0` to roundoff. A
 projection with a small nonzero curl does not meet this contract.
-`vrmhd_drive_build` selects `VRMHD_CURRENT_SOURCE` or `VRMHD_LOOP_VOLTAGE`:
-the former retains the prescribed `Js` and requires zero voltage; the latter
-sets `Js=0` and returns the positive voltage load subtracted by the stationary
-wrapper. Other source channels are retained.
+`vrmhd_drive_build` selects `VRMHD_CURRENT_SOURCE`, `VRMHD_LOOP_VOLTAGE` or
+`VRMHD_LOOP_VOLTAGE_SOURCE`: the first retains the prescribed `Js` and requires
+zero voltage; the second sets `Js=0` and returns the positive voltage load
+subtracted by the stationary wrapper; the third returns the same load and
+retains `Js`, a non-inductive current at fixed loop voltage (JOREK's
+`loop_voltage` with a current source). Other source channels are retained.
 
 The returned harmonic cochain stores zero increments on section edges and a
 unit integral on every periodic orbit edge. It uses the full coordinate

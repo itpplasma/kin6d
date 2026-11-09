@@ -4,7 +4,7 @@ module vrmhd_leaf_dispatch
     implicit none
     integer, parameter :: nleaf = 27, maxargs = 33
     integer, parameter :: nargs(nleaf) = [ &
-        3, 3, 3, 1, 4, 2, 11, 6, 6, 13, 7, 12, 14, &
+        4, 4, 4, 1, 4, 2, 11, 6, 6, 13, 7, 12, 14, &
         25, 2, 9, 9, 10, 8, 24, 16, 9, 5, 6, 2, 7, 33]
     character(32), parameter :: names(nleaf) = [character(32) :: &
         'eta', &
@@ -42,13 +42,13 @@ contains
         select case (leaf)
         case (1)
             call vrmhd_eta( &
-                x(1), x(2), x(3), y)
+                x(1), x(2), x(3), x(4), y)
         case (2)
             call vrmhd_nu( &
-                x(1), x(2), x(3), y)
+                x(1), x(2), x(3), x(4), y)
         case (3)
             call vrmhd_chi_parallel( &
-                x(1), x(2), x(3), y)
+                x(1), x(2), x(3), x(4), y)
         case (4)
             call vrmhd_chi_perpendicular( &
                 x(1), y)
@@ -172,25 +172,25 @@ contains
         select case (leaf)
         case (1)
             call vrmhd_eta_jvp( &
-                x(1), x(2), x(3), d(1), d(2), &
-                d(3), tangent)
+                x(1), x(2), x(3), x(4), d(1), d(2), &
+                d(3), d(4), tangent)
             call vrmhd_eta_vjp( &
-                x(1), x(2), x(3), weight, gradient(1), &
-                gradient(2), gradient(3))
+                x(1), x(2), x(3), x(4), weight, gradient(1), &
+                gradient(2), gradient(3), gradient(4))
         case (2)
             call vrmhd_nu_jvp( &
-                x(1), x(2), x(3), d(1), d(2), &
-                d(3), tangent)
+                x(1), x(2), x(3), x(4), d(1), d(2), &
+                d(3), d(4), tangent)
             call vrmhd_nu_vjp( &
-                x(1), x(2), x(3), weight, gradient(1), &
-                gradient(2), gradient(3))
+                x(1), x(2), x(3), x(4), weight, gradient(1), &
+                gradient(2), gradient(3), gradient(4))
         case (3)
             call vrmhd_chi_parallel_jvp( &
-                x(1), x(2), x(3), d(1), d(2), &
-                d(3), tangent)
+                x(1), x(2), x(3), x(4), d(1), d(2), &
+                d(3), d(4), tangent)
             call vrmhd_chi_parallel_vjp( &
-                x(1), x(2), x(3), weight, gradient(1), &
-                gradient(2), gradient(3))
+                x(1), x(2), x(3), x(4), weight, gradient(1), &
+                gradient(2), gradient(3), gradient(4))
         case (4)
             call vrmhd_chi_perpendicular_jvp( &
                 x(1), d(1), tangent)
