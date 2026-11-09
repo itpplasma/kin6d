@@ -1,12 +1,12 @@
 program transport_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
+    use milca_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport, solve_transport_tangent, sample_transport, &
         sample_transport_arrays
-    use kin6d_transport_certificate, only: transport_certificate_t, &
+    use milca_transport_certificate, only: transport_certificate_t, &
         certify_transport, certify_transport_tangent, transport_certificate_accepts, &
         transport_observable_band
-    use kin6d_transport_sampling, only: transport_basis_t, &
+    use milca_transport_sampling, only: transport_basis_t, &
         transport_sampling_workspace_t, initialize_transport_sampling, &
         prepare_transport_basis, sample_transport_input_cached, &
         certify_transport_cached, certify_transport_tangent_cached, &
@@ -19,9 +19,9 @@ program transport_demo
     use fortnum_interval, only: interval_t, interval, rad
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, legend, tight_layout, savefig, ylim, xlim, suptitle
-    use kin6d_demo_style, only: blue, vermillion, black, grey, num
+    use milca_demo_style, only: blue, vermillion, black, grey, num
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     ! Linear plotted bands include a rigorous chord interpolation remainder.
     integer, parameter :: modes = 2

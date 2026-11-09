@@ -14,7 +14,7 @@ module kin6d_ideal_fb_circuits
     !! generated shell Hessian leaf (ideal_fb_traces_jvp/vjp).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_coils_3d, only: coil_set_t, segment_b
+    use milca_coils_3d, only: coil_set_t, segment_b
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_field_basis_t, &
         ideal_fb_sampler, ideal_fb_drive_traces, ideal_fb_set_traces, &
         ideal_fb_traces_jvp, ideal_fb_traces_vjp, ideal_fb_set_drive, &

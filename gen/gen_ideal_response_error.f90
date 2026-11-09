@@ -1,6 +1,6 @@
 program gen_ideal_response_error
     use fortsym_expr, only: expr_t, sym, operator(-), operator(/)
-    use kin6d_gen_support, only: leaf_writer_t
+    use milca_gen_support, only: leaf_writer_t
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: defect, after, ratio

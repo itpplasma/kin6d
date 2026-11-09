@@ -13,7 +13,7 @@ program nested_equilibrium
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     use fortnum_quadrature, only: gauss_legendre
     implicit none
     integer, parameter :: mmax = 64, nmax = 32, kmax = 32

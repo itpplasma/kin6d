@@ -7,7 +7,7 @@
 !> count N (N-1)/2 * shell volume/V. S(k): all lattice vectors with
 !> 0 < |n| <= nmax, binned by |n| (exact integer shells n^2). Both are
 !> per-snapshot estimators; averaging and intervals belong to the caller.
-module kin6d_pair_correlation
+module milca_pair_correlation
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
     private
@@ -137,4 +137,4 @@ contains
         end do
         where (vectors > 0) s = s/vectors
     end subroutine
-end module kin6d_pair_correlation
+end module milca_pair_correlation

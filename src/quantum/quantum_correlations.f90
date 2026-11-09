@@ -1,7 +1,7 @@
 module kin6d_quantum_correlations
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     use fortnum_interval, only: interval_t, interval
     use kin6d_quantum_correlations_leaves, only: quantum_wick_pair, &
         quantum_wick_pair_jvp, quantum_wick_pair_vjp, quantum_wick_pair_interval, &

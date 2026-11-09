@@ -3,7 +3,7 @@ program gen_vrmhd_leaves
     use fortsym_expr, only: expr_t, sym, rat, &
         operator(+), operator(-), operator(*), operator(/), &
         operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer, packed
     type(expr_t) :: rho, rd, t, td, mi, q, coef, t0, par, perp, eps

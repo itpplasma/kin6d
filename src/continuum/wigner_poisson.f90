@@ -5,7 +5,7 @@
 !> Wigner kick in (x, eta) as the phase s_k(eta) Vhat_k, Poisson at the half
 !> step. The forward tangent d/dhbar propagates through every substep.
 !> The Wigner function is not clipped; negative mass is a diagnostic.
-module kin6d_wigner_poisson
+module milca_wigner_poisson
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     use kin6d_streaming_leaves, only: streaming_rotation
@@ -374,4 +374,4 @@ contains
         omega = (0.0_dp, 1.0_dp)*log(z1)/tau
         if (real(omega, dp) < 0) omega = cmplx(-real(omega, dp), aimag(omega), dp)
     end subroutine
-end module kin6d_wigner_poisson
+end module milca_wigner_poisson

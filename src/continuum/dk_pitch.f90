@@ -9,7 +9,7 @@
 !! smooth in t, so Gauss-Legendre with 2p+2 points per element integrates
 !! both forms exactly. Returns the symmetric positive semidefinite
 !! stiffness K = -(weak C_L) and the mass M; C_L = -M^{-1} K.
-module kin6d_dk_pitch
+module milca_dk_pitch
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights
@@ -92,4 +92,4 @@ contains
         end function global_dof
     end subroutine build_pitch_operator
 
-end module kin6d_dk_pitch
+end module milca_dk_pitch

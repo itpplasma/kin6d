@@ -10,10 +10,10 @@ program test_ocp
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
-    use kin6d_vlasov_response, only: plasma_dispersion, landau_root, &
+    use milca_vlasov_response, only: plasma_dispersion, landau_root, &
         vlasov_density_response, fit_damped_cosine
-    use kin6d_pair_correlation, only: pair_counts, pair_distribution, structure_factor
-    use kin6d_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
+    use milca_pair_correlation, only: pair_counts, pair_distribution, structure_factor
+    use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
         ocp_advance_jvp, ocp_mode, ocp_displace, ocp_displace_tangent, &
         ocp_debye_green, ocp_kinetic_temperature
     use kin6d_nbody, only: nbody_system_t, nbody_energy

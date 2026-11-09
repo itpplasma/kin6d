@@ -8,7 +8,7 @@
 !> selector. mc_setup is the OCP form: Wigner-Seitz radius a = 1, g = 1, so
 !> the reduced energy U is in e^2/(4 pi eps0 a) and beta = Gamma;
 !> n = 3/(4 pi), L = (4 pi N/3)^(1/3). Gamma is checked against the shared
-!> kin6d_species scales (one definition).
+!> milca_species scales (one definition).
 !>
 !> Energy: Ewald sum of kin6d_coulomb_leaves with parameters from
 !> kin6d_ewald (real space: minimum image for real_cutoff = 0, the OCP
@@ -27,7 +27,7 @@
 !> wrapped into the cube; Metropolis acceptance. The step d (initially a/2)
 !> may be tuned only during equilibration (mc_sweep tune=.true.); production
 !> sweeps keep it fixed so that detailed balance holds.
-module kin6d_ocp_monte_carlo
+module milca_ocp_monte_carlo
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
@@ -36,7 +36,7 @@ module kin6d_ocp_monte_carlo
                                     ewald_self, ewald_background
     use kin6d_correlation_hierarchy_leaves, only: ch_ewald_real_potential
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
-    use kin6d_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
+    use milca_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
     use kin6d_pair_law, only: pair_law_t, pair_law_excess, pair_coulomb
     implicit none
     private
@@ -370,4 +370,4 @@ contains
             end do
         end do
     end subroutine
-end module kin6d_ocp_monte_carlo
+end module milca_ocp_monte_carlo

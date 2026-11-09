@@ -103,7 +103,7 @@ program gs_free_3d_main
     use kin6d_gs_free_boundary, only: gs_fb_trace_lcfs
     use kin6d_curved_triangle, only: initialize_periodic_curve, periodic_curve_t, &
         curve_value
-    use kin6d_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
+    use milca_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
         coil_set_modes
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_report_t, &

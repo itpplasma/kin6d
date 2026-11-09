@@ -8,7 +8,7 @@
 !> the declared short-range term of kin6d_pair_law (periodic-image Kelbg
 !> excess, spin-averaged Pauli potential) on top of that Coulomb part.
 !> N >= 3 is sampled by the one periodic-cell Metropolis sampler
-!> (kin6d_ocp_monte_carlo, mc_setup_cell); the N = 2 quadrature uses the
+!> (milca_ocp_monte_carlo, mc_setup_cell); the N = 2 quadrature uses the
 !> independent two-body kin6d_nbody path and is the oracle for the sampler.
 !>
 !> Estimators (common with the quantum cell, docs/quantum-classical-
@@ -17,12 +17,12 @@
 !> S = {1 <= |n|^2 <= 3}, Wigner--Kirkwood and leading-exchange reweighting,
 !> and the beta derivative of g by the energy covariance. Monte Carlo
 !> intervals are batch-means statistical intervals (labelled), not bounds.
-module kin6d_classical_cell
+module milca_classical_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use kin6d_coulomb_leaves, only: ewald_background
@@ -30,8 +30,8 @@ module kin6d_classical_cell
     use kin6d_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
     use kin6d_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
         pair_law_exchange_sum, pair_coulomb, pair_kelbg, pair_kelbg_pauli
-    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces
-    use kin6d_series_statistics, only: series_batch_means
+    use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces
+    use milca_series_statistics, only: series_batch_means
     implicit none
     private
     public :: classical_cell_t, classical_mc_t, init_classical_cell
@@ -218,7 +218,7 @@ contains
     end function
 
     !> Canonical Metropolis Monte Carlo of the cell with the shared periodic
-    !> sampler (kin6d_ocp_monte_carlo: single-particle uniform cube moves,
+    !> sampler (milca_ocp_monte_carlo: single-particle uniform cube moves,
     !> step tuned during equilibration only). One measurement per sweep of n
     !> moves; batch means over `batches`. reweight (Coulomb model) adds the
     !> Wigner--Kirkwood and leading-order exchange reweighted g and the
@@ -362,7 +362,7 @@ contains
         ok = all(ieee_is_finite(mc%g)) .and. ieee_is_finite(mc%c2)
     end subroutine
 
-    !> Mean and standard error over batch columns (kin6d_series_statistics).
+    !> Mean and standard error over batch columns (milca_series_statistics).
     subroutine batch_stats(a, mean, err)
         real(dp), intent(in) :: a(:, :)
         real(dp), allocatable, intent(out) :: mean(:), err(:)
@@ -492,4 +492,4 @@ contains
             xx = 1 - cell%same_spin*cell_exchange_sum(cell, dd)
         end subroutine
     end subroutine
-end module kin6d_classical_cell
+end module milca_classical_cell

@@ -1,7 +1,7 @@
 !> Particle-mesh Ewald (PME) action of the periodic Coulomb sum: the fast
 !> counterpart of the direct Ewald sum of kin6d_nbody, which stays the oracle.
 !>
-!> Same convention as kin6d_ewald/kin6d_symbolic_physics: cube of edge L,
+!> Same convention as kin6d_ewald/milca_symbolic_physics: cube of edge L,
 !> neutralizing uniform background, tin-foil boundary, Ewald parameter alpha.
 !> - Real space: g erfc(alpha r)/r for minimum-image pairs with r < cutoff,
 !>   cutoff < L/2, found by a linked cell list (no image beyond the minimum

@@ -37,7 +37,7 @@ module kin6d_packet_models
                                        SECTOR_PRODUCT, SECTOR_SINGLET, SECTOR_TRIPLET
     use kin6d_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
     use fortnum_ode_cash_karp, only: cash_karp_step
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     implicit none
     private
     public :: packet_spec_t, packet_sample_t, packet_trace_t

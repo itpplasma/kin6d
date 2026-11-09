@@ -1,8 +1,8 @@
 program gen_transport
     use fortsym_expr, only: expr_t, sym, pi_expr, func, abs, sin, cos, &
         operator(+), operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: krook_node, p1_interpolate
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: krook_node, p1_interpolate
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: v, nu, k, sc, ss, a, b, x, acc, index, count

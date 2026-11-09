@@ -1,9 +1,9 @@
-module kin6d_coil_quadrature_field
+module milca_coil_quadrature_field
     ! Exact polygon source, evaluated by FortNum Gauss-Legendre quadrature.
     ! Quadrature order is input data and must be checked by refinement.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_coils_3d, only: coil_set_t, coil_mu0
+    use milca_coils_3d, only: coil_set_t, coil_mu0
     use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_island_leaves, only: biot_savart_integrand
     use fortnum_quadrature, only: gauss_legendre

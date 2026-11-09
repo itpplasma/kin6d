@@ -1,5 +1,5 @@
-!> Energy-coupled NTV kernel (procedures included in kin6d_dk_ntv) (#270): the operator of kin6d_dk_ntv on the
-!! Galerkin speed basis of kin6d_dk_collop, with the linearised collision
+!> Energy-coupled NTV kernel (procedures included in milca_dk_ntv) (#270): the operator of milca_dk_ntv on the
+!! Galerkin speed basis of milca_dk_collop, with the linearised collision
 !! operator in place of monoenergetic pitch-angle scattering.
 !!
 !! With f_a = F_a h_a and h_a = sum_k phi_k(x) h_ak(theta, xi), x = v/v_a,

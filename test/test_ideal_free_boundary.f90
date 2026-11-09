@@ -92,7 +92,7 @@ program test_ideal_free_boundary
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
@@ -105,7 +105,7 @@ program test_ideal_free_boundary
         ideal_fb_curvature_t, ideal_fb_negative_curvature, ideal_fb_trust_subproblem, &
         ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect
     use kin6d_curved_triangle, only: triangle_locate
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
     use fortnum_symmetric_eigen, only: dense_oracle => symmetric_eigen
     use fortnum_quadrature, only: gauss_legendre

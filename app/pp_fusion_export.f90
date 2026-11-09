@@ -5,7 +5,7 @@ program pp_fusion_export
     use kin6d_pp_fusion, only: pp_fusion_config_t, pp_fusion_result_t, &
         pp_fusion_solve, &
         pp_hc, pp_mp, pp_alpha, pp_vector_coupling
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     use fortnum_special_coulomb, only: coulomb_c0_squared
     implicit none
     include 'kin6d_build_info.inc'

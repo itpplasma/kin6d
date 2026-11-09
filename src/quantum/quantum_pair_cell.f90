@@ -22,7 +22,7 @@
 module kin6d_quantum_pair_cell
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
     use kin6d_quantum_fock_leaves, only: qf_kinetic, qf_coulomb
     use kin6d_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &

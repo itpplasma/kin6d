@@ -3,14 +3,14 @@ program gen_correlation_hierarchy
     ! docs/correlation-hierarchy.md). Wigner-Seitz units: a = 1,
     ! e^2/(4 pi eps0) = 1, k_B T = 1/Gamma, n = 3/(4 pi); every energy below
     ! is in k_B T (beta v = Gamma/r). Physics formulas come from
-    ! gen/kin6d_symbolic_physics.f90 (Coulomb, Ewald splitting, Yukawa,
+    ! gen/milca_symbolic_physics.f90 (Coulomb, Ewald splitting, Yukawa,
     ! Debye length); this file only composes them.
     use, intrinsic :: iso_fortran_env, only: int64
     use fortsym_expr, only: expr_t, sym, rat, pi_expr, exp, sqrt, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: coulomb_potential, coulomb_force, &
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: coulomb_potential, coulomb_force, &
         ewald_real_potential, ewald_reciprocal_weight, yukawa_potential, debye_length
     implicit none
     type(leaf_writer_t) :: w

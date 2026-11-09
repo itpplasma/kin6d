@@ -18,7 +18,7 @@ program gs_phase1_main
         write_gs_profile_law, gs_law_sources, gs_law_primitives
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
     use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, gs_timer_event_count, gs_timer_event_get, &
         gs_timer_reset, gs_progress_set, gs_progress, GS_T_ASSEMBLY, GS_T_FIXED_CG, &

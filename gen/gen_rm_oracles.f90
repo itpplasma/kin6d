@@ -3,7 +3,7 @@ program gen_rm_oracles
     use fortsym_expr, only: expr_t, sym, sqrt, log, operator(+), &
         operator(-), operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: k2, kb, b2, cross2, rho, mu, cs2, alf, total, disc, fast

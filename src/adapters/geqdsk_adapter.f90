@@ -1,4 +1,4 @@
-module kin6d_geqdsk_adapter
+module milca_geqdsk_adapter
     ! Outer interchange boundary: SI / COCOS 3 inside, libneo CGS outside.
     ! Files and classification are discrete operations, without derivatives or
     ! continuous error enclosures. Imported and extended fields are candidates.
@@ -8,7 +8,7 @@ module kin6d_geqdsk_adapter
                             geqdsk_classify, geqdsk_standardise
     use math_constants, only: length_si_to_cgs, magneticflux_si_to_cgs, &
                           magneticfield_si_to_cgs, current_si_to_cgs, pressure_si_to_cgs
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     use kin6d_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
                                        EQ_PSI, EQ_VALUES
     use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium

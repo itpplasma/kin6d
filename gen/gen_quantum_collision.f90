@@ -2,13 +2,13 @@ program gen_quantum_collision
     ! Generates the project-owned numerical leaves of the QG6 binary-collision
     ! kernel (src/pairs/quantum_collision_kernel.f90) and hybrid classical/quantum
     ! encounter (src/quantum/hybrid_encounter.f90). Physics from
-    ! gen/kin6d_symbolic_physics.f90 (screened partial-wave potential,
+    ! gen/milca_symbolic_physics.f90 (screened partial-wave potential,
     ! Sommerfeld parameter); kinematics of the repulsive Kepler hyperbola.
     use fortsym_expr, only: expr_t, sym, sqrt, exp, log, atan, tan, erf, pi_expr, rat, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: screened_partial_wave_potential, &
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: screened_partial_wave_potential, &
                                       yukawa_potential, sommerfeld_parameter
     implicit none
     type(leaf_writer_t) :: w

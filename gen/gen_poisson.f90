@@ -14,8 +14,8 @@ program gen_poisson
                        operator(*), operator(/), operator(**), cos, sin
     use fortsym_diff, only: diff
     use fortsym_subs, only: subs
-    use kin6d_gen_support, only: leaf_writer_t
-    use kin6d_symbolic_physics, only: modal_poisson
+    use milca_gen_support, only: leaf_writer_t
+    use milca_symbolic_physics, only: modal_poisson
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: k, eps, rc, rs, pc, ps, ec, es, x, v, a, nu, drive, source

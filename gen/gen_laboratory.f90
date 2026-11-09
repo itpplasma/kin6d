@@ -3,8 +3,8 @@ program gen_laboratory
                        operator(*), operator(/), operator(**), exp, cos, sin
     use fortsym_diff, only: diff
     use fortsym_subs, only: subs
-    use kin6d_gen_support, only: leaf_writer_t
-    use kin6d_symbolic_physics, only: phase_rotation, free_streaming_rotation, &
+    use milca_gen_support, only: leaf_writer_t
+    use milca_symbolic_physics, only: phase_rotation, free_streaming_rotation, &
         krook_node, krook_node_residual, p1_weight, p1_blend
     implicit none
     type(leaf_writer_t) :: w

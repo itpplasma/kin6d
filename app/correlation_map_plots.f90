@@ -4,10 +4,10 @@ module correlation_map_plots
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortplot, only: figure, subplot, plot, fill_between, title, suptitle, xlabel, &
         ylabel, xlim, ylim, legend, tight_layout, savefig
-    use kin6d_demo_style, only: blue, vermillion, green, orange, purple, sky, black, &
+    use milca_demo_style, only: blue, vermillion, green, orange, purple, sky, black, &
         grey, num
-    use kin6d_ocp_hnc, only: hnc_t
-    use kin6d_correlation_hierarchy, only: ocp_energy_literature
+    use milca_ocp_hnc, only: hnc_t
+    use milca_correlation_hierarchy, only: ocp_energy_literature
     use correlation_map_md, only: md_result_t
     use correlation_map_types
     implicit none

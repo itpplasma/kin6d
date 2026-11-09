@@ -2,12 +2,12 @@ program test_tiago_island
     use, intrinsic :: iso_fortran_env, only: dp => real64, int32
     use island_a_fixture, only: island_a_setup, shell_source, island_a_sample_points
     use nn_vacuum_fixture, only: field, coils, current, ftor
-    use kin6d_coils_3d, only: coil_set_b_cart
+    use milca_coils_3d, only: coil_set_b_cart
     use kin6d_nonnested_coupled, only: nc_problem_t
     use kin6d_island_provider, only: island_provider_t, island_provider_init, &
         island_provider_solve, island_provider_sample, island_provider_vjp, &
         island_provider_free, island_provider_provenance, IP_OK, IP_NTHETA, IP_EPSILON
-    use kin6d_tiago_island_mse, only: island_mse_posterior_t, island_mse_predict
+    use milca_tiago_island_mse, only: island_mse_posterior_t, island_mse_predict
     use tiago_diagnostic_types, only: mse_channel_t
     use tiago_mse, only: mse_angles
     use tiago_inference_engines, only: map_fit

@@ -12,7 +12,7 @@
 !>   per-state sparse 2-/3-RDM entries. At
 !>   nonzero Q these are the Fourier coefficients of the Ursell (connected)
 !>   diagonal cumulants of a homogeneous state: the common classical/quantum
-!>   measure (kin6d_classical_cell computes the same moments).
+!>   measure (milca_classical_cell computes the same moments).
 !> - ideal_cell_pair: spin-summed/-resolved shell-averaged pair functions of
 !>   ideal fermions in the same box and canonical ensemble over all S_z,
 !>   assembled from the Q3 fixed-N_sigma states (kin6d_fermion_ensemble).

@@ -23,7 +23,7 @@ module kin6d_quantum_fock
         qf_pair_action_accumulate_interval, &
         qf_pair_integral, &
         qf_pair_integral_interval
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     implicit none
     private
     public :: fock_basis_t, fock_hamiltonian_t, init_fock_basis, &

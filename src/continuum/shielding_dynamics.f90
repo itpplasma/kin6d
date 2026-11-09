@@ -1,4 +1,4 @@
-module kin6d_shielding_dynamics
+module milca_shielding_dynamics
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, is_empty, &
@@ -181,4 +181,4 @@ contains
         end do
         ok = .true.
     end subroutine
-end module kin6d_shielding_dynamics
+end module milca_shielding_dynamics

@@ -8,13 +8,13 @@
 !> DIR/em-wave-plasma-reflection/ (kin6d animation export).
 program em_slab_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_em_slab, only: em_slab_config_t, em_slab_result_t, em_slab_frames_t, &
+    use milca_em_slab, only: em_slab_config_t, em_slab_result_t, em_slab_frames_t, &
         em_slab_run, em_slab_reflection, em_slab_decay_length, &
         em_slab_mean_amplitude, em_slab_wavenumber
     use kin6d_em_slab_leaves, only: em_slab_fresnel, em_slab_evanescent, &
         em_slab_vacuum_envelope, em_slab_evanescent_envelope
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_animation_export, only: animation_export_t
+    use milca_result_io, only: run_t, result_file_t
+    use milca_animation_export, only: animation_export_t
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     ! Configuration (&em_slab); run 1 below, run 2 above omega_pe.

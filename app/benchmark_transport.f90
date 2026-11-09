@@ -1,13 +1,13 @@
 program benchmark_transport_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
+    use milca_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport, solve_transport_tangent
-    use kin6d_transport_certificate, only: transport_certificate_t, certify_transport, &
+    use milca_transport_certificate, only: transport_certificate_t, certify_transport, &
         certify_transport_tangent, transport_certificate_accepts, &
         certify_transport_sample, certify_transport_tangent_sample, &
         transport_observable_band
-    use kin6d_transport_sampling, only: transport_basis_t, &
+    use milca_transport_sampling, only: transport_basis_t, &
         transport_sampling_workspace_t, initialize_transport_sampling, &
         prepare_transport_basis, certify_transport_cached, &
         certify_transport_tangent_cached, transport_sampling_bytes
@@ -15,7 +15,7 @@ program benchmark_transport_main
         transport_cosine_moment_cell_interval, transport_scalar_add_interval, &
         transport_accuracy_interval
     use fortnum_interval, only: interval_t, interval, rad
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     ! The source, mode count, plot grid and goal scales define the printed
     ! benchmark case and stay fixed; the namelist holds run sizes only.

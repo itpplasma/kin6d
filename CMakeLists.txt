@@ -1011,16 +1011,16 @@ foreach(example quantum_reference classical_pair coulomb_encounter jellium_cell)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
 endforeach()
 # Presentation-only palette and number formatting for the gallery demos.
-add_library(kin6d_demo_style app/demo_style.f90)
-target_compile_options(kin6d_demo_style PRIVATE -Wall -Wextra)
+add_library(milca_demo_style app/demo_style.f90)
+target_compile_options(milca_demo_style PRIVATE -Wall -Wextra)
 foreach(application kin6d_demo steady_laboratory_demo transport_demo
         streaming_comparison_demo streaming_moments_demo debye_sphere_demo
         slab_oscillation_demo shielding_dynamics_demo interaction_demo
         microscopic_cloud_demo classical_pair_demo)
-    target_link_libraries(${application} PRIVATE kin6d_demo_style)
+    target_link_libraries(${application} PRIVATE milca_demo_style)
 endforeach()
 add_executable(test_demo_style test/test_demo_style.f90)
-target_link_libraries(test_demo_style PRIVATE kin6d_demo_style)
+target_link_libraries(test_demo_style PRIVATE milca_demo_style)
 add_test(NAME demo_style_numbers COMMAND test_demo_style)
 add_executable(formal_krook_certificate app/formal_krook_certificate.f90)
 target_link_libraries(formal_krook_certificate PRIVATE kin6d)
@@ -1243,19 +1243,19 @@ if(KIN6D_FORTSYM_BUILD)
         SOURCE_SUBDIR gen/codegen_sources_only)
     FetchContent_MakeAvailable(kin6d_shared_mhd)
     set(shared_mhd_gen "${kin6d_shared_mhd_SOURCE_DIR}/gen/ideal_mhd")
-    add_library(kin6d_gen_support STATIC gen/kin6d_gen_support.f90
-        gen/kin6d_symbolic_physics.f90 gen/kin6d_symbolic_ideal.f90
+    add_library(milca_gen_support STATIC gen/milca_gen_support.f90
+        gen/milca_symbolic_physics.f90 gen/milca_symbolic_ideal.f90
         ${shared_mhd_gen}/ideal_mhd_symbolic.f90)
-    target_include_directories(kin6d_gen_support PUBLIC
+    target_include_directories(milca_gen_support PUBLIC
         ${KIN6D_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
-    target_link_libraries(kin6d_gen_support PUBLIC
+    target_link_libraries(milca_gen_support PUBLIC
         ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
     add_executable(test_gs_p1_current_identities test/test_gs_p1_current_identities.f90)
-    target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
+    target_link_libraries(test_gs_p1_current_identities PRIVATE milca_gen_support)
     add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
         COMMAND test_gs_p1_current_identities)
     add_executable(gen_vrmhd_island gen/gen_vrmhd_island.f90)
-    target_link_libraries(gen_vrmhd_island PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_vrmhd_island PRIVATE milca_gen_support)
     add_test(NAME vrmhd_island_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_vrmhd_island>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_island_leaves.f90
@@ -1264,7 +1264,7 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_island_regeneration PROPERTIES LABELS rm-b5)
     add_executable(gen_vrmhd_mms gen/gen_vrmhd_mms.f90)
-    target_link_libraries(gen_vrmhd_mms PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_vrmhd_mms PRIVATE milca_gen_support)
     add_test(NAME vrmhd_mms_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_vrmhd_mms>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_mms_leaves.f90
@@ -1273,7 +1273,7 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_mms_regeneration PROPERTIES LABELS rm2)
     add_executable(gen_vrmhd_mms_fourier gen/gen_vrmhd_mms_fourier.f90)
-    target_link_libraries(gen_vrmhd_mms_fourier PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_vrmhd_mms_fourier PRIVATE milca_gen_support)
     add_test(NAME vrmhd_mms_fourier_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_vrmhd_mms_fourier>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_mms_fourier_leaves.f90
@@ -1289,7 +1289,7 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_mms_nonlinear_regeneration PROPERTIES LABELS rm3b)
     add_executable(gen_vrmhd_gs gen/gen_vrmhd_gs.f90)
-    target_link_libraries(gen_vrmhd_gs PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_vrmhd_gs PRIVATE milca_gen_support)
     add_test(NAME vrmhd_gs_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_vrmhd_gs>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_vrmhd_gs_leaves.f90
@@ -1298,7 +1298,7 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_gs_regeneration PROPERTIES LABELS rm2)
     add_executable(gen_vrmhd_section gen/gen_vrmhd_section.f90)
-    target_link_libraries(gen_vrmhd_section PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_vrmhd_section PRIVATE milca_gen_support)
     add_test(NAME vrmhd_section_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_vrmhd_section>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_vrmhd_section_leaves.f90
@@ -1307,7 +1307,7 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_section_regeneration PROPERTIES LABELS rm2)
     add_executable(gen_gs_symmetry gen/gen_gs_symmetry.f90)
-    target_link_libraries(gen_gs_symmetry PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_gs_symmetry PRIVATE milca_gen_support)
     add_test(NAME grad_shafranov_rm0_symbolic
         COMMAND ${CMAKE_COMMAND}
             -DGENERATOR=$<TARGET_FILE:gen_gs_symmetry>
@@ -1316,23 +1316,23 @@ if(KIN6D_FORTSYM_BUILD)
             -DLEAF=kin6d_gs_symmetry_leaves.f90
             -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_executable(gen_ideal_fb_kink gen/gen_ideal_fb_kink.f90)
-    target_link_libraries(gen_ideal_fb_kink PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_ideal_fb_kink PRIVATE milca_gen_support)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
-    target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
+    target_link_libraries(test_gs_symbolic PRIVATE milca_gen_support)
     add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
     add_executable(test_gs_periodic_cylinder_symbolic
         test/test_gs_periodic_cylinder_symbolic.f90)
-    target_link_libraries(test_gs_periodic_cylinder_symbolic PRIVATE kin6d_gen_support)
+    target_link_libraries(test_gs_periodic_cylinder_symbolic PRIVATE milca_gen_support)
     add_test(NAME grad_shafranov_periodic_cylinder_exact_identities
         COMMAND test_gs_periodic_cylinder_symbolic)
     add_executable(test_gs_variational_identities test/test_gs_variational_identities.f90)
-    target_link_libraries(test_gs_variational_identities PRIVATE kin6d_gen_support)
+    target_link_libraries(test_gs_variational_identities PRIVATE milca_gen_support)
     add_executable(test_gs_forward_majorant_identities
         test/test_gs_forward_majorant_identities.f90)
-    target_link_libraries(test_gs_forward_majorant_identities PRIVATE kin6d_gen_support)
+    target_link_libraries(test_gs_forward_majorant_identities PRIVATE milca_gen_support)
     add_executable(test_gs_coupled_majorant_identities
         test/test_gs_coupled_majorant_identities.f90)
-    target_link_libraries(test_gs_coupled_majorant_identities PRIVATE kin6d_gen_support)
+    target_link_libraries(test_gs_coupled_majorant_identities PRIVATE milca_gen_support)
     file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/gs_coupled_majorant_evidence)
     add_test(NAME grad_shafranov_coupled_majorant_exact_identities
         COMMAND test_gs_coupled_majorant_identities)
@@ -1391,7 +1391,7 @@ if(KIN6D_FORTSYM_BUILD)
             pp_fusion pp_fusion_eft
             jellium_cell ocp island_seed thermal_screening rm_oracles)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
-        target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
+        target_link_libraries(gen_${generator} PRIVATE milca_gen_support)
     endforeach()
     add_test(NAME dk_pitch_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_dk_pitch>
@@ -1469,7 +1469,7 @@ if(KIN6D_FORTSYM_BUILD)
     kin6d_test_labels(island_leaf_regeneration fast CLASSES equilibrium
         TARGETS gen_islands)
     add_executable(gen_ideal_mhd_batches ${shared_mhd_gen}/gen_ideal_mhd_batches.f90)
-    target_link_libraries(gen_ideal_mhd_batches PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_ideal_mhd_batches PRIVATE milca_gen_support)
     add_test(NAME ideal_mhd_batch_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_batches>
         -DREVISION=${KIN6D_FORTSYM_REVISION}
@@ -1480,7 +1480,7 @@ if(KIN6D_FORTSYM_BUILD)
         TARGETS gen_ideal_mhd_batches)
     add_executable(gen_ideal_mhd_coordinates
         ${shared_mhd_gen}/gen_ideal_mhd_coordinates.f90)
-    target_link_libraries(gen_ideal_mhd_coordinates PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_ideal_mhd_coordinates PRIVATE milca_gen_support)
     add_test(NAME ideal_mhd_coordinates_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_coordinates>
         -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated/ideal_mhd_energy_generated.f90
@@ -1560,11 +1560,11 @@ if(KIN6D_FORTSYM_BUILD)
         -DWORK=${CMAKE_BINARY_DIR}/map-3d-readback-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_map_3d_readback_regeneration.cmake)
     add_executable(check_response_strip_current gen/check_response_strip_current.f90)
-    target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
+    target_link_libraries(check_response_strip_current PRIVATE milca_gen_support)
     add_test(NAME response_strip_current_exact_identities
         COMMAND check_response_strip_current)
     add_executable(check_homma_derivations gen/check_homma_derivations.f90)
-    target_link_libraries(check_homma_derivations PRIVATE kin6d_gen_support)
+    target_link_libraries(check_homma_derivations PRIVATE milca_gen_support)
     add_test(NAME check_homma_derivations COMMAND check_homma_derivations)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
@@ -1610,7 +1610,7 @@ endforeach()
 if(KIN6D_FORTSYM_BUILD)
     foreach(generator relativistic_fermi fermion_ensemble)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
-        target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
+        target_link_libraries(gen_${generator} PRIVATE milca_gen_support)
     endforeach()
 endif()
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_relativistic_fermi_leaves.f90)
@@ -1730,13 +1730,13 @@ foreach(q7 screening wigner)
     add_test(NAME ${q7}_q7_oracles COMMAND test_${q7})
     if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${q7} gen/gen_${q7}.f90)
-        target_link_libraries(gen_${q7} PRIVATE kin6d_gen_support)
+        target_link_libraries(gen_${q7} PRIVATE milca_gen_support)
     endif()
 endforeach()
 # Q5: Hartree/HF/Mermin/TDHF mean-field models of the Q4 jellium cell (appended).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_mean_field_cell gen/gen_mean_field_cell.f90)
-    target_link_libraries(gen_mean_field_cell PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_mean_field_cell PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_mean_field_cell_leaves.f90
     src/quantum/mean_field_cell.f90)
@@ -1751,7 +1751,7 @@ target_link_libraries(mean_field_cell_demo PRIVATE kin6d kin6d_io fortplot)
 # (appended block).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_quantum_collision gen/gen_quantum_collision.f90)
-    target_link_libraries(gen_quantum_collision PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_quantum_collision PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_quantum_collision_leaves.f90
     src/pairs/quantum_collision_kernel.f90)
@@ -1771,7 +1771,7 @@ target_link_libraries(hybrid_encounter_demo PRIVATE kin6d kin6d_io fortplot)
 # partial-wave reference (src/quantum/packet_models.f90, docs/packet-models.md).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_packet_models gen/gen_packet_models.f90)
-    target_link_libraries(gen_packet_models PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_packet_models PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_packet_models_leaves.f90
     src/quantum/gaussian_pair.f90 src/quantum/packet_models.f90)
@@ -1787,7 +1787,7 @@ target_link_libraries(packet_models_demo PRIVATE kin6d fortplot kin6d_io)
 # (docs/quantum-classical-correlations.md).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_quantum_classical gen/gen_quantum_classical.f90)
-    target_link_libraries(gen_quantum_classical PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_quantum_classical PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_quantum_classical_leaves.f90
     src/pairs/pair_law.f90)
@@ -1801,12 +1801,12 @@ target_link_libraries(test_quantum_classical PRIVATE kin6d)
 add_test(NAME quantum_classical_h1b_oracles COMMAND test_quantum_classical)
 add_executable(correlation_map_quantum_demo app/correlation_map_quantum_demo.f90)
 target_link_libraries(correlation_map_quantum_demo PRIVATE kin6d kin6d_io
-    kin6d_demo_style fortplot)
+    milca_demo_style fortplot)
 # Campaign H1a: classical OCP correlation-hierarchy map (Metropolis MC with
 # incremental Ewald, g3/cumulant estimators, YBG closures, HNC; appended).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_correlation_hierarchy gen/gen_correlation_hierarchy.f90)
-    target_link_libraries(gen_correlation_hierarchy PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_correlation_hierarchy PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_core PRIVATE src/core/series_statistics.f90)
 target_sources(kin6d_classical PRIVATE src/generated/kin6d_correlation_hierarchy_leaves.f90
@@ -1820,7 +1820,7 @@ add_executable(correlation_map_classical_demo app/correlation_map_types.f90
     app/correlation_map_md.f90 app/correlation_map_plots.f90
     app/correlation_map_classical_demo.f90)
 target_link_libraries(correlation_map_classical_demo PRIVATE kin6d kin6d_io fortplot
-    kin6d_demo_style)
+    milca_demo_style)
 if(OpenMP_Fortran_FOUND)
     target_link_libraries(correlation_map_classical_demo PRIVATE OpenMP::OpenMP_Fortran)
 endif()
@@ -2865,7 +2865,7 @@ set_tests_properties(nonnested_qa_oracle_check
 # relativistic Boris macroparticles (docs/em-slab-reflection.md; appended).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_em_slab gen/gen_em_slab.f90)
-    target_link_libraries(gen_em_slab PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_em_slab PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_continuum PRIVATE src/generated/kin6d_em_slab_leaves.f90
     src/continuum/em_slab.f90)

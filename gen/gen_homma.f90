@@ -8,7 +8,7 @@ program gen_homma
     use fortsym_diff, only: diff
     use fortsym_subs, only: subs
     use fortsym_expr, only: rat
-    use kin6d_gen_support, only: leaf_writer_t
+    use milca_gen_support, only: leaf_writer_t
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: v, s, vt, n, c, x, pi, pi32, fm, pt, zero

@@ -737,7 +737,7 @@ nr=16 three-mode seed is a separate regression for the observed mode-1
 residual rejection at 1.189e-9. No new sparse kernel or backend is introduced.
 
 [V] Rung 0 uses the published synthetic NN1 192-segment filament and its
-annulus. `kin6d_coil_quadrature_field` integrates the exact polygon source
+annulus. `milca_coil_quadrature_field` integrates the exact polygon source
 with FortNum Gauss--Legendre nodes. The 8/12-node quadrature and the
 independent closed straight-segment formula are compared at 64 points.
 The P2/P3 ladders print `h=0.9/nr`, width, absolute error against the

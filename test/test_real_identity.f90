@@ -2,7 +2,7 @@ program test_real_identity
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, &
         ieee_positive_inf, ieee_negative_inf
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     implicit none
     real(dp) :: nan, pinf, ninf, subnormal
 

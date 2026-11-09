@@ -11,8 +11,8 @@ program gen_packet_models
     use fortsym_expr, only: expr_t, sym, sqrt, rat, &
                             operator(+), operator(-), operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: gaussian_coulomb_potential, gaussian_coulomb_series
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: gaussian_coulomb_potential, gaussian_coulomb_series
     implicit none
     integer, parameter :: series_order = 7
     type(leaf_writer_t) :: w
@@ -31,7 +31,7 @@ program gen_packet_models
     call w%line('! FortSym revision: '//fortsym_revision)
     call w%line('! Canonical isotropic thawed Gaussians (TDVP/WPMD) in the x-z plane:')
     call w%line('! state (q, p, s, ps), s = variance of |psi|^2 per axis, ps = 3 hbar beta.')
-    call w%line('! Gaussian-averaged Coulomb from gen/kin6d_symbolic_physics.f90.')
+    call w%line('! Gaussian-averaged Coulomb from gen/milca_symbolic_physics.f90.')
     call w%line('! kappa: optional isotropic harmonic test potential kappa r^2/2.')
     call w%line('! JVP/VJP use Euclidean pairings of the listed real arguments.')
     call w%line('module kin6d_packet_models_leaves')

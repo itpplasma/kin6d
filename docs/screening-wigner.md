@@ -9,7 +9,7 @@ Status labels follow AGENTS.md: *bound* is rigorous, *indicator* is not.
 Model: homogeneous ideal 3D spin-two electron gas with a neutralizing
 background, static linear response (ideal-gas RPA). A static local-field
 correction, correlations and the dynamic response are out of scope.
-Inputs `(n, T)` in the caller's reduced units map through `kin6d_species`
+Inputs `(n, T)` in the caller's reduced units map through `milca_species`
 to `Theta, r_s, Gamma, lambda_D`; `kin6d_fermi_gas` supplies `mu` and
 `k_s^2 = (e^2/eps0) dn/dmu` (charge `sqrt(g)`, `eps0 = 1/(4 pi)`).
 Units inside: `kF = 1`, `EF = 1`, `x = q/(2kF)`,

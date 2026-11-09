@@ -1,4 +1,4 @@
-module kin6d_slab_oscillation
+module milca_slab_oscillation
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, intersect, is_empty, mag, &
@@ -408,4 +408,4 @@ contains
         cell = min(left, size(grid) - 1)
     end function locate
 
-end module kin6d_slab_oscillation
+end module milca_slab_oscillation

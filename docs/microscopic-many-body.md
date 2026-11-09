@@ -265,7 +265,7 @@ transport closures.
 
 The classical cases share one foundation: the species/unit record
 (`src/core/species.f90`), the single symbolic Coulomb, uniform-sphere and Ewald
-source (`gen/kin6d_symbolic_physics.f90`), Ewald parameters chosen from a
+source (`gen/milca_symbolic_physics.f90`), Ewald parameters chosen from a
 tolerance with a shell-sum truncation bound (`src/pairs/ewald.f90`) or PME, and one
 general-N FortNum Strang kick-drift-kick path (`src/pairs/nbody.f90`) with tiled
 direct and Ewald sums, an encounter-resolved step and fail-closed coincidence

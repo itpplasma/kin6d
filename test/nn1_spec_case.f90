@@ -5,7 +5,7 @@
 !   grid.txt: lines "R Z phi" (m, m, rad).  Writes out_prefix.B.txt: R Z phi BR BZ BPHI | direct BR BZ BPHI
 module nn1_spec_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
         coil_set_modes, coil_mu0
     use kin6d_nonnested_leaves, only: segment_potential, vacuum_gauge
     implicit none

@@ -2,7 +2,7 @@
 program gen_pp_fusion_eft
     use fortsym_expr, only: expr_t, sym, exp, sqrt, log, sin, cos, &
         pi_expr, operator(+), operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: bd, mp, mn, hc, alpha, mu, gamma, chi, screen, euler

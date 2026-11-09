@@ -1,7 +1,7 @@
 program gen_mean_field_cell
     use fortsym_expr, only: expr_t, sym, rat, log, sqrt, operator(+), &
                             operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: f, rho, sigma, beta, rs, energy, entropy, temperature

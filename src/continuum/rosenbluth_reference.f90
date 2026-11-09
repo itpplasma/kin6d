@@ -1,4 +1,4 @@
-module kin6d_rosenbluth_reference
+module milca_rosenbluth_reference
     ! Rosenbluth potentials H=int f/|v-v'|, G=int f|v-v'| of a background that is
     ! a Maxwellian (l=0) plus a heat-flux distortion (l=1, linear in q), and the
     ! Fokker-Planck coefficients A=Gamma(1+m_a/m_b) grad H, D=Gamma/2 hess G.
@@ -316,4 +316,4 @@ contains
             p%n_b, p%t_b, p%m_b, p%q_b, bmag, lnl, homma_eps0, q_out(3))
     end subroutine homma_closure
 
-end module kin6d_rosenbluth_reference
+end module milca_rosenbluth_reference

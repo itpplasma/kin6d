@@ -1,25 +1,25 @@
 program benchmark_error_continuum
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval
-    use kin6d_laboratory, only: laboratory_t, initialize, advance, certificate_radius
-    use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
+    use milca_laboratory, only: laboratory_t, initialize, advance, certificate_radius
+    use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
         fp_certificate_radius
     use poisson_laboratory, only: coupled_steady_t, solve_coupled_steady, &
         coupled_certificate_radius, poisson_mode_t, solve_poisson_mode
     use kin6d_poisson_leaves, only: poisson_coefficients_interval
-    use kin6d_streaming_comparison, only: streaming_state_t, init_streaming, &
+    use milca_streaming_comparison, only: streaming_state_t, init_streaming, &
         advance_streaming, streaming_radius
-    use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
+    use milca_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport
-    use kin6d_transport_certificate, only: transport_certificate_t, certify_transport
-    use kin6d_slab_oscillation, only: slab_oscillation_state_t, &
+    use milca_transport_certificate, only: transport_certificate_t, certify_transport
+    use milca_slab_oscillation, only: slab_oscillation_state_t, &
         initialize_slab_oscillation, solve_slab_oscillation, slab_oscillation_radius
-    use kin6d_shielding_dynamics, only: shielding_state_t, init_shielding, &
+    use milca_shielding_dynamics, only: shielding_state_t, init_shielding, &
         advance_shielding, sample_shielding
-    use kin6d_debye_sphere_reference, only: debye_sphere_values, debye_sphere_enclosure
+    use milca_debye_sphere_reference, only: debye_sphere_values, debye_sphere_enclosure
     use kin6d_interaction_laboratory, only: interaction_state_t, init_interaction, &
         step_interaction, sample_interaction
-    use kin6d_species, only: atomic_units, electron
+    use milca_species, only: atomic_units, electron
     use error_benchmark_support
     implicit none
     type(laboratory_t) :: stream

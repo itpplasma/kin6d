@@ -1,10 +1,10 @@
 program benchmark_slab_oscillation_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_slab_oscillation, only: slab_oscillation_state_t, &
+    use milca_slab_oscillation, only: slab_oscillation_state_t, &
          initialize_slab_oscillation, solve_slab_oscillation, slab_oscillation_radius, &
                                       sample_slab_oscillation
     use kin6d_slab_oscillation_leaves, only: slab_oscillation_period
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer :: steps = 128, samples = 15, repetitions = 160
     type(run_t) :: run

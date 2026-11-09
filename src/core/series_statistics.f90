@@ -8,7 +8,7 @@
 !>   standard error sqrt(2 tau var/n) of the mean.
 !> - series_batch_means: mean and standard error from nb contiguous batches
 !>   (labelled statistical); valid when the batch length >> tau.
-module kin6d_series_statistics
+module milca_series_statistics
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
     private
@@ -49,4 +49,4 @@ contains
         mean = sum(b)/nb
         error = sqrt(sum((b - mean)**2)/(nb*(nb - 1)))
     end subroutine
-end module kin6d_series_statistics
+end module milca_series_statistics

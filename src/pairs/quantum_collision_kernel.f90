@@ -5,7 +5,7 @@
 !> eta = g/(hbar v), b90 = g/(mu v^2) = eta/k, lambdabar = 1/k. Screening is
 !> either a sharp impact-parameter (classical) / partial-wave (quantum) cut at
 !> lambda_D, kappa = k lambda_D, or the static Yukawa potential
-!> g exp(-r/lambda_D)/r (gen/kin6d_symbolic_physics.f90).
+!> g exp(-r/lambda_D)/r (gen/milca_symbolic_physics.f90).
 !>
 !> Every Coulomb logarithm is the momentum-transfer cross section normalized
 !> as lnL = sigma_tr/(4 pi b90^2); the Landau/Spitzer rates use it linearly.

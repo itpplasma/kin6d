@@ -9,7 +9,7 @@ module kin6d_makegrid_circuits
     !! coil_circuit_basis_t treats as not connected.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use neo_makegrid_coils, only: makegrid_coils_t, read_makegrid_coils
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_name_len
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_name_len
     implicit none
     private
     public :: makegrid_circuits_read

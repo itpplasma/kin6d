@@ -10,8 +10,8 @@ program gen_ideal_xi
     use fortsym_kernel, only: kernel_spec_t, emit_kernel, &
         PRECISION_REAL32, PRECISION_REAL64
     use fortsym_string, only: str, chars
-    use kin6d_symbolic_ideal, only: frozen_energy
-    use kin6d_gen_support, only: fortsym_revision
+    use milca_symbolic_ideal, only: frozen_energy
+    use milca_gen_support, only: fortsym_revision
     implicit none
     type(native_engine_t) :: engine
     type(expr_t) :: d(3, 3), b(3), a(3, 3), c(3, 3), ab(3), cb(3)

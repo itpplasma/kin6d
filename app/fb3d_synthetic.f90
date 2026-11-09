@@ -90,7 +90,7 @@ program fb3d_synthetic
     use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
     use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents
-    use kin6d_coils_3d, only: coil_set_t, coil_mu0
+    use milca_coils_3d, only: coil_set_t, coil_mu0
     use kin6d_makegrid_circuits, only: makegrid_circuits_read
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
     !$ use omp_lib, only: omp_get_max_threads

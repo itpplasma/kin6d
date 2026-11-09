@@ -3,7 +3,7 @@ program gen_island_seed
     ! (src/mhd/island_seed.f90, docs/island-seed.md).
     use fortsym_expr, only: expr_t, sym, sqrt, operator(+), operator(-), &
         operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: rmajor, rminor, c, s, br, bz, bphi, xi, alpha, babs

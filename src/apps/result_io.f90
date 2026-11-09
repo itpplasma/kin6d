@@ -8,7 +8,7 @@
 !> Output: `output/<application>.nc`, a NetCDF-4/HDF5 file written by FortIO
 !> with named real variables (scalar, 1-3D), units/long_name and an optional
 !> per-variable error/certificate status, plus global provenance attributes.
-module kin6d_result_io
+module milca_result_io
     use, intrinsic :: iso_fortran_env, only: dp => real64, compiler_version, &
         compiler_options
     use netcdf, only: nf90_create, nf90_close, nf90_def_dim, nf90_def_var, &
@@ -518,4 +518,4 @@ contains
             y, m, d, int(minutes/60), int(mod(minutes, 60_8)), v(7)
         text = buffer
     end function
-end module kin6d_result_io
+end module milca_result_io

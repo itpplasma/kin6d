@@ -37,7 +37,7 @@ are existing code.
 | exterior | operator | E_v exterior term | where |
 |---|---|---|---|
 | per-n (axisymmetric Γ_c) | Galerkin Steklov–Poincaré S_n per harmonic | Σ_m c_m [½⟨S_n u_m, u_m⟩ − ⟨h_m, Φ̃_m⟩] | N4, FortFEM toroidal-mode BEM |
-| R2 (general 3D Γ_c) | full-surface DtN S on P2 panels | [½⟨S u, u⟩ − ⟨h³, Φ̃⟩ + harmonic periods]/nfp | `kin6d_equilibrium_boundary_3d`, FortFEM parametric BEM |
+| R2 (general 3D Γ_c) | full-surface DtN S on P2 panels | [½⟨S u, u⟩ − ⟨h³, Φ̃⟩ + harmonic periods]/nfp | `milca_equilibrium_boundary_3d`, FortFEM parametric BEM |
 | frozen (#88) | any fixed SPD S of R2 shape | as R2 | `ideal_fb_attach_exterior_3d` |
 
 Here c_m = 2π/nfp for n = 0 and π/nfp otherwise. The R2 full-turn pairing
@@ -60,7 +60,7 @@ circuit current, its field is
 b_k = Σ_{c ∈ k} N_c B_c[1 A],
 
 where B_c is the closed-form straight-segment Biot–Savart field of
-`kin6d_coils_3d`. The external field is
+`milca_coils_3d`. The external field is
 
 B_vac(p) = B_0 + Σ_k I_k b_k,  p = (I_1, …, I_K),
 
@@ -157,9 +157,9 @@ of F_k.
 |---|---|
 | N4 residual, Hessian, Newton/KKT, slide gauge (`kin6d_ideal_free_boundary`) | reused; `ideal_fb_set_drive` now wraps the batched `ideal_fb_drive_traces` |
 | per-n exterior S_n (FortFEM toroidal-mode BEM) | reused |
-| R2 general 3D Γ_c (`kin6d_equilibrium_boundary_3d`, FortFEM parametric BEM) and its adapter | reused; full-turn mapping factored into `ideal_fb_full_turn_traces` |
+| R2 general 3D Γ_c (`milca_equilibrium_boundary_3d`, FortFEM parametric BEM) and its adapter | reused; full-turn mapping factored into `ideal_fb_full_turn_traces` |
 | frozen exterior (#88) | reused; traces now replaceable after attachment (`ideal_fb_set_traces`) |
-| Biot–Savart segments (`kin6d_coils_3d`) | reused |
+| Biot–Savart segments (`milca_coils_3d`) | reused |
 | field-basis contract `ideal_fb_field_basis_t`, coil circuit basis, circuit traces, currents → traces, JVP/VJP | new |
 | exact ∂/∂F_vac of the shell gradient (existing generated Hessian leaf) | new |
 

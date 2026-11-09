@@ -3,8 +3,8 @@ program gen_coulomb_encounter
     ! two-body quantum Coulomb encounter (src/quantum/coulomb_encounter.f90).
     use fortsym_expr, only: expr_t, sym, sqrt, sin, cos, exp, log, erfc, rat, pi_expr, &
                             operator(+), operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: coulomb_potential, partial_wave_potential, &
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: coulomb_potential, partial_wave_potential, &
                                       sommerfeld_parameter, rydberg_energy
     implicit none
     type(leaf_writer_t) :: w
@@ -32,8 +32,8 @@ program gen_coulomb_encounter
     call w%line('! FortSym revision: '//fortsym_revision)
     call w%line('! Two-body relative motion, reduced mass mu, bare Coulomb g/r.')
     call w%line('! Partial waves u_l(r)/r Y_lm; no softening or screening.')
-    call w%line('! Physics from gen/kin6d_symbolic_physics.f90; reduced mass, Bohr')
-    call w%line('! radius and Sommerfeld eta come from kin6d_species.')
+    call w%line('! Physics from gen/milca_symbolic_physics.f90; reduced mass, Bohr')
+    call w%line('! radius and Sommerfeld eta come from milca_species.')
     call w%line('! JVP/VJP use Euclidean pairings of the listed real arguments.')
     call w%line('module kin6d_coulomb_encounter_leaves')
     call w%line('implicit none')

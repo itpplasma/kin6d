@@ -1,7 +1,7 @@
 !> Classical correlation-hierarchy estimators of the periodic 3D OCP (H1a,
 !> docs/correlation-hierarchy.md). Wigner-Seitz units: a = 1, n = 3/(4 pi),
 !> beta v(r) = Gamma/r. Pair g2(r) and S(k) come from
-!> kin6d_pair_correlation; this module adds
+!> milca_pair_correlation; this module adds
 !>
 !> - the triplet distribution g3(r12, r13, r23) on a cube of bins of width
 !>   rmax/bins in each side (fully permutation-symmetric histogram), and its
@@ -22,7 +22,7 @@
 !>   n int F(r13) X d3, X = g13 h23 (Kirkwood) or h23 (first order);
 !> - pair-level observables of a g2 table: excess energy, screening moments
 !>   and S(k) by radial Fourier transform.
-module kin6d_correlation_hierarchy
+module milca_correlation_hierarchy
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_correlation_hierarchy_leaves, only: ch_ybg_force_moment, &
@@ -341,4 +341,4 @@ contains
         call ch_ocp_energy_fit_jvp(gamma, pc2000(1), pc2000(2), pc2000(3), pc2000(4), &
                                    pc2000(5), pc2000(6), 1.0_dp, z, z, z, z, z, z, dudg)
     end subroutine
-end module kin6d_correlation_hierarchy
+end module milca_correlation_hierarchy

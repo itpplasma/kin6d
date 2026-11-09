@@ -30,7 +30,7 @@ program gs_free_main
     use kin6d_gs_certificate, only: gs_fb_certifier_t
     use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
         claim_name
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     use fortnum_polynomial, only: lagrange_weights
     use fortplot_system_runtime, only: create_directory_runtime
     !$ use omp_lib, only: omp_get_max_threads

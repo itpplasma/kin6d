@@ -28,7 +28,7 @@ and for adaptive classical/quantum and correlation-order switching
 
 ## Foundation decisions (F)
 
-- F1 `kin6d_species`/units: one record with charge, mass, hbar, Coulomb
+- F1 `milca_species`/units: one record with charge, mass, hbar, Coulomb
   coupling g = q_i q_j/(4 pi eps0) in declared reduced units and an SI map.
   Physical scales (Bohr radius, Rydberg, Sommerfeld eta, Gamma, Theta, r_s,
   lambda_D, omega_p) are generated from this record, never retyped.
@@ -91,9 +91,9 @@ run from the repository root and must reproduce committed leaves exactly.
   17 leaf families with FortSym a614271 reproduces the committed leaves
   bit-identically. Fixed generator link to use the platform shared-library
   suffix.
-- 2026-10-05 (worker, F1-F4): `gen/kin6d_gen_support.f90` is the one emit
+- 2026-10-05 (worker, F1-F4): `gen/milca_gen_support.f90` is the one emit
   helper for all generators; the FortSym revision comes only from
-  `KIN6D_FORTSYM_REVISION` (configured include). `gen/kin6d_symbolic_physics.f90`
+  `KIN6D_FORTSYM_REVISION` (configured include). `gen/milca_symbolic_physics.f90`
   holds the single symbolic Coulomb/sphere/Ewald/jellium/partial-wave and
   scale definitions; `gen_coulomb` and `gen_species` emit them.
   `src/core/species.f90` (units with SI map, species, pair/plasma scales),
@@ -280,7 +280,7 @@ run from the repository root and must reproduce committed leaves exactly.
   recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
 - 2026-10-06 (worker, Q2): `src/quantum/packet_models.f90`, `src/quantum/gaussian_pair.f90`,
   leaves from `gen/gen_packet_models.f90` (Gaussian-averaged Coulomb added to
-  `kin6d_symbolic_physics`), `encounter_project` (generic Q1 projection),
+  `milca_symbolic_physics`), `encounter_project` (generic Q1 projection),
   docs/packet-models.md, `packet_models_demo` (result_io). Models M2 (WPMD
   product), M2S/M2T (two-determinant), M3 (relative TDVP Gaussian), M3S/M3T,
   M4 K = 2/4/8 (vMCG, guided zero-population enrichment, Tikhonov status and
@@ -357,7 +357,7 @@ run from the repository root and must reproduce committed leaves exactly.
   - c3 resolution (0.6a bins lower `||c3||^2` by 33%);
   - generic series statistics could move to FortNum;
   - a FortSym `sqrt(1*3)` folding defect (worked around in the generator);
-  - the default kin6d_ocp MD step fails closed at Gamma 1 (the demo uses
+  - the default milca_ocp MD step fails closed at Gamma 1 (the demo uses
     dt/4).
 - 2026-10-06 (controller, pause 2): merged Q2, QG6, Q5, cleanup, both
   figure passes, C3/C4 code (final Landau evidence pending on its branch),

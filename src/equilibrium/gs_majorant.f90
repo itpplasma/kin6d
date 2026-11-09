@@ -32,7 +32,7 @@ module kin6d_gs_majorant
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
         sparse_direct_factor_csc, sparse_direct_solve_factored, sparse_direct_free
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     use, intrinsic :: iso_fortran_env, only: i64 => int64
     use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none

@@ -3,7 +3,7 @@
 ! Every pointwise coefficient, flux weight and moment weight comes from the
 ! FortSym leaves in kin6d_fp_relaxation_leaves; this module holds only the
 ! cell bookkeeping and the linear algebra.
-module kin6d_fp_relaxation
+module milca_fp_relaxation
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use kin6d_fp_relaxation_leaves
@@ -243,4 +243,4 @@ contains
         end do
     end subroutine thomas
 
-end module kin6d_fp_relaxation
+end module milca_fp_relaxation

@@ -12,7 +12,7 @@
 !!                stage-1 gate driver feeds this mode).
 program test_dk_ntv
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_ntv, only: ntv_surface_t, ntv_factor_t, ntv_kernel_t, ntv_kernel, ntv_f10, NTV_OK, &
+    use milca_dk_ntv, only: ntv_surface_t, ntv_factor_t, ntv_kernel_t, ntv_kernel, ntv_f10, NTV_OK, &
         NTV_WEIGHT_MU, NTV_WEIGHT_FULL, ntv_circular_line_t, NTV_BAD_INPUT
     use fortnum_quadrature, only: gauss_legendre
     implicit none

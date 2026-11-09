@@ -1,8 +1,8 @@
 program gen_shielding_dynamics
     use fortsym_expr, only: expr_t, sym, num, pi_expr, exp, abs, sin, cos, &
                         operator(+), operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: modal_poisson
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: modal_poisson
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: a, b, k, rho, h, slope, radius, residual, x, acc, mu

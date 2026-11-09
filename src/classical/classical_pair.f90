@@ -1,12 +1,12 @@
 !> C1: two electrons in a periodic cube with neutralizing background, the
 !> classical twin of the Q0 quantum pair quench. Units, species and cell edge
-!> come from kin6d_species (periodic_pair_units, periodic_pair_length), the
+!> come from milca_species (periodic_pair_units, periodic_pair_length), the
 !> same declarations the quantum reference uses; the Ewald parameters are
 !> selected from a requested truncation tolerance and the dynamics are the
 !> shared kin6d_nbody KDK path on the full two-particle state.
-module kin6d_classical_pair
+module milca_classical_pair
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_species, only: units_t, periodic_pair_units, periodic_pair_length, &
+    use milca_species, only: units_t, periodic_pair_units, periodic_pair_length, &
                              electron
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use kin6d_nbody, only: nbody_system_t, nbody_periodic

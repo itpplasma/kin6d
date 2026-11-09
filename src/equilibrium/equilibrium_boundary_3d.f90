@@ -1,4 +1,4 @@
-module kin6d_equilibrium_boundary_3d
+module milca_equilibrium_boundary_3d
     !! R2 of free-boundary-theory.md. Full-surface Cartesian Laplace BEM;
     !! R maps the consumer trace into continuous P2 BEM nodal values.
     use, intrinsic :: iso_fortran_env, only: dp => real64

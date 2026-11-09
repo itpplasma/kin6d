@@ -4,7 +4,7 @@ program test_interaction
     use kin6d_interaction_laboratory
     use kin6d_interaction_leaves
     use kin6d_coulomb_leaves, only: coulomb_pair, coulomb_pair_interval
-    use kin6d_species, only: units_t, species_t, atomic_units, electron
+    use milca_species, only: units_t, species_t, atomic_units, electron
     use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step, nbody_step_jvp
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK

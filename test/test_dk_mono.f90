@@ -11,11 +11,11 @@
 !! sqrt(nu); two collisionalities eliminate them (Richardson).
 program test_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK, &
+    use milca_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK, &
         mono_coefficients_jvp, mono_estimate_t, mono_estimate, mono_factor_t, mono_factor, &
         mono_solve, mono_apply, mono_drives, mono_coupling
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
+    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
         boozer_surface, BOOZER_OK
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp)

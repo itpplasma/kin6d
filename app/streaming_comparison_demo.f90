@@ -1,12 +1,12 @@
 program streaming_comparison_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval
-    use kin6d_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
+    use milca_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
         init_streaming, advance_streaming, evaluate_streaming, streaming_radius, &
         evaluate_streaming_candidate_interval, &
         init_streaming_particles, get_streaming_particles, density_streaming, &
         density_streaming_chord
-    use kin6d_streaming_particle_density, only: particle_density_certificate_t, &
+    use milca_streaming_particle_density, only: particle_density_certificate_t, &
         particle_density_workspace_t, prepare_particle_density_workspace, &
         project_particle_density, certify_particle_density, &
         sample_particle_density_band, particle_density_chord
@@ -17,11 +17,11 @@ program streaming_comparison_demo
     use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
         pcolormesh, plot, fill_between, title, xlabel, ylabel, xlim, ylim, &
         legend, tight_layout, savefig, colorbar, suptitle
-    use kin6d_demo_style, only: blue, vermillion, purple, black, grey, hold_frames, num
+    use milca_demo_style, only: blue, vermillion, purple, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: modes = 1, fps = 24, cohort_size = 3
     integer :: nx = 96, nv = 128, particle_nx = 32, particle_nv = 48

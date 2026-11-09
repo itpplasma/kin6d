@@ -8,7 +8,7 @@ program test_ideal_fb_surface
     use kin6d_ideal_free_boundary_bem3d, only: coupling_surface_t, ideal_fb_surface
     use fortfem_parametric_bem_high_order, only: build_p2_trace_connectivity, &
                                           bem_pair_options_t, bem_pair_report_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), radius = .15_dp
     real(dp), parameter :: nodes(2, 6) = reshape( &

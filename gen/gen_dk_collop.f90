@@ -3,7 +3,7 @@ program gen_dk_collop
         operator(+), operator(-), operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: x, rinv, tau, y, pi, chandra, series, l, mu, t, s

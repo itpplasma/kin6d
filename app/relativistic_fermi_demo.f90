@@ -10,11 +10,11 @@ program relativistic_fermi_demo
         initialize_fermi_workspace, solve_fermi_gas_si, occupation_fermi_gas
     use kin6d_fermi_gas_leaves, only: fermi_si_parameters
     use kin6d_relativistic_fermi_leaves, only: fermi_rel_limits
-    use kin6d_species, only: electron_mass_si, hbar_si, elementary_charge_si, coulomb_si
+    use milca_species, only: electron_mass_si, hbar_si, elementary_charge_si, coulomb_si
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, legend, &
         savefig, xscale, yscale, suptitle, tight_layout
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     ! Electron constants from the shared species record (CODATA 2018); the
     ! remaining exact SI constants and the atomic mass unit are declared here.

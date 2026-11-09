@@ -1,8 +1,8 @@
 program gen_fp
     use fortsym, only: expr_t, sym, operator(+), operator(-), &
                        operator(*), operator(/), operator(**), exp
-    use kin6d_gen_support, only: leaf_writer_t
-    use kin6d_symbolic_physics, only: p1_weight, p1_blend
+    use milca_gen_support, only: leaf_writer_t
+    use milca_symbolic_physics, only: p1_weight, p1_blend
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: v, theta, h, a, b, mass, z, vm, lo, hi, index, count, radius

@@ -27,7 +27,7 @@ W = integral [ |DX b|^2/(2 mu0 J) - p J ] ds1 ds2 dphi_hat .
 `p` is the gamma=0 material pressure used by the existing map, rather than a
 new pressure equation. The sign `sigma` is the chart orientation: cylindrical
 `(R,Z,phi)` has sigma=-1. KIN6D's authoritative energy is the shared
-`frozen_energy` imported by `gen/kin6d_symbolic_ideal.f90:1` and used in
+`frozen_energy` imported by `gen/milca_symbolic_ideal.f90:1` and used in
 `gen/gen_ideal_map.f90:49`. The reference-form pullback is already generated
 there (`gen/gen_ideal_map.f90:109`). Existing freeze and energy integration
 are `src/mhd/ideal_map.f90:440` and `:976` on this base.

@@ -27,7 +27,7 @@ Canonical TDVP (M2, M3): psi = (2 pi s)^(-3/4) exp(-(1/(4s) - i beta)|r-q|^2
 Hamilton's equations of <H>(q, p, s, ps) and hbar gammadot = p.qdot - s psdot
 - <H> (Dirac-Frenkel phase). Energy, forces, JVP/VJP: FortSym leaves from
 `gen/gen_packet_models.f90`; the Gaussian-averaged Coulomb definition is
-`gaussian_coulomb_potential` in `gen/kin6d_symbolic_physics.f90` (series form
+`gaussian_coulomb_potential` in `gen/milca_symbolic_physics.f90` (series form
 for q^2/(2s) < 0.02).
 
 Metric engine (M2S/M2T/M3S/M3T/M4, cross-check for M2/M3): real parameters

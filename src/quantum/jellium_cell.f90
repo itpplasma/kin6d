@@ -4,7 +4,7 @@
 !> engine's jellium Galerkin projection (bare Coulomb, q=0 removed by the
 !> neutralizing background). Total momentum K and S_z are exact symmetries:
 !> every solve uses a sector basis and the matrix-free coupled action, which
-!> fails closed on leakage. Atomic units (hbar=m=g=1) come from kin6d_species.
+!> fails closed on leakage. Atomic units (hbar=m=g=1) come from milca_species.
 !> Claims: finite-basis eigen/evolution numbers only; momentum-cutoff,
 !> finite-size and thermodynamic-limit errors are indicators, not bounds.
 module kin6d_jellium_cell
@@ -16,7 +16,7 @@ module kin6d_jellium_cell
     use fortnum_ode_cash_karp, only: cash_karp_step
     use fortnum_ode_residual_certificate, only: certify_linear_trajectory
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
     use kin6d_quantum_fock, only: fock_basis_t, fock_hamiltonian_t, &
         init_fock_sector_basis, prepare_jellium_hamiltonian, &
@@ -28,7 +28,7 @@ module kin6d_jellium_cell
     use kin6d_jellium_cell_leaves, only: jc_lindhard_term, jc_rpa, jc_boltzmann, &
         jc_fermi, jc_shell_moment, jc_shell_moment_series, jc_shell_average, jc_pair_correlation, jc_susceptibility, &
         jc_half, jc_kick_response, jc_thermal_term, jc_truncation_interval
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     implicit none
     private
     public :: jellium_cell_t, jellium_sector_t, jellium_spectrum_t

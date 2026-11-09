@@ -14,7 +14,7 @@ program fermion_ensemble_demo
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, &
         legend, tight_layout, savefig, xscale, yscale, suptitle
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: colors(3, 4) = reshape([0.0_dp, 0.447_dp, 0.698_dp, &

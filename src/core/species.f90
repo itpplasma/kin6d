@@ -4,8 +4,8 @@
 !> 1/(4 pi eps0); masses and charges are in declared SI mass/charge units.
 !> The SI length and time of one reduced unit then follow (species_unit_map).
 !> Pair coupling g = coulomb q_i q_j; every physical scale is a generated leaf
-!> from gen/kin6d_symbolic_physics.f90, never retyped here.
-module kin6d_species
+!> from gen/milca_symbolic_physics.f90, never retyped here.
+module milca_species
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_species_leaves, only: species_pair_scales, species_sommerfeld, &
                                     species_plasma_scales, species_unit_map
@@ -118,4 +118,4 @@ contains
                                    p%fermi, p%theta, p%rs, p%debye_length, &
                                    p%plasma_frequency)
     end function
-end module kin6d_species
+end module milca_species

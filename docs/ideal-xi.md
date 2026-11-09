@@ -5,7 +5,7 @@ map lane's existing fixed-pressure (`gamma=0`) frozen-in energy. It accepts
 physical displacement gradients, without constructing a global matrix.
 It does not yet supply a global stability eigenproblem or a continuous bound.
 
-[V] Both map and xi generators use `kin6d_symbolic_ideal:frozen_energy`:
+[V] Both map and xi generators use `milca_symbolic_ideal:frozen_energy`:
 
 \[
 w(F)=\frac{|F B|^2}{2\mu_0\det F}-p\det F,\qquad \det F>0.

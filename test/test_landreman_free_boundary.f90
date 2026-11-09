@@ -70,7 +70,7 @@ program test_landreman_free_boundary
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
     use kin6d_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
              ideal_fb_set_currents, coil_circuit_basis_t, coil_circuit_basis_init
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
     use landreman_circuit_basis, only: ring_basis_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), delta = LANDREMAN_DELTA

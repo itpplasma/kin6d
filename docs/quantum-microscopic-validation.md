@@ -17,7 +17,7 @@ encounters serve scattering; neutralized periodic 3D cells serve electron
 gases. Every case declares mass, charge, hbar, preparation, spin sector,
 geometry, background and boundary conditions, all taken from the shared
 species/unit record and the single symbolic Coulomb source
-(`gen/kin6d_symbolic_physics.f90`). Nuclear motion is classical or prescribed
+(`gen/milca_symbolic_physics.f90`). Nuclear motion is classical or prescribed
 when present, with that approximation stated. Nonrelativistic electrostatics
 is the controlled domain; v/c, x_F and the omitted electromagnetic physics are
 recorded, and QED is outside the native scope. No screened potential is

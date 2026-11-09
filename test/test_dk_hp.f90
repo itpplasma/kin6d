@@ -1,5 +1,5 @@
 !> Spectral elements on the orbit-class mesh against the Legendre-Fourier
-!! reference kin6d_dk_mono and against limits derived independently by
+!! reference milca_dk_mono and against limits derived independently by
 !! averaging the same equation (as in test_dk_mono): collisionless, banana
 !! and Pfirsch-Schlueter, at collisionalities below the reach of the
 !! reference. Field b = 1/(1 + eps cos theta), kappa = 1.
@@ -9,9 +9,9 @@
 !!   test_dk_hp mono nu n_theta n_leg          Legendre-Fourier reference
 program test_dk_hp
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_hp, only: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, &
+    use milca_dk_hp, only: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, &
         hp_coefficients, HP_OK
-    use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK
+    use milca_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp)
     character(32) :: check
@@ -200,7 +200,7 @@ contains
     !> a factor 0.5 to 2, and one adaptive refinement step reduces the error
     !> tenfold.
     logical function estimate() result(ok)
-        use kin6d_dk_hp, only: hp_estimate, hp_refine
+        use milca_dk_hp, only: hp_estimate, hp_refine
         real(dp), parameter :: eps = 0.1_dp, nu = 1e-4_dp
         type(hp_field_t) :: f
         type(hp_mesh_t) :: mesh, next
@@ -223,11 +223,11 @@ contains
     end function estimate
 
     !> One toroidal harmonic with streaming shift, precession and drive,
-    !> against the Legendre-Fourier kernel kin6d_dk_ntv on the circular
+    !> against the Legendre-Fourier kernel milca_dk_ntv on the circular
     !> stage-1 surface b = 1 - eps cos theta.
     logical function ntv_reference() result(ok)
-        use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
-        use kin6d_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k1
         type(hp_operator_t) :: op
@@ -259,7 +259,7 @@ contains
     !> The stage-1 harmonic (eps 0.05, q 2.2, n 3, m 6) with the operator of
     !> collisionality nu, precession pre and rotation omega_E.
     function stage1(nu, pre, omega) result(op)
-        use kin6d_dk_hp, only: hp_operator_t
+        use milca_dk_hp, only: hp_operator_t
         real(dp), intent(in) :: nu, pre, omega
         type(hp_operator_t) :: op
         op%k = 1/(2.2_dp*6.2_dp); op%k_power = 0; op%q = 2.2_dp; op%n = 3
@@ -268,7 +268,7 @@ contains
     end function stage1
 
     real(dp) function stage1_kernel(op, p, n_col, n_bulk, delta) result(r)
-        use kin6d_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel
         type(hp_operator_t), intent(in) :: op
         integer, intent(in) :: p, n_col, n_bulk
         real(dp), intent(in) :: delta
@@ -301,7 +301,7 @@ contains
     !> derived in test_dk_ntv (one_over_nu_limit), where the Legendre
     !> reference reaches 1e-2 from nu = 1e-5 to 1e-6.
     logical function ntv_one_over_nu() result(ok)
-        use kin6d_dk_hp, only: hp_operator_t
+        use milca_dk_hp, only: hp_operator_t
         integer, parameter :: ns = 96
         real(dp) :: nu(3), y(3), m(3, 3), lc, lm, xs(ns), ws(ns), xt(ns), wt(ns), &
             s, lam, lam2, outer, limit, qq, fit
@@ -385,7 +385,7 @@ contains
     !> R of the stage-1 harmonic (eps 0.05, q 2.2, n 3, m 6) on a uniform
     !> mesh, with its superbanana-plateau limit.
     logical function ntv_scan() result(ok)
-        use kin6d_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel
         character(16) :: arg
         type(hp_operator_t) :: op
         type(hp_field_t) :: f
@@ -414,9 +414,9 @@ contains
         ok = status == HP_OK
     end function ntv_scan
 
-    !> The same harmonic with the Legendre-Fourier kernel kin6d_dk_ntv.
+    !> The same harmonic with the Legendre-Fourier kernel milca_dk_ntv.
     logical function ntv_legendre() result(ok)
-        use kin6d_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
+        use milca_dk_ntv, only: ntv_surface_t, ntv_kernel_t, ntv_kernel, NTV_OK
         character(16) :: arg
         type(ntv_surface_t) :: sf
         type(ntv_kernel_t) :: k
@@ -447,7 +447,7 @@ contains
     !> omega_E = 0). Bounce integrals by Gauss quadrature in
     !> theta = theta_t sin(u), which removes the turning-point singularity.
     real(dp) function sbp_limit(eps, op) result(r)
-        use kin6d_dk_hp, only: hp_operator_t
+        use milca_dk_hp, only: hp_operator_t
         real(dp), intent(in) :: eps
         type(hp_operator_t), intent(in) :: op
         real(dp) :: lo, hi, mid, h, d
@@ -471,7 +471,7 @@ contains
     !> 4 int_0^theta_t w(theta) dtheta/|xi|, w = cos theta (kind 0) or
     !> cos((m - n q) theta) (kind 1); |xi|^2 = lam eps (cos - cos theta_t).
     real(dp) function well(eps, op, lam, kind) result(s)
-        use kin6d_dk_hp, only: hp_operator_t
+        use milca_dk_hp, only: hp_operator_t
         real(dp), intent(in) :: eps, lam
         type(hp_operator_t), intent(in) :: op
         integer, intent(in) :: kind
@@ -518,7 +518,7 @@ contains
     end function scan
 
     logical function adapt_scan() result(ok)
-        use kin6d_dk_hp, only: hp_estimate, hp_refine
+        use milca_dk_hp, only: hp_estimate, hp_refine
         real(dp), parameter :: eps = 0.1_dp
         character(16) :: arg
         real(dp) :: nu, tol, value, eta

@@ -1,14 +1,14 @@
-!> NTV field line of a Boozer `.bc` surface (kin6d_ntv_boozer_line): closed
+!> NTV field line of a Boozer `.bc` surface (milca_ntv_boozer_line): closed
 !! forms on a synthetic file of circular surfaces with a toroidal current and
 !! magnetic shear, and refusal of a file with n /= 0 rows. With arguments
 !! (file s n_theta) it prints the line of a given file instead.
 program test_ntv_boozer_line
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
+    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
         boozer_surface, BOOZER_OK
     use kin6d_ntv_boozer_leaves, only: ntv_boozer_point, ntv_boozer_point_jvp, &
         ntv_boozer_point_vjp
-    use kin6d_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK, &
+    use milca_ntv_boozer_line, only: ntv_boozer_line_t, ntv_boozer_line, NTV_LINE_OK, &
         NTV_LINE_REFUSED
     implicit none
     real(dp), parameter :: r0 = 1.7_dp, a = 0.5_dp, b0 = 2.3_dp, eps = 0.1_dp

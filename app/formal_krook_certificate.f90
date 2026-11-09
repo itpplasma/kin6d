@@ -2,7 +2,7 @@ program formal_krook_certificate
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_support_datatype
     use kin6d_poisson_leaves, only: coupled_amplitude
-    use kin6d_result_io, only: run_t, result_file_t, result_directory
+    use milca_result_io, only: run_t, result_file_t, result_directory
     implicit none
     ! Inputs of the scalar direct solve. They are fixed by the Lean model
     ! (exactAmplitude := 1/2); the namelist records them and rejects changes.

@@ -1,7 +1,7 @@
 !> Ewald parameters of the periodic Coulomb sum, chosen from a requested
 !> truncation tolerance rather than fixed numbers.
 !>
-!> Convention (kin6d_symbolic_physics): cube of edge L, neutralizing uniform
+!> Convention (milca_symbolic_physics): cube of edge L, neutralizing uniform
 !> background, tin-foil boundary, k = 2 pi n/L with n /= 0. The real-space sum
 !> runs over images with max-norm index <= real_cutoff after wrapping the
 !> separation into [-L/2,L/2]^3; the reciprocal sum over 0 < |n|_inf <=

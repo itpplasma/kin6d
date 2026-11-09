@@ -12,7 +12,7 @@ module kin6d_gs_ampere_loop
     use kin6d_grad_shafranov_leaves, only: gs_current_sheet
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_nonlinear, only: gs_cubic_load, gs_profile_jacobian_t, gs_forcing_t
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_quadrature, only: gauss_legendre_ab
     use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY

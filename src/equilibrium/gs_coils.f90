@@ -49,7 +49,7 @@ module kin6d_gs_coils
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_rect_coil_t, &
         gs_rect_coil_flux, gs_rect_coil_flux_gradient, gs_green, gs_green_gradient
-    use kin6d_real_identity, only: same_real_value
+    use milca_real_identity, only: same_real_value
     implicit none
     private
 

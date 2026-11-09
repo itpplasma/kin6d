@@ -2,12 +2,12 @@ program benchmark_error_microscopic
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
-    use kin6d_species, only: electron, atomic_units, species_t
+    use milca_species, only: electron, atomic_units, species_t
     use kin6d_pme, only: pme_parameters_t, pme_select, pme_estimate
     use kin6d_nbody, only: nbody_system_t, nbody_periodic_mesh, nbody_force
-    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_sweep, mc_energy
-    use kin6d_series_statistics, only: series_batch_means
-    use kin6d_classical_cell, only: classical_cell_t, classical_mc_t, &
+    use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_sweep, mc_energy
+    use milca_series_statistics, only: series_batch_means
+    use milca_classical_cell, only: classical_cell_t, classical_mc_t, &
         init_classical_cell, classical_cell_mc, model_coulomb
     use error_benchmark_support
     implicit none

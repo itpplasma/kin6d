@@ -3,7 +3,7 @@ program gen_boozer_file
         operator(+), operator(-), &
         operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: s, half_m, axis

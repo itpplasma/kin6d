@@ -1,7 +1,7 @@
 program slab_oscillation_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, hull, mag
-    use kin6d_slab_oscillation, only: slab_oscillation_state_t, &
+    use milca_slab_oscillation, only: slab_oscillation_state_t, &
                                  initialize_slab_oscillation, sample_slab_oscillation, &
                   sample_slab_oscillation_candidate_interval, slab_oscillation_radius, &
                                       slab_oscillation_chord
@@ -9,12 +9,12 @@ program slab_oscillation_demo
     use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
                         plot, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
                         tight_layout, savefig, suptitle
-    use kin6d_demo_style, only: vermillion, black, grey, hold_frames, num
+    use milca_demo_style, only: vermillion, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_animation_export, only: animation_export_t
+    use milca_result_io, only: run_t, result_file_t
+    use milca_animation_export, only: animation_export_t
     implicit none
     integer, parameter :: markers = 17, fps = 24
     ! 193 frames span two periods in 8 s at 24 fps; a one-second hold follows.

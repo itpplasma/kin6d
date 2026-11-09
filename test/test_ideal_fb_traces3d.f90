@@ -90,7 +90,7 @@ program test_ideal_fb_traces3d
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
         ideal_chart_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
         coupling_surface_t
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
@@ -105,7 +105,7 @@ program test_ideal_fb_traces3d
     use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0, segment_b
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0, segment_b
     use kin6d_makegrid_circuits, only: makegrid_circuits_read
     use neo_biotsavart, only: coils_t, compute_magnetic_field, clight
     use neo_makegrid_coils, only: makegrid_coils_t, read_makegrid_coils, &

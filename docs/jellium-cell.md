@@ -13,7 +13,7 @@ spherical cutoff `|n|^2 <= c` (c = 1, 2, 3 gives 7, 19, 27 modes, M = 14, 38,
 c = 1 the cubic set equals the spherical c = 3 set). The Hamiltonian is the
 Fock engine's jellium Galerkin projection (`prepare_jellium_hamiltonian`,
 shared jellium coefficient `4 pi g/(V q^2)`, q = 0 removed). Atomic units
-come from `kin6d_species`; L follows from the shared r_s definition and
+come from `milca_species`; L follows from the shared r_s definition and
 `Theta = T/T_F` uses the shared Fermi energy.
 
 Total momentum K and S_z are exact symmetries. Every solve uses a sector

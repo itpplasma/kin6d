@@ -2,11 +2,11 @@ program test_transport_linear_bands
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval
-    use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
+    use milca_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport, solve_transport_tangent
-    use kin6d_transport_certificate, only: transport_certificate_t, &
+    use milca_transport_certificate, only: transport_certificate_t, &
         certify_transport_tangent
-    use kin6d_transport_sampling, only: transport_basis_t, &
+    use milca_transport_sampling, only: transport_basis_t, &
         transport_sampling_workspace_t, initialize_transport_sampling, &
         prepare_transport_basis, transport_linear_enclosure, &
         certify_transport_linear, certify_transport_tangent_linear

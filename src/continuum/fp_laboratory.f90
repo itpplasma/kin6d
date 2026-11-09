@@ -1,4 +1,4 @@
-module kin6d_fp_laboratory
+module milca_fp_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, mag

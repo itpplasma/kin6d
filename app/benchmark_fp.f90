@@ -1,8 +1,8 @@
 program benchmark_fp_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
+    use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
         fp_certificate_radius, fp_certificate_accepts, sample_fp
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     type(fp_state_t) :: state
     type(run_t) :: run

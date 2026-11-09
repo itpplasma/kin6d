@@ -16,13 +16,13 @@ program test_correlation_hierarchy
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform, rng_normal
-    use kin6d_species, only: atomic_units, electron, species_t
+    use milca_species, only: atomic_units, electron, species_t
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_energy
-    use kin6d_ocp_monte_carlo
-    use kin6d_correlation_hierarchy
-    use kin6d_ocp_hnc
-    use kin6d_series_statistics
+    use milca_ocp_monte_carlo
+    use milca_correlation_hierarchy
+    use milca_ocp_hnc
+    use milca_series_statistics
     use kin6d_correlation_hierarchy_leaves, only: ch_ocp_energy_fit, &
         ch_ocp_energy_fit_jvp, ch_debye_hueckel_energy, ch_debye_wavenumber
     implicit none

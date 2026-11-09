@@ -2,7 +2,7 @@
 program gen_pp_fusion
     use fortsym_expr, only: expr_t, sym, rat, exp, sqrt, log, pi_expr, &
         operator(+), operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: r, x, vc, vt, vls, vs, kin, alpha, mp, hc, hb, ga

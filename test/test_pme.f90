@@ -7,7 +7,7 @@ program test_pme
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform
-    use kin6d_species, only: units_t, species_t, reduced_units, electron
+    use milca_species, only: units_t, species_t, reduced_units, electron
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use kin6d_pme, only: pme_parameters_t, pme_select, pme_estimate
     use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8

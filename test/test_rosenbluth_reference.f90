@@ -4,7 +4,7 @@ program test_rosenbluth_reference
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_homma_leaves
-    use kin6d_rosenbluth_reference
+    use milca_rosenbluth_reference
     implicit none
     real(dp), parameter :: e_charge = 1.602176634e-19_dp
     real(dp), parameter :: pi = 3.14159265358979323846_dp

@@ -9,7 +9,7 @@ module kin6d_ideal_free_boundary_bem3d
     use fortfem_generated_bem_frame, only: bem_frame
     use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use kin6d_triangle_basis, only: triangle_basis_jet
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
         gamma_c_3d_build_periodic
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_attach_exterior_3d, &
                                    ideal_fb_full_turn_traces, IDEAL_FB_BAD_INPUT

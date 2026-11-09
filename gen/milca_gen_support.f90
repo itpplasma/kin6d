@@ -2,7 +2,7 @@
 ! One emit path (primal, JVP/VJP and strict interval leaves) and one FortSym
 ! revision source: KIN6D_FORTSYM_REVISION in CMakeLists.txt, delivered as the
 ! configured include file kin6d_fortsym_revision.inc.
-module kin6d_gen_support
+module milca_gen_support
     use fortsym_expr, only: expr_t, sym
     use fortsym_products, only: jvp, vjp
     use fortsym_engine, only: engine_result_t
@@ -232,4 +232,4 @@ contains
         flag = .false.
         if (present(value)) flag = value
     end function
-end module kin6d_gen_support
+end module milca_gen_support

@@ -1,7 +1,7 @@
 program gen_dk_hp
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
         operator(*), operator(/)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: b, b_theta, xi, k, nu, measure, lambda, cos_t, offset, wsign
@@ -35,7 +35,7 @@ program gen_dk_hp
         [measure*nu*(1 - xi*xi)/2, -measure*k*b_theta*(1 + xi*xi)/(2*b*b), &
         measure*xi*b, measure], ad=.true.)
     call writer%emit('dk_hp_stream', ['b ', 'xi'], ['psi'], [-lambda/2], ad=.true.)
-    ! One toroidal harmonic n in the frame exp(-i n zeta) (kin6d_dk_ntv):
+    ! One toroidal harmonic n in the frame exp(-i n zeta) (milca_dk_ntv):
     ! times the measure, the factor xi k of -i n q, the precession factor
     ! (1 + wsign xi^2)(cos theta - offset)/b of i (n/v) pre and the drive
     ! factor (1 + wsign xi^2)/b of S/v (wsign = -1: lambda, grad-B only);

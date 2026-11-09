@@ -3,7 +3,7 @@ program gen_s0_gs_space
     use fortsym_expr, only: expr_t, sym, sin, cos, operator(+), operator(-), &
         operator(*), operator(/)
     use fortsym_diff, only: diff
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: r, theta, m, u(3), du(3), c, s, cr, ci

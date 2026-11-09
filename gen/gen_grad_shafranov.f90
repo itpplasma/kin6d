@@ -8,7 +8,7 @@ program gen_grad_shafranov
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
    use fortsym_engine_native, only: native_engine_t, make_native_engine
    use fortsym_precision, only: PRECISION_REAL32, PRECISION_REAL64
-   use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+   use milca_gen_support, only: leaf_writer_t, fortsym_revision
    implicit none
    type(leaf_writer_t) :: w, wb, ws
    type(native_engine_t) :: engine
