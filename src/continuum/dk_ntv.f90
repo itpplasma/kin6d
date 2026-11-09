@@ -246,9 +246,9 @@ module milca_dk_ntv
         complex(dp), allocatable :: s_lu(:, :, :), y(:, :, :)
         integer, allocatable :: piv(:, :)
         ! Modal form: node(m, 1) and sys(m) belong to the collision eigenmodes
-        ! m of the l = 1 rows, v their speed-species vectors and vinv = v^-1.
+        ! m of the l = 1 rows (see factor_modal).
         logical :: modal = .false.
-        real(dp), allocatable :: v(:, :), vinv(:, :)
+        real(dp), allocatable :: v(:, :), vinv(:, :), vu(:, :), rv(:, :)
     end type
 
     ! Pair blocks factorised densely: degrees l < 2 low_pairs.

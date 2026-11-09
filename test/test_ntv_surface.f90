@@ -26,11 +26,18 @@
 !!                  (Helander and Simakov, PRL 101, 145003, 2008), here
 !!                  against the pitch-angle d11 on the same grid;
 !!   iterative      GMRES right-preconditioned by the collision-mode
-!!                  factorisations (pairs = 0) reproduces the direct solve.
+!!                  factorisations, without (pairs = 0) and with (pairs = 1)
+!!                  the exact l <= 1 block, reproduces the direct solve;
+!!   exact          with pitch-angle scattering every preconditioner is the
+!!                  inverse, so each GMRES solve converges in one iteration:
+!!                  the modal chain with 0 and 1 exact pair blocks here, and
+!!                  the per-node chain of the NTV kernel
+!!                  (ntv_energy_coefficients, two exact pair blocks).
 program test_ntv_surface
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_dk_ntv, only: ntv_surface_t, ntv_axisymmetric_coefficients, &
-                            ntv_surface_coefficients, NTV_OK, NTV_WEIGHT_FULL
+                            ntv_surface_coefficients, ntv_energy_coefficients, NTV_OK, &
+                            NTV_WEIGHT_FULL
     use milca_dk_mono, only: mono_coefficients_t, mono_coefficients_3d, MONO_OK
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
                         collop_nuhat, collop_vth, COLLOP_OK, COLLOP_LORENTZ, COLLOP_FULL
@@ -50,6 +57,7 @@ program test_ntv_surface
     case ('onsager'); ok = onsager()
     case ('ambipolar'); ok = ambipolar()
     case ('iterative'); ok = iterative()
+    case ('exact'); ok = exact()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -256,7 +264,44 @@ contains
         print '(a,i0)', 'GMRES iterations: ', its
         ok = matrix_close('GMRES on collision-mode factorisations', dg(1, 1, :, :), &
                           d(1, 1, :, :), 1e-6_dp)
+        call ntv_surface_coefficients(helical(nt, nz), 1, q, ig, 1/(q*rmajor), sp, lnl, &
+                                      grid, COLLOP_FULL, n_leg, dg, its, st, pairs=1)
+        ok = ok .and. st == NTV_OK
+        if (.not. ok) return
+        print '(a,i0)', 'GMRES iterations with the exact l <= 1 block: ', its
+        ok = matrix_close('GMRES with the exact l <= 1 block', dg(1, 1, :, :), &
+                          d(1, 1, :, :), 1e-6_dp) .and. ok
     end function iterative
+
+    logical function exact() result(ok)
+        integer, parameter :: nt = 11, nz = 7
+        type(collop_species_t) :: sp(1)
+        type(collop_grid_t) :: grid
+        type(ntv_surface_t) :: sf
+        real(dp) :: lnl(1, 1), d(1, 1, 3, 3), k(1, 1, 2)
+        integer :: its, st, p
+        call plasma(1e-2_dp, sp, lnl, grid)
+        ok = .true.
+        do p = 0, 1
+            call ntv_surface_coefficients(helical(nt, nz), 1, q, ig, 1/(q*rmajor), sp, &
+                                          lnl, grid, COLLOP_LORENTZ, n_leg, d, its, st, &
+                                          pairs=p)
+            print '(a,i0,a,i0)', 'surface, exact pair blocks ', p, ': iterations ', its
+            ok = ok .and. st == NTV_OK .and. its == 3
+        end do
+        sf%eps = eps
+        sf%q = q
+        sf%k = 1/(q*rmajor)
+        sf%n = 3
+        sf%m = [6]
+        sf%c = [(1e-3_dp, 0.0_dp)]
+        sf%weight = NTV_WEIGHT_FULL
+        sf%boozer_stream = .true.
+        call ntv_energy_coefficients(sf, sp, lnl, grid, COLLOP_LORENTZ, 2e3_dp, 17, n_leg, &
+                                     k, its, st)
+        print '(a,i0)', 'NTV kernel, per-node chain: iterations ', its
+        ok = ok .and. st == NTV_OK .and. its == 2
+    end function exact
 
     !> G(x) = (erf(x) - 2 x exp(-x^2)/sqrt(pi))/(2 x^2).
     real(dp) function chandrasekhar(x)

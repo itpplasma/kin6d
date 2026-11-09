@@ -182,11 +182,48 @@ per collision eigenmode: after the row scaling the operator is S x R - I x C_l
 (S streaming per unit speed, R the lumped-to-Galerkin speed-mass ratio, C_l
 the speed-species collision rows of degree l), and in the eigenvectors of
 R^-1 C_1 the l = 1 rows, which carry momentum conservation, are diagonal.
-Memory per mode is that of the monoenergetic surface problem. Iterations
-for three drives (11 x 7 points, 12 Legendre, 9 nodes): 3 with pitch-angle
-scattering (exact preconditioner), 93 test particle, 128 to 239 full
-operator at NEO-2 collisionality 1e-3 to 1e1. A per-node preconditioner
-without the modal basis stalled (above 1000).
+Memory per mode is that of the monoenergetic surface problem. With
+`pairs = 1` the lowest pair block (l <= 1, carrying density, momentum and
+energy conservation) is factorised exactly with the full speed and species
+coupling, and the mode chain enters it through its Schur complement
+(I x R V) U_m Y_m (I x V^-1). The neglected off-diagonal part of the collision
+rows, relative to the diagonal kept, is for deuterium and electrons
+1.4 to 1.6 at every l >= 2 in the modal basis and 6.3, 1.2, 0.35, 0.18, 0.03
+(l = 0, 1, 2, 3, 8) in the speed-node basis, falling like 1/l^2; the
+exact l <= 1 block removes the two large node-basis entries, but the
+energy scattering left at l = 2 to 6 makes the node chain the weaker
+preconditioner above it. A per-node chain had read the collision rows of
+degree l + 1 (an array section starting the degree index at 1); test
+`ntv_surface_exact` checks that every chain is exact with pitch-angle
+scattering, which also covers the NTV kernel (19 GMRES iterations before
+the fix, 2 after, coefficients unchanged to the GMRES tolerance).
+
+Iterations for six drives (deuterium and electrons, DIII-D helical core of
+Cianciosa et al. 2017 at s = 0.058, iota = 0.999, 15 x 9 points, 20
+Legendre, 9 speed nodes, NEO-2 collisionality 0.1/m):
+
+| preconditioner | GMRES iterations | wall (8 threads) |
+|---|---|---|
+| exact l <= 1, node chain above | 2522 | 761 s |
+| collision modes, no exact block | 1024 | 151 s |
+| exact l <= 1, collision modes above (`pairs = 1`) | 483 | 95 s |
+
+Legendre convergence on that surface at collisionality 0.01/m (16 speed
+nodes, `pairs = 1`; relative change of each coefficient against 80
+Legendre polynomials):
+
+| coefficient | 20 | 40 |
+|---|---|---|
+| electron D33 (conductivity) | 1.8e-2 | 9.7e-4 |
+| electron D31 (bootstrap, A_1) | 1.8e-2 | 2.0e-4 |
+| electron D32 (bootstrap, A_2) | 3.9e-2 | 7.9e-4 |
+| ion D31 | 2.6e-3 | 1.0e-3 |
+| electron-ion D31 | 6.0e-3 | 1.2e-3 |
+| ion D11 | 3.6e-2 | 2.0e-3 |
+
+The change falls twentyfold per doubling. Cost at 20, 40, 80 Legendre:
+849, 1950, 3136 GMRES iterations, 140, 441, 1116 s, 5.0, 6.6, 8.0 GB on a
+shared 28-core Apple M3 Ultra node (12 threads).
 
 Checks (one species, deuterium 2 keV):
 
