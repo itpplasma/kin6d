@@ -144,9 +144,13 @@
     !> b.grad theta/b; with pitch-angle scattering each node then solves the
     !> problem of dk_mono driven by (T/(Z e)) x (-2/(kappa q)) times its drift,
     !> so (3/4) (T/(Z e)) (-2/(kappa q)) relates the flow response to A_1 to
-    !> the energy average of the monoenergetic D31.
+    !> the energy average of the monoenergetic D31. local(theta, a, b, j), on
+    !> the n_theta collocation points theta_i = 2 pi (i - 1)/n_theta, is the
+    !> parallel-flow response at each point in the same units, the quantity
+    !> whose surface average with the Boozer weight 1/b^2 is d(a, b, 3, j):
+    !> u_par B per unit drive.
     subroutine ntv_axisymmetric_coefficients(sf, species, lnlambda, grid, model, n_theta, &
-            n_leg, d, iterations, status, kappa)
+            n_leg, d, iterations, status, kappa, local)
         type(ntv_surface_t), intent(in) :: sf
         type(collop_species_t), intent(in) :: species(:)
         real(dp), intent(in) :: lnlambda(:, :)
@@ -155,6 +159,7 @@
         real(dp), intent(out) :: d(:, :, :, :)
         integer, intent(out) :: iterations, status
         real(dp), intent(out), optional :: kappa
+        real(dp), intent(out), optional :: local(:, :, :, :)
     type(energy_system_t) :: e
     type(ntv_system_t) :: g, gf
     type(hybrid_t) :: lu
@@ -166,6 +171,9 @@
     status = NTV_BAD_INPUT
     iterations = 0
     if (any(shape(d) /= [size(species), size(species), 3, 3])) return
+    if (present(local)) then
+        if (any(shape(local) /= [n_theta, size(species), size(species), 3])) return
+    end if
     call energy_build(sf, species, lnlambda, grid, model, 0.0_dp, n_theta, n_leg, e, g, st)
     if (st /= NTV_OK) return
     status = NTV_SINGULAR
@@ -218,6 +226,14 @@
                 end do
                 d(a, sb, 1:2, jf) = e%tz(a)/(sqrt(pi)*2*j0)*d(a, sb, 1:2, jf)
                 d(a, sb, 3, jf) = e%vt(a)/(sqrt(pi)*2*j0)*d(a, sb, 3, jf)
+                if (present(local)) then
+                    local(:, a, sb, jf) = 0
+                    do kk = 1, e%nx
+                        local(:, a, sb, jf) = local(:, a, sb, jf) &
+                            + d3(kk)*real(x(e%n + 1:2*e%n, kk, 0, a), dp)
+                    end do
+                    local(:, a, sb, jf) = e%vt(a)/sqrt(pi)*b*2/3.0_dp*local(:, a, sb, jf)
+                end if
             end do
         end do
     end do

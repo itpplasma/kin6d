@@ -1041,7 +1041,7 @@ endforeach()
 # Homogeneous FP relaxation (B04): the same executable, one check per name.
 add_executable(test_ntv_axisymmetric test/test_ntv_axisymmetric.f90)
 target_link_libraries(test_ntv_axisymmetric PRIVATE milca)
-foreach(check onsager momentum collisionless)
+foreach(check onsager momentum local collisionless)
     add_test(NAME ntv_axisymmetric_${check} COMMAND test_ntv_axisymmetric ${check})
     milca_test_labels(ntv_axisymmetric_${check} fast CLASSES continuum
         TARGETS test_ntv_axisymmetric)
