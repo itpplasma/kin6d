@@ -27,7 +27,7 @@
 !! Error estimates (mono_estimate) are indicators in the sense of
 !! certification.md: a two-resolution difference for the discretisation and
 !! one refinement step on the true residual for the algebraic error.
-module kin6d_dk_mono
+module milca_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_fourier, only: fourier_derivative
     use kin6d_dk_mono_leaves, only: dk_mono_point, dk_mono_point_jvp
@@ -454,4 +454,4 @@ contains
         end do
     end function trig_resample
 
-end module kin6d_dk_mono
+end module milca_dk_mono

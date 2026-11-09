@@ -9,7 +9,7 @@ on flux surfaces and the field from the per-n Ampère operator.
 ## Model
 
 A perturbation is `X(R, Z) e^{i n φ}` (physical field `X e^{i n φ} + c.c.`,
-the convention of `kin6d_coils_3d`), `n ≠ 0`, static (`ω = 0`), on an
+the convention of `milca_coils_3d`), `n ≠ 0`, static (`ω = 0`), on an
 axisymmetric G-EQDSK equilibrium.
 
 - **Coil field**: closed-form Biot–Savart of the 3D coils (L3), projected on

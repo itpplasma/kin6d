@@ -7,7 +7,7 @@ program pp_fusion_eft_export
     use kin6d_pp_fusion, only: pp_fusion_config_t, pp_fusion_result_t, &
         pp_fusion_solve, &
         pp_vector_coupling, pp_hc, pp_mp, pp_mn, pp_alpha, axial, ft0
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     implicit none
     include 'kin6d_build_info.inc'
     type(pp_eft_config_t) :: cfg, zero

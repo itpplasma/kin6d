@@ -21,7 +21,7 @@ program gen_thermal_screening
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     use fortsym_engine_native, only: native_engine_t, make_native_engine
     use fortsym_engine_symengine, only: symengine_engine_t, make_symengine_engine
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     integer, parameter :: nfun = 5, ig = 1, iff = 2, icx = 3, icy = 4, icz = 5
     type(leaf_writer_t) :: w

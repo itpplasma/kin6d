@@ -2,7 +2,7 @@ module gll_benchmark_context
     ! A single benchmark invocation owns this context. Module callbacks avoid
     ! executable-stack trampolines on GNU 12; this is not a solver library.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_gll_spike
+    use milca_ideal_gll_spike
     use fortfem_tensor_solver, only: tensor_multigrid_t, build_tensor_multigrid, &
         tensor_vcycle, free_tensor_multigrid
     use fortfem_tensor_mesh, only: tensor_mesh_t

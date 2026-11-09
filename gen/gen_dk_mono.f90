@@ -1,7 +1,7 @@
 program gen_dk_mono
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
         operator(*), operator(/)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: b, b_theta, kappa, k

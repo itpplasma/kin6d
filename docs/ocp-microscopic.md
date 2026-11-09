@@ -10,8 +10,8 @@ uniform neutralizing background and the bare Coulomb interaction. No
 softening, screened pair potential, collision operator or wall is imposed.
 Plasma units of the responsive species (electrons only): `k_B T = m = 1`,
 `lambda_De = 1`, `omega_pe = 1`, so the density is `Lambda = n lambda_D^3`
-and the Coulomb constant is `1/(4 pi Lambda)`; `kin6d_ocp` checks these
-against the shared `kin6d_species` scales. C4 adds a fixed repulsive point
+and the Coulomb constant is `1/(4 pi Lambda)`; `milca_ocp` checks these
+against the shared `milca_species` scales. C4 adds a fixed repulsive point
 impurity of charge `Q = -kappa 4 pi Lambda e` (same sign as the electrons),
 compensated in the background. Its nonlinear radius is
 `r_nl = |qQ|/(4 pi eps0 k_B T) = kappa lambda_D`. "Weak" means linear response
@@ -52,7 +52,7 @@ ion.
     Richardson extrapolation).
 - `src/classical/pair_correlation.f90`: estimators for `g(r)` (cell list) and for the
   shell-averaged `S(k)`.
-- `kin6d_ocp`: preparation, mode amplitude, displacement and its tangent,
+- `milca_ocp`: preparation, mode amplitude, displacement and its tangent,
   and the radial histogram. It also holds the periodic screened-Poisson Green
   function. That function is the image sum of `exp(-r)/r` minus the zero mode
   `4 pi/(V kappa^2)`, with a shell truncation bound. Its leaves are generated
@@ -78,7 +78,7 @@ seed, rejected draws and cost.
   - the linear Vlasov response;
   - the Landau root mode;
   - the Bohm-Gross frequency;
-  - the cold slab, `kin6d_slab_oscillation`.
+  - the cold slab, `milca_slab_oscillation`.
 
   Two boxes:
   - "clean": `k lambda_D = 0.3`, `Lambda = 10`, N = 91 870;

@@ -9,16 +9,16 @@ program interaction_demo
                                         interaction_particle_coordinate, &
                                         interaction_particle_coordinate_interval
     use kin6d_coulomb_leaves, only: coulomb_pair
-    use kin6d_species, only: units_t, atomic_units, electron, pair_coupling
+    use milca_species, only: units_t, atomic_units, electron, pair_coupling
     use fortplot, only: figure, figure_t, get_global_figure, subplot, plot, &
                         scatter, quiver, &
                         title, xlabel, ylabel, xlim, ylim, legend, &
                         tight_layout, savefig, suptitle
-    use kin6d_demo_style, only: blue, vermillion, hold_frames, num
+    use milca_demo_style, only: blue, vermillion, hold_frames, num
     use fortplot_animation, only: animation_t, &
                                   animation_func => FuncAnimation, save_animation
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: fps = 24
     ! 241 frames of 50 steps: the same 12000 steps as before, shown in 10 s.

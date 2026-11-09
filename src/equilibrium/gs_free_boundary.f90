@@ -68,7 +68,7 @@ module kin6d_gs_free_boundary
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
                                GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &
                                GS_DIRECT_ORDER_ND
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
                                   gs_requested_device

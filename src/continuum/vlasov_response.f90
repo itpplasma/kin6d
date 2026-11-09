@@ -14,7 +14,7 @@
 !>   solved by the trapezoidal product rule with Richardson extrapolation
 !>   (h, h/2). This is the full finite-k response including the ballistic
 !>   transient; its late time is the Landau root.
-module kin6d_vlasov_response
+module milca_vlasov_response
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     implicit none
     private
@@ -166,4 +166,4 @@ contains
             if (present(amp)) amp = sqrt(ca*ca + cb*cb)
         end function
     end subroutine
-end module kin6d_vlasov_response
+end module milca_vlasov_response

@@ -2,7 +2,7 @@ program test_island_vacuum_oracle
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_vacuum_fixture, only: make_coil, coils, current, r0, ftor, field, &
                                  direct_coil, direct_field, solve_vacuum, orbit
-    use kin6d_coil_quadrature_field, only: coil_quadrature_field_t, &
+    use milca_coil_quadrature_field, only: coil_quadrature_field_t, &
                                            coil_quadrature_init
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &

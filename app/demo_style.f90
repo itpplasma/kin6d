@@ -1,6 +1,6 @@
 !> Presentation helpers shared by the gallery demos (docs/figure-style.md).
 !> Display only: no physics, numerics or certificate logic lives here.
-module kin6d_demo_style
+module milca_demo_style
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     implicit none
@@ -58,4 +58,4 @@ contains
         if (buffer(mantissa_end:mantissa_end) == '.') mantissa_end = mantissa_end - 1
         text = buffer(1:mantissa_end)//trim(form)
     end function num
-end module kin6d_demo_style
+end module milca_demo_style

@@ -11,7 +11,7 @@
 !   + background; self = lim_{r->0}(phi_E - g/r) is the image/self term.
 ! - Energies use the same reduced units as g/length; hbar is reduced too.
 ! Every function returns FortSym expressions in the current FortSym context.
-module kin6d_symbolic_physics
+module milca_symbolic_physics
     use, intrinsic :: iso_fortran_env, only: int64
     use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erf, erfc, cos, sin, &
                             operator(+), operator(-), operator(*), operator(/), &
@@ -357,4 +357,4 @@ contains
         type(expr_t) :: omega
         omega = omega_p*sqrt(1 + 3*k**2*lambda**2)
     end function
-end module kin6d_symbolic_physics
+end module milca_symbolic_physics

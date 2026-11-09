@@ -16,12 +16,12 @@ program test_quantum_classical
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use kin6d_nbody, only: nbody_force
     use kin6d_coulomb_leaves, only: ewald_background
-    use kin6d_classical_cell
+    use milca_classical_cell
     use kin6d_quantum_pair_cell
     use kin6d_quantum_classical_leaves
     use kin6d_jellium_cell
     use kin6d_quantum_classical_map
-    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, &
+    use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, &
         mc_energy
     use kin6d_quantum_fock, only: fock_matvec, fock_hamiltonian_t
     use kin6d_quantum_fock_leaves, only: qf_kinetic

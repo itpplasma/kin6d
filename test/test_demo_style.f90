@@ -1,7 +1,7 @@
 !> Title numbers: hand-written expected strings are the oracle.
 program test_demo_style
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_demo_style, only: num
+    use milca_demo_style, only: num
     implicit none
     integer :: failures = 0
     call check(num(2.0e-323_dp), '0')

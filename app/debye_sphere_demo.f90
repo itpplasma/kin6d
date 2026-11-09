@@ -1,19 +1,19 @@
 program debye_sphere_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, rad
-    use kin6d_debye_sphere_reference, only: debye_sphere_values, debye_sphere_bands
+    use milca_debye_sphere_reference, only: debye_sphere_values, debye_sphere_bands
     use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_bare_inside, sphere_bare_outside, sphere_coordinate, sphere_parameter, &
         sphere_response, sphere_response_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, &
         plot, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
         tight_layout, savefig, pcolormesh, colorbar, suptitle, set_yscale
-    use kin6d_demo_style, only: blue, vermillion, green, black, grey, hold_frames, num
+    use milca_demo_style, only: blue, vermillion, green, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     integer, parameter :: fps = 24

@@ -1,7 +1,7 @@
 program gen_quantum_correlations
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
         operator(*), operator(/), abs
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: xr, xi, yr, yi, zr, zi, wr, wi, gr, gi, value, other

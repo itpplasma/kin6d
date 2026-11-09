@@ -2,7 +2,7 @@
 ! FortSym revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Canonical isotropic thawed Gaussians (TDVP/WPMD) in the x-z plane:
 ! state (q, p, s, ps), s = variance of |psi|^2 per axis, ps = 3 hbar beta.
-! Gaussian-averaged Coulomb from gen/kin6d_symbolic_physics.f90.
+! Gaussian-averaged Coulomb from gen/milca_symbolic_physics.f90.
 ! kappa: optional isotropic harmonic test potential kappa r^2/2.
 ! JVP/VJP use Euclidean pairings of the listed real arguments.
 module kin6d_packet_models_leaves

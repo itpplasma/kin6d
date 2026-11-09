@@ -1,7 +1,7 @@
 program gen_islands
     use fortsym_expr, only: expr_t, sym, sqrt, atan2, log, operator(+), &
                             operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: a, b, c, d, x, y, z, lx, ly, lz, r3

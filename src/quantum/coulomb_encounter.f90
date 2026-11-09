@@ -785,7 +785,7 @@ contains
         use kin6d_interaction_laboratory, only: interaction_state_t, init_interaction, &
             step_interaction, sample_interaction
         use kin6d_interaction_leaves, only: interaction_energy
-        use kin6d_species, only: units_t, species_t
+        use milca_species, only: units_t, species_t
         type(encounter_t), intent(in) :: enc
         integer, intent(in) :: nsample
         integer(i64), intent(in) :: seed

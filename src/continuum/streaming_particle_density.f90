@@ -1,9 +1,9 @@
-module kin6d_streaming_particle_density
+module milca_streaming_particle_density
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, rad, hull, &
                                 linear_interpolation_remainder
-    use kin6d_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
+    use milca_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
                       streaming_shape, get_streaming_initial, get_streaming_particles, &
                              streaming_particle_info, streaming_particles_source_matches
     use kin6d_streaming_leaves, only: streaming_characteristic, &
@@ -389,4 +389,4 @@ subroutine particle_density_coefficients(initial,particles,t,certificate,cosine,
 
  ok = ieee_is_finite(value%lo) .and. ieee_is_finite(value%hi) .and. value%lo <= value%hi
     end function
-end module kin6d_streaming_particle_density
+end module milca_streaming_particle_density

@@ -1,4 +1,4 @@
-module kin6d_ideal_gll_spike
+module milca_ideal_gll_spike
     ! Opt-in composition of FortFEM tensor operations and KIN6D physics leaves.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite

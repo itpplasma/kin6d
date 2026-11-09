@@ -2,7 +2,7 @@ program test_streaming_moments
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval
-    use kin6d_streaming_moments, only: streaming_moments_t, &
+    use milca_streaming_moments, only: streaming_moments_t, &
         initialize_streaming_moments, advance_streaming_moments, &
         sample_streaming_moments, sample_streaming_moments_box
     use kin6d_streaming_moments_leaves, only: streaming_moments_current_cell, &

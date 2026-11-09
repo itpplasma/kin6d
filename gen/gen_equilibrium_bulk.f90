@@ -2,7 +2,7 @@ program gen_equilibrium_bulk
     ! D7 volume moments and the perimeter-current convention for beta_p, li.
     use fortsym_expr, only: expr_t, sym, pi_expr, operator(+), operator(*), &
         operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: r, gr, gz, p, volume, pint, bint, current, length, mu0, bp

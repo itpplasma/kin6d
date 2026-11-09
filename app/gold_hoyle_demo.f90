@@ -1,7 +1,7 @@
 program gold_hoyle_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov_leaves, only: gs_gold_hoyle
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     type(run_t) :: run
     type(result_file_t) :: result

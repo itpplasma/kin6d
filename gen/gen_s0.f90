@@ -9,7 +9,7 @@ program gen_s0
     use fortsym_kernel, only: kernel_spec_t, emit_kernel, &
         PRECISION_REAL32, PRECISION_REAL64
     use fortsym_string, only: str, chars
-    use kin6d_gen_support, only: fortsym_revision
+    use milca_gen_support, only: fortsym_revision
     implicit none
     type(native_engine_t) :: engine
     type(engine_result_t) :: check

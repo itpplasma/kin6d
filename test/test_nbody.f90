@@ -5,7 +5,7 @@ program test_nbody
     ! finite-difference derivative checks.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_species, only: units_t, species_t, atomic_units, periodic_pair_units, &
+    use milca_species, only: units_t, species_t, atomic_units, periodic_pair_units, &
         electron, pair_scales, pair_scales_t, plasma_scales, plasma_scales_t, &
         sommerfeld_parameter, pair_coupling
     use kin6d_coulomb_leaves, only: coulomb_partial_wave, coulomb_pair, &

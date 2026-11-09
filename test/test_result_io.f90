@@ -7,7 +7,7 @@
 program test_result_io
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortio, only: fortio_file_t, fortio_status_t, hdf5_attribute_t
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp) :: scale = 1.5_dp
     integer :: count = 3

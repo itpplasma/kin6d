@@ -35,7 +35,7 @@ module kin6d_hybrid_encounter
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform, rng_normal
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_species, only: units_t, species_t, pair_scales_t, pair_scales
+    use milca_species, only: units_t, species_t, pair_scales_t, pair_scales
     use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
                            nbody_step, nbody_encounter_step
     use kin6d_quantum_collision_kernel, only: quantum_cut_log, classical_cut_log

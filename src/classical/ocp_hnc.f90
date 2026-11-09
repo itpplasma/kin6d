@@ -14,7 +14,7 @@
 !> are a DST-I evaluated by one FortNum complex FFT of length 2m on the odd
 !> extension. Iteration: damped Picard on gamma_s with step halving when
 !> the update norm grows; converged when max |update| <= tolerance.
-module kin6d_ocp_hnc
+module milca_ocp_hnc
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     use kin6d_correlation_hierarchy_leaves, only: ch_hnc_closure, &
@@ -102,4 +102,4 @@ contains
         call ch_excess_energy_density(h%r, gamma, h%g - 1, density, e)
         h%energy = sum(e)*dr
     end subroutine
-end module kin6d_ocp_hnc
+end module milca_ocp_hnc

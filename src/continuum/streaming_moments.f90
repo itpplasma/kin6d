@@ -1,8 +1,8 @@
-module kin6d_streaming_moments
+module milca_streaming_moments
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull
-    use kin6d_streaming_comparison, only: streaming_state_t, init_streaming, &
+    use milca_streaming_comparison, only: streaming_state_t, init_streaming, &
         advance_streaming, density_coefficients_streaming, streaming_radius, &
         evaluate_streaming
     use kin6d_streaming_leaves, only: streaming_rotation, streaming_rotation_interval, &
@@ -204,4 +204,4 @@ contains
         ok = ieee_is_finite(value%lo) .and. ieee_is_finite(value%hi) .and. &
             value%lo <= value%hi
     end function
-end module kin6d_streaming_moments
+end module milca_streaming_moments

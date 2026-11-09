@@ -28,7 +28,7 @@ module kin6d_grad_shafranov
    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
        curve_value, boundary_curve, triangle_shapes, triangle_locate
    use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
-    use kin6d_real_identity, only: same_real_value
+   use milca_real_identity, only: same_real_value
    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
       GS_SCREW, GS_UNSUPPORTED_SYMMETRY, gs_reduced_field
    use kin6d_gs_symmetry_leaves, only: gs_screw_bilinear, &

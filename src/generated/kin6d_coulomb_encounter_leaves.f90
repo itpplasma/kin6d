@@ -2,8 +2,8 @@
 ! FortSym revision: b9ea95c5a0475b016b1e149875a9bec9d8562533
 ! Two-body relative motion, reduced mass mu, bare Coulomb g/r.
 ! Partial waves u_l(r)/r Y_lm; no softening or screening.
-! Physics from gen/kin6d_symbolic_physics.f90; reduced mass, Bohr
-! radius and Sommerfeld eta come from kin6d_species.
+! Physics from gen/milca_symbolic_physics.f90; reduced mass, Bohr
+! radius and Sommerfeld eta come from milca_species.
 ! JVP/VJP use Euclidean pairings of the listed real arguments.
 module kin6d_coulomb_encounter_leaves
 implicit none

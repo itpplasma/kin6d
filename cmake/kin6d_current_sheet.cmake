@@ -3,7 +3,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_current_sheet_leaves.f90
     src/mhd/current_sheet_oracles.f90 src/mhd/sheet_slab_map.f90)
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_current_sheet gen/gen_current_sheet.f90)
-    target_link_libraries(gen_current_sheet PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_current_sheet PRIVATE milca_gen_support)
     add_test(NAME current_sheet_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_current_sheet>
         -DFAMILY=current_sheet

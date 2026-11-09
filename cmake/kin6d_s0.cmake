@@ -40,9 +40,9 @@ target_link_libraries(test_s0_tae PRIVATE kin6d_mhd)
 add_test(NAME s0_toroidal_continuum_gap COMMAND test_s0_tae)
 set_tests_properties(s0_toroidal_continuum_gap PROPERTIES TIMEOUT 60 PROCESSORS 2
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
-if(TARGET kin6d_gen_support)
+if(TARGET milca_gen_support)
     add_executable(gen_s0_gs_space gen/gen_s0_gs_space.f90)
-    target_link_libraries(gen_s0_gs_space PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_s0_gs_space PRIVATE milca_gen_support)
     add_test(NAME s0_gs_space_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_s0_gs_space>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_s0_gs_space_leaves.f90
@@ -51,7 +51,7 @@ if(TARGET kin6d_gen_support)
     set_tests_properties(s0_gs_space_regeneration PROPERTIES TIMEOUT 10
         LABELS "stability;s0")
     add_executable(gen_s0 gen/gen_s0.f90)
-    target_link_libraries(gen_s0 PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_s0 PRIVATE milca_gen_support)
     add_test(NAME s0_exact_identities_and_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_s0>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_s0_leaves.f90

@@ -1,7 +1,7 @@
 program gen_ntv_boozer
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
         operator(*), operator(/)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: bmod, bmod_t, bmod_s, bref, iota, iota_s, g, i, g_s, i_s, psi_s

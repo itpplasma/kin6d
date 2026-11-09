@@ -30,18 +30,18 @@ program test_ideal_fb_circuits
     !                the vacuum traces and of the F_vac-free residual part,
     !                Ampere oracle for F_vac of the toroidal-field circuit.
     !   exterior3d   the same JVP/VJP checks with a frozen full-surface R2
-    !                exterior attached (kin6d_equilibrium_boundary_3d form).
+    !                exterior attached (milca_equilibrium_boundary_3d form).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
     use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents, &
         ideal_fb_currents_jvp, ideal_fb_currents_vjp
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     use ideal_fb_circuits_test_field, only: elliptic_field_t
     implicit none

@@ -3,8 +3,8 @@ program gen_wigner
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     use fortsym_string, only: str
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: modal_poisson, phase_rotation
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: modal_poisson, phase_rotation
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: hbar, k, eta, nr, ni, dt, s, vr, vi, n, fr, fi, phase

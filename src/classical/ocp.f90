@@ -4,20 +4,20 @@
 !> Plasma units of the responsive species (electrons only): k_B T = m = 1,
 !> lambda_D = 1, omega_p = 1, so n = Lambda = n lambda_D^3 and the Coulomb
 !> constant is 1/(4 pi Lambda). The values are checked against the shared
-!> kin6d_species scales (one definition). Optional fixed repulsive impurity of
+!> milca_species scales (one definition). Optional fixed repulsive impurity of
 !> charge Q (electron charge -1, same sign) at the origin, compensated in the
 !> background; kappa = |Q|/(4 pi Lambda) = r_nl/lambda_D is its nonlinear
 !> radius |qQ|/(4 pi eps0 k_B T) in Debye lengths. Interactions: the shared
 !> N-body system with the particle-mesh Ewald action (kin6d_pme) and the
 !> encounter-resolved near/far step (kin6d_near_encounter). No softening,
 !> screened potential or collision operator is imposed.
-module kin6d_ocp
+module milca_ocp
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK, FORTNUM_DOMAIN_ERROR, &
                               status_set
     use fortnum_rng, only: rng_t, rng_seed, rng_uniform, rng_normal, rng_split
-    use kin6d_species, only: units_t, species_t, reduced_units, electron, &
+    use milca_species, only: units_t, species_t, reduced_units, electron, &
         plasma_scales, plasma_scales_t, electron_mass_si, elementary_charge_si
     use kin6d_pme, only: pme_parameters_t, pme_select
     use kin6d_ocp_leaves, only: debye_image, debye_zero_mode, debye_shell_bound
@@ -305,4 +305,4 @@ contains
         end do
         g = g/directions
     end function
-end module kin6d_ocp
+end module milca_ocp

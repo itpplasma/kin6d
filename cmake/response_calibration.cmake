@@ -11,7 +11,7 @@ set_tests_properties(response_unit_sheet_spot_cylinder PROPERTIES TIMEOUT 600
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_response_calibration gen/gen_response_calibration.f90)
-    target_link_libraries(gen_response_calibration PRIVATE kin6d_gen_support)
+    target_link_libraries(gen_response_calibration PRIVATE milca_gen_support)
 endif()
 target_sources(kin6d_mhd PRIVATE src/mhd/response_qualification.f90)
 add_executable(test_response_qualification test/test_response_qualification.f90)

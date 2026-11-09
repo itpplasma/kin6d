@@ -1,6 +1,6 @@
 module nn_vacuum_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
+    use milca_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
         coil_set_modes, coil_mu0
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
                                            nn_build, nn_solve, nn_vacuum_mode

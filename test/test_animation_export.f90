@@ -5,8 +5,8 @@
 program test_animation_export
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32, &
         int8, int16
-    use kin6d_result_io, only: run_t
-    use kin6d_animation_export, only: animation_export_t
+    use milca_result_io, only: run_t
+    use milca_animation_export, only: animation_export_t
     implicit none
     character(len=*), parameter :: root = 'output/test_animation_export'
     type(run_t) :: run

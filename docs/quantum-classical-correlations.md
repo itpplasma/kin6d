@@ -9,7 +9,7 @@ How large are diffraction, exchange and degeneracy effects on pair and
 three-body correlations, measured against the classical parent with the
 same N, periodic cube, uniform neutralizing background, density and
 temperature? Electrons only, atomic units, `r_s`, `Theta = kT/E_F` and
-`Gamma = g/(a kT)` from `kin6d_species` (`a = r_s`). On the grid
+`Gamma = g/(a kT)` from `milca_species` (`a = r_s`). On the grid
 `Gamma = r_s/(1.8416 Theta)` and the thermal wavelength
 `lambda_T = (2 pi hbar^2/(m kT))^(1/2)` gives `lambda_T/a = 1.847 Theta^(-1/2)`,
 a function of `Theta` alone.
@@ -32,7 +32,7 @@ a function of `Theta` alone.
     Kelbg+Pauli laws are a declared short-range addition
     (`src/pairs/pair_law.f90`) on top of the one Ewald Coulomb energy.
     Intervals are batch-means statistical errors (40 batches,
-    `kin6d_series_statistics`). They are labelled statistical, never
+    `milca_series_statistics`). They are labelled statistical, never
     certified. The N = 2 quadrature uses the independent two-body
     `kin6d_nbody` pair potential and is the sampler's oracle.
 - Exact quantum N = 2 (`src/quantum/quantum_pair_cell.f90`): the centre of mass and

@@ -3,13 +3,13 @@ program gen_ocp
     ! cardinal B-spline assignment weights of the particle-mesh Ewald action,
     ! the alias terms of its influence function, the periodic screened-Poisson
     ! (Debye) Green function and the weak-coupling oracles. Physics formulas
-    ! come from gen/kin6d_symbolic_physics.f90.
+    ! come from gen/milca_symbolic_physics.f90.
     use, intrinsic :: iso_fortran_env, only: int64
     use fortsym_expr, only: expr_t, sym, rat, exp, sqrt, sin, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: ewald_real_potential, ewald_real_force, &
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: ewald_real_potential, ewald_real_force, &
         ewald_reciprocal_weight, yukawa_potential, &
         yukawa_zero_mode, debye_structure_factor, bohm_gross_frequency
     implicit none

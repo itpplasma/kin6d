@@ -1,9 +1,9 @@
 program test_error_modes
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
     use kin6d_quantum_evolution
-    use kin6d_slab_oscillation, only: slab_oscillation_state_t, &
+    use milca_slab_oscillation, only: slab_oscillation_state_t, &
         initialize_slab_oscillation, slab_oscillation_indicator
-    use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, fp_indicator
+    use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, fp_indicator
     use fortnum_rng, only: rng_t, rng_seed
     use fortnum_status, only: fortnum_status_t
     use kin6d_quantum_evolution_leaves, only: qe_action_allowance, &

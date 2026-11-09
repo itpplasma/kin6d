@@ -7,7 +7,7 @@ module kin6d_screening_hierarchy
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_species, only: units_t, species_t, plasma_scales_t, plasma_scales, &
+    use milca_species, only: units_t, species_t, plasma_scales_t, plasma_scales, &
         pair_coupling
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si

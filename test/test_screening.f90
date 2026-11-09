@@ -4,7 +4,7 @@
 program test_screening
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre_ab
-    use kin6d_species, only: atomic_units, electron
+    use milca_species, only: atomic_units, electron
     use kin6d_screening_hierarchy
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)

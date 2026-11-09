@@ -51,7 +51,7 @@ end module
 program test_geqdsk_adapter
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use geqdsk_analytic_oracle, only: oracle_t, r0, minor, f0, c, pi, mu0, q_oracle
-    use kin6d_geqdsk_adapter, only: geqdsk_data_t, geqdsk_import_t, export_geqdsk, &
+    use milca_geqdsk_adapter, only: geqdsk_data_t, geqdsk_import_t, export_geqdsk, &
                                 import_geqdsk, geqdsk_grid, resolve_geqdsk, native_cocos
     use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, EQ_PSI, EQ_BZ
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs

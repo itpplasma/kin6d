@@ -278,7 +278,7 @@ new boundary until the chain is within `refit_tolerance` h (the model is rebuilt
 every mesh). `tie_a(k) = tie_b(k)` ties two circuit currents to be equal.
 
 Outputs, in the working directory: `output/gs_free.nc` (NetCDF with the provenance
-attributes of `kin6d_result_io`: command line, literal and resolved namelist,
+attributes of `milca_result_io`: command line, literal and resolved namelist,
 commit, build, plus `lcfs_mode`, `fit`, coil and profile file names, thread count);
 `mesh.dat` (native mesh, flux measured from psi_b), `profile-law.dat` (executed
 law, axis = psi_a - psi_b), `summary.dat`. NetCDF variables:

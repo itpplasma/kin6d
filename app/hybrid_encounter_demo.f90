@@ -14,10 +14,10 @@ program hybrid_encounter_demo
         savefig, fill_between, set_xscale, set_yscale
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
-    use kin6d_species, only: atomic_units, electron
+    use milca_species, only: atomic_units, electron
     use kin6d_quantum_collision_kernel
     use kin6d_hybrid_encounter, single_encounter => hybrid_encounter
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: blue(3) = [0.000_dp, 0.447_dp, 0.698_dp]

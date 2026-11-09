@@ -4,7 +4,7 @@ target_sources(kin6d_equilibrium PRIVATE
 if(KIN6D_FORTSYM_BUILD)
     foreach(family cerfon_freidberg equilibrium_bulk)
         add_executable(gen_${family} gen/gen_${family}.f90)
-        target_link_libraries(gen_${family} PRIVATE kin6d_gen_support)
+        target_link_libraries(gen_${family} PRIVATE milca_gen_support)
         add_test(NAME equilibrium_${family}_regeneration COMMAND ${CMAKE_COMMAND}
             -DGENERATOR=$<TARGET_FILE:gen_${family}>
             -DFAMILY=${family}

@@ -3,7 +3,7 @@ program gen_gs_error
     !! Domains: positive R and box widths; alpha > 0 for goal division.
     !! Geometry, topology, solves and status checks belong to the caller.
     use fortsym
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     implicit none
     type(leaf_writer_t) :: writer

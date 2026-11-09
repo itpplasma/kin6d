@@ -13,8 +13,8 @@ program gen_current_sheet
     use fortsym_expr, only: expr_t, sym, sinh, cosh, sin, cos, operator(+), operator(-), &
         operator(*), operator(/)
     use fortsym_diff, only: diff
-    use kin6d_symbolic_ideal, only: frozen_energy
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_ideal, only: frozen_energy
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: t, k, a, psi0, psia, psi, b0, dp, dm, wp, wm

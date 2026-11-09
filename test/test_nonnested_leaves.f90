@@ -8,7 +8,7 @@ program test_nonnested_leaves
         coupled_current_vjp, anisotropic_flux, island_defect_density, &
         island_defect_density_jvp, island_defect_density_vjp, island_defect_norm, &
         island_defect_norm_jvp, island_defect_norm_vjp
-    use kin6d_coils_3d, only: segment_b, coil_mu0
+    use milca_coils_3d, only: segment_b, coil_mu0
     implicit none
     real(dp) :: x(6), dx(6), g(6), w(9), y(9), yp(9), ym(9), dy(9), c(5)
     real(dp) :: err, dot_error, h, a(3), l(3), p(3), pp(3), ap(3), am(3)

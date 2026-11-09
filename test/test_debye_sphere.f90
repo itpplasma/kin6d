@@ -2,7 +2,7 @@ program test_debye_sphere
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_interval, only: interval_t, interval
-    use kin6d_debye_sphere_reference, only: debye_sphere_values, &
+    use milca_debye_sphere_reference, only: debye_sphere_values, &
         debye_sphere_enclosure, debye_sphere_bands
     use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_inside_jvp, sphere_inside_vjp, sphere_outside_jvp, &

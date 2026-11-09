@@ -50,7 +50,7 @@ program gs_response_3d
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_coils_3d
+    use milca_coils_3d
     use kin6d_vacuum_surfaces
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
         ring_labels_smooth

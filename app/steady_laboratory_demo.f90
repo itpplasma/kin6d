@@ -1,6 +1,6 @@
 program steady_laboratory_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
+    use milca_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
         fp_certificate_radius, fp_certificate_accepts, fp_mass_interval, &
         fp_normalization_interval
     use kin6d_fp_leaves, only: fp_band, fp_reference, fp_mass_error_band
@@ -14,9 +14,9 @@ program steady_laboratory_demo
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, legend, savefig, tight_layout, xlim, ylim, suptitle, set_yscale, &
         set_xscale
-    use kin6d_demo_style, only: blue, vermillion, black, grey
+    use milca_demo_style, only: blue, vermillion, black, grey
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     type(fp_state_t) :: fp, coarse
     type(coupled_steady_t) :: coupled, krook, homogeneous

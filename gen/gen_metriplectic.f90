@@ -5,7 +5,7 @@ program gen_metriplectic
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), operator(*), &
         operator(/)
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: j(3), b(3), v(3), a(3), d(3), c(3), h(3, 3)

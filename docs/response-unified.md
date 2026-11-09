@@ -53,7 +53,7 @@ freezes the flux into the electron fluid (Omega_e). v1 = -i w xi -
 Omega' (xi.grad psi) R^2 grad phi; for the static drive w = -n Omega the
 Coriolis and centrifugal terms are of the order of rho w^2 and are kept with
 it; the s_2f row needs the ion gyroviscous stress in (R2) [K]. Signs follow
-the per-n convention of `kin6d_coils_3d`. Derived in
+the per-n convention of `milca_coils_3d`. Derived in
 [response-r2-r4.md](../theory/derivations/response-r2-r4.md) (T8), with
 `test/check_response_r2_r4.py`; open points listed there.
 

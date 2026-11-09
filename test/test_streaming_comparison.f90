@@ -2,7 +2,7 @@ program test_streaming_comparison
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_finite
     use fortnum_interval, only: interval_t, interval
-    use kin6d_streaming_comparison, only: &
+    use milca_streaming_comparison, only: &
         streaming_state_t, init_streaming, advance_streaming, evaluate_streaming, &
         evaluate_streaming_interval, evaluate_streaming_candidate_interval, &
         streaming_radius, streaming_particles_t, &

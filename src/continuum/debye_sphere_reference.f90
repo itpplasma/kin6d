@@ -1,4 +1,4 @@
-module kin6d_debye_sphere_reference
+module milca_debye_sphere_reference
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval, hull, is_empty, iadd, &
@@ -160,4 +160,4 @@ contains
         type(interval_t) :: w
         w = iadd(value, interval(-radius, radius))
     end function
-end module kin6d_debye_sphere_reference
+end module milca_debye_sphere_reference

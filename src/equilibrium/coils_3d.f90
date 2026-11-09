@@ -1,4 +1,4 @@
-module kin6d_coils_3d
+module milca_coils_3d
     !! K-C1: closed 3D polyline coils, closed-form straight-segment Biot-Savart
     !! field, and projection of the field onto toroidal Fourier modes in the
     !! meridional plane.

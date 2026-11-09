@@ -24,7 +24,7 @@
 !!
 !! Tangents with respect to the species temperatures and densities
 !! (collop_build_jvp) come from the leaf JVPs at fixed normalised grid.
-module kin6d_dk_collop
+module milca_dk_collop
     use, intrinsic :: iso_fortran_env, only: dp => real64, real128
     use fortnum_quadrature, only: gauss_legendre, gauss_lobatto_legendre
     use fortnum_polynomial, only: lagrange_weights, lagrange_differentiation_matrix
@@ -689,4 +689,4 @@ contains
         end do
     end subroutine panel_rule
 
-end module kin6d_dk_collop
+end module milca_dk_collop

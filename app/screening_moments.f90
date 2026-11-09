@@ -1,12 +1,12 @@
 program screening_moments_main
     ! Thermal-force benchmarks B05-B07 from the first-order spatial-moment equations
-    ! (kin6d_screening_moments). Two resolutions (cells, oracle panels and window
+    ! (milca_screening_moments). Two resolutions (cells, oracle panels and window
     ! steps all doubled) give the error estimate |coarse - fine|.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_screening_moments, only: scr_t, scr_setup, scr_steady, scr_rate0, scr_transient
-    use kin6d_fp_relaxation, only: fp_relax_cells
-    use kin6d_rosenbluth_reference, only: homma_pair_t, homma_closure
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_screening_moments, only: scr_t, scr_setup, scr_steady, scr_rate0, scr_transient
+    use milca_fp_relaxation, only: fp_relax_cells
+    use milca_rosenbluth_reference, only: homma_pair_t, homma_closure
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     implicit none
     real(dp), parameter :: amu = 1.66053906660e-27_dp, e_charge = 1.602176634e-19_dp
     real(dp), parameter :: mp = 1.67262192369e-27_dp

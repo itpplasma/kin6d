@@ -11,7 +11,7 @@ program packet_models_demo
     use kin6d_coulomb_encounter
     use kin6d_packet_models
     use kin6d_coulomb_encounter_leaves, only: ce_observable_radius
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, title, &
         xlabel, ylabel, xlim, ylim, legend, savefig, pcolormesh, tight_layout, &
         set_xscale, set_yscale, suptitle, colorbar

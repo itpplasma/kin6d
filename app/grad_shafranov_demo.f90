@@ -10,7 +10,7 @@ program grad_shafranov_demo
    use kin6d_gs_certificate, only: gs_fixed_certifier_t
    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
       claim_name
-   use kin6d_result_io, only: run_t, result_file_t
+   use milca_result_io, only: run_t, result_file_t
    use kin6d_grad_shafranov_leaves, only: gs_field
    use fortplot_system_runtime, only: create_directory_runtime
    implicit none

@@ -3,7 +3,7 @@ program gs_response_calibration
     !! does not solve a pressure-retaining coupled plasma response.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read, flux_ray_point, &
         surface_t, surface_build, find_surface_q, profiles_of_psin, angle_hamada
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge

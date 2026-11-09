@@ -11,8 +11,8 @@
 !> (statistical intervals), pair and connected three-body Fourier moments.
 program correlation_map_quantum_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_classical_cell
+    use milca_result_io, only: run_t, result_file_t
+    use milca_classical_cell
     use kin6d_quantum_pair_cell
     use kin6d_quantum_classical_map
     use kin6d_jellium_cell
@@ -20,7 +20,7 @@ program correlation_map_quantum_demo
     use fortplot, only: figure, subplot, plot, title, suptitle, xlabel, ylabel, &
         xlim, ylim, legend, tight_layout, savefig, pcolormesh, colorbar, xscale, &
         yscale
-    use kin6d_demo_style, only: blue, vermillion, green, orange, purple, sky, &
+    use milca_demo_style, only: blue, vermillion, green, orange, purple, sky, &
         black, grey, num
     implicit none
     integer, parameter :: max_rs = 8, max_theta = 8, max_bins = 32

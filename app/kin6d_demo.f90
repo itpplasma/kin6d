@@ -1,7 +1,7 @@
-module kin6d_demo_application
+module milca_demo_application
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_nan
-    use kin6d_laboratory, only: laboratory_t, initialize, advance, sample, &
+    use milca_laboratory, only: laboratory_t, initialize, advance, sample, &
                                 solve_steady, certificate_radius, certificate_accepts
     use kin6d_leaves, only: coordinate, reconstruct, interpolate, &
                             characteristic_reference, interval_reconstruct, &
@@ -10,10 +10,10 @@ module kin6d_demo_application
     use fortplot, only: figure_t, figure, get_global_figure, subplot, title, &
                    xlabel, ylabel, xlim, ylim, pcolormesh, plot, fill_between, legend, &
                         savefig, tight_layout, colorbar, suptitle, set_yscale
-    use kin6d_demo_style, only: blue, vermillion, black, grey, movie_fps, hold_frames, num
+    use milca_demo_style, only: blue, vermillion, black, grey, movie_fps, hold_frames, num
     use fortplot_animation, only: animation_t, FuncAnimation, save_animation
     use fortplot_system_runtime, only: create_directory_runtime
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: nx = 192
     ! 193 frames of dt = 5/128 span t = 0..7.5 in 8 s at 24 fps.
@@ -250,7 +250,7 @@ contains
 end module
 
 program kin6d_demo
-    use kin6d_demo_application, only: run_demo
+    use milca_demo_application, only: run_demo
     implicit none
     call run_demo()
 end program

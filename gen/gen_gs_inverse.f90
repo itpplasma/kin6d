@@ -2,7 +2,7 @@ program gen_gs_inverse
     use fortsym_expr, only: expr_t, sym, sqrt, log, atan2, operator(+), operator(-), &
         operator(*), operator(/)
     use fortsym_diff, only: diff
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: radius, r, radial_gradient, q, two_pi, coarea

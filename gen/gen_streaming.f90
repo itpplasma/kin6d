@@ -1,8 +1,8 @@
 program gen_streaming
     use fortsym_expr, only: expr_t, sym, pi_expr, func, abs, sin, cos, &
         operator(+), operator(-), operator(*), operator(/), operator(**)
-    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: free_streaming_rotation, p1_interpolate
+    use milca_gen_support, only: leaf_writer_t, fortsym_revision
+    use milca_symbolic_physics, only: free_streaming_rotation, p1_interpolate
     implicit none
     type(leaf_writer_t) :: w
     type(expr_t) :: t, v, k, a0, b0, phase, x, x0, acc, a, b

@@ -1,6 +1,6 @@
 !> Figures and movie of the Q7 Wigner demo (presentation only; every plotted
 !> number is also written to output/wigner_demo.nc and the CSV files).
-module kin6d_wigner_plots
+module milca_wigner_plots
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortplot, only: figure, subplot, plot, title, suptitle, xlabel, ylabel, &
         xlim, ylim, legend, tight_layout, savefig, pcolormesh, colorbar, &
@@ -175,7 +175,7 @@ contains
             'phase-space vortex; quantum $f_W$ turns negative where the beams overlap')
         call tight_layout()
     end subroutine
-end module kin6d_wigner_plots
+end module milca_wigner_plots
 
 !> Q7 part 2 demo: 1X1V Wigner-Poisson vs Vlasov-Poisson on one grid.
 !> Quantum Langmuir (Bohm-Gross) dispersion, quantum two-stream growth,
@@ -183,11 +183,11 @@ end module kin6d_wigner_plots
 !> figures and the f_W | f_V movie. Units: omega_p, v_ref, m = 1.
 program wigner_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_wigner_poisson
-    use kin6d_wigner_dispersion, only: beam_t, dispersion_root
+    use milca_wigner_poisson
+    use milca_wigner_dispersion, only: beam_t, dispersion_root
     use kin6d_wigner_leaves, only: wigner_bohm_gross, wigner_cold_two_stream
-    use kin6d_wigner_plots, only: plot_summary, plot_movie
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_wigner_plots, only: plot_summary, plot_movie
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: nlk = 6, nts = 15, nh = 3, nhb = 5, frames = 288

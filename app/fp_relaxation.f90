@@ -2,9 +2,9 @@ program fp_relaxation_main
     ! B04 homogeneous relaxation of the drifting W3+ test population. Two
     ! resolutions (cells and time step both doubled) give the error estimate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_fp_relaxation, only: fp_relax_t, fp_relax_setup, fp_relax_initial, &
+    use milca_fp_relaxation, only: fp_relax_t, fp_relax_setup, fp_relax_initial, &
         fp_relax_run, fp_relax_cells, fp_relax_nmom
-    use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use milca_result_io, only: run_t, result_file_t, runtime_git
     implicit none
     integer, parameter :: ntimes = 12
     real(dp), parameter :: amu = 1.66053906660e-27_dp, e_charge = 1.602176634e-19_dp

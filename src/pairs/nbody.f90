@@ -27,7 +27,7 @@ module kin6d_nbody
     use kin6d_near_encounter, only: near_t, near_setup, near_flow
     use kin6d_pme, only: pme_parameters_t, pme_t, pme_setup, pme_force, &
                          pme_force_jvp, pme_constant
-    use kin6d_species, only: units_t, species_t
+    use milca_species, only: units_t, species_t
     implicit none
     private
     public :: nbody_system_t, nbody_isolated, nbody_periodic, nbody_add_source

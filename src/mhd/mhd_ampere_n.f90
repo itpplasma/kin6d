@@ -32,7 +32,7 @@ module kin6d_mhd_ampere_n
     !!
     !! Units.  SI; A in T m, B in T, J in A/m^2.  Inner products carry the
     !! measure R dR dZ (the 2 pi of the phi integral is dropped throughout).
-    !! Complex amplitudes follow kin6d_coils_3d: a field X(R, Z) e^{i n phi}
+    !! Complex amplitudes follow milca_coils_3d: a field X(R, Z) e^{i n phi}
     !! stands for the physical field X e^{i n phi} + c.c.
     !!
     !! Coupled error (ampere_n_coupled_error).  The equilibrated bound of

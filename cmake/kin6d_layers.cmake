@@ -205,7 +205,7 @@ function(kin6d_layers_finalize)
                 continue()
             endif()
             if(target STREQUAL "kin6d_io" OR "${sources}" MATCHES "(^|;)app/"
-                    OR "${libraries}" MATCHES "(^|;)(fortplot|kin6d_io|kin6d_demo_style)(;|$)")
+                    OR "${libraries}" MATCHES "(^|;)(fortplot|kin6d_io|milca_demo_style)(;|$)")
                 set_property(TARGET ${target} PROPERTY EXCLUDE_FROM_ALL TRUE)
             endif()
         endforeach()

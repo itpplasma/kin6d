@@ -11,11 +11,11 @@
 !>   physical parameters with units, and one entry per array (file, dtype,
 !>   shape, order, units, description, decode rule for quantized arrays).
 !> No timestamp is written, so equal inputs give byte-identical exports.
-module kin6d_animation_export
+module milca_animation_export
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32, &
         int8, int16, int32, compiler_version
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_result_io, only: run_t, runtime_git
+    use milca_result_io, only: run_t, runtime_git
     implicit none
     private
     include 'kin6d_build_info.inc'
@@ -229,4 +229,4 @@ contains
         end do
         text = text//']'
     end function
-end module kin6d_animation_export
+end module milca_animation_export

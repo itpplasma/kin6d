@@ -12,7 +12,7 @@ neutralizing background and the bare Coulomb interaction in a periodic cube
 with tin-foil Ewald sums. Units are Wigner-Seitz: `a = 1`,
 `e^2/(4 pi eps0) = 1`, `n = 3/(4 pi)`, `L = (4 pi N/3)^(1/3)` and
 `beta = Gamma`, so `beta v(r) = Gamma/r`. Gamma and the Debye wavenumber
-`kappa a = sqrt(3 Gamma)` come from the shared `kin6d_species` scales and the
+`kappa a = sqrt(3 Gamma)` come from the shared `milca_species` scales and the
 generated `ch_debye_wavenumber` leaf. Couplings are
 Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 
@@ -41,7 +41,7 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 - Finite size: N = 1000 and N = 500 at every Gamma, plus a linear 1/N
   extrapolation of `u`.
 - Independent method: molecular dynamics at Gamma = 1, N = 500, from
-  `kin6d_ocp` (PME, encounter-resolved splitting) at a quarter of its
+  `milca_ocp` (PME, encounter-resolved splitting) at a quarter of its
   default step. An isokinetic thermostat acts during equilibration only;
   production is NVE.
 
@@ -245,7 +245,7 @@ JVP/VJP. No derivative of the YBG/HNC outputs is propagated yet.
   equation (the second YBG equation for g3), are not implemented.
 - The quoted c3 is a 0.2a bin average (resolution indicator above). A
   finer, statistics-limited g3 near contact needs more sampling.
-- Time-series statistics (`kin6d_series_statistics`) are generic and could
+- Time-series statistics (`milca_series_statistics`) are generic and could
   move to FortNum. `ocp_shielding_demo` and the H1b batch means use them.
 - FortSym emits `sqrt(1*3)` (an integer argument) for `sqrt(3*one)` with a
   rational one. The generator works around it with `sqrt(rat(3))`; this is a

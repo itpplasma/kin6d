@@ -5,9 +5,9 @@ program screening_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortplot, only: figure, subplot, plot, title, suptitle, xlabel, ylabel, &
         xlim, ylim, legend, tight_layout, savefig, set_xscale, set_yscale
-    use kin6d_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
+    use milca_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
     use kin6d_screening_hierarchy
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: blue(3) = [0.000_dp, 0.447_dp, 0.698_dp]

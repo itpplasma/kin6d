@@ -31,19 +31,19 @@ module kin6d_gs_coupling
     !!
     !! Core boundary layer. Gamma_c, its panels and restriction, the cached
     !! Steklov-Poincare map and the coil flux come from the D6 layer
-    !! kin6d_equilibrium_boundary (docs/equilibrium-core.md, M4); this module
+    !! milca_equilibrium_boundary (docs/equilibrium-core.md, M4); this module
     !! is its psi-lane (n = 0, kind GAMMA_C_FLUX) adapter and keeps the
     !! interior stiffness, the coupled operator and the loads.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t
     use fortnum_quadrature, only: gauss_legendre
-    use kin6d_equilibrium_boundary, only: gamma_c_t, gamma_c_chain, gamma_c_build, &
+    use milca_equilibrium_boundary, only: gamma_c_t, gamma_c_chain, gamma_c_build, &
         gamma_c_edge_weights, gamma_c_edge_point, gamma_c_quadrature, &
         gamma_c_assemble, gamma_c_steklov, gamma_c_steklov_cache_clear, &
         gamma_c_exterior, axisymmetric_coils_t, GAMMA_C_FLUX, GAMMA_C_OK
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_gs_coils, only: gs_circuit_set_t

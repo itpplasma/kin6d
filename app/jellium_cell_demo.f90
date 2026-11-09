@@ -2,7 +2,7 @@
 !> density of the parity-even N = 2 ground state after the cos(q.x) kick is
 !> delta n(x, t) = (2/V) delta<A>(t) cos(q.x); the history and band are the
 !> data written to output/jellium-mode-history.csv.
-module kin6d_jellium_movie
+module milca_jellium_movie
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, xlim, ylim, legend, tight_layout, savefig, suptitle, &
@@ -81,7 +81,7 @@ contains
         call suptitle(trim(heading))
         call tight_layout()
     end subroutine
-end module kin6d_jellium_movie
+end module milca_jellium_movie
 
 !> Q4 interacting jellium cell: finite-N electrons in a periodic cube with a
 !> neutralizing background and bare Coulomb interaction, solved in exact
@@ -93,8 +93,8 @@ program jellium_cell_demo
     use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_model_info, &
         fock_rdms
     use kin6d_jellium_cell
-    use kin6d_result_io, only: run_t, result_file_t
-    use kin6d_jellium_movie, only: plot_kick_movie
+    use milca_result_io, only: run_t, result_file_t
+    use milca_jellium_movie, only: plot_kick_movie
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, xlim, ylim, legend, tight_layout, savefig, xscale, yscale, suptitle
     implicit none

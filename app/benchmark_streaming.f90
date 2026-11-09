@@ -2,7 +2,7 @@ program benchmark_streaming_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_leaves, only: coordinate, initial_coefficients, stream_step, &
                             stream_factors, stream_cached
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer :: n = 131073, steps = 200, repeats = 5
     real(dp), allocatable :: v(:), m(:), a(:), b(:), an(:), bn(:), cv(:), sv(:)

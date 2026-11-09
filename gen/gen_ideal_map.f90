@@ -9,7 +9,7 @@ program gen_ideal_map
    !   w = |DX b|^2/(2*mu0*J) - p*J,  J = sigma*det(DX).
    use fortsym_expr, only: expr_t, sym, pi_expr, operator(+), operator(-), &
                            operator(*), operator(/), operator(**)
-   use kin6d_symbolic_ideal, only: frozen_energy
+   use milca_symbolic_ideal, only: frozen_energy
    use fortsym_diff, only: diff
    use fortsym_subs, only: subs_many
    use fortsym_products, only: jvp
@@ -21,7 +21,7 @@ program gen_ideal_map
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
    use fortsym_engine_native, only: native_engine_t, make_native_engine
    use fortsym_precision, only: PRECISION_REAL32, PRECISION_REAL64
-   use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+   use milca_gen_support, only: leaf_writer_t, fortsym_revision
    implicit none
    type(leaf_writer_t) :: w
    type(native_engine_t) :: engine

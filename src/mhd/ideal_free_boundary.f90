@@ -63,7 +63,7 @@ module kin6d_ideal_free_boundary
     use kin6d_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
         fold_barrier_hessian
     use kin6d_triangle_basis, only: triangle_basis_jet
-    use kin6d_sort_keys, only: sort_key_order
+    use milca_sort_keys, only: sort_key_order
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
@@ -81,7 +81,7 @@ module kin6d_ideal_free_boundary
         csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL, &
         FORTSPARSE_SYM_INDEFINITE, sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_energy, &
+    use milca_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_energy, &
         assignment(=)
     implicit none
     private

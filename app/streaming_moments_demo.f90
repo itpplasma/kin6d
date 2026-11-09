@@ -1,12 +1,12 @@
 program streaming_moments_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, hull
-    use kin6d_streaming_moments, only: streaming_moments_t, &
+    use milca_streaming_moments, only: streaming_moments_t, &
         initialize_streaming_moments, advance_streaming_moments, &
         sample_streaming_moments, sample_streaming_moments_box, &
         sample_streaming_moments_distribution
     use kin6d_streaming_moments_leaves, only: streaming_moments_initial
-    use kin6d_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
+    use milca_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
         init_streaming, advance_streaming, init_streaming_particles, &
         get_streaming_particles
     use kin6d_streaming_leaves, only: streaming_plot_x, streaming_velocity_coordinate, &
@@ -16,12 +16,12 @@ program streaming_moments_demo
         pcolormesh, plot, fill_between, &
         title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, colorbar, &
         suptitle
-    use kin6d_demo_style, only: blue, movie_fps, hold_frames, num
+    use milca_demo_style, only: blue, movie_fps, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_result_io, only: run_t, result_file_t
+    use milca_result_io, only: run_t, result_file_t
     implicit none
     integer :: nx = 96, nv = 64, particle_nx = 32, particle_nv = 48
     ! 193 frames span T = 0..8 in 8 s at 24 fps; a one-second hold follows.

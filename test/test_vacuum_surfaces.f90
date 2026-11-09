@@ -4,7 +4,7 @@ program test_vacuum_surfaces
     !! G-EQDSK round trip, and resolution convergence / thread invariance of the
     !! vacuum b_mn of synthetic 3D coils.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_coils_3d
+    use milca_coils_3d
     use kin6d_vacuum_surfaces
 !$  use omp_lib
     implicit none
