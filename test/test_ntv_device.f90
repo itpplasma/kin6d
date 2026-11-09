@@ -3,14 +3,15 @@
 !! preconditioned by one factorisation agree with a factorisation per surface,
 !! a second solve at the reported offset rotation carries no flux, and a
 !! surface that fails leaves the other surfaces of the profile intact, and the
-!! radial force balance returns the Omega_tE of the rotation it was solved for.
+!! radial force balance returns the Omega_tE of the rotation it was solved for;
+!! the orbit-width indicators match the concentric-circle geometry of the file.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
     use milca_ntv_device, only: ntv_species_t, ntv_profile_t, ntv_resolution_t, &
         ntv_species_result_t, ntv_device_profile, deflection_frequency, DEVICE_OK, &
         DEVICE_SOLVE, ntv_axisymmetric_result_t, ntv_device_axisymmetric, &
-        ntv_omega_te_from_rotation
+        ntv_omega_te_from_rotation, ntv_indicator_t, ntv_device_indicators
     implicit none
     real(dp), parameter :: r0 = 1.7_dp, a = 0.5_dp, b0 = 2.3_dp, eps = 0.1_dp
     real(dp), parameter :: jpol = -1.2e7_dp, itor_s = -3.0e5_dp, flux = -1.3_dp
@@ -23,6 +24,7 @@ program test_ntv_device
     call offset_rotation()
     call failed_surface()
     call force_balance()
+    call indicators()
     if (failures > 0) error stop 'FAIL'
     print '(a)', 'All tests passed!'
 
@@ -284,6 +286,53 @@ contains
         call close_to('force balance: Omega_tE', ntv_omega_te_from_rotation(r(1), sp, prof, &
             1, 1, radius, rotation), omega_te, 1e-10_dp)
     end subroutine force_balance
+
+    !> The file's surfaces are concentric circles r = a sqrt(s) with
+    !> B = b0 (1 - 0.1 sqrt(s) cos(theta)): eps = 0.1 sqrt(s), |grad r| = 1,
+    !> dpsi_pol/dr = iota (flux/2 pi) 2 r/a^2 and G = mu0 I_pol/(2 pi).
+    subroutine indicators()
+        character(*), parameter :: eq_name = 'ntv_ind_eq.bc', pert_name = 'ntv_ind_pert.bc'
+        real(dp), parameter :: mu0 = 1.25663706212e-6_dp, elementary = 1.602176634e-19_dp
+        type(boozer_file_t) :: eq, pert
+        type(ntv_species_t) :: sp(1)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_indicator_t), allocatable :: ind(:)
+        real(dp) :: s, r, iota, dpsi_dr, ds_dr, va, want
+        integer :: status
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        s = 0.45_dp
+        prof%s = [s]
+        prof%omega_te = [0.0_dp]
+        allocate (prof%density(1, 1), prof%temperature(1, 1), prof%density_s(1, 1), &
+            prof%temperature_s(1, 1), prof%kappa(1, 1))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -4*kev
+        prof%kappa = 3e-4_dp
+        res%n_theta = 33
+        call ntv_device_indicators(eq, pert, 3, sp, prof, res, ind, status)
+        call check('indicators: status', status == DEVICE_OK)
+        if (failures > 0) return
+        r = a*sqrt(s)
+        iota = 0.9_dp - 0.3_dp*s
+        ds_dr = 2*r/a**2
+        dpsi_dr = abs(iota*flux/(2*pi)*ds_dr)
+        va = sqrt(2*prof%temperature(1, 1)/sp(1)%mass)
+        call close_to('indicators: eps', ind(1)%eps, eps*sqrt(s), 1e-12_dp)
+        call close_to('indicators: gradient length', ind(1)%gradient_length(1), &
+            min(3e19_dp/(1e19_dp*ds_dr), 2.0_dp/(4.0_dp*ds_dr)), 1e-6_dp)
+        ! <B^2> with the geometric weight R = r0 + r cos(theta) of the circles:
+        ! b0^2 (1 + e^2/2 - e r/r0) for B = b0 (1 - e cos(theta)).
+        want = sp(1)%mass*va*mu0*abs(jpol)/(2*pi)/(elementary*dpsi_dr*b0 &
+            *sqrt(1 + (eps*sqrt(s))**2/2 - eps*sqrt(s)*r/r0))
+        call close_to('indicators: orbit excursion', ind(1)%excursion(1), want, 1e-3_dp)
+    end subroutine indicators
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.
