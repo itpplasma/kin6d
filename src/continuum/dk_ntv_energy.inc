@@ -161,12 +161,8 @@
         real(dp), intent(out), optional :: kappa
         real(dp), intent(out), optional :: local(:, :, :, :)
     type(energy_system_t) :: e
-    type(ntv_system_t) :: g, gf
-    type(hybrid_t) :: lu
-    complex(dp), allocatable :: radial(:, :), parallel(:, :), rhs(:, :, :, :), x(:, :, :, :)
-    real(dp), allocatable :: b(:), d3(:)
-    real(dp) :: j0
-    integer :: a, sb, jf, st, kk
+    type(ntv_system_t) :: g
+    integer :: st
 
     status = NTV_BAD_INPUT
     iterations = 0
@@ -176,7 +172,92 @@
     end if
     call energy_build(sf, species, lnlambda, grid, model, 0.0_dp, n_theta, n_leg, e, g, st)
     if (st /= NTV_OK) return
+    if (present(kappa)) kappa = 1.5_dp*g%stream(1)*g%source(1)
+    call transport_matrix(e, g, &
+        cmplx(log_b_slope(g)/(1.5_dp*g%source*sf%q), 0.0_dp, dp), e%nb, d, iterations, &
+        status, local)
+    end subroutine ntv_axisymmetric_coefficients
+
+    !> The transport matrix of ntv_axisymmetric_coefficients on a 3D surface in
+    !> Boozer angles with zero E x B: b(i, j) = B/B0 on n_theta x n_zeta (both
+    !> odd) points of theta in [0, 2 pi) and zeta in one field period
+    !> [0, 2 pi/nper), b.grad = kappa b (d_theta + q d_zeta) with kappa =
+    !> iota B0/(G + iota I) [1/m], and the radial drift of the axisymmetric
+    !> surface with d_theta b replaced by d_theta b - (I/G) d_zeta b
+    !> (geometry of mono_coefficients_3d). Same drives, responses and units as
+    !> the axisymmetric matrix, which an axisymmetric b reproduces; local is
+    !> (n_theta n_zeta, ns, ns, 3), theta fastest. pairs (default all) is the
+    !> number of lowest pair blocks factorised with the full speed and species
+    !> coupling; with fewer, GMRES on the operator is right-preconditioned by
+    !> the direct block factorisation of every speed node and species for the
+    !> others, which keeps the memory per node at that of the
+    !> monoenergetic surface problem.
+    subroutine ntv_surface_coefficients(b, nper, q, i_over_g, kappa, species, &
+            lnlambda, grid, model, n_leg, d, iterations, status, local, pairs)
+        real(dp), intent(in) :: b(:, :), q, i_over_g, kappa
+        integer, intent(in) :: nper
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model, n_leg
+        real(dp), intent(out) :: d(:, :, :, :)
+        integer, intent(out) :: iterations, status
+        real(dp), intent(out), optional :: local(:, :, :, :)
+        integer, intent(in), optional :: pairs
+    type(energy_system_t) :: e
+    type(ntv_system_t) :: g
+    real(dp), allocatable :: b_par(:), b_drift(:), radial(:)
+    integer :: n, st, np
+
+    status = NTV_BAD_INPUT
+    iterations = 0
+    n = size(b)
+    if (any(shape(d) /= [size(species), size(species), 3, 3])) return
+    if (mod(n_leg, 2) /= 0 .or. n_leg < 4 .or. abs(q) <= tiny(q) .or. &
+        abs(kappa) <= tiny(kappa)) return
+    if (present(local)) then
+        if (any(shape(local) /= [n, size(species), size(species), 3])) return
+    end if
+    call mono_surface_operators(b, nper, q, i_over_g, g%d, b_par, b_drift, st)
+    if (st /= MONO_OK) return
+    g%n = n
+    g%nblock = n_leg/2
+    g%wsign = 1
+    allocate (g%stream(n), g%mirror(n), g%source(n), g%measure(n), radial(n))
+    call dk_ntv_surface_point(reshape(b, [n]), b_par, b_drift, kappa, q, g%stream, &
+        g%mirror, radial, g%source, g%measure)
+    allocate (g%drift(n), g%drift2(n), g%s(n))
+    g%drift = 0
+    g%drift2 = 0
+    g%s = radial
+    call energy_assemble(g, species, lnlambda, grid, model, 0.0_dp, e, st)
+    if (st /= NTV_OK) return
+    np = e%nb
+    if (present(pairs)) np = max(0, min(pairs, e%nb))
+    call transport_matrix(e, g, cmplx(radial, 0.0_dp, dp), np, d, iterations, status, &
+        local)
+    end subroutine ntv_surface_coefficients
+
+    !> Shared n = 0 solve of the transport matrices: e and g assembled, radial
+    !> the radial drive S on the surface points.
+    subroutine transport_matrix(e, g, radial_s, pairs, d, iterations, status, local)
+        type(energy_system_t), intent(inout) :: e
+        type(ntv_system_t), intent(in) :: g
+        complex(dp), intent(in) :: radial_s(:)
+        integer, intent(in) :: pairs
+        real(dp), intent(out) :: d(:, :, :, :)
+        integer, intent(out) :: iterations, status
+        real(dp), intent(out), optional :: local(:, :, :, :)
+    type(ntv_system_t) :: gf
+    type(hybrid_t) :: lu
+    complex(dp), allocatable :: radial(:, :), parallel(:, :), rhs(:, :, :, :), &
+        x(:, :, :, :)
+    real(dp), allocatable :: b(:), d3(:)
+    real(dp) :: j0
+    integer :: a, sb, jf, st, kk, its
+
     status = NTV_SINGULAR
+    iterations = 0
     e%gs%nq = 0
     e%go%omega = 0
     e%gp%precess = 0
@@ -185,16 +266,20 @@
     call cache_blocks(e)
     ! Without rotation and precession only collisions damp the parallel-field
     ! response (~1/nu), and GMRES on the hybrid preconditioner stalls in the
-    ! banana regime. Every pair block therefore carries its full speed and
-    ! species coupling, which makes the block factorisation the inverse.
-    call factor_hybrid(e, lu, st, e%nb)
+    ! banana regime. By default every pair block therefore carries its full
+    ! speed and species coupling, which makes the block factorisation the
+    ! inverse.
+    if (pairs == 0) then
+        call factor_modal(e, lu, st)
+    else
+        call factor_hybrid(e, lu, st, pairs)
+    end if
     if (st /= NTV_OK) return
     b = 2/(3*g%source)
-    if (present(kappa)) kappa = g%stream(1)/b(1)
     gf = g
     gf%dpar = .false.
     gf%dlf10 = .false.
-    gf%s = log_b_slope(g)*b/sf%q
+    gf%s = radial_s
     call drive(gf, 1.0_dp, radial)
     allocate (parallel, mold=radial)
     parallel = 0
@@ -214,9 +299,17 @@
                 end if
                 rhs(1:e%n, kk, 0, sb) = rhs(1:e%n, kk, 0, sb) - sum(rhs(1:e%n, kk, 0, sb))/e%n
             end do
-            if (.not. allocated(x)) allocate (x, mold=rhs)
-            call hybrid_solve(e, lu, rhs, x, st)
-            if (st /= NTV_OK) return
+            if (pairs < e%nb) then
+                call coupled_solve(e, lu, rhs, x, its, st)
+                iterations = iterations + its
+            else
+                if (.not. allocated(x)) allocate (x, mold=rhs)
+                call hybrid_solve(e, lu, rhs, x, st)
+            end if
+            if (st /= NTV_OK) then
+                status = st
+                return
+            end if
             do a = 1, e%ns
                 d(a, sb, :, jf) = 0
                 do kk = 1, e%nx
@@ -251,7 +344,7 @@
             integer :: i
             v = [(m(i, i), i=1, size(m, 1))]
         end function diag
-    end subroutine ntv_axisymmetric_coefficients
+    end subroutine transport_matrix
 
     !> The energy-coupled system of one surface, assembled but not factorised:
     !> streaming, rotation and precession blocks, the lumped kinetic masses,
@@ -268,10 +361,31 @@
         type(ntv_system_t), intent(out) :: g
         integer, intent(out) :: status
     type(ntv_surface_t) :: base
+    real(dp), allocatable :: zero10(:, :)
+    integer :: st
+
+    status = NTV_BAD_INPUT
+    base = sf
+    allocate (zero10(2*n_theta, n_leg/2))
+    zero10 = 0
+    call factor(base, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, n_theta, n_leg, g, st, &
+        f10=zero10, assemble_only=.true.)
+    if (st /= NTV_OK) return
+    call energy_assemble(g, species, lnlambda, grid, model, omega_e, e, status)
+    end subroutine energy_build
+
+    !> The energy-coupled system of the assembled surface rows g.
+    subroutine energy_assemble(g, species, lnlambda, grid, model, omega_e, e, status)
+        type(ntv_system_t), intent(in) :: g
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :), omega_e
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model
+        type(energy_system_t), intent(out) :: e
+        integer, intent(out) :: status
     type(collop_t) :: op
-    real(dp), allocatable :: galerkin(:, :), moment(:), zero10(:, :), &
-        lorentz(:, :, :, :, :)
-    integer :: a, st, kk
+    real(dp), allocatable :: galerkin(:, :), moment(:), lorentz(:, :, :, :, :)
+    integer :: a, st, kk, n_leg
 
     status = NTV_BAD_INPUT
     e%ns = size(species)
@@ -279,12 +393,7 @@
     ! zero weight in every drive and flux for l = 0.
     e%nx = grid%n - 1
     if (e%ns < 1 .or. size(lnlambda, 1) /= e%ns .or. size(lnlambda, 2) /= e%ns) return
-    base = sf
-    allocate (zero10(2*n_theta, n_leg/2))
-    zero10 = 0
-    call factor(base, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, n_theta, n_leg, g, st, &
-        f10=zero10, assemble_only=.true.)
-    if (st /= NTV_OK) return
+    n_leg = 2*g%nblock
     e%n = g%n
     e%nb = g%nblock
     e%nn = 2*g%n*e%nx
@@ -341,7 +450,7 @@
     e%pre = e%pre - lorentz
     if (e%coupled) e%full = e%full - lorentz
     status = NTV_OK
-    end subroutine energy_build
+    end subroutine energy_assemble
 
     !> The system of one speed node: the node-diagonal part of the operator,
     !> including the diagonal of the energy scattering.
@@ -548,6 +657,144 @@
         integer, intent(out) :: iterations, status
         call coupled_solve(e, lu, rhs, x, iterations, status)
     end subroutine solve_any
+
+    !> Modal preconditioner of the n = 0 system. After the row scaling the
+    !> operator is S x R - I x C_l: streaming S per unit speed, R the diagonal
+    !> ratio of lumped to Galerkin speed mass of each node, C_l the
+    !> speed-species collision rows of degree l. In the eigenvectors V of
+    !> R^-1 C_1 the l = 1 rows, which carry momentum conservation, are
+    !> diagonal, so each mode m is a monoenergetic surface problem with the
+    !> rates diag(V^-1 R^-1 C_l V)_m, factorised directly; GMRES supplies the
+    !> off-diagonal rest at l /= 1. Requires a real spectrum of R^-1 C_1,
+    !> which holds where C is self-adjoint in the Maxwellian-weighted product.
+    subroutine factor_modal(e, h, status)
+        type(energy_system_t), intent(in) :: e
+        type(hybrid_t), intent(out) :: h
+        integer, intent(out) :: status
+        real(dp), allocatable :: c(:, :), w(:, :), wr(:), wi(:), work(:), vl(:, :), &
+            chat(:, :)
+        integer, allocatable :: piv(:)
+        integer :: nm, l, info, m, a, k
+        nm = e%nx*e%ns
+        status = NTV_SINGULAR
+        allocate (c(nm, nm), w(nm, nm), wr(nm), wi(nm), work(8*nm), vl(1, 1), &
+            h%v(nm, nm), h%vinv(nm, nm), piv(nm), chat(nm, 0:2*e%nb - 1))
+        c = collision_matrix(e, 1)
+        w = c
+        call dgeev('N', 'V', nm, w, nm, wr, wi, vl, 1, h%v, nm, work, size(work), info)
+        if (info /= 0) return
+        if (any(abs(wi) > 1e-10_dp*maxval(abs(wr)))) return
+        w = h%v
+        h%vinv = 0
+        do m = 1, nm
+            h%vinv(m, m) = 1
+        end do
+        call dgesv(nm, nm, w, nm, piv, h%vinv, nm, info)
+        if (info /= 0) return
+        do l = 0, 2*e%nb - 1
+            w = matmul(h%vinv, matmul(collision_matrix(e, l), h%v))
+            do m = 1, nm
+                chat(m, l) = w(m, m)
+            end do
+        end do
+        ! The modal right-hand side is V^-1 R^-1 rhs.
+        do a = 1, e%ns
+            do k = 1, e%nx
+                h%vinv(:, (a - 1)*e%nx + k) = &
+                    h%vinv(:, (a - 1)*e%nx + k)/stream_ratio(e, k, a)
+            end do
+        end do
+        h%modal = .true.
+        h%j0 = 0
+        allocate (h%sys(nm), h%node(nm, 1))
+        do m = 1, nm
+            h%sys(m) = mode_system(e, chat(m, :))
+            call factor_species(h%sys(m), 1, h%node(m, 1), status)
+            if (status /= NTV_OK) return
+        end do
+    end subroutine factor_modal
+
+    !> Scaled collision rows of degree l over (node, species), node fastest.
+    function collision_matrix(e, l) result(c)
+        type(energy_system_t), intent(in) :: e
+        integer, intent(in) :: l
+        real(dp) :: c(e%nx*e%ns, e%nx*e%ns)
+        integer :: a, b, k
+        do b = 1, e%ns
+            do a = 1, e%ns
+                do k = 1, e%nx
+                    c((a - 1)*e%nx + k, (b - 1)*e%nx + 1:b*e%nx) = &
+                        collision_rows(e, k, a, b, l)/stream_ratio(e, k, a)
+                end do
+            end do
+        end do
+    end function collision_matrix
+
+    !> Streaming coefficient of node k of species a after the row scaling.
+    pure real(dp) function stream_ratio(e, k, a)
+        type(energy_system_t), intent(in) :: e
+        integer, intent(in) :: k, a
+        stream_ratio = e%row(k, a)*e%vt(a)*e%m3(k, k)
+    end function stream_ratio
+
+    !> Unit-speed surface system of one collision mode with rates rate(l).
+    function mode_system(e, rate) result(f)
+        type(energy_system_t), intent(in) :: e
+        real(dp), intent(in) :: rate(0:)
+        type(energy_system_t) :: f
+        f%ns = 1; f%n = e%n; f%nb = e%nb; f%border = e%border
+        f%cs => e%cs; f%co => e%co; f%cp => e%cp
+        f%nx = 1
+        f%nn = 2*e%n
+        f%vt = [1.0_dp]
+        f%tz = [1.0_dp]
+        f%row = reshape([1.0_dp], [1, 1])
+        f%m2 = reshape([1.0_dp], [1, 1])
+        f%m3 = reshape([1.0_dp], [1, 1])
+        f%m4 = reshape([1.0_dp], [1, 1])
+        allocate (f%pre(1, 1, 1, 1, 0:ubound(rate, 1)))
+        f%pre(1, 1, 1, 1, :) = rate
+        f%coupled = .false.
+    end function mode_system
+
+    !> x = P^-1 rhs with the modal preconditioner; arrays (2 n, nx, 0:nb-1, ns).
+    subroutine modal_solve(e, h, rhs, x, status)
+        type(energy_system_t), intent(in) :: e
+        type(hybrid_t), intent(in) :: h
+        complex(dp), intent(in) :: rhs(:, :, 0:, :)
+        complex(dp), intent(out) :: x(:, :, 0:, :)
+        integer, intent(out) :: status
+        complex(dp), allocatable :: z(:, :, :), y(:, :, :)
+        integer :: m, j, info, nm, n2
+        nm = e%nx*e%ns
+        n2 = 2*e%n
+        ! z(row, block, mode) = V^-1 rhs over the speed-species index.
+        allocate (z(n2, 0:e%nb - 1, nm), y(n2, 0:e%nb - 1, nm))
+        do j = 0, e%nb - 1
+            z(:, j, :) = matmul(reshape(rhs(:, :, j, :), [n2, nm]), transpose(h%vinv))
+        end do
+        status = NTV_SINGULAR
+        do m = 1, nm
+            associate (f => h%node(m, 1), s => h%sys(m))
+                do j = e%nb - 1, 0, -1
+                    if (j < e%nb - 1) z(:, j:j, m) = z(:, j:j, m) &
+                        - offdiag_apply(s, 1, j, j + 1, z(:, j + 1:j + 1, m))
+                    call zgetrs('N', n2, 1, f%s_lu(:, :, j), n2, f%piv(:, j), &
+                        z(:, j, m), n2, info)
+                    if (info /= 0) return
+                end do
+                y(:, 0, m) = z(:, 0, m)
+                do j = 1, e%nb - 1
+                    y(:, j, m) = z(:, j, m) - matmul(f%y(:, :, j), y(:, j - 1, m))
+                end do
+            end associate
+        end do
+        do j = 0, e%nb - 1
+            x(:, :, j, :) = reshape(matmul(y(:, j, :), transpose(h%v)), &
+                [n2, e%nx, e%ns])
+        end do
+        status = NTV_OK
+    end subroutine modal_solve
 
     !> The perturbed-operator sources of f_10 (module header of dk_ntv) per
     !> node: the mirror force on the streaming mass, 1.5 source stream sdb
@@ -791,7 +1038,11 @@
             integer :: st
             v = reshape(input, shape(rhs))
             allocate (y, mold=v)
-            call hybrid_solve(e, lu, v, y, st)
+            if (lu%modal) then
+                call modal_solve(e, lu, v, y, st)
+            else
+                call hybrid_solve(e, lu, v, y, st)
+            end if
             if (st /= NTV_OK) status = st
             output = reshape(y, [ntot])
         end subroutine precondition

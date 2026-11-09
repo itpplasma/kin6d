@@ -4,7 +4,7 @@ program gen_dk_ntv
     use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: writer
-    type(expr_t) :: cos_t, sin_t, eps, k, offset, b
+    type(expr_t) :: cos_t, sin_t, eps, k, offset, b, b_par, b_drift, kappa, q
 
     ! Frozen-field NTV benchmark surface: |B|/B0 = b = 1 - eps cos(theta),
     ! b.grad theta = k, lambda = (1 - xi^2)/b. The grad-B precession is local,
@@ -32,6 +32,18 @@ program gen_dk_ntv
         'mirror_b ', 'measure_b'], &
         [b, k*eps*sin_t/(2*b), (cos_t - offset)/b, 2/(3*b), 2/(b*b), k*b, k*eps*sin_t/2, &
         2/(b*b*b)], ad=.true.)
+    ! A 3D surface in Boozer angles (zero E x B, n = 0): b.grad = kappa b d_par
+    ! with d_par = d_theta + q d_zeta, so the streaming and mirror factors are
+    ! kappa b and kappa d_par(b)/2. (B x grad B).grad psi ~ I d_zeta B -
+    ! G d_theta B makes the radial drive of the axisymmetric surface, d_theta b/q,
+    ! the drift derivative b_drift = d_theta b - (I/G) d_zeta b over q. The
+    ! drive source 2/(3 b) and the Boozer flux measure 2/b^3 are those above.
+    b = sym('b'); b_par = sym('b_par'); b_drift = sym('b_drift'); kappa = sym('kappa')
+    q = sym('q')
+    call writer%emit('dk_ntv_surface_point', &
+        ['b      ', 'b_par  ', 'b_drift', 'kappa  ', 'q      '], &
+        ['stream ', 'mirror ', 'radial ', 'source ', 'measure'], &
+        [kappa*b, kappa*b_par/2, b_drift/q, 2/(3*b), 2/(b*b*b)], ad=.true.)
     call writer%line('end module milca_dk_ntv_leaves')
     call writer%close()
 end program gen_dk_ntv

@@ -148,6 +148,60 @@ uniqueness from convergence. Check the root solver on an independently solved
 reduced flux model and compare all bracketed kinetic roots with matched
 SFINCS flux curves, with declared numerical and reference errors.
 
+Status of the first K1 step (`ntv_surface_coefficients`, test
+`ntv_surface_*`): the transport matrix of one 3D surface with the full
+linearised operator at E_r = 0, without tangential drift. This is the
+operator NEO-2-PAR solves and the zero-E_r column of ICNTS; the E x B and
+tangential-drift terms for the ambipolar root are not built yet. In Boozer
+angles (theta, zeta), with b = B/B0 and the covariant components G, I, the
+equation per species is the axisymmetric one of `ntv_axisymmetric_coefficients`
+with two replacements:
+
+- parallel derivative b.grad = kappa b (d_theta + q d_zeta), kappa =
+  iota B0/(G + iota I);
+- radial drift v_d.grad psi proportional to (1 + xi^2)(d_theta b - (I/G)
+  d_zeta b)/b, from (B x grad B).grad psi ~ I d_zeta B - G d_theta B; the
+  radial covariant component B_s is dropped, as in DKES and NEO-2.
+
+Phase-space measure: the Boozer Jacobian ~ 1/B^2 times 2 pi v^2 dv dxi, in
+which sqrt(g) B.grad = const (iota d_theta + d_zeta) is divergence free, so
+streaming with the mirror force is skew and the collision operator
+self-adjoint; hence d13 = -d31 and d23 = -d32 (Onsager) for the pairing of the
+forces (A1, A2, A3) with the particle flux, energy flux and <u_par B> of the
+axisymmetric matrix, which keeps its units. Null space: the density (and,
+with the full operator, energy) of each species; every speed node's
+surface-averaged l = 0 component is constrained to zero, which the drives
+allow because their weighted surface average vanishes. Discretisation: Fourier
+collocation on theta x zeta over one field period, Legendre in xi, nodal GLL
+in x, the simpler reference discretisation of DK1; DG in pitch and surface
+is not built and is needed only if this one loses the DK1 comparison. Solver:
+the default factorises every pair block with full speed and species
+coupling (exact, memory ~ (2 n_theta n_zeta n_x n_s)^2 per block). With
+`pairs = 0`, GMRES is right-preconditioned by one direct block factorisation
+per collision eigenmode: after the row scaling the operator is S x R - I x C_l
+(S streaming per unit speed, R the lumped-to-Galerkin speed-mass ratio, C_l
+the speed-species collision rows of degree l), and in the eigenvectors of
+R^-1 C_1 the l = 1 rows, which carry momentum conservation, are diagonal.
+Memory per mode is that of the monoenergetic surface problem. Iterations
+for three drives (11 x 7 points, 12 Legendre, 9 nodes): 3 with pitch-angle
+scattering (exact preconditioner), 93 test particle, 128 to 239 full
+operator at NEO-2 collisionality 1e-3 to 1e1. A per-node preconditioner
+without the modal basis stalled (above 1000).
+
+Checks (one species, deuterium 2 keV):
+
+| check | oracle | agreement |
+|---|---|---|
+| axisymmetric b on a 17 x 3 grid | `ntv_axisymmetric_coefficients` | 9e-12 |
+| quasi-helical b(theta - zeta), iota = 1.25 | isomorphic tokamak, streaming kappa (1 - q N), radial rows times 1 + N I/G | 3e-11 |
+| pitch-angle scattering, non-symmetric field | energy sum of `mono_coefficients_3d` at nu_D(x_k)/(v x_k) | 2e-15 to 4e-14 |
+| intrinsic ambipolarity, quasi-helical, full operator | d11 = d12 = 0 | see test output; axisymmetric d11 falls 0.42, 3.6e-4, 2.8e-7, 3e-10 of the pitch-angle value over speed grids 3 x 4 to 12 x 6 |
+| Onsager, non-symmetric field | d13 = -d31 | spectral in the grid: 2e-9 to 4e-12 (collisionality 1), 6e-5 to 1e-7 (1e-2), from 11 x 7 to 21 x 13 |
+
+The coarse speed grid of the first three rows is a like-for-like grid, not
+a converged one: single-species d11 with the full operator needs about
+6 elements of order 6 before momentum conservation suppresses it.
+
 ### K2: global steady distributions and quasineutrality
 
 Retain v_d.grad(psi) partial_psi f on the unknown over a radial domain, where
