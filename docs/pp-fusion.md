@@ -97,7 +97,7 @@ output. The potential singularities are never evaluated at the removed
 origin node. FEM-DVR quadrature of the short-range potentials is an
 approximation checked by h/p refinement; no exact-quadrature claim is made.
 
-`kin6d_radial_dvr` supplies the existing normalized GLL basis with coefficients
+`milca_radial_dvr` supplies the existing normalized GLL basis with coefficients
 c_i=√w_i u(r_i). A scalar nodal potential adds to the Hamiltonian diagonal.
 The coupled matrix interleaves the two channels at every radius: its lower
 half-bandwidth is 2(order−1), not the radial dimension. It stores O(n p)

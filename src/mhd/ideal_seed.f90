@@ -1,4 +1,4 @@
-module kin6d_ideal_seed
+module milca_ideal_seed
     ! Nested seed of the frozen-in energy map from a boundary and profiles
     ! (DESIGN 7.1, VMEC's interpolated initial guess made regular at the axis).
     ! The boundary b(t) = R + iZ, t in [0, 1), counter-clockwise, is extended
@@ -24,7 +24,7 @@ module kin6d_ideal_seed
     ! diffeomorphism for convex boundaries (Rado-Kneser-Choquet); init checks
     ! det DY > 0 on a polar grid.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     use kin6d_curved_triangle, only: boundary_curve
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_fft, only: fft_c2c
@@ -223,4 +223,4 @@ contains
         call field%profile%evaluate(s, q, pressure)
         b3 = 4*pi*abs(field%psi_axis)*q/(point(1)*shell_weight(field, s))
     end subroutine
-end module kin6d_ideal_seed
+end module milca_ideal_seed

@@ -1,6 +1,6 @@
-module kin6d_nested_seed_input
+module milca_nested_seed_input
     ! Boundary/profile input of the fixed-boundary 3D map seed
-    ! (kin6d_ideal_seed_3d) from an exact nested reference. Only the boundary
+    ! (milca_ideal_seed_3d) from an exact nested reference. Only the boundary
     ! surface, the total toroidal flux and the profiles iota(s), p(s) in the
     ! normalized toroidal flux s enter. Interior oracle fields do not, so they
     ! remain independent error oracles for the solved state.
@@ -10,7 +10,7 @@ module kin6d_nested_seed_input
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
     use milca_nested_oracle_leaves, only: nested_boundary_harmonic, &
         nested_boundary_radius
-    use kin6d_ideal_seed_3d, only: toroidal_profile_t
+    use milca_ideal_seed_3d, only: toroidal_profile_t
     implicit none
     private
     public :: nested_seed_boundary, nested_seed_profile

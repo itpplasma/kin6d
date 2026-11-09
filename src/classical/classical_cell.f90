@@ -3,13 +3,13 @@
 !> the classical Boltzmann weight; spin labels are spectators.
 !>
 !> The periodic energy is pairwise additive, U = const + sum_{i<j} u(x_i-x_j),
-!> with u the zero-mean Ewald pair potential of the shared kin6d_nbody/kin6d_ewald path
+!> with u the zero-mean Ewald pair potential of the shared milca_nbody/milca_ewald path
 !> (a two-particle periodic system). Optional semiclassical pair models add
-!> the declared short-range term of kin6d_pair_law (periodic-image Kelbg
+!> the declared short-range term of milca_pair_law (periodic-image Kelbg
 !> excess, spin-averaged Pauli potential) on top of that Coulomb part.
 !> N >= 3 is sampled by the one periodic-cell Metropolis sampler
 !> (milca_ocp_monte_carlo, mc_setup_cell); the N = 2 quadrature uses the
-!> independent two-body kin6d_nbody path and is the oracle for the sampler.
+!> independent two-body milca_nbody path and is the oracle for the sampler.
 !>
 !> Estimators (common with the quantum cell, docs/quantum-classical-
 !> correlations.md): shell-averaged spin-summed g on equal shells in |r|<L/2,
@@ -24,11 +24,11 @@ module milca_classical_cell
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use milca_species, only: units_t, species_t, plasma_scales_t, atomic_units, &
         electron, plasma_scales, pair_coupling
-    use kin6d_ewald, only: ewald_parameters_t, ewald_select
+    use milca_ewald, only: ewald_parameters_t, ewald_select
     use milca_coulomb_leaves, only: ewald_background
-    use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
+    use milca_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
     use milca_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
-    use kin6d_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
+    use milca_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
         pair_law_exchange_sum, pair_coulomb, pair_kelbg, pair_kelbg_pauli
     use milca_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces
     use milca_series_statistics, only: series_batch_means
@@ -38,7 +38,7 @@ module milca_classical_cell
     public :: cell_pair_energy, cell_exchange_sum, cell_total_energy
     public :: cell_q_set, cell_triple_set, classical_cell_mc
     public :: classical_pair_quadrature, cell_shell_volume, cell_sampler_offset
-    !> Pair-law selectors (kin6d_pair_law).
+    !> Pair-law selectors (milca_pair_law).
     integer, parameter, public :: model_coulomb = pair_coulomb, &
         model_kelbg = pair_kelbg, model_kelbg_pauli = pair_kelbg_pauli
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -46,7 +46,7 @@ module milca_classical_cell
     type :: classical_cell_t
         integer :: n = 0, model = model_coulomb
         real(dp) :: length = 0, volume = 0, coupling = 1, mass = 1, hbar = 1
-        !> Relative Ewald truncation tolerance (kin6d_ewald units).
+        !> Relative Ewald truncation tolerance (milca_ewald units).
         real(dp) :: tolerance = 1.0e-10_dp
         real(dp) :: rs = 0, theta = 0, gamma = 0, fermi = 0, kt = 0, beta = 0
         !> Pair thermal length hbar/sqrt(2 mu kT), mu = m/2 (Kelbg/exchange).

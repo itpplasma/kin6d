@@ -26,7 +26,7 @@ program test_ideal_map_axisymmetric
     use milca_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, &
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
@@ -37,8 +37,8 @@ program test_ideal_map_axisymmetric
     use kin6d_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
         triangle_bernstein_controls, TRIANGLE_MAX_NODES
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_ideal_seed, only: nested_seed_t, ideal_seed_init
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_ideal_seed, only: nested_seed_t, ideal_seed_init
     use ideal_map_cases, only: setup_case, psi_exact, boundary_point, label, &
         phi_edge, pullback_field_t, solovev_profile_t, pi, a, raxis, psi_axis, r0, &
         f_edge, seed_map_point, &
@@ -48,7 +48,7 @@ program test_ideal_map_axisymmetric
         run_equilibrium_case, write_equilibrium_report, &
         equilibrium_floor_report_t, equilibrium_residual_floor, write_residual_floor
     use milca_equilibrium_state, only: equilibrium_state_t
-    use kin6d_map_equilibrium, only: map_equilibrium
+    use milca_map_equilibrium, only: map_equilibrium
     implicit none
     type :: map_case_state_t
         type(gs_state_t) :: gs

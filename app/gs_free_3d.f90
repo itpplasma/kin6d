@@ -11,7 +11,7 @@ module gs_free_3d_support
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_grad_shafranov, only: gs_state_t, gs_element_jet
     use milca_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     public :: reference_t, reference_locate_jet, offset_field_t

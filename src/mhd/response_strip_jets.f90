@@ -1,4 +1,4 @@
-module kin6d_response_strip_jets
+module milca_response_strip_jets
     !! Imported TC24 candidate jets, in physical (R,phi,Z) at phi=0.
     !! u=sqrt(psin), theta=geometric angle about the supplied magnetic axis.
     !! Smooth spatial jets differentiate the represented spline and implicit
@@ -6,11 +6,11 @@ module kin6d_response_strip_jets
     !! continuous error enclosures are unavailable. No pressure is subtracted.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_eval, profiles_of_psin, &
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_eval, profiles_of_psin, &
         flux_ray_point
-    use kin6d_mhd_ideal_n, only: equilibrium_point, ideal_options_t
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_response_fluid, only: response_fluid_equilibrium_t
+    use milca_mhd_ideal_n, only: equilibrium_point, ideal_options_t
+    use milca_mhd_ampere_n, only: mu0
+    use milca_response_fluid, only: response_fluid_equilibrium_t
     use milca_response_strip_jets_leaves, only: strip_field_jets, strip_map_jets
     implicit none
     private

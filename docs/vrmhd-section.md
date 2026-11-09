@@ -262,7 +262,7 @@ closedness for screw symmetry.
 
 ## Time evolution
 
-`kin6d_vrmhd_evolve` integrates `M(U) U_dot + R(U) - V h.W = 0` with
+`milca_vrmhd_evolve` integrates `M(U) U_dot + R(U) - V h.W = 0` with
 [FortNum](https://github.com/lazy-fortran/fortnum)'s matrix-free
 variable-step BDF2 (`fortnum_ode_bdf`, with a backward Euler first step).
 The vector potential keeps Weyl gauge, without the stationary Coulomb
@@ -543,7 +543,7 @@ screw charts with the explicit closed coframe.
 
 ### Nonlinear Fourier coupling
 
-`kin6d_vrmhd_fourier_nonlinear` reconstructs the complete retained state at
+`milca_vrmhd_fourier_nonlinear` reconstructs the complete retained state at
 uniform orbit angles, evaluates the same generated Cartesian weak form as the
 section, and projects every residual and tangent back onto all retained
 harmonics. It accepts the `vrmhd_fourier_t` layout, including independent field

@@ -1,4 +1,4 @@
-module kin6d_s0_gs_space
+module milca_s0_gs_space
     ! A conforming radial P1 x poloidal Fourier subspace on a circular torus.
     ! The fields are sampled exclusively through the solved core-state evaluator.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -7,8 +7,8 @@ module kin6d_s0_gs_space
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_s0_gs_space_leaves, only: s0_polar_geometry, s0_polar_jet
-    use kin6d_ideal_xi, only: xi_gradient_n, XI_OK
-    use kin6d_s0_volume, only: s0_assemble_volume
+    use milca_ideal_xi, only: xi_gradient_n, XI_OK
+    use milca_s0_volume, only: s0_assemble_volume
     use fortfem_generated_line_basis, only: generated_line_jet
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortsparse, only: csc_z_t, fortsparse_status_t, status_set, &
@@ -150,4 +150,4 @@ contains
             space%p,space%rho,eq%mu0,space%value,space%gradient, &
             stiffness,mass,status)
     end subroutine s0_gs_assemble
-end module kin6d_s0_gs_space
+end module milca_s0_gs_space

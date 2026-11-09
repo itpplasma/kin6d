@@ -4,9 +4,9 @@ program test_response_toroidal_strip
     !! Equilibrium p=pbase+alpha R^2, B_phi^2=C/R^2-mu0 alpha R^2,
     !! J_Z=-2 alpha R/B_phi satisfies J0 x B0=grad p exactly.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_response_fluid, only: response_fluid_equilibrium_t
-    use kin6d_response_toroidal_strip, only: &
+    use milca_mhd_ampere_n, only: mu0
+    use milca_response_fluid, only: response_fluid_equilibrium_t
+    use milca_response_toroidal_strip, only: &
         toroidal_strip_t, toroidal_strip_work_t, toroidal_strip_status_t, &
         toroidal_strip_init, &
         toroidal_strip_action, toroidal_strip_solve, toroidal_strip_vjp, &

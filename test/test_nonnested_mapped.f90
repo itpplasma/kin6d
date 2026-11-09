@@ -213,10 +213,10 @@ program test_nonnested_mapped
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, nn_build, &
         nn_solve
-    use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t, nn_map_set_chart, &
         nn_map_point, map_metric_t, nn_mapped_cartesian_data, &
         nn_mapped_cartesian_error, nn_vector_field_i

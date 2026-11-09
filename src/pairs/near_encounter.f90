@@ -17,7 +17,7 @@
 !> Fixed particles (an impurity) are external sources inside clusters and
 !> never merge clusters. Derivative: tangent of the same flow with the
 !> cluster structure and substep counts held at the primal values.
-module kin6d_near_encounter
+module milca_near_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK, FORTNUM_DOMAIN_ERROR, &
@@ -528,4 +528,4 @@ contains
         if (w2 > 0) t = min(dt, max(0.0_dp, -dot_product(d0, w)/w2))
         dmin = norm2(d0 + t*w)
     end function
-end module kin6d_near_encounter
+end module milca_near_encounter

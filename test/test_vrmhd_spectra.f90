@@ -1,7 +1,7 @@
 program test_vrmhd_spectra
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use vrmhd_spectrum_support, only: spectrum, require, block_dofs
-    use kin6d_vrmhd_section, only: VRMHD_EDGE_SECOND
+    use milca_vrmhd_section, only: VRMHD_EDGE_SECOND
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
     implicit none
     integer, parameter :: max_levels = 4

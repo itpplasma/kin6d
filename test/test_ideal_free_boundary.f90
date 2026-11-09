@@ -2,7 +2,7 @@ module ideal_fb_test_field
     ! Smooth nested frozen data for the derivative checks: elliptic labels
     ! about (3.05, 0), F = 6 T m, pressure linear in the label.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     type, extends(ideal_frozen_t), public :: screw_field_t
@@ -91,7 +91,7 @@ program test_ideal_free_boundary
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
     use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
@@ -113,7 +113,7 @@ program test_ideal_free_boundary
     use kin6d_triangle_basis, only: triangle_basis_jet
     use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
         cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
-    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+    use milca_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
     use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, FORTSPARSE_OK

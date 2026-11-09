@@ -15,7 +15,7 @@ program hybrid_encounter_demo
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use milca_species, only: atomic_units, electron
-    use kin6d_quantum_collision_kernel
+    use milca_quantum_collision_kernel
     use kin6d_hybrid_encounter, single_encounter => hybrid_encounter
     use milca_result_io, only: run_t, result_file_t
     implicit none

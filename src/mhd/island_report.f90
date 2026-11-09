@@ -1,13 +1,13 @@
-module kin6d_island_report
+module milca_island_report
     ! Explicit diagnostic pass, independent of Newton convergence and acceptance.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, &
         ieee_value, ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_divergence
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_residual, nc_store, nc_source_data
-    use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
+    use milca_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
     use milca_equilibrium_residual, only: equilibrium_residual_t
     use milca_nonnested_leaves, only: island_defect_density, island_defect_norm
     implicit none

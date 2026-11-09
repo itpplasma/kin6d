@@ -1,7 +1,7 @@
 program test_response_calibration
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_response_calibration, only: spot_weights, spot_jump, &
+    use milca_response_calibration, only: spot_weights, spot_jump, &
         spot_jump_vjp, equivalent_sheet_field, spot_distance
     use milca_response_calibration_leaves, only: sheet_field, &
         sheet_field_jvp, sheet_field_vjp, spot_distance_jvp, spot_distance_vjp

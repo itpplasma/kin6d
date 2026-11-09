@@ -1,4 +1,4 @@
-module kin6d_mhd_perturbation_n
+module milca_mhd_perturbation_n
     !! L7 core: displacement, Lagrangian field and curvature coupling of a per-n
     !! linear response on flux surfaces of an axisymmetric equilibrium.
     !!
@@ -24,14 +24,14 @@ module kin6d_mhd_perturbation_n
     !! = -B (kappa.xi + div xi_perp).  The parallel displacement is gauge:
     !! xi_par shifts |B|_L by xi_par b.grad|B|; we set xi_par = 0.
     !!
-    !! Charts: spectra use the SFL angles of kin6d_vacuum_surfaces (PEST,
+    !! Charts: spectra use the SFL angles of milca_vacuum_surfaces (PEST,
     !! Hamada) in the convention of `surface_harmonics`: X e^{i n phi} =
     !! e^{i n zeta} sum_m X_m e^{-i m theta_s}, zeta = phi - (nu - q theta_s).
     !! Boozer angles are not provided by the core yet (no D7 Boozer map).
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, int8
-    use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, angle_pest, &
+    use milca_vacuum_surfaces, only: psi_grid_t, surface_t, angle_pest, &
         angle_hamada
-    use kin6d_mhd_ideal_n, only: equilibrium_point, ideal_options_t
+    use milca_mhd_ideal_n, only: equilibrium_point, ideal_options_t
     implicit none
     private
 
@@ -610,4 +610,4 @@ contains
         end do
     end subroutine sha256_bytes
 
-end module kin6d_mhd_perturbation_n
+end module milca_mhd_perturbation_n

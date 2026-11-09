@@ -1,4 +1,4 @@
-module kin6d_response_strip
+module milca_response_strip
     !! R-B1: resolved resistive-inertial layer strip in the periodic cylinder
     !! (docs/response-unified.md, treatment (B); theory/derivations/
     !! response-r2-r4.md, (R2)-(R3) single fluid, no rotation, zero beta,
@@ -475,4 +475,4 @@ contains
 
     end subroutine ri_dispersion_gamma
 
-end module kin6d_response_strip
+end module milca_response_strip

@@ -87,7 +87,7 @@ kernels), in order of expected payoff:
    harmonic forms per geometry and project them out of every solve; evaluate
    the force through curl (curl curl)⁻¹ curl(J × B). Implemented on the NN1
    complex as a diagnostic, with a mixed Leray form as the comparison path:
-   `kin6d_nonnested_force`, [projected force](nonnested-force.md)
+   `milca_nonnested_force`, [projected force](nonnested-force.md)
    (`nonnested_force_*`).
 4. **Energy-criterion island seeding** as an initializer for island cases.
    Implemented opt-in on the NN1 complex: [island-seed.md](island-seed.md).

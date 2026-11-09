@@ -1,4 +1,4 @@
-module kin6d_nonnested_transport
+module milca_nonnested_transport
     ! NN2 first increment: steady anisotropic pressure transport in a given
     ! magnetic field,
     !     -div(K grad p) = S in Omega,  p = p_b on the boundary,
@@ -10,7 +10,7 @@ module kin6d_nonnested_transport
     ! Generic Fourier-V0 assembly lives in FortFEM; the sparse solve is the
     ! NN1 symmetric Dirichlet solve. See docs/equilibrium-nonnested-nn2.md.
     ! With estimate_error, the N = 0 block carries the equilibrated energy
-    ! bound of kin6d_nonnested_error (nt_axisymmetric_error); a phi-dependent
+    ! bound of milca_nonnested_error (nt_axisymmetric_error); a phi-dependent
     ! K with modes > 0 uses the full Fourier-Galerkin residual bound.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -23,7 +23,7 @@ module kin6d_nonnested_transport
         EQ_BPHI, EQ_VALUES
     use milca_equilibrium_nonnested, only: nn_linear_solve
     use milca_nonnested_leaves, only: anisotropic_conductivity
-    use kin6d_nonnested_error, only: nn_error_t, nt_axisymmetric_error
+    use milca_nonnested_error, only: nn_error_t, nt_axisymmetric_error
     implicit none
     private
     public :: nt_conductivity_t, nt_report_t, nt_solve
@@ -145,4 +145,4 @@ contains
         call nt_axisymmetric_error(fs, modes, nphi, conductivity, &
             conductivity%chi_perp, source, p, report%error, report%error_status)
     end subroutine
-end module kin6d_nonnested_transport
+end module milca_nonnested_transport

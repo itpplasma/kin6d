@@ -2,7 +2,7 @@
 
 Status: first verified stage of step N1 of the 3D TC24 design (nonlinear lane,
 DESIGN section 7). Fixed boundary, ideal, nested-compatible, gamma = 0.
-Module `kin6d_ideal_map` (`src/mhd/ideal_map.f90`); generated leaves
+Module `milca_ideal_map` (`src/mhd/ideal_map.f90`); generated leaves
 `src/generated/milca_ideal_map_leaves.f90` from `gen/gen_ideal_map.f90`.
 
 ## Formulation

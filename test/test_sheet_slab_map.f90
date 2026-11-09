@@ -14,7 +14,7 @@ program test_sheet_slab_map
     !   shielding_limit  h ~ Delta -> 0: the sheet current converges to the
     !                continuous-iota ideal shielding current at rate O(Delta)
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_sheet_slab_map, only: sheet_slab_map_t
+    use milca_sheet_slab_map, only: sheet_slab_map_t
     use milca_current_sheet_oracles, only: slab_sheet_t
     implicit none
     character(32) :: arg

@@ -20,12 +20,12 @@ program test_mhd_ideal_n
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init, meridian_qpoint
     use fortnum_krylov, only: complex_gmres_operator
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl, ampere_n_error, ampere_n_error_t, mu0
-    use kin6d_mhd_response_n, only: layer_closure_t
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+    use milca_mhd_response_n, only: layer_closure_t
+    use milca_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         sample_field, mde_solve, ideal_options_t, ideal_response, &
         ideal_response_error_t, ideal_current, ideal_load
     use fortsparse, only: csc_matvec
@@ -317,7 +317,7 @@ contains
     end function ftest
 
     subroutine divergence_check()
-        use kin6d_mhd_ideal_n, only: ideal_current
+        use milca_mhd_ideal_n, only: ideal_current
         type(flux_mesh_t) :: fm
         type(meridian_feec_t) :: fs
         type(meridian_point_basis_t) :: pb
@@ -382,7 +382,7 @@ contains
         !! ideal_load with the near-rational strip shape (psi and q at every
         !! quadrature point in the OpenMP region) is independent of the
         !! thread count: 1 against 4 threads to roundoff.
-        use kin6d_mhd_ideal_n, only: ideal_load
+        use milca_mhd_ideal_n, only: ideal_load
         integer, parameter :: np = 128, nu = 16
         type(flux_mesh_t) :: fm
         type(meridian_feec_t) :: fs

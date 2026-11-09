@@ -14,7 +14,7 @@ program test_quantum_classical
     !> against the N = 2 quadrature.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_nbody, only: nbody_force
+    use milca_nbody, only: nbody_force
     use milca_coulomb_leaves, only: ewald_background
     use milca_classical_cell
     use kin6d_quantum_pair_cell
@@ -396,8 +396,8 @@ contains
     end subroutine
 
     !> The shared sampler energy (incremental Ewald, minimum-image or image
-    !> cube, plus the kin6d_pair_law addition) minus cell_sampler_offset =
-    !> the zero-mean pair sum of the independent two-body kin6d_nbody path,
+    !> cube, plus the milca_pair_law addition) minus cell_sampler_offset =
+    !> the zero-mean pair sum of the independent two-body milca_nbody path,
     !> for the bare Coulomb and the Kelbg+Pauli law; after sweeps the
     !> incremental energy (cached pair additions) = a full recompute.
     subroutine sampler_energy_oracle()
@@ -438,7 +438,7 @@ contains
 
     !> The OCP form of the shared sampler (a = 1, minimum-image Ewald) at
     !> N = 2 reproduces the deterministic atomic-unit pair quadrature
-    !> (independent kin6d_nbody pair potential) at equal Gamma.
+    !> (independent milca_nbody pair potential) at equal Gamma.
     subroutine h1a_sampler_oracle()
         type(classical_cell_t) :: cell
         type(ocp_mc_t) :: ocp

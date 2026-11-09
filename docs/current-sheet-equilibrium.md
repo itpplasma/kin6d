@@ -316,7 +316,7 @@ Open, with the known obstruction:
 Stage 0 (this page). Stage 1: `src/mhd/current_sheet_oracles.f90` with
 `test/test_current_sheet_oracles.f90` (§5.1, §5.2).
 
-Stage 2: `src/mhd/sheet_slab_map.f90` (`kin6d_sheet_slab_map`), the
+Stage 2: `src/mhd/sheet_slab_map.f90` (`milca_sheet_slab_map`), the
 nonlinear frozen-in map of §4 for the slab and the helical screw pinch,
 with pointwise energy, gradient and Hessian leaves from
 `gen/gen_current_sheet.f90`; tests `test/test_sheet_slab_map.f90` and

@@ -1,6 +1,6 @@
 module map_equilibrium_oracle
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, minor = 0.62_dp, ftor = 32.86_dp
     real(dp), parameter :: c = ftor/(12*r0**3), shear = 0.08_dp
@@ -40,8 +40,8 @@ program test_map_equilibrium
     use milca_grad_shafranov, only: gs_state_t, initialize_gs
     use milca_gs_equilibrium, only: gs_geometry_view
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze
-    use kin6d_map_equilibrium, only: map_equilibrium
+    use milca_ideal_map, only: ideal_map_t, ideal_map_init, ideal_map_freeze
+    use milca_map_equilibrium, only: map_equilibrium
     use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
                  EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_UNAVAILABLE
     use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium

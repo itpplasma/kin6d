@@ -1,7 +1,7 @@
 program test_response_qualification
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
-    use kin6d_response_qualification, only: response_record_t, qualification_t, &
+    use milca_response_qualification, only: response_record_t, qualification_t, &
                                             qualify_response, ladder_gate
     implicit none
     type(response_record_t) :: rows(3, 8)

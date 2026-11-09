@@ -9,8 +9,8 @@ module ideal_map_cases
     ! normalised poloidal flux (q by spectral contour quadrature, tabulated
     ! on Chebyshev nodes) for the nested-seed builder.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_ideal_seed, only: ideal_profile_t
+    use milca_ideal_map, only: ideal_frozen_t
+    use milca_ideal_seed, only: ideal_profile_t
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
     private

@@ -1,4 +1,4 @@
-module kin6d_sheet_slab_map
+module milca_sheet_slab_map
     ! Nonlinear frozen-in ideal map of the sheared slab with a current sheet
     ! (docs/current-sheet-equilibrium.md section 4, stage 2), mu0 = 1.
     !
@@ -690,4 +690,4 @@ contains
         end do
         status = 0
     end subroutine
-end module kin6d_sheet_slab_map
+end module milca_sheet_slab_map

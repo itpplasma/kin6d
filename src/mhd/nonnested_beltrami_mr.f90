@@ -1,4 +1,4 @@
-submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
+submodule(milca_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     ! Opt-in matrix-free MINRES path of the Taylor closure
     ! (docs/equilibrium-beltrami.md, docs/nonnested-newton-mr.md). After
     ! lifting the boundary trace the fixed-mu equation is the symmetric
@@ -12,7 +12,7 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     ! path symmetrises the assembled block the same way, while the lifted
     ! trace enters through P C itself). S is never assembled: its action is
     ! FortFEM's sum-factorised meridian_fourier_curl_curl_apply (FFT in phi per
-    ! meridional quadrature point), as in kin6d_nonnested_newton_mr. C, P and
+    ! meridional quadrature point), as in milca_nonnested_newton_mr. C, P and
     ! G are mode-block-diagonal meridional matrices and stay sparse.
     !
     ! Preconditioner (BELTRAMI_PC_BLOCK): the block-diagonal SPD
@@ -44,7 +44,7 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     !   towards zero and was measured to need 2-5 times more iterations; the
     !   factors are reused unchanged when mu moves (Newton on mu).
     ! Mapped domains: Sbar ~ S with the constants of sup K/Kbar and
-    ! sup Kbar/K (the metric lumping of kin6d_nonnested_newton_mr).
+    ! sup Kbar/K (the metric lumping of milca_nonnested_newton_mr).
     !
     ! Helicity constraint: H(A) = H0 makes mu an unknown. The Taylor
     ! Lagrangian
@@ -67,7 +67,7 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use milca_equilibrium_nonnested, only: nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free
-    use kin6d_nonnested_newton_mr, only: lumped_metric_t, mode_curl, mode_mass
+    use milca_nonnested_newton_mr, only: lumped_metric_t, mode_curl, mode_mass
     implicit none
 
     type, extends(newton_mr_problem_t) :: saddle_t

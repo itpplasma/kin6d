@@ -4,7 +4,7 @@
   closure (R4) of [response-unified.md](../../docs/response-unified.md):
   linearisation about a rigidly rotating axisymmetric state, Lagrangian and
   Eulerian forms, the ideal limit and its gauges, the static ideal closure of
-  `kin6d_mhd_ideal_n`, the resistive and drift-MHD layer equations with their
+  `milca_mhd_ideal_n`, the resistive and drift-MHD layer equations with their
   known limits, and the pressure-tensor interface to the DK solver.
 - Status keys follow [theory-map.md](../../docs/theory-map.md). Every
   identity marked "checked" is evaluated by `test/check_response_r2_r4.py`
@@ -114,7 +114,7 @@ b0 . (J0 x B1) = -p0' B1.grad psi/B; with (T8.1),
 electron fluid; the J0 x B1 term of (T8.6) is what turns Omega_i into
 Omega_e. Status: hand derivation; enters the checked layer equations below.
 
-## R5. Static ideal outer region and `kin6d_mhd_ideal_n`
+## R5. Static ideal outer region and `milca_mhd_ideal_n`
 
 Drop rho w^2, rotation terms (O(M^2), O(w^2 tau_A^2)), nu, eta, s_2f; fluid
 P1 = p1 I. (T8.4) is grad p1 = J1 x B0 + J0 x B1 with J0 x B0 = grad p0. Then

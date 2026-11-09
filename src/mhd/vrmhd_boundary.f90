@@ -1,6 +1,6 @@
-module kin6d_vrmhd_boundary
+module milca_vrmhd_boundary
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vrmhd_section, only: vrmhd_section_t
+    use milca_vrmhd_section, only: vrmhd_section_t
     implicit none
     private
     public :: vrmhd_current_lift
@@ -12,4 +12,4 @@ contains
         wall = 0
         where (op%fs%sp(1)%bnd) wall = trace
     end subroutine
-end module kin6d_vrmhd_boundary
+end module milca_vrmhd_boundary

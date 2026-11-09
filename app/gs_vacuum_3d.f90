@@ -2,10 +2,10 @@ program gs_vacuum_3d
     !! L3: per-n vacuum field of 3D coils on the flux surfaces of a G-EQDSK
     !! equilibrium, projected onto PEST and Hamada harmonics b_mn.
     !! Usage: gs_vacuum_3d input.nml   (namelist /l3/, see below)
-    !! Conventions are fixed in module kin6d_vacuum_surfaces and milca_coils_3d.
+    !! Conventions are fixed in module milca_vacuum_surfaces and milca_coils_3d.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_coils_3d
-    use kin6d_vacuum_surfaces
+    use milca_vacuum_surfaces
     implicit none
     integer, parameter :: maxs = 64, maxn = 16
     character(len=512) :: eqdsk = '', coils = '', currents = '', prefix = 'l3', nml

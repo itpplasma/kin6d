@@ -1,4 +1,4 @@
-module kin6d_vrmhd_parameters
+module milca_vrmhd_parameters
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
     private
@@ -18,4 +18,4 @@ module kin6d_vrmhd_parameters
         real(dp) :: electron_mass = 9.1093837139e-31_dp
         real(dp) :: gradient_floor(2) = 1.0e-30_dp
     end type
-end module kin6d_vrmhd_parameters
+end module milca_vrmhd_parameters

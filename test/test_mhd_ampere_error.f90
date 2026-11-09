@@ -6,8 +6,8 @@ program test_mhd_ampere_error
         meridian_stiffness, meridian_load, meridian_real_to_complex
     use fortsparse, only: csc_z_t, csc_matvec, sparse_solve_once, &
         fortsparse_status_t, status_ok
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, &
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, &
         ampere_n_build, ampere_n_solve, ampere_n_error, &
         ampere_n_equilibrated_error, ampere_n_free
     implicit none

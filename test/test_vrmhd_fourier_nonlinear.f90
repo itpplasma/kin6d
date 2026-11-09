@@ -2,9 +2,9 @@ program test_vrmhd_fourier_nonlinear
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_fourier
-    use kin6d_vrmhd_fourier_nonlinear
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_fourier
+    use milca_vrmhd_fourier_nonlinear
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_qgrad, meridian_lagrange_nodes

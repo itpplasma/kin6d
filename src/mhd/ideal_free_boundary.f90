@@ -2,7 +2,7 @@ module milca_ideal_free_boundary
     ! 3D free boundary of the nested map lane (DESIGN 7.3, core note D6, N4).
     ! One reference mesh of the region inside a fixed axisymmetric coupling
     ! curve Gamma_c, with the plasma boundary Gamma_p as an internal chain:
-    !   plasma cells: the frozen-in energy of kin6d_ideal_map (unchanged), in
+    !   plasma cells: the frozen-in energy of milca_ideal_map (unchanged), in
     !     the position gauge: every node (Gamma_p included) carries its full
     !     poloidal position (q1, q2) per Fourier mode and the toroidal
     !     displacement omega is zero. Relabelling along B needs a toroidal
@@ -54,7 +54,7 @@ module milca_ideal_free_boundary
         ieee_quiet_nan
     use milca_grad_shafranov, only: gs_state_t
     use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t, &
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
     use milca_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
@@ -2167,7 +2167,7 @@ contains
         !            flux density, master coordinates, reference quadrature),
         ! with the C1 partition of unity phi_l = cos^2(pi/2 (L rho - l)),
         ! l = 0..L, rho = (1 - T)^1/2 and one layer per element layer, as in
-        ! the nested omega gauge of kin6d_ideal_map. Integrating by parts,
+        ! the nested omega gauge of milca_ideal_map. Integrating by parts,
         ! M_l vanishes for every curl-free u (translations, elongation), and
         ! a smooth f restores the moments for any continuum equilibrium: the
         ! gauge selects the labelling only (to discretisation accuracy) and

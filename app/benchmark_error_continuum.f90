@@ -17,7 +17,7 @@ program benchmark_error_continuum
     use milca_shielding_dynamics, only: shielding_state_t, init_shielding, &
         advance_shielding, sample_shielding
     use milca_debye_sphere_reference, only: debye_sphere_values, debye_sphere_enclosure
-    use kin6d_interaction_laboratory, only: interaction_state_t, init_interaction, &
+    use milca_interaction_laboratory, only: interaction_state_t, init_interaction, &
         step_interaction, sample_interaction
     use milca_species, only: atomic_units, electron
     use error_benchmark_support

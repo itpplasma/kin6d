@@ -17,7 +17,7 @@
 ! The GLL rule and the normalized associated Legendre recurrence used by the
 ! encounter are generic numerics pending an upstream FortNum home; they are
 ! kept private and minimal here (see docs/coulomb-encounter.md, open issues).
-module kin6d_radial_dvr
+module milca_radial_dvr
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_coulomb_encounter_leaves, only: ce_radial_potential, ce_kinetic_scale
@@ -400,4 +400,4 @@ contains
             end if
         end do
     end subroutine radial_locate
-end module kin6d_radial_dvr
+end module milca_radial_dvr

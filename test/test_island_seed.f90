@@ -21,13 +21,13 @@ program test_island_seed
     !   ladder : predicted width on 8/16/32 rings converges.
     !   leaves : generated leaf identities, JVP vs differences, JVP/VJP.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_report_t, &
         nn_solve, nn_linear_solve, nn_velocity
-    use kin6d_nonnested_relax, only: relax_system_t, relax_state_t, relax_options_t, &
+    use milca_nonnested_relax, only: relax_system_t, relax_state_t, relax_options_t, &
         relax_report_t, relax_prepare, relax_state, relax_pack_modes, relax_run, &
         relax_free, RELAX_IDEAL
-    use kin6d_island_seed, only: seed_options_t, seed_report_t, island_seed, &
+    use milca_island_seed, only: seed_options_t, seed_report_t, island_seed, &
         seed_resonant_br, seed_resonance_t, island_resonances, &
         seed_circle_quadrature
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_op_complex, &

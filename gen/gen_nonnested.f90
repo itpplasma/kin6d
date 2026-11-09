@@ -56,7 +56,7 @@ program gen_nonnested
     !     J = B x grad p / |B|^2 + g_par b b.E - G grad Phi,
     !     G = g_par b b + g_perp (I - b b),  E = ephi e_phi,
     ! all in physical (R, phi, Z) components. Their JVPs in (B, grad p,
-    ! grad Phi, ephi) are the Newton blocks of kin6d_nonnested_coupled.
+    ! grad Phi, ephi) are the Newton blocks of milca_nonnested_coupled.
     bg = br*gpr + bphi*gpp + bz*gpz
     flux = [cperp*gpr + d*bg*br, cperp*gpp + d*bg*bphi, cperp*gpz + d*bg*bz]
     call w%emit('anisotropic_flux', &

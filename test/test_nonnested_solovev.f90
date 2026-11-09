@@ -2,11 +2,11 @@ program test_nonnested_solovev
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, coordinates, &
         boundary, exact
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
         nn_build, nn_solve, nn_export
-    use kin6d_nonnested_residual, only: nn_residual
+    use milca_nonnested_residual, only: nn_residual
     use milca_equilibrium_residual, only: equilibrium_residual_t
     use milca_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
         EQ_BR, EQ_BZ, EQ_PSI, EQ_P

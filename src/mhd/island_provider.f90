@@ -1,4 +1,4 @@
-module kin6d_island_provider
+module milca_island_provider
     ! Closure A+D forward provider for inference (TIAGO DESIGN.md seam):
     ! named parameters, a warm-started stationary solve, B and p sampled in
     ! real space, equation-level JVP/VJP and provenance/status.
@@ -28,14 +28,14 @@ module kin6d_island_provider
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, &
         fortsparse_status_t, status_ok
-    use kin6d_mhd_mesh, only: flux_mesh_locate
+    use milca_mhd_mesh, only: flux_mesh_locate
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_point
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_report_t, nc_solve, nc_continue, nc_residual, nc_store, nc_fixed, &
         nc_reduce, nc_tangent_t, nc_tangent_factor, nc_tangent_solve, &
         nc_tangent_free
-    use kin6d_island_report, only: island_report_t, island_residual_report
+    use milca_island_report, only: island_report_t, island_residual_report
     implicit none
     private
     public :: island_provider_t, island_provider_init, island_provider_solve
@@ -470,7 +470,7 @@ contains
         type(nc_layout_t) :: lay
         lay = nc_layout(prov%field)
         write (buf, '(9a,i0,a,i0,a,i0,a,i0,a,4(es23.15e3,1x),a,4(es12.4,1x),a,i0,a,i0,a,es10.2,a,i0,a,i0)') &
-            'provider=kin6d_island_provider case=', trim(prov%case_id), &
+            'provider=milca_island_provider case=', trim(prov%case_id), &
             ' closure=', trim(prov%problem%closure%pressure), '+', &
             trim(prov%problem%closure%current), ' drive=', &
             trim(prov%problem%closure%drive), ' order=', prov%field%fs%k, &

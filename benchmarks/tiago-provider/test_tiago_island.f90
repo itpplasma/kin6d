@@ -3,8 +3,8 @@ program test_tiago_island
     use island_a_fixture, only: island_a_setup, shell_source, island_a_sample_points
     use nn_vacuum_fixture, only: field, coils, current, ftor
     use milca_coils_3d, only: coil_set_b_cart
-    use kin6d_nonnested_coupled, only: nc_problem_t
-    use kin6d_island_provider, only: island_provider_t, island_provider_init, &
+    use milca_nonnested_coupled, only: nc_problem_t
+    use milca_island_provider, only: island_provider_t, island_provider_init, &
         island_provider_solve, island_provider_sample, island_provider_vjp, &
         island_provider_free, island_provider_provenance, IP_OK, IP_NTHETA, IP_EPSILON
     use milca_tiago_island_mse, only: island_mse_posterior_t, island_mse_predict

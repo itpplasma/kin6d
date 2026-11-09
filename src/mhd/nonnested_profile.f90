@@ -1,4 +1,4 @@
-module kin6d_nonnested_profile
+module milca_nonnested_profile
     ! Closure B: fit once on a copied seed, then solve A+D with immutable
     ! spatial data. The weak source is S = -div(q_seed), not a nodal target
     ! penalty. No topology classification or fitting occurs inside Newton.
@@ -8,7 +8,7 @@ module kin6d_nonnested_profile
     use fortfem_meridian_fourier_curl, only: meridian_fourier_gradient
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     use fortfem_meridian_feec_n, only: meridian_point_basis
-    use kin6d_mhd_mesh, only: flux_mesh_locate
+    use milca_mhd_mesh, only: flux_mesh_locate
     use milca_equilibrium_nonnested, only: free_b_field_t
     use milca_equilibrium_state, only: equilibrium_field_t, EQ_VALUES, &
                                        EQ_BR, EQ_BPHI, EQ_BZ, EQ_P
@@ -290,4 +290,4 @@ contains
                     report%seed_current_fit_rms, report%parallel_pressure_rms]))) return
         status = 0
     end subroutine
-end module kin6d_nonnested_profile
+end module milca_nonnested_profile

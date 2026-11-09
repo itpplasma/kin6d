@@ -1,4 +1,4 @@
-module kin6d_map_equilibrium
+module milca_map_equilibrium
     ! Read-only N=0 cylindrical map -> S adapter. The reference form is retained
     ! with the map, rather than reconstructed from truncated Fourier B modes.
     ! Inverting the represented map is a geometric root solve; the field leaf
@@ -12,7 +12,7 @@ module kin6d_map_equilibrium
                    EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES, &
                                        EQ_UNAVAILABLE
     use milca_equilibrium_chart, only: cylindrical_chart_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t
     use milca_ideal_map_leaves, only: ideal_axisymmetric_field, ideal_reference_form, &
         ideal_region_weight, ideal_contour_density
     use milca_grad_shafranov, only: gs_state_t, gs_axis_candidate, gs_element_jet
@@ -435,4 +435,4 @@ contains
         !$omp end parallel do
         status = failed
     end subroutine
-end module kin6d_map_equilibrium
+end module milca_map_equilibrium

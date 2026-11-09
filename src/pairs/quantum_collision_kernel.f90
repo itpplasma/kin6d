@@ -26,13 +26,13 @@
 !> beyond r_turn + tail*lambda_D, matched to Riccati-Bessel functions by least
 !> squares. d delta_l/d eta from the same factorization (implicit equation-level
 !> tangent (H - E) da = -(dV/dg) a), not by differentiating iterations.
-module kin6d_quantum_collision_kernel
+module milca_quantum_collision_kernel
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_special_gamma, only: digamma_complex, trigamma_complex
     use fortnum_special_riccati_bessel, only: riccati_bessel
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
-    use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
+    use milca_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
     use kin6d_coulomb_encounter_leaves, only: ce_mott
     use milca_quantum_collision_leaves
     implicit none
@@ -551,4 +551,4 @@ contains
         dlnl = dlnl/eta**2 - 2*lnl/eta
         if (present(viscosity)) viscosity = viscosity_from_phases(delta)/eta**2
     end subroutine yukawa_transfer_log
-end module kin6d_quantum_collision_kernel
+end module milca_quantum_collision_kernel

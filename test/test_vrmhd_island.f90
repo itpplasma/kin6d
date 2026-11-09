@@ -4,10 +4,10 @@ program test_vrmhd_island
     use vrmhd_periodic_slab, only: periodic_slab_t, periodic_slab_build, &
         periodic_scalar
     use vrmhd_island_leaves, only: island_shear_equilibrium, island_seed
-    use kin6d_vrmhd_section, only: vrmhd_section_basis, vrmhd_section_trace, &
+    use milca_vrmhd_section, only: vrmhd_section_basis, vrmhd_section_trace, &
         vrmhd_section_residual
-    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
+    use milca_vrmhd_parameters, only: vrmhd_parameters_t
+    use milca_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
         vrmhd_evolve_consistent, vrmhd_evolve_expand
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load, &
         meridian_point_basis_t, meridian_point_basis_init

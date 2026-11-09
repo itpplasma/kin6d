@@ -334,7 +334,7 @@ opt-in C with regional invariants. The default below selects A+D.
 [V] `nc_problem_t%closure` defaults to A+D, current drive `I_phi`, Dirichlet
 heat and potential data and the `regularised` target class. Existing NN2
 callers retain their coefficients, source hooks, boundary seed and current.
-`kin6d_island_case:island_case_read` reads the following **single-region
+`milca_island_case:island_case_read` reads the following **single-region
 subset** from an open Fortran unit, leaving a rejected problem unchanged:
 
 ```fortran
@@ -417,7 +417,7 @@ must not be conflated. Quote only the path actually computed.
 
 #### Implemented A+D forward provider
 
-[V] `kin6d_island_provider` wraps the NN2 A+D solve for inference consumers
+[V] `milca_island_provider` wraps the NN2 A+D solve for inference consumers
 such as [TIAGO](https://github.com/itpplasma/tiago) (its DESIGN.md
 forward-provider seam). The parameters are theta = [sigma, epsilon, drive,
 chi_par]: sigma scales the declared source S = sigma S_0(R,Z), epsilon scales a

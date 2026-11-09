@@ -1,7 +1,7 @@
 module fitted_island_data
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_equilibrium_state, only: equilibrium_field_t, EQ_BPHI
-    use kin6d_nonnested_profile, only: nn_profile_t
+    use milca_nonnested_profile, only: nn_profile_t
     implicit none
     type, extends(equilibrium_field_t) :: seed_t
         real(dp) :: toroidal = 1
@@ -49,19 +49,19 @@ program test_island_fitted
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_is_finite, ieee_value, ieee_quiet_nan
     use fitted_island_data
     use nn_solovev_fixture, only: r0, minor, ftor, mapping, coordinates
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
     use fortsparse, only: csc_t, csc_matvec
     use milca_equilibrium_nonnested, only: free_b_field_t, nn_build
-    use kin6d_nonnested_profile, only: nn_fit_source
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
+    use milca_nonnested_profile, only: nn_fit_source
+    use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_validate, nc_source_data, nc_fixed, nc_reduce, nc_residual, &
         nc_jacobian, nc_jvp, nc_vjp
-    use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
+    use milca_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
     use milca_equilibrium_residual, only: equilibrium_residual_t
-    use kin6d_island_case, only: island_case_read
-    use kin6d_island_closure, only: ISLAND_INVALID, ISLAND_DELEGATE_B, ISLAND_BAD_DATA
-    use kin6d_island_report, only: island_report_t, island_residual_report
+    use milca_island_case, only: island_case_read
+    use milca_island_closure, only: ISLAND_INVALID, ISLAND_DELEGATE_B, ISLAND_BAD_DATA
+    use milca_island_report, only: island_report_t, island_residual_report
     implicit none
     type(nc_problem_t) :: problem, other
     type(flux_mesh_t) :: mesh

@@ -3,9 +3,9 @@ program test_response_strip_readback
     !! exterior solution for the step equilibrium: psi=0 inside r_s and
     !! psi_ext*(r^m - r_s^(2m) r^-m) outside. Phi=2 i m R0 psi, psi_N=r^2.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_response_strip, only: cyl_step_t, strip_options_t, strip_solution_t, &
+    use milca_response_strip, only: cyl_step_t, strip_options_t, strip_solution_t, &
         strip_mesh, strip_solve, layer_width, step_rational, step_fprime
-    use kin6d_response_calibration, only: spot_weights, spot_jump
+    use milca_response_calibration, only: spot_weights, spot_jump
     implicit none
     type(cyl_step_t) :: eq
     type(strip_options_t) :: opt

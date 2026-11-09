@@ -1,4 +1,4 @@
-module kin6d_ideal_seed_3d
+module milca_ideal_seed_3d
     ! Fixed-boundary seed only: no exact interior equilibrium is used.
     ! Boundary convention: R,Z = sum C_mn cos(m theta-n*nfp*phi)
     !                                  + S_mn sin(m theta-n*nfp*phi).
@@ -6,7 +6,7 @@ module kin6d_ideal_seed_3d
     ! normalized TOROIDAL flux, unlike ideal_seed's poloidal-flux profiles.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_map_init, &
+    use milca_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_rdof, IDEAL_MAP_OK, &
         IDEAL_MAP_BAD_INPUT, IDEAL_MAP_FOLDED, ideal_map_angle_enable, &
         ideal_map_angle_value

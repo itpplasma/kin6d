@@ -20,11 +20,11 @@ axisymmetric G-EQDSK equilibrium.
   (`fortfem_toroidal_mode_boundary_operators_2d`). The operator
   `K + C^H S^{-1} C` (`C` the normal-flux pairing,
   `fortfem_meridian_magnetic_coupling`) is Hermitian positive definite and
-  factored once per mesh and `n` (`kin6d_mhd_ampere_n`).
+  factored once per mesh and `n` (`milca_mhd_ampere_n`).
 - **Shielding sheets** on the rational surfaces `q = m/n`: surface currents
   `n̂ × grad_n Λ`, `Λ = λ e^{i(nζ − mθ_s)}`, with `λ` fixed by zero total
-  resonant flux (`kin6d_mhd_response_n`).
-- **Volume current** (`model = 'ideal'`, `kin6d_mhd_ideal_n`):
+  resonant flux (`milca_mhd_response_n`).
+- **Volume current** (`model = 'ideal'`, `milca_mhd_ideal_n`):
   `B0·∇p = −p0' B·∇ψ`, `J⊥ = B0 × (∇p − J0 × B)/B0²`,
   `B0·∇(J∥/B0) = −∇·J⊥`, with the magnetic differential equations solved
   exactly in the geometric-angle Fourier basis. The current leaving through
@@ -45,7 +45,7 @@ Not modelled: rotation, resistivity, kinetic terms.
 
 ## Discretisation
 
-Flux-aligned mesh (`kin6d_mhd_mesh`): rings at `u = sqrt(ψ_N)`, uniform plus
+Flux-aligned mesh (`milca_mhd_mesh`): rings at `u = sqrt(ψ_N)`, uniform plus
 every rational surface; vertices per ring double outward; isoparametric
 geometry of order ≤ 2 whose ring-edge nodes lie on the flux surfaces. FEEC
 order `k` (P_k Nédélec). The volume current of the strip between two rings is
@@ -200,12 +200,12 @@ in `prefix_layer.dat`. This is mesh setup; cap/discovery changes have no smooth
 derivative. A rational outside the fit domain is refused explicitly. This
 change does not qualify finite-pressure asymptotic matching or a resolved strip.
 
-`kin6d_mhd_closure_n`, `closure = 'frobenius'` in `gs_response_3d`. Near a
+`milca_mhd_closure_n`, `closure = 'frobenius'` in `gs_response_3d`. Near a
 rational `q = m/n` at `psin_s`, `x = psin − psin_s`, the resonant flux of an
 ideal outer solution is `Φ_m = A|x|^(1/2−μ) + B|x|^(1/2+μ) + Cx + …` on each
 side (Glasser–Greene–Johnson; `μ = sqrt(−D_I)`, Mercier index from the DCON
 formula). The layer `|x| < δ` carries no volume current; two resonant sheets
-on its edge rings (the shared sheet machinery of `kin6d_mhd_response_n`,
+on its edge rings (the shared sheet machinery of `milca_mhd_response_n`,
 `layer_closure_t`) are fixed by vanishing large coefficients `A±`, read from
 fits of `Φ_m` on three graded rings outside the layer on each side (basis
 `t^−ε, t, (t^(1+ε)−t)/ε`, `ε = μ − 1/2`, which tends to `1, t, t ln t` at zero
@@ -239,7 +239,7 @@ current changes `singflx` by 4–35x (nrad 96).
 
 ## Resistive closure with rotation (L5)
 
-`kin6d_mhd_layer_n`, `closure = 'resistive'` in `gs_response_3d`. A separate
+`milca_mhd_layer_n`, `closure = 'resistive'` in `gs_response_3d`. A separate
 current model on the shared operator (equilibrium-core D5): the outer region
 is the static ideal response above (Ampère operator, coil drive, MEPHIT-form
 volume current, unchanged); each rational keeps the L6 layer and its two edge
@@ -311,14 +311,14 @@ factored as the real SPD form (1M unknowns at nrad 128). Output `prefix_res.dat`
 the vacuum resonant flux `Φ_vac` and `b_vac = Φ_vac/area`, the sheet amplitude
 `λ` and `b_shield = −M_ss λ/area`, the resonant flux of the shielding current
 alone per area (GPEC's `singflx`); `m = n q` with the signed `q` of
-`kin6d_vacuum_surfaces` (GPEC labels it `−m`). The file also carries a
+`milca_vacuum_surfaces` (GPEC labels it `−m`). The file also carries a
 `# ampere_discrete_energy_error_max` comment: the worst discrete residual-energy
 indicator of the app's unit-sheet Ampère solves (claim `indicator`; the
 continuous claim stays `unavailable-exterior-remainder`).
 
 ## Perturbation export (L7 core)
 
-`kin6d_mhd_perturbation_n` (`src/mhd/mhd_perturbation_n.f90`), test
+`milca_mhd_perturbation_n` (`src/mhd/mhd_perturbation_n.f90`), test
 `mhd_perturbation_l7_xi_lagrangian_charts`. From the total Eulerian per-n field
 `dB_E` (coil + plasma + sheets, coefficient of `e^{i n phi}`, physical field
 `dB_E e^{i n phi} + c.c.`, cylindrical `(R, phi, Z)`, SI) on a flux surface it

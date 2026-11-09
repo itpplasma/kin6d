@@ -9,7 +9,7 @@ module correlation_map_md
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use milca_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_thermostat, &
         ocp_advance, ocp_kinetic_temperature
-    use kin6d_nbody, only: nbody_system_t, nbody_energy
+    use milca_nbody, only: nbody_system_t, nbody_energy
     use milca_pair_correlation, only: pair_counts, pair_distribution
     use milca_series_statistics, only: series_autocorrelation
     implicit none

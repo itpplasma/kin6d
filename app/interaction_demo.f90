@@ -1,7 +1,7 @@
 program interaction_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, ipoint
-    use kin6d_interaction_laboratory
+    use milca_interaction_laboratory
     use milca_interaction_leaves, only: interaction_energy, &
                                         interaction_particle_error_interval, &
                                         interaction_frame_time, &

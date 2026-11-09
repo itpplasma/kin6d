@@ -8,10 +8,10 @@ module nn_vacuum_fixture
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use milca_nonnested_leaves, only: segment_potential, vacuum_gauge
     use milca_equilibrium_state, only: equilibrium_field_t
-    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+    use milca_island_diagnostics, only: island_trace_options_t, island_point_t, &
                            island_trace, island_symmetry_point, island_periodic_point, &
                                         island_stability, island_libration_edge
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_mesh_2d, only: mesh_2d_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6, ftor = 100

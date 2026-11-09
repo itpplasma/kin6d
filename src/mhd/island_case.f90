@@ -1,7 +1,7 @@
-module kin6d_island_case
+module milca_island_case
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
-    use kin6d_nonnested_coupled, only: nc_problem_t, nc_validate
-    use kin6d_island_closure, only: ISLAND_INVALID
+    use milca_nonnested_coupled, only: nc_problem_t, nc_validate
+    use milca_island_closure, only: ISLAND_INVALID
     implicit none
     private
     public :: island_case_read

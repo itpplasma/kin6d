@@ -2,7 +2,7 @@ module ideal_fb_circuits_test_field
     ! Smooth nested frozen data (elliptic labels about (3.05, 0), F = 6 T m),
     ! the same simple data as the N4 derivative checks.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     type, extends(ideal_frozen_t), public :: elliptic_field_t

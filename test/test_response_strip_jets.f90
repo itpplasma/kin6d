@@ -1,7 +1,7 @@
 program test_response_strip_jets
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read
-    use kin6d_response_strip_jets, only: strip_equilibrium_jets_t, &
+    use milca_vacuum_surfaces, only: psi_grid_t, eqdsk_read
+    use milca_response_strip_jets, only: strip_equilibrium_jets_t, &
         strip_equilibrium_point, strip_equilibrium_grid
     implicit none
     type(psi_grid_t) :: g

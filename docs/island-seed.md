@@ -2,7 +2,7 @@
 
 Status: implemented, opt-in (2026-10-28). Item 4 of the
 [relaxation comparators](relaxation-comparators.md#algorithms-to-adopt).
-Module `src/mhd/island_seed.f90` (`kin6d_island_seed`), generated leaves
+Module `src/mhd/island_seed.f90` (`milca_island_seed`), generated leaves
 `src/generated/milca_island_seed_leaves.f90` from `gen/gen_island_seed.f90`,
 test `test/test_island_seed.f90`. Nothing calls it by default.
 

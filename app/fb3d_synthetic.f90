@@ -7,7 +7,7 @@ module fb3d_synthetic_field
     ! in (q1, q2), so the VMEC angle is pi/2 - theta_c):
     !   chi = sgn b3 a^2/2 int_0^s iota ds',  grad chi = sgn b3 iota(s) q.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_ideal_map, only: ideal_frozen_t
+    use milca_ideal_map, only: ideal_frozen_t
     implicit none
     private
     type, extends(ideal_frozen_t), public :: iota_field_t

@@ -59,7 +59,7 @@ program test_geqdsk_adapter
     use milca_gs_ampere_loop, only: gs_boundary_current
     use milca_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
     use geqdsk_tools, only: geqdsk_t, geqdsk_read, geqdsk_write
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, eqdsk_read, psi_eval, &
+    use milca_vacuum_surfaces, only: psi_grid_t, psi_grid_init, eqdsk_read, psi_eval, &
                                      profiles_of_psin, surface_t, surface_build
     implicit none
     character(1024) :: mode, argument
