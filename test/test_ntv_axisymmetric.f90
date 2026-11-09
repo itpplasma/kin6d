@@ -4,6 +4,9 @@
 !!   onsager        d(1, 1, 1, 3) = -d(1, 1, 3, 1) and d(1, 1, 2, 3) =
 !!                  -d(1, 1, 3, 2), with pitch-angle scattering and with the
 !!                  full linearised operator;
+!!   momentum       a single species with momentum-conserving self-collisions:
+!!                  A_1 drives only the rigid rotation, so the flow response
+!!                  is -(T/(Z e))/(2 k q) exactly (D_31 = G T/(Z e));
 !!   collisionless  with pitch-angle scattering every speed node solves the
 !!                  problem of dk_mono, driven by (T/(Z e)) x r times its radial
 !!                  drift, r = -2/(k q). As nu -> 0 the parallel-flow response
@@ -32,6 +35,7 @@ program test_ntv_axisymmetric
     call get_command_argument(1, check)
     select case (trim(check))
     case ('onsager'); ok = onsager()
+    case ('momentum'); ok = momentum()
     case ('collisionless'); ok = collisionless()
     case default
         print '(a)', 'unknown check '//trim(check)
@@ -89,6 +93,16 @@ contains
                 .and. close('d23 = -d32', d(1, 1, 2, 3), -d(1, 1, 3, 2), 1e-6_dp)
         end do
     end function onsager
+
+    logical function momentum() result(ok)
+        real(dp) :: d(1, 1, 3, 3)
+        integer :: status
+        ok = .false.
+        call solve(1e-3_dp, COLLOP_FULL, d, status)
+        if (status /= NTV_OK) return
+        ok = close('A_1 flow, full operator', d(1, 1, 3, 1), &
+            -(2*kev/charge)/(2*(1/(q*rmajor))*q), 1e-5_dp)
+    end function momentum
 
     logical function collisionless() result(ok)
         real(dp), parameter :: nu(2) = [6.25e-6_dp, 1.5625e-6_dp], mu(2) = [1e-6_dp, 2.5e-7_dp]
