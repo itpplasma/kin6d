@@ -142,9 +142,9 @@ features, each checked against NEO-2 on the same inputs before it counts as cove
 | NEO-2 feature | Status |
 |---|---|
 | quasilinear NTV torque, all species, full linearised operator, both quasilinear sources (NEO-2-QL) | covered (step 0) |
-| E_r from the radial force balance of one species with prescribed toroidal rotation (`isw_calc_er = 1`) | missing; needs the axisymmetric D_31 and D_32, so it comes with the bootstrap step |
+| E_r from the radial force balance of one species with prescribed toroidal rotation (`isw_calc_er = 1`) | covered: Omega_tE from V_phi/R of one species; on ITER TC24 it returns NEO-2's Omega_tE from NEO-2's rotation profile within 1.4 %, and the V_phi/R profiles agree within 1.1 % |
 | non-axisymmetric heat flux (`isw_qflux_NA`) | covered: K_21, K_22 and the energy flux; within 2 % of NEO-2 on ITER TC24 (4 % worst case) |
-| axisymmetric transport matrix with the full operator: bootstrap current, parallel conductivity, Ware pinch | the n = 0 solve exists inside the NTV kernel; not yet an output |
+| axisymmetric transport matrix with the full operator: bootstrap current, parallel conductivity, Ware pinch | covered: D_31 and D_32 species matrices within 1.7 %, parallel flows within 1 % and <j_par B> within 1.8 % of NEO-2 on ITER TC24; D_33 and D_13 within 3.5 % in unit-free combinations; AUG 30835 at s = 0.50: deuteron flow within 0.5 %, <j_par B> within 0.1 % |
 | relativistic collision operator (Braams-Karney) and the generalised Spitzer function for current drive | missing |
 | misaligned-potential drive: radial E x B drift of the potential harmonic not aligned with the perturbed surfaces, Phi^MA_m = Phi_m + E_0r Delta_m (Delta_m the surface displacement), acting on d f0/dr, with the local parallel current over the surface (NEO-2 pull request 240, draft) | missing; one more right-hand side of the kernel, which already resolves theta. Check: a corrugation without misaligned potential gives zero parallel current at any collisionality with a momentum-conserving operator; collisionless limit against KiLCA |
 | quasineutral Phi_1 on the surface from the species responses (planned NEO-2 stack after 240, SFINCS benchmark) | missing; a bordered unknown per angle in the multispecies solve |
