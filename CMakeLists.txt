@@ -370,7 +370,7 @@ target_link_libraries(milca_gs_reference_test PUBLIC milca)
 target_compile_options(milca_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(milca_equilibrium PRIVATE src/generated/milca_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
 target_sources(milca_equilibrium PRIVATE src/generated/milca_boozer_file_leaves.f90
-    src/equilibrium/boozer_file.f90)
+    src/equilibrium/boozer_file.f90 src/equilibrium/boozer_orbit.f90)
 target_sources(milca_equilibrium PRIVATE src/generated/milca_gs_inverse_leaves.f90
     src/equilibrium/gs_inverse.f90 src/equilibrium/gs_prescribed_q.f90)
 set_source_files_properties(src/generated/milca_gs_inverse_leaves.f90
@@ -1045,6 +1045,13 @@ foreach(check onsager momentum local collisionless)
     add_test(NAME ntv_axisymmetric_${check} COMMAND test_ntv_axisymmetric ${check})
     milca_test_labels(ntv_axisymmetric_${check} fast CLASSES continuum
         TARGETS test_ntv_axisymmetric)
+endforeach()
+add_executable(test_boozer_orbit test/test_boozer_orbit.f90)
+target_link_libraries(test_boozer_orbit PRIVATE milca)
+foreach(check deeply_trapped thin_bounce invariants)
+    add_test(NAME boozer_orbit_${check} COMMAND test_boozer_orbit ${check})
+    milca_test_labels(boozer_orbit_${check} fast CLASSES equilibrium
+        TARGETS test_boozer_orbit)
 endforeach()
 add_executable(test_dk_ntv test/test_dk_ntv.f90)
 target_link_libraries(test_dk_ntv PRIVATE milca)

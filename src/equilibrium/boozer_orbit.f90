@@ -1,0 +1,307 @@
+!> Unperturbed guiding-centre orbits at finite width on the axisymmetric
+!! equilibrium of a Boozer file, from the canonical Lagrangian of White and
+!! Chance (Phys. Fluids 27, 2455 (1984)) per unit charge,
+!!   L = P_theta theta_dot + P_zeta zeta_dot - H,
+!!   P_theta = psi + rho I,  P_zeta = rho G - psi_p,
+!!   H = (Z e/m) rho^2 B^2/2 + (mu/(Z e)) B + Phi(psi_p),
+!! with psi = psi_tor/(2 pi) = psi' s, psi_p the poloidal flux per radian,
+!! dpsi_p/dpsi = iota, rho = m v_par/(Z e B), G and I the covariant Boozer
+!! components [T m] and H in volts. For fixed (P_zeta, H, mu) the orbit is a
+!! curve psi(theta); its turning points (rho = 0) lie on psi_p = -P_zeta,
+!! the surface s* of psi* = p_phi/(Z e). With D = G + iota I + rho (G I' - I G'),
+!! ' = d/dpsi, Hamilton's equations give
+!!   theta_dot = (H_psi G - H_rho (rho G' - iota))/D,
+!!   zeta_dot = (H_rho (1 + rho I') - H_psi I)/D,
+!! exact at any orbit width within the model of the file (axisymmetric,
+!! no radial covariant component). The electrostatic potential is linear,
+!! dPhi/dpsi_p = -omega_e, so that omega_e is the E x B rotation frequency.
+!! Lengths in m, fluxes in T m^2, energies in J (mu in J/T), times in s.
+module milca_boozer_orbit
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_quadrature, only: gauss_legendre
+    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, BOOZER_OK
+    implicit none
+    private
+    public :: orbit_particle_t, orbit_point_t, orbit_state, orbit_point, orbit_frequencies, &
+        orbit_flux_p
+    integer, parameter, public :: ORBIT_OK = 0, ORBIT_BAD_INPUT = 1, ORBIT_NO_ROOT = 2
+
+    real(dp), parameter :: pi = 4*atan(1.0_dp)
+
+    !> One particle class: mass [kg], charge Z e [C], magnetic moment [J/T],
+    !> total energy [J] including Z e Phi, dPhi/dpsi_p = -omega_e [rad/s], and
+    !> the reference surface s_ref where Phi = 0. The orbit itself is fixed by
+    !> its surface s* (P_zeta = -psi_p(s*)).
+    type :: orbit_particle_t
+        real(dp) :: mass = 0, charge = 0, mu = 0, energy = 0
+        real(dp) :: omega_e = 0, s_ref = 0
+    end type
+
+    !> The orbit at one theta: s, rho [m], v_par [m/s], B [T], theta_dot and
+    !> zeta_dot [rad/s].
+    type :: orbit_point_t
+        real(dp) :: s = 0, rho = 0, v_par = 0, b = 0, theta_dot = 0, zeta_dot = 0
+    end type
+
+contains
+
+    !> psi_p(s) - psi_p(s0) = psi' int_s0^s iota ds by 8-point Gauss-Legendre.
+    function orbit_flux_p(bf, s0, s) result(dpsi_p)
+        type(boozer_file_t), intent(in) :: bf
+        real(dp), intent(in) :: s0, s
+        real(dp) :: dpsi_p, x(8), w(8)
+        type(boozer_surface_t) :: surf
+        integer :: k, st
+        call gauss_legendre(8, x, w)
+        dpsi_p = 0
+        do k = 1, 8
+            call boozer_surface(bf, 0.5_dp*(s0 + s) + 0.5_dp*(s - s0)*x(k), surf, st)
+            dpsi_p = dpsi_p + w(k)*surf%iota
+        end do
+        dpsi_p = 0.5_dp*(s - s0)*dpsi_p*surf%psi_prime
+    end function orbit_flux_p
+
+    !> Field quantities at (s, theta): B, dB/ds, G, I, dG/ds, dI/ds, iota, psi'.
+    subroutine orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, status)
+        type(boozer_file_t), intent(in) :: bf
+        real(dp), intent(in) :: s, theta
+        real(dp), intent(out) :: b, b_s, g, i, g_s, i_s, iota, psi_prime
+        integer, intent(out) :: status
+        type(boozer_surface_t) :: surf
+        integer :: k
+        call boozer_surface(bf, s, surf, status)
+        if (status /= BOOZER_OK) then
+            status = ORBIT_BAD_INPUT
+            return
+        end if
+        b = 0
+        b_s = 0
+        do k = 1, size(surf%m)
+            if (surf%n(k) /= 0) cycle
+            b = b + surf%bmn(k)*cos(surf%m(k)*theta) + surf%bma(k)*sin(surf%m(k)*theta)
+            b_s = b_s + surf%bmn_s(k)*cos(surf%m(k)*theta) + surf%bma_s(k)*sin(surf%m(k)*theta)
+        end do
+        g = surf%g_cov
+        i = surf%i_cov
+        g_s = surf%g_cov_s
+        i_s = surf%i_cov_s
+        iota = surf%iota
+        psi_prime = surf%psi_prime
+        status = ORBIT_OK
+    end subroutine orbit_state
+
+    !> The orbit point at theta on the leg sigma (sign of v_par). rho follows
+    !> from P_zeta, and s is the root of H(s) on the side of s* that sigma
+    !> selects, bracketed outwards from s* and refined by bisection.
+    subroutine orbit_point(bf, p, s_star, theta, sigma, pt, status)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, theta, sigma
+        type(orbit_point_t), intent(out) :: pt
+        integer, intent(out) :: status
+        real(dp) :: lo, hi, mid, f_lo, f_hi, f_mid, step, dir
+        integer :: it
+        status = ORBIT_BAD_INPUT
+        if (p%mass <= 0 .or. p%charge == 0) return
+        dir = sigma*sign(1.0_dp, leg_sign())
+        lo = s_star
+        f_lo = residual(lo)
+        if (f_lo > 0) then
+            ! The orbit does not reach this theta.
+            status = ORBIT_NO_ROOT
+            return
+        end if
+        step = 1e-3_dp
+        do it = 1, 60
+            hi = s_star + dir*step
+            if (hi <= 0 .or. hi >= 1) then
+                status = ORBIT_NO_ROOT
+                return
+            end if
+            f_hi = residual(hi)
+            if (f_hi > 0) exit
+            lo = hi
+            f_lo = f_hi
+            step = 2*step
+        end do
+        if (f_hi <= 0) then
+            status = ORBIT_NO_ROOT
+            return
+        end if
+        do it = 1, 200
+            mid = 0.5_dp*(lo + hi)
+            f_mid = residual(mid)
+            if (f_mid > 0) then
+                hi = mid
+            else
+                lo = mid
+            end if
+            if (abs(hi - lo) < 1e-15_dp) exit
+        end do
+        call evaluate(0.5_dp*(lo + hi), pt, status)
+    contains
+        !> sign of rho on the side s > s*: rho G = P_zeta + psi_p(s) grows like
+        !> iota psi' (s - s*).
+        real(dp) function leg_sign()
+            real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime
+            integer :: st
+            call orbit_state(bf, s_star, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+            leg_sign = iota*psi_prime*g
+        end function leg_sign
+
+        real(dp) function residual(s)
+            real(dp), intent(in) :: s
+            type(orbit_point_t) :: q
+            integer :: st
+            call evaluate(s, q, st)
+            residual = huge(1.0_dp)
+            if (st /= ORBIT_OK) return
+            residual = kinetic(q%rho, q%b) + p%mu*q%b + p%charge*potential(s) - p%energy
+        end function residual
+
+        real(dp) function kinetic(rho, b)
+            real(dp), intent(in) :: rho, b
+            kinetic = (p%charge*rho*b)**2/(2*p%mass)
+        end function kinetic
+
+        real(dp) function potential(s)
+            real(dp), intent(in) :: s
+            potential = -p%omega_e*orbit_flux_p(bf, p%s_ref, s)
+        end function potential
+
+        subroutine evaluate(s, q, st)
+            real(dp), intent(in) :: s
+            type(orbit_point_t), intent(out) :: q
+            integer, intent(out) :: st
+            real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, h_psi, h_rho, d, rho
+            call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+            if (st /= ORBIT_OK) return
+            rho = orbit_flux_p(bf, s_star, s)/g
+            q%s = s
+            q%rho = rho
+            q%b = b
+            q%v_par = p%charge*rho*b/p%mass
+            ! Derivatives per unit psi (toroidal flux per radian) and per volt.
+            h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime &
+                - p%omega_e*iota
+            h_rho = p%charge*rho*b**2/p%mass
+            d = g + iota*i + rho*(g*i_s - i*g_s)/psi_prime
+            q%theta_dot = (h_psi*g - h_rho*(rho*g_s/psi_prime - iota))/d
+            q%zeta_dot = (h_rho*(1 + rho*i_s/psi_prime) - h_psi*i)/d
+        end subroutine evaluate
+    end subroutine orbit_point
+
+    !> Poloidal and toroidal frequencies of the orbit with surface s_star and
+    !> the energy and magnetic moment of p. A trapped
+    !> orbit bounces between the turning points theta_1 < theta_2 where
+    !> mu B(s*, theta) + Z e Phi(s*) = H; omega_b = 2 pi/tau_b and the
+    !> precession is the toroidal advance per bounce over tau_b. A passing
+    !> orbit (sigma given) transits theta over 2 pi. Gauss-Legendre in u with
+    !> theta = theta_m + Delta sin(u) removes the inverse square root at the
+    !> turning points. trapped is set from the field at s*.
+    subroutine orbit_frequencies(bf, p, s_star, sigma, n_quad, omega_b, omega_zeta, trapped, &
+            status)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, sigma
+        integer, intent(in) :: n_quad
+        real(dp), intent(out) :: omega_b, omega_zeta
+        logical, intent(out) :: trapped
+        integer, intent(out) :: status
+        real(dp) :: x(n_quad), w(n_quad), t1, t2, tau, dzeta, u, theta, jac, sg
+        type(orbit_point_t) :: pt
+        integer :: k, leg
+        call gauss_legendre(n_quad, x, w)
+        call turning_points(t1, t2, trapped, status)
+        if (status /= ORBIT_OK) return
+        tau = 0
+        dzeta = 0
+        if (trapped) then
+            do leg = 1, 2
+                sg = merge(1.0_dp, -1.0_dp, leg == 1)
+                do k = 1, n_quad
+                    u = 0.5_dp*pi*x(k)
+                    theta = 0.5_dp*(t1 + t2) + 0.5_dp*(t2 - t1)*sin(u)
+                    jac = 0.5_dp*(t2 - t1)*cos(u)*0.5_dp*pi
+                    call orbit_point(bf, p, s_star, theta, sg, pt, status)
+                    if (status /= ORBIT_OK) return
+                    tau = tau + w(k)*jac/abs(pt%theta_dot)
+                    dzeta = dzeta + w(k)*jac*pt%zeta_dot/abs(pt%theta_dot)
+                end do
+            end do
+        else
+            do k = 1, n_quad
+                theta = pi*(x(k) + 1)
+                call orbit_point(bf, p, s_star, theta, sigma, pt, status)
+                if (status /= ORBIT_OK) return
+                tau = tau + w(k)*pi/abs(pt%theta_dot)
+                dzeta = dzeta + w(k)*pi*pt%zeta_dot/abs(pt%theta_dot)
+            end do
+        end if
+        omega_b = 2*pi/tau
+        omega_zeta = dzeta/tau
+        status = ORBIT_OK
+    contains
+        !> Roots of mu B(s*, theta) = H - Z e Phi(s*) around the minimum of B
+        !> by bisection on a 512-point scan; none means passing.
+        subroutine turning_points(a, b, trap, st)
+            real(dp), intent(out) :: a, b
+            logical, intent(out) :: trap
+            integer, intent(out) :: st
+            integer, parameter :: m = 512
+            real(dp) :: th(0:m), f(0:m)
+            integer :: j, jmin
+            do j = 0, m
+                th(j) = 2*pi*j/m
+                f(j) = level(th(j), st)
+                if (st /= ORBIT_OK) return
+            end do
+            trap = any(f > 0)
+            a = 0
+            b = 0
+            if (.not. trap) return
+            jmin = minloc(f, 1) - 1
+            ! Walk from the minimum of B to both sides until the level is crossed.
+            a = root(th(jmin), th(jmin) - 2*pi, st)
+            if (st /= ORBIT_OK) return
+            b = root(th(jmin), th(jmin) + 2*pi, st)
+            if (a > b) a = a - 2*pi
+        end subroutine turning_points
+
+        real(dp) function level(th, st)
+            real(dp), intent(in) :: th
+            integer, intent(out) :: st
+            real(dp) :: bb, b_s, g, i, g_s, i_s, iota, psi_prime
+            call orbit_state(bf, s_star, th, bb, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+            level = p%mu*bb - p%charge*p%omega_e*orbit_flux_p(bf, p%s_ref, s_star) - p%energy
+        end function level
+
+        !> First crossing of level = 0 going from inside (level < 0) at th_in
+        !> towards th_out.
+        real(dp) function root(th_in, th_out, st)
+            real(dp), intent(in) :: th_in, th_out
+            integer, intent(out) :: st
+            real(dp) :: lo, hi, mid, step
+            integer :: j
+            lo = th_in
+            step = (th_out - th_in)/512
+            hi = lo
+            do j = 1, 512
+                hi = th_in + j*step
+                if (level(hi, st) > 0) exit
+                lo = hi
+            end do
+            do j = 1, 200
+                mid = 0.5_dp*(lo + hi)
+                if (level(mid, st) > 0) then
+                    hi = mid
+                else
+                    lo = mid
+                end if
+                if (abs(hi - lo) < 1e-15_dp) exit
+            end do
+            root = 0.5_dp*(lo + hi)
+        end function root
+    end subroutine orbit_frequencies
+
+end module milca_boozer_orbit
