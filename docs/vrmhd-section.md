@@ -150,7 +150,11 @@ consumer uses the J range to identify algebraic coordinates.
 coefficient arguments. Parameters, geometry and prescribed sources are fixed.
 `vrmhd_section_mass` returns `M(U) U_dot` through the same generated mass
 leaves. `vrmhd_section_jacobian` assembles `R_U + (M U_dot)_U + shift M`
-from those JVP leaves, for small reference problems. `vrmhd_section_vjp`
+from the pointwise tangent matrix. The residual integrand is linear in the
+test data, so one reverse sweep of the same leaf composition with the
+generated VJP leaves gives, per test slot, its derivative with respect to all
+33 state and 12 rate values; 36 sweeps per quadrature point replace 1620
+directional evaluations. `vrmhd_section_vjp`
 applies its sparse transpose. The duality is the Euclidean coefficient/test
 pairing; physical Riesz maps belong to the consumer.
 
@@ -305,7 +309,9 @@ preconditioner is a FortSparse supernodal direct factor of the reduced assembled
 Jacobian `P^T J P`. It uses weighted matching, scaling and sparse ordering;
 FortSparse checks a refined solve against the original matrix and falls back
 to its scalar pivoted factor if its factorization or backward-error gates fail.
-Consistent initial derivatives retain the existing direct solves. Setting
+Consistent initial derivatives use one supernodal factor per solve. A new
+factor of the fixed reduced pattern goes through `sparse_refactor`, which keeps
+its ordering and weighted matching. Setting
 `problem%solver%options%lu_method=FORTSPARSE_LU_SCALAR` after construction
 selects the scalar factor as a control. With `lag` above one, a factor is
 reused while `alpha`

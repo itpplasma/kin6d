@@ -14,7 +14,8 @@ program gen_vrmhd_leaves
     type(expr_t) :: mass, alpha, gpar, gfloor, chi, product_gradient(3), expo
     character(16) :: vector_args(3)
     character(32) :: leaf_names(40), id_text
-    integer :: i, j, leaf_id = 0
+    integer :: i, j, leaf_id = 0, nvjp = 0
+    character(96) :: vjp_lines(2000)
 
     rho = sym('rho'); rd = sym('rho_dot')
     t = sym('temperature'); td = sym('temperature_dot')
@@ -165,6 +166,18 @@ program gen_vrmhd_leaves
     call packed%line("error stop 'invalid VRMHD leaf'")
     call packed%line('end select')
     call packed%line('end subroutine')
+    call packed%line('subroutine vrmhd_leaf_vjp(id, x, w, gx)')
+    call packed%line('integer, intent(in) :: id')
+    call packed%line('real(dp), intent(in) :: x(:), w')
+    call packed%line('real(dp), intent(out) :: gx(:)')
+    call packed%line('select case(id)')
+    do i = 1, nvjp
+        call packed%line(trim(vjp_lines(i)))
+    end do
+    call packed%line('case default')
+    call packed%line("error stop 'invalid VRMHD leaf'")
+    call packed%line('end select')
+    call packed%line('end subroutine')
     call packed%line('end module milca_vrmhd_dispatch')
     call packed%close()
     call packed%open('gen_vrmhd_leaves', &
@@ -226,7 +239,36 @@ contains
             end if
         end do
         call packed%line(line//'dy)')
+        call vjp_line('case('//trim(number_of(leaf_id))//')')
+        call vjp_line('call vrmhd_'//name//'_vjp( &')
+        line = ''
+        do a = 1, 2*n + 1
+            if (a <= n) then
+                line = line//'x('//trim(number_of(a))//'), '
+            else if (a == n + 1) then
+                line = line//'w, '
+            else
+                line = line//'gx('//trim(number_of(a - n - 1))//')'
+                if (a < 2*n + 1) line = line//', '
+            end if
+            if (mod(a, 4) == 0 .and. a < 2*n + 1) then
+                call vjp_line(line//'&'); line = ''
+            end if
+        end do
+        call vjp_line(line//')')
     end subroutine
+
+    subroutine vjp_line(text)
+        character(*), intent(in) :: text
+        nvjp = nvjp + 1
+        vjp_lines(nvjp) = text
+    end subroutine
+
+    function number_of(k) result(text)
+        integer, intent(in) :: k
+        character(16) :: text
+        write(text, '(i0)') k
+    end function
 
     subroutine vector(prefix, a)
         character(*), intent(in) :: prefix
