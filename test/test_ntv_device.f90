@@ -5,7 +5,8 @@
 !! surface that fails leaves the other surfaces of the profile intact, and the
 !! radial force balance returns the Omega_tE of the rotation it was solved for;
 !! the orbit-width indicators match the concentric-circle geometry of the file,
-!! and the finite-width kernel reproduces the thin kernel for thin orbits.
+!! and the finite-width kernel reproduces the thin kernel for thin orbits and
+!! fails a surface whose orbits leave the file.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -13,6 +14,10 @@ program test_ntv_device
         ntv_species_result_t, ntv_device_profile, deflection_frequency, DEVICE_OK, &
         DEVICE_SOLVE, ntv_axisymmetric_result_t, ntv_device_axisymmetric, &
         ntv_omega_te_from_rotation, ntv_indicator_t, ntv_device_indicators
+    use milca_boozer_orbit, only: orbit_particle_t
+    use milca_dk_hp, only: hp_operator_t
+    use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
+        hp_orbit_perturbation, hp_orbit_confined
     implicit none
     real(dp), parameter :: r0 = 1.7_dp, a = 0.5_dp, b0 = 2.3_dp, eps = 0.1_dp
     real(dp), parameter :: jpol = -1.2e7_dp, itor_s = -3.0e5_dp, flux = -1.3_dp
@@ -27,6 +32,7 @@ program test_ntv_device
     call force_balance()
     call indicators()
     call orbit_width_thin()
+    call orbit_width_lost()
     if (failures > 0) error stop 'FAIL'
     print '(a)', 'All tests passed!'
 
@@ -385,6 +391,67 @@ contains
             call close_to('torque thin orbits', wide(i, 1)%torque, thin(i, 1)%torque, 2e-3_dp)
         end do
     end subroutine orbit_width_thin
+
+    !> Physical deuterons on s = 0.12 of a file that starts at s = 0.1: their
+    !> orbits leave the file, which the finite-width model cannot represent.
+    !> The surface reports a failed solve instead of evaluating outside it.
+    subroutine orbit_width_lost()
+        character(*), parameter :: eq_name = 'ntv_lost_eq.bc', pert_name = 'ntv_lost_pert.bc'
+        type(boozer_file_t), target :: eq, pert
+        type(ntv_species_t) :: sp(1)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_species_result_t), allocatable :: wide(:, :)
+        integer :: status
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        prof%s = [0.12_dp]
+        prof%omega_te = [0.0_dp]
+        allocate (prof%density(1, 1), prof%temperature(1, 1), prof%density_s(1, 1), &
+            prof%temperature_s(1, 1), prof%kappa(1, 1))
+        prof%density = 3e19_dp
+        prof%temperature = 20*kev
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -1*kev
+        prof%kappa = 3e-4_dp
+        res%n_theta = 33
+        res%n_leg = 80
+        res%n_x = 2
+        res%sources = .false.
+        res%orbit_width = .true.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, wide, status)
+        call check('lost orbits fail the profile', status == DEVICE_SOLVE)
+        call check('lost orbits fail the surface', wide(1, 1)%status == DEVICE_SOLVE)
+        ! The drive at points whose orbits leave the file is zero, not read
+        ! from outside it, and the geometry reports the loss.
+        block
+            type(orbit_particle_t) :: p
+            type(hp_orbit_geometry_t) :: g
+            type(hp_operator_t) :: op
+            complex(dp) :: src
+            real(dp) :: worst
+            integer :: j, k
+            p%mass = sp(1)%mass
+            p%charge = 1.602176634e-19_dp
+            p%energy = 20*kev
+            p%s_ref = 0.12_dp
+            call hp_orbit_geometry(eq, p, 0.12_dp, b0, g, status)
+            call hp_orbit_perturbation(g, pert, 3, b0)
+            op%n = 3
+            worst = 0
+            do j = 0, 31
+                do k = 0, 31
+                    src = g%perturbation(2*pi*j/32, -1 + 2*(k + 0.5_dp)/32, op)
+                    worst = max(worst, abs(src))
+                end do
+            end do
+            call check('drive stays finite', worst < huge(1.0_dp))
+            call check('lost orbits detected', .not. hp_orbit_confined(g, 32, 32))
+        end block
+    end subroutine orbit_width_lost
 
     subroutine write_file(name, perturbation)
         character(*), intent(in) :: name

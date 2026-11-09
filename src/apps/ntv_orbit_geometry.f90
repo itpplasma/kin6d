@@ -21,13 +21,13 @@
 !! Pitch-angle scattering acts at fixed psi* (first stage of collisions).
 module milca_ntv_orbit_geometry
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface
+    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, BOOZER_OK
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_pitch_point, &
         orbit_state, orbit_potential, ORBIT_OK
     use milca_dk_hp, only: hp_geometry_t, hp_operator_t
     implicit none
     private
-    public :: hp_orbit_geometry_t, hp_orbit_geometry, hp_orbit_perturbation
+    public :: hp_orbit_geometry_t, hp_orbit_geometry, hp_orbit_perturbation, hp_orbit_confined
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
 
@@ -117,6 +117,33 @@ contains
         g%pert_ref = b_ref
     end subroutine hp_orbit_perturbation
 
+    !> Whether every orbit of g through an n_theta x n_xi sample of (theta, xi)
+    !> has its point inside the files' radial range. Orbits that leave it
+    !> (near the axis or at high energy) are outside the model; the kernel
+    !> must not be solved for them.
+    logical function hp_orbit_confined(g, n_theta, n_xi) result(ok)
+        type(hp_orbit_geometry_t), intent(in) :: g
+        integer, intent(in) :: n_theta, n_xi
+        type(orbit_point_t) :: pt
+        type(boozer_surface_t) :: ps
+        real(dp) :: mu, th, xi
+        integer :: j, k, st
+        ok = .false.
+        do j = 0, n_theta - 1
+            th = g%theta_x - 2*pi + 2*pi*(j + 0.5_dp)/n_theta
+            do k = 0, n_xi - 1
+                xi = -1 + 2*(k + 0.5_dp)/n_xi
+                mu = g%mu_hat(th, xi, pt, st)
+                if (st /= ORBIT_OK) return
+                if (associated(g%pert)) then
+                    call boozer_surface(g%pert, pt%s, ps, st)
+                    if (st /= BOOZER_OK) return
+                end if
+            end do
+        end do
+        ok = .true.
+    end function hp_orbit_confined
+
     complex(dp) function orbit_perturbation(g, th, xi, op) result(src)
         class(hp_orbit_geometry_t), intent(in) :: g
         real(dp), intent(in) :: th, xi
@@ -129,9 +156,11 @@ contains
             src = op_drive(op, th)
             return
         end if
-        mu = g%mu_hat(th, xi, pt, st)
-        call boozer_surface(g%pert, pt%s, ps, st)
         src = 0
+        mu = g%mu_hat(th, xi, pt, st)
+        if (st /= ORBIT_OK) return
+        call boozer_surface(g%pert, pt%s, ps, st)
+        if (st /= BOOZER_OK) return
         do k = 1, size(ps%m)
             if (ps%n(k)*ps%nper /= g%n_tor) cycle
             src = src + (0, 1)*op%n*cmplx(ps%bmn(k), ps%bma(k), dp)/g%pert_ref &
