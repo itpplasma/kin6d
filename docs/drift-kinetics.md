@@ -297,6 +297,55 @@ device fields that were exchanged within the collaboration; a comparison
 with its published values needs those field files and digitised curves and
 is open.
 
+Model 2, the cheaper thermal model (`mono_thermal_coefficients`, tests
+`dk_mono_thermal_*`): electrons and one ion species from monoenergetic
+coefficients with the momentum correction of
+[Sugama and Nishimura (2002)](https://doi.org/10.1063/1.1512917) (SN). Every
+speed node of the speed grid is one `mono_coefficients_3d` solve at
+nu = nu_D^a(x)/v; SN's Eq. (43) (a generated leaf) turns D11, D13, D33 into
+the monoenergetic viscosity and flux coefficients M, N, L, Eq. (36)
+integrates them over energy on the nodes, and Eqs. (C5)-(C13) give the
+transport matrix with the 13-moment friction of electrons and ions to lowest
+order in (m_e/m_i)^(1/2). The Pfirsch-Schlueter flux is not part of SN's
+(C5) and is missing from model 2.
+
+Normalisation: SN's DKES source sigma_1 is taken as c_s v^2 times the radial
+drift of `dk_mono` with c_s = 2 G m/(Z e B0) for the poloidal flux per radian
+as radial label. Reading sigma_1 = -(1/2) v_d.grad(s) with the guiding-centre
+drift v_d.grad(psi) = v_par b.grad(I v_par/Omega) gives half of that; with
+the half, SN's symmetric-case identity N_aj/M_aj = L_aj/N_aj =
+(c_1 B_theta + c_2 B_zeta)/(e (c_1 psi' - c_2 chi') <B^2>) (Eqs. (46), (D4))
+fails by exactly that factor on an axisymmetric field. The factor is fixed
+there and confirmed on a quasi-helical field, whose geometric factor
+(G + N I)/(Z e (N q - 1) <B^2>) differs (both to 1.5e-9), and independently
+by the bootstrap current of model 3 (below), which uses NEO-2-validated
+units and would be off by the same factor 2 otherwise. The origin of the
+factor in SN's definitions is not resolved here.
+
+Error of model 2 against model 3 (deuterium and electrons, 2 keV,
+5e19/m^3, s = 0.058, 15 x 9 points or axisymmetric 15 points, 40 Legendre
+polynomials, 16 speed nodes; NEO-2 collisionality kappa; ratio - 1):
+
+| surface | kappa | conductivity | bootstrap, n' | bootstrap, T' | Gamma_e | Gamma_i/Gamma_e (model 2, model 3) |
+|---|---|---|---|---|---|---|
+| axisymmetric | 0.01/m | -0.4 % | -2.5 % | -8.2 % | -2.4 % | 1.000, 1.008 |
+| axisymmetric | 0.1/m | -2.2 % | -3.5 % | -4.3 % | -21 % | 1.000, 1.026 |
+| helical core | 0.01/m | -0.5 % | +1.3 % | -10.5 % | -19 % | 26.0, 15.8 |
+| helical core | 0.1/m | -2.2 % | +6.7 % | +3.4 % | +11 % | 22.7, 5.9 |
+
+Gamma_e is compared through its ratio to the pitch-angle-only flux of each
+model (the same energy integral of the same monoenergetic solves), which
+removes the flux normalisation; at 0.1/m its error is the missing
+Pfirsch-Schlueter flux. Gamma_i/Gamma_e measures the non-ambipolar ion flux:
+model 2 is intrinsically ambipolar in the symmetric case by construction,
+and on the helical core it overestimates the ion flux 1.6 to 4 times, the
+case where the dropped ion-electron friction and the 13-moment truncation
+matter most. Model 2 is therefore usable for conductivity and the
+density-driven bootstrap current (within 0.5 % and 7 % here), not for the
+radial fluxes of a nearly symmetric 3D surface. It costs 1.6 s against 624 s
+for model 3 with the l <= 1 preconditioner on the helical surface (same
+speed grid and Legendre resolution, loaded 28-core node).
+
 ### K2: global steady distributions and quasineutrality
 
 Retain v_d.grad(psi) partial_psi f on the unknown over a radial domain, where

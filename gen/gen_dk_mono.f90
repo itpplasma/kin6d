@@ -5,6 +5,8 @@ program gen_dk_mono
     implicit none
     type(leaf_writer_t) :: writer
     type(expr_t) :: b, b_theta, kappa, k
+    type(expr_t) :: m, t, nud, v, nu, b0, b2, cs, d11, d13, d33, ups2, d11p, d13p, &
+        d33p, den
 
     ! Axisymmetric surface in Boozer angles, B = B0 b(theta), v = 1. The
     ! parallel derivative is b.grad theta d_theta with b.grad theta = kappa b,
@@ -28,6 +30,28 @@ program gen_dk_mono
     call writer%emit('dk_mono_point', ['b      ', 'b_theta', 'kappa  '], &
         ['stream ', 'mirror ', 'drift0 ', 'drift2 ', 'drive_e', 'weight '], &
         [k, k*b_theta/(2*b), -(2*k*b_theta)/(3*b*b), -(k*b_theta)/(3*b*b), b, 1/(b*b)], ad=.true.)
+    ! Sugama and Nishimura, Phys. Plasmas 9, 4637 (2002), Eq. (43): viscosity
+    ! and radial-flux coefficients M, N, L of monoenergetic particles (mass m,
+    ! temperature t, speed v, deflection frequency nud = nu v) from the
+    ! DKES coefficients, which in terms of the coefficients d11, d13, d33 of
+    ! this module (radial drift per v^2 c_s, parallel drive xi b) are
+    ! D11 = c_s^2 v^3 d11/4, D13 = c_s v^2 b0 d13/2 and
+    ! D33 = (v b0^2/nu) (<b^2>/3 - nu d33); c_s is the radial-drift scale,
+    ! v_d.grad(psi) = c_s v^2 (radial drift of d11). The bracket
+    ! 1 - 3 m nud D33/(2 T K <B^2>) equals 3 nu d33/<b^2> (2 T K = m v^2).
+    ! ups2 = <u^2> carries the Pfirsch-Schlueter part B^2 v^2 nud <U^2>/(3
+    ! Omega^2) = v^2 nud c_s^2 ups2/3 of L.
+    m = sym('m'); t = sym('t'); nud = sym('nud'); v = sym('v'); nu = sym('nu')
+    b0 = sym('b0'); b2 = sym('b2'); cs = sym('cs'); d11 = sym('d11')
+    d13 = sym('d13'); d33 = sym('d33'); ups2 = sym('ups2')
+    d11p = cs*cs*v*v*v*d11/4
+    d13p = cs*v*v*b0*d13/2
+    d33p = v*b0*b0*(b2/3 - nu*d33)/nu
+    den = 3*nu*d33/b2
+    call writer%emit('dk_mono_thermal_point', ['m   ', 't   ', 'nud ', 'v   ', 'nu  ', &
+        'b0  ', 'b2  ', 'cs  ', 'd11 ', 'd13 ', 'd33 ', 'ups2'], ['vm', 'vn', 'vl'], &
+        [m*m*nud*nud*d33p/(t*den), m*nud*d13p/(t*den), &
+        (d11p - v*v*nud*cs*cs*ups2/3 + 3*nud*d13p*d13p/(v*v*b0*b0*b2*den))/t], ad=.true.)
     call writer%line('end module milca_dk_mono_leaves')
     call writer%close()
 end program gen_dk_mono
