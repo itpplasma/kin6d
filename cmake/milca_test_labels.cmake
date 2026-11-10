@@ -954,7 +954,7 @@ milca_test_labels(vrmhd_mms_regeneration fast CLASSES mhd TARGETS gen_vrmhd_mms)
 
 milca_test_labels(vrmhd_pairing_measurement fast CLASSES mhd TARGETS vrmhd_pairing_study)
 milca_test_labels(vrmhd_pairing_benchmark performance CLASSES mhd TARGETS vrmhd_pairing_study)
-foreach(gate energy decay waves steady)
+foreach(gate energy decay waves steady refactor)
     milca_test_labels(vrmhd_evolve_${gate} fast CLASSES mhd
         TARGETS test_vrmhd_evolve)
 endforeach()

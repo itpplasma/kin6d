@@ -13,7 +13,7 @@ program test_vrmhd_cylinder
     use milca_vrmhd_steady, only: vrmhd_steady_solve, vrmhd_steady_options_t, &
         vrmhd_steady_report_t, vrmhd_steady_spectrum
     use milca_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
-        vrmhd_evolve_consistent, vrmhd_evolve_expand, prof_t, prof_n
+        vrmhd_evolve_consistent, vrmhd_evolve_expand
     use fortsparse, only: csc_t, csc_from_triplet, fortsparse_status_t, status_ok
     use fortnum_ode_bdf, only: bdf_options_t, bdf_state_t, bdf_report_t, bdf_init, &
         bdf_integrate_to
@@ -24,6 +24,8 @@ program test_vrmhd_cylinder
     real(dp) :: dtau = 0, strength = 0, t_end = 1.0e3_dp, dt_out = 10, dt_max = 0
     real(dp) :: beta_poloidal = 1, seed = 1.0e-6_dp
     integer :: frozen_eta = 0, k, e, check = 0
+    !> Saved section state: written after `evolve`, read by `pumped` instead of evolving.
+    character(len=512) :: state_file = ''
     real(dp) :: chi_ratio = 1.0e6_dp
     call get_command_argument(1, gate)
     ! Run options as key=value; the registered tests use the defaults.
@@ -44,6 +46,7 @@ program test_vrmhd_cylinder
         case ('seed'); read (arg(e + 1:), *) seed
         case ('chi_ratio'); read (arg(e + 1:), *) chi_ratio
         case ('check'); read (arg(e + 1:), *) check
+        case ('state'); state_file = arg(e + 1:)
         case default; error stop 'unknown argument'
         end select
     end do
@@ -56,6 +59,8 @@ program test_vrmhd_cylinder
         call stationary_gate(rings, .true.)
     case ('evolve')
         call stationary_gate(rings, .false., .true.)
+    case ('pumped')
+        call stationary_gate(rings, .false., .true., pumped=.true.)
     case default
         error stop 'choose profiles or stationary'
     end select
@@ -100,13 +105,13 @@ contains
         print '(a,es24.16)', 'axial electric field: ', prof%electric_field
     end subroutine
 
-    subroutine stationary_gate(nr, linear, evolve)
+    subroutine stationary_gate(nr, linear, evolve, pumped)
         !! Newton solve of the stationary 2D state from the interpolated
         !! Ohmic profiles; with `linear`, the m = 1 eigenvalue about it with
         !! frozen temperatures (frozen eta), against the reduced-MHD oracle.
         integer, intent(in) :: nr
         logical, intent(in) :: linear
-        logical, intent(in), optional :: evolve
+        logical, intent(in), optional :: evolve, pumped
         type(vrmhd_cylinder_case_t) :: c
         type(vrmhd_cylinder_profile_t) :: prof
         type(meridian_mesh_t) :: mm
@@ -120,8 +125,10 @@ contains
         complex(dp), allocatable :: values(:), vectors(:, :)
         logical, allocatable :: frozen(:)
         real(dp) :: r1, change_te, speed
+        real(dp), allocatable :: ue(:)
         integer(int64) :: t0, t1, rate
-        integer :: status, i, info
+        integer :: status, i, info, unit
+        logical :: have_state
         c%grid = 20001
         c%beta_poloidal = beta_poloidal
         if (linear) c%beta_poloidal = 0.01_dp
@@ -199,8 +206,26 @@ contains
             ! The unstable eigenvector seeds the evolution without exciting the
             ! fast waves an arbitrary flow would.
             i = maxloc(real(values), 1)
-            call evolve_run(op, c, p, source, load, u(:op%ndof), &
-                real(vectors(:op%ndof, i)))
+            allocate (ue(op%ndof))
+            have_state = .false.
+            if (len_trim(state_file) > 0) inquire (file=trim(state_file), exist=have_state)
+            if (present(pumped) .and. have_state) then
+                open (newunit=unit, file=trim(state_file), access='stream', &
+                    form='unformatted', status='old', action='read')
+                read (unit) ue
+                close (unit)
+            else
+                call evolve_run(op, c, p, source, load, u(:op%ndof), &
+                    real(vectors(:op%ndof, i)), ue)
+                if (len_trim(state_file) > 0) then
+                    open (newunit=unit, file=trim(state_file), access='stream', &
+                        form='unformatted', status='replace', action='write')
+                    write (unit) ue
+                    close (unit)
+                end if
+            end if
+            if (present(pumped)) call pumped_state(op, c, prof, steady, p, u0, &
+                source, load, ue)
             return
         end if
         ! Oracle: Chebyshev eigenvalue solver of visco-resistive reduced MHD of
@@ -211,7 +236,7 @@ contains
             < 0.05_dp, 'linear m = 1 growth rate')
     end subroutine
 
-    subroutine evolve_run(op, c, p, source, load, u0, mode)
+    subroutine evolve_run(op, c, p, source, load, u0, mode, u_final)
         !! BDF2 evolution from the stationary 2D state seeded with the unstable
         !! m = 1 eigenvector, scaled to a peak velocity `seed`; frozen_eta = 1
         !! keeps both temperatures at their profile.
@@ -219,6 +244,7 @@ contains
         type(vrmhd_cylinder_case_t), intent(in) :: c
         type(vrmhd_parameters_t), intent(in) :: p
         real(dp), intent(in) :: source(:, :, :), load(:), u0(:), mode(:)
+        real(dp), intent(out) :: u_final(:)
         type(vrmhd_evolve_t) :: problem
         type(bdf_options_t) :: options
         type(bdf_state_t) :: state
@@ -250,6 +276,7 @@ contains
             load=load, lag=8)
         call require(status == 0, 'evolution build')
         problem%shift_tolerance = 0.5_dp
+        problem%verbose = check == 2
         allocate (derivative(nfree))
         call vrmhd_evolve_consistent(problem, 0.0_dp, y, derivative, status)
         call require(status == 0, 'consistent start')
@@ -273,15 +300,69 @@ contains
                 steps, newton, problem%factorizations, real(t1 - t0, dp)/rate
             flush (6)
             if (state%t >= t_end) exit
-            t_next = t_next + dt_out
+            t_next = min(t_next + dt_out, t_end)
             call bdf_integrate_to(problem, state, t_next, options, report, st)
             steps = steps + report%accepted
             newton = newton + report%newton_iterations
             krylov_total = krylov_total + report%krylov_iterations
-            print '(a,i8,6(f9.2,i7))', '  prof krylov,eval,lin,apply,prec,factor,jac: ', krylov_total, &
-                (prof_t(i), prof_n(i), i=1, 6)
+            print '(a,6i7)', '  interval accepted, rejected (error, newton), newton, krylov, factorizations: ', &
+                report%accepted, report%rejected_error, report%rejected_newton, &
+                report%newton_iterations, report%krylov_iterations, problem%factorizations
             if (st%code /= FORTNUM_OK) print *, report
             call require(st%code == FORTNUM_OK, 'BDF step')
+        end do
+        u_final = u
+    end subroutine
+
+    subroutine pumped_state(op, c, prof, steady, p, boundary, source, load, ue)
+        !! Newton solve of the stationary helical state from an evolved
+        !! (saturated) state, and the eigenvalues of its linearisation nearest
+        !! zero: a stable steady pumped state has all of them in Re < 0.
+        type(vrmhd_section_t), intent(in) :: op
+        type(vrmhd_cylinder_case_t), intent(in) :: c
+        type(vrmhd_cylinder_profile_t), intent(in) :: prof
+        type(vrmhd_stationary_t), intent(in) :: steady
+        type(vrmhd_parameters_t), intent(in) :: p
+        real(dp), intent(in) :: boundary(:), source(:, :, :), load(:), ue(:)
+        type(vrmhd_steady_options_t) :: options
+        type(vrmhd_steady_report_t) :: report
+        real(dp), allocatable :: u(:), residuals(:)
+        complex(dp), allocatable :: values(:), vectors(:, :)
+        logical, allocatable :: frozen(:)
+        real(dp), parameter :: edges(2) = [0.09_dp, 0.11_dp]
+        real(dp) :: q(2, 1), energy(2)
+        integer(int64) :: t0, t1, rate
+        integer :: status, i, info
+        allocate (u(steady%ndof))
+        u = 0; u(:op%ndof) = ue
+        call vrmhd_cylinder_diagnostics(op, c%r0, ue, edges, q, energy, status)
+        call require(status == 0, 'diagnostics')
+        print '(a,2f11.6,2es13.5)', 'evolved: q(0.1), E_B(m=1), E_K(m=1): ', q(:, 1), energy
+        options%dtau = dtau; options%verbose = .true.; options%rtol = 1.0e-10_dp
+        options%growth = 4
+        call system_clock(t0, rate)
+        call vrmhd_steady_solve(op, steady, p, boundary, source, load, u, options, report)
+        call system_clock(t1)
+        print '(a,i0,a,f10.2,a,i0,a,es10.2,a,es10.2)', 'pumped steady status ', &
+            report%status, ' wall ', real(t1 - t0, dp)/rate, ' iterations ', &
+            report%iterations, ' residual ', report%residual, ' from ', report%residual0
+        call vrmhd_cylinder_diagnostics(op, c%r0, u(:op%ndof), edges, q, energy, status)
+        print '(a,2f11.6,2es13.5)', 'steady: q(0.1), E_B(m=1), E_K(m=1): ', q(:, 1), energy
+        print '(a,es14.6)', 'max |u_steady - u_evolved| / max |u_evolved| (B, v): ', &
+            maxval(abs(u(op%offset(2) + 1:op%offset(5)) - ue(op%offset(2) + 1:op%offset(5)))) &
+            /max(maxval(abs(ue(op%offset(2) + 1:op%offset(5)))), tiny(1.0_dp))
+        call report_state(op, c, prof, u(:op%ndof), 'pumped steady state')
+        if (report%status /= 0) return
+        allocate (frozen(op%ndof), source=.false.)
+        allocate (values(6), vectors(steady%ndof, 6), residuals(6))
+        call system_clock(t0)
+        call vrmhd_steady_spectrum(op, steady, p, u, boundary, source, frozen, &
+            1.0e-5_dp, values, vectors, residuals, info)
+        call system_clock(t1)
+        print '(a,i0,a,f10.2)', 'pumped spectrum info ', info, ' wall seconds ', &
+            real(t1 - t0, dp)/rate
+        do i = 1, size(values)
+            print '(a,2es16.8,es10.2)', '  lambda, residual: ', values(i), residuals(i)
         end do
     end subroutine
 

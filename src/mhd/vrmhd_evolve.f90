@@ -10,13 +10,11 @@ module milca_vrmhd_evolve
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_matmul, &
         csc_from_triplet, sparse_solver_t, sparse_factor, sparse_refactor, &
         sparse_solve, &
-        sparse_free, fortsparse_status_t, status_ok, &
+        sparse_free, fortsparse_status_t, status_ok, sparse_factor_stats, &
+        sparse_factor_stats_t, &
         FORTSPARSE_LU_SUPERNODAL
-    use, intrinsic :: iso_fortran_env, only: int64
     implicit none
     private
-    real(dp), public :: prof_t(6) = 0
-    integer, public :: prof_n(6) = 0
 
     !> The state is u = lift + P y. Rows are tested with P^T, so a periodic
     !> identification or a Dirichlet elimination is a choice of P and lift.
@@ -35,6 +33,8 @@ module milca_vrmhd_evolve
         !> FGMRES products since the last linearization; a stale factor that
         !> needs more than krylov_refactor of them is replaced at the next one.
         integer :: applies = 0, krylov_refactor = 8
+        !> Print one line per linearization: time, shift, products of the last solve.
+        logical :: verbose = .false.
         real(dp), allocatable :: u(:), ud(:)
         real(dp) :: alpha = 0, factored_alpha = 0
         logical :: factored = .false.
@@ -100,6 +100,11 @@ contains
         ! The factor only preconditions FGMRES, so an unrefined static-pivot
         ! factor is accepted instead of the serial scalar fallback.
         problem%solver%options%verify_factor = .false.
+        ! FGMRES works on the original matrix, so perturbed or grown pivots
+        ! only weaken the preconditioner; the serial scalar refactorization
+        ! they would otherwise trigger takes minutes at 1e5 unknowns.
+        problem%solver%options%verify_perturbed = .false.
+        problem%solver%options%pivot_growth_limit = huge(1.0_dp)
         status = 0
     end subroutine
 
@@ -126,8 +131,6 @@ contains
         real(dp), intent(out) :: residual(:)
         integer, intent(out) :: status
         real(dp), allocatable :: u(:), ud(:), zero(:), r(:), jv(:)
-        integer(int64) :: pc0, pc1, prt
-        call system_clock(pc0, prt)
         status = 1
         residual = 0
         if (.not. ieee_is_finite(t)) return
@@ -141,7 +144,6 @@ contains
         residual = 0
         if (status /= 0) return
         residual = csc_matvec(self%restriction, r - self%load)
-        call system_clock(pc1); prof_t(1)=prof_t(1)+real(pc1-pc0,dp)/prt; prof_n(1)=prof_n(1)+1
     end subroutine
 
     subroutine evolve_linearize(self, t, y, ydot, alpha, status)
@@ -150,8 +152,7 @@ contains
         integer, intent(out) :: status
         type(csc_t) :: reduced
         type(fortsparse_status_t) :: st
-        integer(int64) :: pc0, pc1, prt
-        call system_clock(pc0, prt)
+        type(sparse_factor_stats_t) :: stats
         status = 1
         if (.not. ieee_is_finite(t)) return
         call vrmhd_evolve_expand(self, y, self%u)
@@ -160,19 +161,18 @@ contains
         status = 0
         ! A lagged factor stays a good preconditioner while the shift is close
         ! and FGMRES still converges in a few products.
+        if (self%verbose) print '(a,es14.6,es11.3,i6,i4)', '  linearize t, alpha, products, since ', &
+            t, alpha, self%applies, self%since
         if (self%applies > self%krylov_refactor) self%since = self%lag
         self%applies = 0
         if (self%factored .and. self%since < self%lag .and. &
             abs(alpha - self%factored_alpha) <= &
             self%shift_tolerance*abs(self%factored_alpha)) then
             self%since = self%since + 1
-            call system_clock(pc1); prof_t(2)=prof_t(2)+real(pc1-pc0,dp)/prt; prof_n(2)=prof_n(2)+1
             return
         end if
         status = 1
-        call system_clock(pc1)
         call reduced_jacobian(self, self%u, self%ud, alpha, reduced, status)
-        call system_clock(pc0); prof_t(6)=prof_t(6)+real(pc0-pc1,dp)/prt; prof_n(6)=prof_n(6)+1
         if (status /= 0) return
         ! The reduced pattern is fixed: ordering and matching are analysed once.
         if (self%factorizations > 0) then
@@ -180,7 +180,12 @@ contains
         else
             call sparse_factor(self%solver, reduced, st)
         end if
-        call system_clock(pc1); prof_t(5)=prof_t(5)+real(pc1-pc0,dp)/prt; prof_n(5)=prof_n(5)+1
+        if (self%verbose .and. status_ok(st)) then
+            call sparse_factor_stats(self%solver, stats, st)
+            print '(a,l2,1x,a,i8,es11.3)', '  factor fallback, reason, perturbed, growth ', &
+                stats%lu_fallback, trim(stats%lu_fallback_reason), &
+                stats%perturbed_pivots, stats%pivot_growth
+        end if
         self%factored = .false.
         status = 1
         if (.not. status_ok(st)) return
@@ -189,7 +194,6 @@ contains
         self%factorizations = self%factorizations + 1
         self%since = 1
         status = 0
-        call system_clock(pc1); prof_t(2)=prof_t(2)+real(pc1-pc0,dp)/prt; prof_n(2)=prof_n(2)+1
     end subroutine
 
     subroutine evolve_apply(self, input, output)
@@ -198,8 +202,6 @@ contains
         real(dp), intent(out) :: output(:)
         real(dp), allocatable :: du(:), dud(:), r(:), jv(:)
         integer :: status
-        integer(int64) :: pc0, pc1, prt
-        call system_clock(pc0, prt)
         allocate (du(self%op%ndof), dud(self%op%ndof), r(self%op%ndof), &
             jv(self%op%ndof))
         self%applies = self%applies + 1
@@ -209,11 +211,9 @@ contains
             self%source, r, jv, status)
         if (status /= 0) then
             output = ieee_value(1.0_dp, ieee_quiet_nan)
-            call system_clock(pc1); prof_t(3)=prof_t(3)+real(pc1-pc0,dp)/prt; prof_n(3)=prof_n(3)+1
             return
         end if
         output = csc_matvec(self%restriction, jv)
-        call system_clock(pc1); prof_t(3)=prof_t(3)+real(pc1-pc0,dp)/prt; prof_n(3)=prof_n(3)+1
     end subroutine
 
     subroutine evolve_precondition(self, r, z, status)
@@ -223,8 +223,6 @@ contains
         integer, intent(out) :: status
         real(dp), allocatable :: b(:), x(:)
         type(fortsparse_status_t) :: st
-        integer(int64) :: pc0, pc1, prt
-        call system_clock(pc0, prt)
         status = 1
         z = 0
         if (.not. self%factored) return
@@ -234,7 +232,6 @@ contains
         if (.not. status_ok(st)) return
         z = x
         status = 0
-        call system_clock(pc1); prof_t(4)=prof_t(4)+real(pc1-pc0,dp)/prt; prof_n(4)=prof_n(4)+1
     end subroutine
 
     subroutine reduced_jacobian(self, u, ud, shift, reduced, status)

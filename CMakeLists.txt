@@ -128,7 +128,7 @@ target_link_libraries(milca_vrmhd_slab_test PUBLIC milca_mhd)
 add_executable(test_vrmhd_evolve test/test_vrmhd_evolve.f90)
 target_link_libraries(test_vrmhd_evolve PRIVATE milca_vrmhd_slab_test
     milca_spectrum_support)
-foreach(gate energy decay waves steady)
+foreach(gate energy decay waves steady refactor)
     add_test(NAME vrmhd_evolve_${gate} COMMAND test_vrmhd_evolve ${gate})
     set_tests_properties(vrmhd_evolve_${gate} PROPERTIES LABELS rm2-evolve
         PROCESSORS 8 TIMEOUT 300
