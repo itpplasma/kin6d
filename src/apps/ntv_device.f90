@@ -111,8 +111,8 @@ module milca_ntv_device
         ! Goal-oriented refinement of that mesh (hp_ntv_estimate) at seed
         ! energies per surface and species, until the corrected kernel R + eta
         ! changes by at most hp_adapt relative between two refinements; every
-        ! energy is then solved on the union of the seed meshes. 0 keeps the
-        ! mesh.
+        ! energy is then solved on the union of its two neighbouring seed
+        ! meshes. 0 keeps the mesh.
         real(dp) :: hp_adapt = 0
     end type
 
@@ -223,11 +223,13 @@ contains
         integer, parameter :: max_kinks = 16
         real(dp), allocatable :: kink(:, :, :)
         integer, allocatable :: nkink(:, :)
-        ! With hp_adapt, the union of the meshes adapted at a few seed energies
-        ! per surface and species, normalised to theta - theta_x and
-        ! lambda/lambda_c; every energy of the integral is solved on it.
-        type(hp_mesh_t), allocatable :: union(:, :)
-        logical, allocatable :: have_union(:, :)
+        ! With hp_adapt, per surface and species, meshes adapted at seed
+        ! energies, normalised to theta - theta_x and lambda/lambda_c; band k
+        ! joins seeds k and k + 1, and every energy is solved on its band.
+        integer, parameter :: max_bands = 16
+        type(hp_mesh_t), allocatable :: band(:, :, :)
+        real(dp), allocatable :: band_seed(:, :, :)
+        integer, allocatable :: nband(:, :)
         integer :: ns, nsp, nchunk, nunit, i, a, k, c, u
 
         ns = size(prof%s)
@@ -248,8 +250,8 @@ contains
             phi(i) = phi(i - 1) + 0.5_dp*(prof%omega_te(i - 1) + prof%omega_te(i)) &
                 *orbit_flux_p(eq, prof%s(i - 1), prof%s(i))
         end do
-        allocate (union(ns, nsp), have_union(ns, nsp))
-        have_union = .false.
+        allocate (band(max_bands, ns, nsp), band_seed(max_bands + 1, ns, nsp), nband(ns, nsp))
+        nband = 0
         if (res%x_tol > 0) then
             allocate (result(ns, nsp), ustat(ns*nsp), kink(max_kinks, ns, nsp), &
                 nkink(ns, nsp))
@@ -287,9 +289,9 @@ contains
                 do i = 1, ns
                     ! With few nodes, the nodes themselves are the seeds.
                     if (res%n_x <= 4) then
-                        call seed_union(i, a, x)
+                        call seed_bands(i, a, x)
                     else
-                        call seed_union(i, a)
+                        call seed_bands(i, a)
                     end if
                 end do
             end do
@@ -358,8 +360,9 @@ contains
                         r(i, k, a) = 0
                         cycle
                     end if
-                    if (have_union(i, a)) then
-                        r(i, k, a) = orbit_r(i, a, x(k), ks, start=union(i, a))
+                    if (nband(i, a) > 0) then
+                        r(i, k, a) = orbit_r(i, a, x(k), ks, &
+                            start=band(band_of(i, a, x(k)), i, a))
                     else
                         r(i, k, a) = orbit_r(i, a, x(k), ks)
                     end if
@@ -376,8 +379,9 @@ contains
             end if
             if (.not. thin_legendre(res)) then
                 do i = first, last
-                    if (have_union(i, a)) then
-                        r(i, k, a) = thin_r(i, a, x(k), ks, start=union(i, a))
+                    if (nband(i, a) > 0) then
+                        r(i, k, a) = thin_r(i, a, x(k), ks, &
+                            start=band(band_of(i, a, x(k)), i, a))
                     else
                         r(i, k, a) = thin_r(i, a, x(k), ks)
                     end if
@@ -637,7 +641,7 @@ contains
             st = DEVICE_SOLVE
             call gauss_legendre(6, x6, w6)
             call gauss_legendre(12, x12, w12)
-            if (res%hp_adapt > 0 .and. .not. thin_legendre(res)) call seed_union(i, a)
+            if (res%hp_adapt > 0 .and. .not. thin_legendre(res)) call seed_bands(i, a)
             np = size(start) - 1
             lo(1:np) = start(1:np)
             hi(1:np) = start(2:)
@@ -689,20 +693,22 @@ contains
             st = DEVICE_OK
         end subroutine adaptive
 
-        !> The union of the meshes adapted at seed energies spanning the
-        !> Maxwellian weight; energies whose orbits leave the file are skipped.
-        subroutine seed_union(i, a, nodes)
+        !> Meshes adapted at seed energies spanning the Maxwellian weight (or at
+        !> the nodes), joined pairwise into bands between neighbouring seeds and
+        !> checked at the band's geometric midpoint; energies whose orbits leave
+        !> the file are skipped.
+        subroutine seed_bands(i, a, nodes)
             integer, intent(in) :: i, a
             real(dp), intent(in), optional :: nodes(:)
-            real(dp), allocatable :: seeds(:), checks(:)
-            type(hp_mesh_t), allocatable :: used(:)
+            real(dp), allocatable :: seeds(:), checks(:), ok_x(:)
+            type(hp_mesh_t), allocatable :: used(:), ok_mesh(:)
             integer, allocatable :: sts(:)
-            integer :: k
+            integer :: k, n
             real(dp) :: r
             if (present(nodes)) then
                 seeds = nodes
             else
-                seeds = [0.7_dp, 2.5_dp, 6.0_dp, 12.0_dp]
+                seeds = [0.4_dp, 0.8_dp, 1.5_dp, 2.5_dp, 4.0_dp, 6.0_dp, 9.0_dp, 14.0_dp]
             end if
             allocate (used(size(seeds)), sts(size(seeds)))
             !$omp parallel do schedule(dynamic, 1) default(shared) private(k, r)
@@ -710,44 +716,62 @@ contains
                 r = kernel_r(i, a, seeds(k), sts(k), used=used(k))
             end do
             !$omp end parallel do
-            call merge_into(i, a, used, sts)
-            if (.not. have_union(i, a)) return
-            ! Check the union at energies between the seeds (or at the nodes):
-            ! where its error estimate exceeds the tolerance, refine from it.
-            if (present(nodes)) then
-                checks = nodes
+            ok_x = pack(seeds, sts == NTV_OK)
+            allocate (ok_mesh(size(ok_x)))
+            n = 0
+            do k = 1, size(seeds)
+                if (sts(k) /= NTV_OK) cycle
+                n = n + 1
+                ok_mesh(n) = used(k)
+            end do
+            if (n == 0) return
+            n = min(n, max_bands + 1)
+            ! One seed: one band, checked at the seed itself.
+            nband(i, a) = max(1, n - 1)
+            band_seed(1:n, i, a) = ok_x(1:n)
+            if (n == 1) then
+                band(1, i, a) = ok_mesh(1)
+                checks = ok_x(1:1)
             else
-                checks = [1.5_dp, 4.0_dp, 9.0_dp]
+                do k = 1, n - 1
+                    band(k, i, a) = ok_mesh(k)
+                    call join(band(k, i, a), ok_mesh(k + 1))
+                end do
+                checks = sqrt(ok_x(1:n - 1)*ok_x(2:n))
             end if
             deallocate (used, sts)
             allocate (used(size(checks)), sts(size(checks)))
             !$omp parallel do schedule(dynamic, 1) default(shared) private(k, r)
             do k = 1, size(checks)
-                r = kernel_r(i, a, checks(k), sts(k), start=union(i, a), used=used(k), &
+                r = kernel_r(i, a, checks(k), sts(k), start=band(k, i, a), used=used(k), &
                     mode=MESH_CHECK)
             end do
             !$omp end parallel do
-            call merge_into(i, a, used, sts)
-        end subroutine seed_union
-
-        !> Adds the meshes of the energies that solved to the union of (i, a).
-        subroutine merge_into(i, a, meshes, statuses)
-            integer, intent(in) :: i, a
-            type(hp_mesh_t), intent(in) :: meshes(:)
-            integer, intent(in) :: statuses(:)
-            integer :: k
-            do k = 1, size(meshes)
-                if (statuses(k) /= NTV_OK .or. .not. allocated(meshes(k)%theta)) cycle
-                if (.not. have_union(i, a)) then
-                    union(i, a) = meshes(k)
-                    have_union(i, a) = .true.
-                else
-                    union(i, a)%theta = merged(union(i, a)%theta, meshes(k)%theta)
-                    union(i, a)%lam = merged(union(i, a)%lam, meshes(k)%lam)
-                    union(i, a)%zeta = merged(union(i, a)%zeta, meshes(k)%zeta)
-                end if
+            do k = 1, size(checks)
+                if (sts(k) == NTV_OK .and. allocated(used(k)%theta)) &
+                    call join(band(k, i, a), used(k))
             end do
-        end subroutine merge_into
+        end subroutine seed_bands
+
+        !> The band of energy x: band k spans seeds k to k + 1, the outer bands
+        !> extend to all lower and higher energies.
+        pure integer function band_of(i, a, x) result(k)
+            integer, intent(in) :: i, a
+            real(dp), intent(in) :: x
+            k = 1
+            if (nband(i, a) < 2) return
+            k = count(band_seed(2:nband(i, a), i, a) <= x) + 1
+            k = min(max(k, 1), nband(i, a))
+        end function band_of
+
+        !> Adds the breakpoints of m to mesh.
+        pure subroutine join(mesh, m)
+            type(hp_mesh_t), intent(inout) :: mesh
+            type(hp_mesh_t), intent(in) :: m
+            mesh%theta = merged(mesh%theta, m%theta)
+            mesh%lam = merged(mesh%lam, m%lam)
+            mesh%zeta = merged(mesh%zeta, m%zeta)
+        end subroutine join
 
         !> Sorted union of two increasing breakpoint lists; points closer than
         !> 1e-12 count as one.
@@ -847,9 +871,10 @@ contains
             !$omp parallel do schedule(dynamic, 1) default(shared) private(q, j)
             do q = 1, nq*size(lo)
                 j = (q - 1)/nq + 1
-                if (have_union(i, a)) then
+                if (nband(i, a) > 0) then
                     rs(q - (j - 1)*nq, j) = kernel_r(i, a, xs(q - (j - 1)*nq, j), &
-                        sts(q - (j - 1)*nq, j), start=union(i, a))
+                        sts(q - (j - 1)*nq, j), &
+                        start=band(band_of(i, a, xs(q - (j - 1)*nq, j)), i, a))
                 else
                     rs(q - (j - 1)*nq, j) = kernel_r(i, a, xs(q - (j - 1)*nq, j), &
                         sts(q - (j - 1)*nq, j))
