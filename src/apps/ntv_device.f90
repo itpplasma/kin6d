@@ -63,6 +63,8 @@ module milca_ntv_device
         ntv_indicator_t, ntv_device_indicators
     integer, parameter, public :: DEVICE_OK = 0, DEVICE_BAD_INPUT = 1, DEVICE_SOLVE = 2, &
         DEVICE_NO_CONVERGENCE = 3, DEVICE_ORBIT_LOST = 4
+    ! Mesh refinement modes of one kernel evaluation (adapt_kernel).
+    integer, parameter :: MESH_FIXED = 0, MESH_SETTLE = 1, MESH_CHECK = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp), elementary = 1.602176634e-19_dp
 
@@ -106,9 +108,11 @@ module milca_ntv_device
         logical :: thin_legendre = .false.
         integer :: hp_order = 4, hp_columns = 24, hp_rows = 8
         real(dp) :: hp_delta = 1e-3_dp
-        ! Goal-oriented refinement of that mesh (hp_ntv_estimate) until the
-        ! corrected kernel R + eta changes by at most hp_adapt relative
-        ! between two refinements; 0 keeps the mesh.
+        ! Goal-oriented refinement of that mesh (hp_ntv_estimate) at seed
+        ! energies per surface and species, until the corrected kernel R + eta
+        ! changes by at most hp_adapt relative between two refinements; every
+        ! energy is then solved on the union of the seed meshes. 0 keeps the
+        ! mesh.
         real(dp) :: hp_adapt = 0
     end type
 
@@ -219,6 +223,11 @@ contains
         integer, parameter :: max_kinks = 16
         real(dp), allocatable :: kink(:, :, :)
         integer, allocatable :: nkink(:, :)
+        ! With hp_adapt, the union of the meshes adapted at a few seed energies
+        ! per surface and species, normalised to theta - theta_x and
+        ! lambda/lambda_c; every energy of the integral is solved on it.
+        type(hp_mesh_t), allocatable :: union(:, :)
+        logical, allocatable :: have_union(:, :)
         integer :: ns, nsp, nchunk, nunit, i, a, k, c, u
 
         ns = size(prof%s)
@@ -239,6 +248,8 @@ contains
             phi(i) = phi(i - 1) + 0.5_dp*(prof%omega_te(i - 1) + prof%omega_te(i)) &
                 *orbit_flux_p(eq, prof%s(i - 1), prof%s(i))
         end do
+        allocate (union(ns, nsp), have_union(ns, nsp))
+        have_union = .false.
         if (res%x_tol > 0) then
             allocate (result(ns, nsp), ustat(ns*nsp), kink(max_kinks, ns, nsp), &
                 nkink(ns, nsp))
@@ -271,6 +282,18 @@ contains
         end if
         allocate (x(res%n_x), w(res%n_x))
         call gauss_gen_laguerre(res%n_x, 2.5_dp, x, w)
+        if (res%hp_adapt > 0 .and. .not. thin_legendre(res)) then
+            do a = 1, nsp
+                do i = 1, ns
+                    ! With few nodes, the nodes themselves are the seeds.
+                    if (res%n_x <= 4) then
+                        call seed_union(i, a, x)
+                    else
+                        call seed_union(i, a)
+                    end if
+                end do
+            end do
+        end if
 
         ! Units: (species, node, first surface of the chunk).
         nchunk = (ns + res%chunk - 1)/res%chunk
@@ -335,7 +358,11 @@ contains
                         r(i, k, a) = 0
                         cycle
                     end if
-                    r(i, k, a) = orbit_r(i, a, x(k), ks)
+                    if (have_union(i, a)) then
+                        r(i, k, a) = orbit_r(i, a, x(k), ks, start=union(i, a))
+                    else
+                        r(i, k, a) = orbit_r(i, a, x(k), ks)
+                    end if
                     lost(i, k, a) = orbit_outside(ks)
                     if (lost(i, k, a)) then
                         r(i, k, a) = 0
@@ -349,7 +376,11 @@ contains
             end if
             if (.not. thin_legendre(res)) then
                 do i = first, last
-                    r(i, k, a) = thin_r(i, a, x(k), ks)
+                    if (have_union(i, a)) then
+                        r(i, k, a) = thin_r(i, a, x(k), ks, start=union(i, a))
+                    else
+                        r(i, k, a) = thin_r(i, a, x(k), ks)
+                    end if
                     if (ks /= HP_OK) return
                     nfac(i, k, a) = 1
                 end do
@@ -386,10 +417,13 @@ contains
 
         !> R of species a on surface i at x = v^2/v_th^2, thin orbits, on the
         !> spectral elements of the Boozer line.
-        real(dp) function thin_r(i, a, xv, st) result(rv)
+        real(dp) function thin_r(i, a, xv, st, start, used, mode) result(rv)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: xv
             integer, intent(out) :: st
+            type(hp_mesh_t), intent(in), optional :: start
+            type(hp_mesh_t), intent(out), optional :: used
+            integer, intent(in), optional :: mode
             type(hp_line_field_t) :: g
             type(hp_operator_t) :: op
             type(hp_mesh_t) :: mesh
@@ -412,24 +446,66 @@ contains
                 prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
             op%source_dpar = res%sources
             op%source_dlf10 = res%sources
-            call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
-                res%hp_delta, 0.3_dp, mesh)
-            call adapt_kernel(g, mesh, op, rv, st)
+            call start_mesh(g, mesh, start)
+            call adapt_kernel(g, mesh, op, rv, st, kernel_mode(start, mode))
+            if (present(used)) call normalised(g, mesh, used)
         end function thin_r
 
+        !> The refinement mode of a kernel: as given, else MESH_FIXED on a start
+        !> mesh and MESH_SETTLE from the mesh of the resolution.
+        pure integer function kernel_mode(start, mode) result(m)
+            type(hp_mesh_t), intent(in), optional :: start
+            integer, intent(in), optional :: mode
+            m = MESH_SETTLE
+            if (present(start)) m = MESH_FIXED
+            if (present(mode)) m = mode
+        end function kernel_mode
+
+        !> The mesh of the resolution, or start carried to g's X point and
+        !> separatrix level.
+        subroutine start_mesh(g, mesh, start)
+            class(hp_geometry_t), intent(in) :: g
+            type(hp_mesh_t), intent(out) :: mesh
+            type(hp_mesh_t), intent(in), optional :: start
+            if (.not. present(start)) then
+                call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
+                    res%hp_delta, 0.3_dp, mesh)
+                return
+            end if
+            mesh%p = start%p
+            mesh%theta = start%theta + g%theta_x
+            mesh%lam = start%lam*g%lambda_c
+            mesh%zeta = start%zeta
+        end subroutine start_mesh
+
+        subroutine normalised(g, mesh, out)
+            class(hp_geometry_t), intent(in) :: g
+            type(hp_mesh_t), intent(in) :: mesh
+            type(hp_mesh_t), intent(out) :: out
+            out%p = mesh%p
+            out%theta = mesh%theta - g%theta_x
+            out%lam = mesh%lam/g%lambda_c
+            out%zeta = mesh%zeta
+        end subroutine normalised
+
         !> hp_ntv_kernel on mesh, or with res%hp_adapt the corrected kernel
-        !> R + eta of goal-oriented refinement from it (at most 8 estimates).
-        subroutine adapt_kernel(g, mesh, op, rv, st)
+        !> R + eta of goal-oriented refinement from it (at most 8 estimates),
+        !> refined until R + eta has settled and eta is within the tolerance.
+        subroutine adapt_kernel(g, mesh, op, rv, st, mode)
             class(hp_geometry_t), intent(in) :: g
             type(hp_mesh_t), intent(inout) :: mesh
             type(hp_operator_t), intent(in) :: op
             real(dp), intent(out) :: rv
             integer, intent(out) :: st
+            ! MESH_FIXED: solve on mesh. MESH_SETTLE: refine until R + eta
+            ! changes by at most hp_adapt. MESH_CHECK: refine until eta is
+            ! within hp_adapt of R + eta, so that R on the mesh is.
+            integer, intent(in) :: mode
             real(dp) :: eta, val, prev
             real(dp), allocatable :: eta_el(:)
             type(hp_mesh_t) :: next
             integer :: it
-            if (.not. res%hp_adapt > 0) then
+            if (mode == MESH_FIXED .or. .not. res%hp_adapt > 0) then
                 call hp_ntv_kernel(g, mesh, op, rv, st)
                 return
             end if
@@ -438,7 +514,11 @@ contains
                 call hp_ntv_estimate(g, mesh, op, rv, eta, eta_el, st)
                 if (st /= HP_OK) return
                 val = rv + eta
-                if (abs(val - prev) <= res%hp_adapt*abs(val)) exit
+                if (mode == MESH_CHECK) then
+                    if (abs(eta) <= res%hp_adapt*abs(val)) exit
+                else if (abs(val - prev) <= res%hp_adapt*abs(val)) then
+                    exit
+                end if
                 prev = val
                 call hp_refine(mesh, eta_el, 0.5_dp, next)
                 mesh = next
@@ -447,10 +527,13 @@ contains
         end subroutine adapt_kernel
 
         !> R of species a on surface i at x = v^2/v_th^2 with finite orbit width.
-        real(dp) function orbit_r(i, a, xv, st) result(rv)
+        real(dp) function orbit_r(i, a, xv, st, start, used, mode) result(rv)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: xv
             integer, intent(out) :: st
+            type(hp_mesh_t), intent(in), optional :: start
+            type(hp_mesh_t), intent(out), optional :: used
+            integer, intent(in), optional :: mode
             type(orbit_particle_t) :: p
             type(hp_orbit_geometry_t) :: g
             type(hp_operator_t) :: op
@@ -483,21 +566,26 @@ contains
             op%wsign = 1
             op%nu = deflection_frequency(species, prof%density(i, :), &
                 prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
-            call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
-                res%hp_delta, 0.3_dp, mesh)
-            call adapt_kernel(g, mesh, op, rv, st)
+            call start_mesh(g, mesh, start)
+            call adapt_kernel(g, mesh, op, rv, st, kernel_mode(start, mode))
+            if (present(used)) call normalised(g, mesh, used)
         end function orbit_r
 
         !> R of species a on surface i at x = v^2/v_th^2.
-        real(dp) function kernel_r(i, a, xv, st) result(rv)
+        real(dp) function kernel_r(i, a, xv, st, start, used, mode) result(rv)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: xv
             integer, intent(out) :: st
+            ! Adapted meshes (normalised) in and out and the refinement mode
+            ! (adapt_kernel), hp kernels only.
+            type(hp_mesh_t), intent(in), optional :: start
+            type(hp_mesh_t), intent(out), optional :: used
+            integer, intent(in), optional :: mode
             type(ntv_kernel_t) :: kern
             real(dp), allocatable :: f10(:, :)
             real(dp) :: v, nu
             if (res%orbit_width) then
-                rv = orbit_r(i, a, xv, st)
+                rv = orbit_r(i, a, xv, st, start, used, mode)
                 if (orbit_outside(st)) then
                     rv = 0
                     st = DEVICE_ORBIT_LOST
@@ -505,7 +593,7 @@ contains
                 return
             end if
             if (.not. thin_legendre(res)) then
-                rv = thin_r(i, a, xv, st)
+                rv = thin_r(i, a, xv, st, start, used, mode)
                 if (st == HP_OK) st = NTV_OK
                 return
             end if
@@ -538,6 +626,7 @@ contains
             st = DEVICE_SOLVE
             call gauss_legendre(6, x6, w6)
             call gauss_legendre(12, x12, w12)
+            if (res%hp_adapt > 0 .and. .not. thin_legendre(res)) call seed_union(i, a)
             np = size(start) - 1
             lo(1:np) = start(1:np)
             hi(1:np) = start(2:)
@@ -588,6 +677,99 @@ contains
             call record_kinks(i, a, lo(1:np), hi(1:np), start)
             st = DEVICE_OK
         end subroutine adaptive
+
+        !> The union of the meshes adapted at seed energies spanning the
+        !> Maxwellian weight; energies whose orbits leave the file are skipped.
+        subroutine seed_union(i, a, nodes)
+            integer, intent(in) :: i, a
+            real(dp), intent(in), optional :: nodes(:)
+            real(dp), allocatable :: seeds(:), checks(:)
+            type(hp_mesh_t), allocatable :: used(:)
+            integer, allocatable :: sts(:)
+            integer :: k
+            real(dp) :: r
+            if (present(nodes)) then
+                seeds = nodes
+            else
+                seeds = [0.7_dp, 2.5_dp, 6.0_dp, 12.0_dp]
+            end if
+            allocate (used(size(seeds)), sts(size(seeds)))
+            !$omp parallel do schedule(dynamic, 1) default(shared) private(k, r)
+            do k = 1, size(seeds)
+                r = kernel_r(i, a, seeds(k), sts(k), used=used(k))
+            end do
+            !$omp end parallel do
+            call merge_into(i, a, used, sts)
+            if (.not. have_union(i, a)) return
+            ! Check the union at energies between the seeds (or at the nodes):
+            ! where its error estimate exceeds the tolerance, refine from it.
+            if (present(nodes)) then
+                checks = nodes
+            else
+                checks = [1.5_dp, 4.0_dp, 9.0_dp]
+            end if
+            deallocate (used, sts)
+            allocate (used(size(checks)), sts(size(checks)))
+            !$omp parallel do schedule(dynamic, 1) default(shared) private(k, r)
+            do k = 1, size(checks)
+                r = kernel_r(i, a, checks(k), sts(k), start=union(i, a), used=used(k), &
+                    mode=MESH_CHECK)
+            end do
+            !$omp end parallel do
+            call merge_into(i, a, used, sts)
+        end subroutine seed_union
+
+        !> Adds the meshes of the energies that solved to the union of (i, a).
+        subroutine merge_into(i, a, meshes, statuses)
+            integer, intent(in) :: i, a
+            type(hp_mesh_t), intent(in) :: meshes(:)
+            integer, intent(in) :: statuses(:)
+            integer :: k
+            do k = 1, size(meshes)
+                if (statuses(k) /= NTV_OK .or. .not. allocated(meshes(k)%theta)) cycle
+                if (.not. have_union(i, a)) then
+                    union(i, a) = meshes(k)
+                    have_union(i, a) = .true.
+                else
+                    union(i, a)%theta = merged(union(i, a)%theta, meshes(k)%theta)
+                    union(i, a)%lam = merged(union(i, a)%lam, meshes(k)%lam)
+                    union(i, a)%zeta = merged(union(i, a)%zeta, meshes(k)%zeta)
+                end if
+            end do
+        end subroutine merge_into
+
+        !> Sorted union of two increasing breakpoint lists; points closer than
+        !> 1e-12 count as one.
+        pure function merged(u, v) result(w)
+            real(dp), intent(in) :: u(:), v(:)
+            real(dp), allocatable :: w(:)
+            real(dp) :: tmp(size(u) + size(v)), x
+            integer :: i, j, n
+            i = 1
+            j = 1
+            n = 0
+            do while (i <= size(u) .or. j <= size(v))
+                if (j > size(v)) then
+                    x = u(i)
+                    i = i + 1
+                else if (i > size(u)) then
+                    x = v(j)
+                    j = j + 1
+                else if (u(i) <= v(j)) then
+                    x = u(i)
+                    i = i + 1
+                else
+                    x = v(j)
+                    j = j + 1
+                end if
+                if (n > 0) then
+                    if (abs(x - tmp(n)) <= 1e-12_dp) cycle
+                end if
+                n = n + 1
+                tmp(n) = x
+            end do
+            w = tmp(1:n)
+        end function merged
 
         !> A kink lies in each run of adjacent panels the quadrature bisected at
         !> least once; its energy is the run's centre.
@@ -654,8 +836,13 @@ contains
             !$omp parallel do schedule(dynamic, 1) default(shared) private(q, j)
             do q = 1, nq*size(lo)
                 j = (q - 1)/nq + 1
-                rs(q - (j - 1)*nq, j) = kernel_r(i, a, xs(q - (j - 1)*nq, j), &
-                    sts(q - (j - 1)*nq, j))
+                if (have_union(i, a)) then
+                    rs(q - (j - 1)*nq, j) = kernel_r(i, a, xs(q - (j - 1)*nq, j), &
+                        sts(q - (j - 1)*nq, j), start=union(i, a))
+                else
+                    rs(q - (j - 1)*nq, j) = kernel_r(i, a, xs(q - (j - 1)*nq, j), &
+                        sts(q - (j - 1)*nq, j))
+                end if
             end do
             !$omp end parallel do
             do j = 1, size(lo)
