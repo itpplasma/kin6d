@@ -318,9 +318,11 @@ contains
             report%energy_increase = max(report%energy_increase, &
                 (after%energy - before%energy)/scale)
             ! Discrete energy law W(n+1) - W(n) = -dt (J, G J) at the midpoint:
-            ! relative defect on steps whose dissipation exceeds 1e-8 W, and
-            ! the absolute defect in units of W on every step.
-            if (dissipation > 1.0e-8_dp*scale) report%identity_defect = &
+            ! relative defect on steps whose dissipation exceeds 1e-6 W, and
+            ! the absolute defect in units of W on every step. The energy
+            ! difference carries about 25 eps W of round-off, so below 1e-6 W
+            ! the relative defect measures round-off, not the law.
+            if (dissipation > 1.0e-6_dp*scale) report%identity_defect = &
                 max(report%identity_defect, &
                 abs(after%energy - before%energy + dissipation)/dissipation)
             report%law_defect = max(report%law_defect, &
