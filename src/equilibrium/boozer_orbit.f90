@@ -22,9 +22,9 @@
 module milca_boozer_orbit
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
-    use fortnum_cubic_spline, only: cubic_spline_t, cubic_spline_init, cubic_spline_eval
+    use fortnum_cubic_spline, only: cubic_spline_t, cubic_spline_init
     use milca_boozer_file, only: boozer_file_t, boozer_field_eval, boozer_iota, &
-        boozer_iota_integral, boozer_harmonics, BOOZER_OK
+        boozer_iota_integral, boozer_harmonics, spline_value, BOOZER_OK
     use milca_boozer_orbit_leaves, only: orbit_pitch_residual, orbit_pitch_residual_jvp, &
         orbit_moment, orbit_moment_jvp, orbit_energy_residual, orbit_energy_residual_jvp
     implicit none
@@ -73,12 +73,11 @@ contains
         type(orbit_particle_t), intent(in) :: p
         real(dp), intent(in) :: s
         real(dp), intent(out) :: phi, phi_s
-        real(dp) :: v(1), dv(1), ref(1), ref_s(1)
+        real(dp) :: v, ref, ref_s
         if (p%has_potential) then
-            call cubic_spline_eval(p%potential, s, v, dv)
-            call cubic_spline_eval(p%potential, p%s_ref, ref, ref_s)
-            phi = v(1) - ref(1)
-            phi_s = dv(1)
+            call spline_value(p%potential, s, v, phi_s)
+            call spline_value(p%potential, p%s_ref, ref, ref_s)
+            phi = v - ref
         else
             phi = -p%omega_e*orbit_flux_p(bf, p%s_ref, s)
             phi_s = -p%omega_e*boozer_iota(bf%axi, s)*inside(bf, s)
@@ -285,14 +284,16 @@ contains
         call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
         if (st /= ORBIT_OK) return
         call orbit_potential(bf, p, s, phi, phi_s)
-        call evaluate_at(p, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
+        call evaluate_at(p, p%mu, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
             orbit_flux_p(bf, s_star, s), phi_s, q)
     end subroutine orbit_evaluate
 
-    !> orbit_evaluate from the field state at s and psi_p(s) - psi_p(s*).
-    pure subroutine evaluate_at(p, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s, q)
+    !> orbit_evaluate from the field state at s and psi_p(s) - psi_p(s*), with
+    !> the magnetic moment mu in place of p%mu.
+    pure subroutine evaluate_at(p, mu, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, &
+            phi_s, q)
         type(orbit_particle_t), intent(in) :: p
-        real(dp), intent(in) :: s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s
+        real(dp), intent(in) :: mu, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s
         type(orbit_point_t), intent(out) :: q
         real(dp) :: h_psi, h_rho, d, rho
         rho = dpsi_p/g
@@ -300,9 +301,9 @@ contains
         q%rho = rho
         q%b = b
         q%v_par = p%charge*rho*b/p%mass
-        q%mu = p%mu
+        q%mu = mu
         ! Derivatives per unit psi (toroidal flux per radian) and per volt.
-        h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime + phi_s/psi_prime
+        h_psi = (p%charge*rho**2*b/p%mass + mu/p%charge)*b_s/psi_prime + phi_s/psi_prime
         h_rho = p%charge*rho*b**2/p%mass
         d = g + iota*i + rho*(g*i_s - i*g_s)/psi_prime
         q%theta_dot = (h_psi*g - h_rho*(rho*g_s/psi_prime - iota))/d
@@ -325,7 +326,6 @@ contains
         real(dp), intent(in) :: s_star, theta, xi
         type(orbit_point_t), intent(out) :: pt
         integer, intent(out) :: status
-        type(orbit_particle_t) :: q
         real(dp) :: lo, hi, f_lo, f_hi, s, f, f_s, step, dir, iota_star, psi_prime_star, &
             r_xi, mu, mu_s, mu_xi, edge
         real(dp), dimension(size(bf%axi%m)) :: cm, sm
@@ -404,11 +404,9 @@ contains
             0.0_dp, phi_s, b_s, mu_s)
         call orbit_moment_jvp(xi, p%mass, p%charge, p%energy, phi, b, 1.0_dp, 0.0_dp, 0.0_dp, &
             0.0_dp, 0.0_dp, 0.0_dp, mu_xi)
-        q = p
-        q%mu = mu
         ! Evaluated at the root itself: near a turning point the leg may pass
         ! theta at s /= s* where s* itself is out of reach.
-        call evaluate_at(q, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s, pt)
+        call evaluate_at(p, mu, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s, pt)
         ! ds/dxi = -R_xi/R_s; R depends on s* through -psi_p(s*) alone.
         pt%mu_xi = mu_xi - mu_s*r_xi/f_s
         pt%s_star_s = -iota_star*psi_prime_star/f_s

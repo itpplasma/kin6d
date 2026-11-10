@@ -396,7 +396,7 @@ contains
         real(dp), intent(in), optional :: f10(:)
         integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc, j
         real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), dphi(:, :), &
-            b_ab(:), d_ab(:), da(:), db_(:), psi(:, :)
+            b_ab(:), d_ab(:), da(:), db_(:), psi(:, :), psi1(:)
         real(dp) :: th, th_a, xi_lo, xi_hi, xi, xi_b, &
             col, dr, de, den, ww, psi_a, psi_b, phase, precess, drive, torque
         complex(dp) :: loc_term, src, s_dpar, s_dlf, s_db
@@ -407,7 +407,7 @@ contains
         nq = 2*p + 3
         allocate (node(p + 1), wn(p + 1), xq(nq), wq(nq), phi(p + 1, nq), &
             dphi(p + 1, nq), b_ab(n_loc), d_ab(n_loc), da(n_loc), db_(n_loc), &
-            psi(p + 1, p + 1))
+            psi(p + 1, p + 1), psi1(n_loc))
         call gauss_lobatto_legendre(p + 1, node, wn)
         call gauss_legendre(nq, xq, wq)
         do q1 = 1, nq
@@ -428,6 +428,7 @@ contains
                 psi(a1 + 1, a2 + 1) = f%stream(th, xi_lo + (xi_hi - xi_lo)*(1 + node(a2 + 1))/2)
             end do
         end do
+        psi1 = reshape(psi, [n_loc])
         do q1 = 1, nq
             th = mesh%theta(ec) + th_a*(1 + xq(q1))
             xi_lo = xi_q(1, q1)
@@ -450,8 +451,8 @@ contains
                         d_ab(ia) = db_(ia)/xi_b
                     end do
                 end do
-                psi_a = sum(reshape(psi, [n_loc])*da)
-                psi_b = sum(reshape(psi, [n_loc])*db_)
+                psi_a = sum(psi1*da)
+                psi_b = sum(psi1*db_)
                 do ic = 1, n_loc
                     s((ic - 1)*n_loc + 1:ic*n_loc) = s((ic - 1)*n_loc + 1:ic*n_loc) &
                         + wq(q1)*wq(q2)*b_ab*(psi_b*da(ic) - psi_a*db_(ic)) &

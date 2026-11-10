@@ -26,7 +26,7 @@ module milca_boozer_file
     public :: load_boozer_file, boozer_surface, boozer_point, boozer_average
     public :: boozer_jacobian_ratio
     public :: boozer_field_t, boozer_field, boozer_field_eval, boozer_iota, &
-        boozer_iota_integral, boozer_harmonics
+        boozer_iota_integral, boozer_harmonics, spline_value
     integer, parameter, public :: BOOZER_OK = 0, BOOZER_OUTSIDE = 1
 
     real(dp), parameter :: twopi = 8*atan(1.0_dp)
@@ -291,21 +291,49 @@ contains
         do k = 1, ubound(z, 1)
             z(k) = z(k - 1)*e
         end do
-        cm = real(z(abs(m)), dp)
-        sm = sign(1, m)*aimag(z(abs(m)))
+        do k = 1, size(m)
+            cm(k) = real(z(abs(m(k))), dp)
+            sm(k) = sign(1, m(k))*aimag(z(abs(m(k))))
+        end do
     end subroutine boozer_harmonics
 
     !> iota at s, zero outside the file as from boozer_surface.
     real(dp) function boozer_iota(fld, s) result(iota)
         type(boozer_field_t), intent(in) :: fld
         real(dp), intent(in) :: s
-        real(dp) :: v(1), v_s(1)
+        real(dp) :: v_s
         iota = 0
         if (.not. allocated(fld%iota%x)) return
         if (s < fld%iota%x(1) .or. s > fld%iota%x(size(fld%iota%x))) return
-        call cubic_spline_eval(fld%iota, s, v, v_s)
-        iota = v(1)
+        call spline_value(fld%iota, s, iota, v_s)
     end function boozer_iota
+
+    !> Value and derivative of the first column of sp at x, the Hermite form of
+    !> cubic_spline_eval without array temporaries (scalar hot paths).
+    pure subroutine spline_value(sp, x, v, v_x)
+        type(cubic_spline_t), intent(in) :: sp
+        real(dp), intent(in) :: x
+        real(dp), intent(out) :: v, v_x
+        real(dp) :: h, t
+        integer :: n, lo, hi, mid
+        n = size(sp%x)
+        lo = 1
+        hi = n - 1
+        do while (hi > lo)
+            mid = (lo + hi + 1)/2
+            if (x >= sp%x(mid)) then
+                lo = mid
+            else
+                hi = mid - 1
+            end if
+        end do
+        h = sp%x(lo + 1) - sp%x(lo)
+        t = (x - sp%x(lo))/h
+        v = (1 + 2*t)*(1 - t)**2*sp%y(lo, 1) + h*t*(1 - t)**2*sp%slope(lo, 1) &
+            + t*t*(3 - 2*t)*sp%y(lo + 1, 1) + h*t*t*(t - 1)*sp%slope(lo + 1, 1)
+        v_x = 6*t*(t - 1)/h*(sp%y(lo, 1) - sp%y(lo + 1, 1)) + (1 - t)*(1 - 3*t)*sp%slope(lo, 1) &
+            + t*(3*t - 2)*sp%slope(lo + 1, 1)
+    end subroutine spline_value
 
     subroutine boozer_surface(bf, s, surf, status)
         type(boozer_file_t), intent(in) :: bf
