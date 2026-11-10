@@ -5,8 +5,9 @@
 !! surface that fails leaves the other surfaces of the profile intact, and the
 !! radial force balance returns the Omega_tE of the rotation it was solved for;
 !! the orbit-width indicators match the concentric-circle geometry of the file,
-!! and the finite-width kernel reproduces the thin kernel for thin orbits and
-!! counts the energies whose orbits leave the file.
+!! the thin kernel refined from a coarse mesh by its error estimate reaches the
+!! converged Legendre kernel, and the finite-width kernel reproduces the thin
+!! kernel for thin orbits and counts the energies whose orbits leave the file.
 program test_ntv_device
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, BOOZER_OK
@@ -32,6 +33,7 @@ program test_ntv_device
     call force_balance()
     call indicators()
     call hp_thin_matches_legendre()
+    call hp_adaptive()
     call orbit_width_thin()
     call orbit_width_lost()
     if (failures > 0) error stop 'FAIL'
@@ -406,6 +408,54 @@ contains
         call close_to('hp thin K11, sources', hp(1, 1)%k11, legendre(1, 1)%k11, 5e-4_dp)
         call close_to('hp thin K12, sources', hp(1, 1)%k12, legendre(1, 1)%k12, 5e-4_dp)
     end subroutine hp_thin_matches_legendre
+
+    !> The hp thin kernel on a mesh too coarse for 2e-3 (order 4, 8 columns,
+    !> 4 rows) reaches the converged Legendre kernel within 2e-3 when refined
+    !> by its dual-weighted residual estimate to hp_adapt = 1e-3.
+    subroutine hp_adaptive()
+        character(*), parameter :: eq_name = 'ntv_hpadapt_eq.bc', pert_name = 'ntv_hpadapt_pert.bc'
+        type(boozer_file_t) :: eq, pert
+        type(ntv_species_t) :: sp(1)
+        type(ntv_profile_t) :: prof
+        type(ntv_resolution_t) :: res
+        type(ntv_species_result_t), allocatable :: coarse(:, :), adapted(:, :), legendre(:, :)
+        integer :: status
+        call write_file(eq_name, .false.)
+        call write_file(pert_name, .true.)
+        call load_boozer_file(eq_name, eq, status)
+        call load_boozer_file(pert_name, pert, status)
+        sp(1) = ntv_species_t(1.0_dp, 3.3435837768e-27_dp)
+        prof%s = [0.45_dp]
+        prof%omega_te = [1e3_dp]
+        allocate (prof%density(1, 1), prof%temperature(1, 1), prof%density_s(1, 1), &
+            prof%temperature_s(1, 1), prof%kappa(1, 1))
+        prof%density = 3e19_dp
+        prof%temperature = 2*kev
+        prof%density_s = -1e19_dp
+        prof%temperature_s = -1*kev
+        prof%kappa = 3e-4_dp
+        res%x_tol = 0
+        res%n_theta = 33
+        res%n_leg = 400
+        res%n_x = 1
+        res%sources = .false.
+        res%thin_legendre = .true.
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, legendre, status)
+        call check('adaptive: Legendre reference', status == DEVICE_OK)
+        res%thin_legendre = .false.
+        res%hp_columns = 8
+        res%hp_rows = 4
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, coarse, status)
+        call check('adaptive: coarse mesh', status == DEVICE_OK)
+        res%hp_adapt = 1e-3_dp
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, adapted, status)
+        call check('adaptive: refined mesh', status == DEVICE_OK)
+        if (failures > 0) return
+        call check('adaptive: the coarse mesh misses 2e-3', &
+            abs(coarse(1, 1)%k11/legendre(1, 1)%k11 - 1) > 2e-3_dp)
+        call close_to('adaptive K11', adapted(1, 1)%k11, legendre(1, 1)%k11, 2e-3_dp)
+        call close_to('adaptive K12', adapted(1, 1)%k12, legendre(1, 1)%k12, 2e-3_dp)
+    end subroutine hp_adaptive
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
     !> file carries harmonics m = 1..4 of toroidal number 3.

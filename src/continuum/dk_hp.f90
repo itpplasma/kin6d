@@ -41,7 +41,7 @@ module milca_dk_hp
     private
     public :: hp_geometry_t, hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_system_t, &
         hp_assemble, hp_factor, hp_solve, hp_coefficients, hp_free, hp_estimate, &
-        hp_refine, hp_operator_t, hp_ntv_kernel
+        hp_refine, hp_operator_t, hp_ntv_kernel, hp_ntv_estimate
     integer, parameter, public :: HP_OK = 0, HP_BAD_INPUT = 1, HP_SINGULAR = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -138,6 +138,14 @@ module milca_dk_hp
     !> Assembled system of n pitch unknowns with its element matrices
     !! (columns of mat), loads and density weights for residual estimates;
     !! loc maps local element nodes to unknowns.
+    !> Equilibrated sparse factor of an NTV system: A, its row and column
+    !> scales and the factor of R A C.
+    type :: ntv_factor_t
+        type(csc_z_t) :: a
+        real(dp), allocatable :: rs(:), cs(:)
+        type(sparse_solver_t) :: solver
+    end type
+
     type :: hp_system_t
         integer :: n = 0
         real(dp) :: norm = 0 ! int dtheta dxi/(b b.grad theta)
@@ -678,13 +686,102 @@ contains
         integer, intent(out) :: status
         integer, intent(out), optional :: n_dof
         type(hp_system_t) :: sys
-        type(csc_z_t) :: a, scaled
-        type(sparse_solver_t) :: solver
-        type(fortsparse_status_t) :: st
-        complex(dp), allocatable :: mat(:, :), x(:), res(:), dx(:)
-        real(dp), allocatable :: rs(:), cs(:)
-        integer, allocatable :: rows(:), cols(:)
-        integer :: e, i, j, n_loc, nt, it
+        type(ntv_factor_t) :: fac
+        complex(dp), allocatable :: mat(:, :), x(:)
+
+        call ntv_system(f, mesh, op, sys, mat, status)
+        if (status /= HP_OK) return
+        if (present(n_dof)) n_dof = sys%n
+        call ntv_factor(sys, mesh%p, mat, fac, status)
+        if (status /= HP_OK) return
+        allocate (x(sys%n))
+        call ntv_solve(fac, sys%drive(:, 3), x, .false., status)
+        call ntv_free(fac)
+        if (status /= HP_OK) return
+        r = real(sum(sys%drive(:, 4)*x), dp)
+    end subroutine hp_ntv_kernel
+
+    !> hp_ntv_kernel with the dual-weighted residual estimate eta of the
+    !! error of R: the primal and adjoint solutions of the mesh are
+    !! interpolated into degree p + 1, where the adjoint is solved again, and
+    !! eta = Re sum_e (z_f - I z)^T (b_f - A_f I x). R + eta is the
+    !! corrected value; eta_el(e) = sum |(z_f - I z) (b_f - A_f I x)| over the
+    !! nodes of element e marks it for refinement (hp_refine).
+    subroutine hp_ntv_estimate(f, mesh, op, r, eta, eta_el, status, n_dof)
+        class(hp_geometry_t), intent(in) :: f
+        type(hp_mesh_t), intent(in) :: mesh
+        type(hp_operator_t), intent(in) :: op
+        real(dp), intent(out) :: r, eta
+        real(dp), allocatable, intent(out) :: eta_el(:)
+        integer, intent(out) :: status
+        integer, intent(out), optional :: n_dof
+        type(hp_system_t) :: sys, fine
+        type(hp_mesh_t) :: mesh_fine
+        type(ntv_factor_t) :: fac
+        complex(dp), allocatable :: mat(:, :), matf(:, :), x(:), z(:), zf(:), xf(:), izf(:), &
+            res(:)
+        real(dp), allocatable :: node(:), node_f(:), w(:), lag(:, :)
+        complex(dp) :: acc
+        integer :: p, e, a, n_loc
+
+        call ntv_system(f, mesh, op, sys, mat, status)
+        if (status /= HP_OK) return
+        if (present(n_dof)) n_dof = sys%n
+        call ntv_factor(sys, mesh%p, mat, fac, status)
+        if (status /= HP_OK) return
+        allocate (x(sys%n), z(sys%n))
+        call ntv_solve(fac, sys%drive(:, 3), x, .false., status)
+        if (status == HP_OK) call ntv_solve(fac, sys%drive(:, 4), z, .true., status)
+        call ntv_free(fac)
+        if (status /= HP_OK) return
+        r = real(sum(sys%drive(:, 4)*x), dp)
+
+        mesh_fine = mesh
+        mesh_fine%p = mesh%p + 1
+        call ntv_system(f, mesh_fine, op, fine, matf, status)
+        if (status /= HP_OK) return
+        call ntv_factor(fine, mesh_fine%p, matf, fac, status)
+        if (status /= HP_OK) return
+        allocate (zf(fine%n))
+        call ntv_solve(fac, fine%drive(:, 4), zf, .true., status)
+        call ntv_free(fac)
+        if (status /= HP_OK) return
+
+        p = mesh%p
+        allocate (node(p + 1), node_f(p + 2), w(p + 2), lag(p + 2, p + 1))
+        call gauss_lobatto_legendre(p + 1, node, w(:p + 1))
+        call gauss_lobatto_legendre(p + 2, node_f, w)
+        do a = 1, p + 2
+            call lagrange_weights(p + 1, node_f(a), node, lag(a, :))
+        end do
+        n_loc = (p + 2)**2
+        allocate (xf(fine%n), izf(fine%n), eta_el(size(fine%loc, 2)), res(n_loc))
+        do e = 1, size(fine%loc, 2)
+            xf(fine%loc(:, e)) = reshape(matmul(lag, matmul(reshape(x(sys%loc(:, e)), &
+                [p + 1, p + 1]), transpose(lag))), [n_loc])
+            izf(fine%loc(:, e)) = reshape(matmul(lag, matmul(reshape(z(sys%loc(:, e)), &
+                [p + 1, p + 1]), transpose(lag))), [n_loc])
+        end do
+        acc = 0
+        do e = 1, size(fine%loc, 2)
+            res = fine%load(:, 3, e) - matmul(reshape(matf(:, e), [n_loc, n_loc]), &
+                xf(fine%loc(:, e)))
+            acc = acc + sum((zf(fine%loc(:, e)) - izf(fine%loc(:, e)))*res)
+            eta_el(e) = sum(abs((zf(fine%loc(:, e)) - izf(fine%loc(:, e)))*res))
+        end do
+        eta = real(acc, dp)
+    end subroutine hp_ntv_estimate
+
+    !> The NTV system of hp_ntv_kernel on mesh: element matrices mat, loads
+    !! (drive 3) and output weights (drive 4); with source_dlf10, f_10 of the
+    !! axisymmetric problem on the same mesh enters the loads.
+    subroutine ntv_system(f, mesh, op, sys, mat, status)
+        class(hp_geometry_t), intent(in) :: f
+        type(hp_mesh_t), intent(in) :: mesh
+        type(hp_operator_t), intent(in) :: op
+        type(hp_system_t), intent(out) :: sys
+        complex(dp), allocatable, intent(out) :: mat(:, :)
+        integer, intent(out) :: status
 
         status = HP_BAD_INPUT
         if (op%n == 0 .or. .not. allocated(op%m)) return
@@ -715,10 +812,23 @@ contains
         else
             call elements(f, mesh, op, sys, mat, status)
         end if
-        if (status /= HP_OK) return
-        if (present(n_dof)) n_dof = sys%n
+    end subroutine ntv_system
+
+    !> Equilibrated rows and columns keep the static-pivot growth of the
+    !> supernodal LU in bounds on graded meshes.
+    subroutine ntv_factor(sys, p, mat, fac, status)
+        type(hp_system_t), intent(in) :: sys
+        integer, intent(in) :: p
+        complex(dp), intent(in) :: mat(:, :)
+        type(ntv_factor_t), intent(out) :: fac
+        integer, intent(out) :: status
+        type(fortsparse_status_t) :: st
+        type(csc_z_t) :: scaled
+        integer, allocatable :: rows(:), cols(:)
+        integer :: e, i, j, n_loc, nt
+
         status = HP_BAD_INPUT
-        n_loc = (mesh%p + 1)**2
+        n_loc = (p + 1)**2
         nt = size(mat)
         allocate (rows(nt), cols(nt))
         do e = 1, size(mat, 2)
@@ -729,34 +839,64 @@ contains
                 end do
             end do
         end do
-        call csc_from_triplet(sys%n, sys%n, rows, cols, reshape(mat, [nt]), a, st)
+        call csc_from_triplet(sys%n, sys%n, rows, cols, reshape(mat, [nt]), fac%a, st)
         if (.not. status_ok(st)) return
         status = HP_SINGULAR
-        ! Equilibrated rows and columns keep the static-pivot growth of the
-        ! supernodal LU in bounds on graded meshes; without it the factor
-        ! falls back to the scalar LU.
-        scaled = a
-        call equilibrate(scaled, rs, cs)
-        solver%backend_id = FORTSPARSE_BACKEND_NATIVE
-        solver%options%ordering = FORTSPARSE_ORDER_AMD
-        solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
-        call sparse_factor(solver, scaled, st)
+        scaled = fac%a
+        call equilibrate(scaled, fac%rs, fac%cs)
+        fac%solver%backend_id = FORTSPARSE_BACKEND_NATIVE
+        fac%solver%options%ordering = FORTSPARSE_ORDER_AMD
+        fac%solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+        call sparse_factor(fac%solver, scaled, st)
         if (.not. status_ok(st)) return
-        allocate (x(sys%n), dx(sys%n))
-        res = rs*sys%drive(:, 3)
-        call sparse_solve_op(solver, res, x, FORTSPARSE_OP_NORMAL, st)
-        x = cs*x
+        status = HP_OK
+    end subroutine ntv_factor
+
+    !> A x = b, or A^T x = b with transpose, by the equilibrated factor
+    !> S = R A C and three refinement steps against A.
+    subroutine ntv_solve(fac, b, x, transpose, status)
+        type(ntv_factor_t), intent(inout) :: fac
+        complex(dp), intent(in) :: b(:)
+        complex(dp), intent(out) :: x(:)
+        logical, intent(in) :: transpose
+        integer, intent(out) :: status
+        type(fortsparse_status_t) :: st
+        complex(dp), allocatable :: res(:), dx(:)
+        integer :: it, op
+        real(dp), allocatable :: left(:), right(:)
+
+        status = HP_SINGULAR
+        if (transpose) then
+            ! A^T = C^-1 S^T R^-1: x = R S^-T C b.
+            left = fac%cs
+            right = fac%rs
+            op = FORTSPARSE_OP_TRANSPOSE
+        else
+            left = fac%rs
+            right = fac%cs
+            op = FORTSPARSE_OP_NORMAL
+        end if
+        allocate (dx(size(b)))
+        res = left*b
+        call sparse_solve_op(fac%solver, res, x, op, st)
+        x = right*x
         do it = 1, 3
             if (.not. status_ok(st)) exit
-            res = rs*(sys%drive(:, 3) - apply_z(a, x))
-            call sparse_solve_op(solver, res, dx, FORTSPARSE_OP_NORMAL, st)
-            x = x + cs*dx
+            if (transpose) then
+                res = left*(b - apply_zt(fac%a, x))
+            else
+                res = left*(b - apply_z(fac%a, x))
+            end if
+            call sparse_solve_op(fac%solver, res, dx, op, st)
+            x = x + right*dx
         end do
-        call sparse_destroy(solver)
-        if (.not. status_ok(st)) return
-        r = real(sum(sys%drive(:, 4)*x), dp)
-        status = HP_OK
-    end subroutine hp_ntv_kernel
+        if (status_ok(st)) status = HP_OK
+    end subroutine ntv_solve
+
+    subroutine ntv_free(fac)
+        type(ntv_factor_t), intent(inout) :: fac
+        call sparse_destroy(fac%solver)
+    end subroutine ntv_free
 
     !> Row and column scalings rs, cs with rs A cs of unit row and column
     !> maxima, by three sweeps of Ruiz's iteration; a is replaced.
@@ -786,6 +926,19 @@ contains
             cs = cs*c
         end do
     end subroutine equilibrate
+
+    pure function apply_zt(a, x) result(y)
+        type(csc_z_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:)
+        complex(dp) :: y(a%ncol)
+        integer :: j, k
+        y = 0
+        do j = 1, a%ncol
+            do k = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                y(j) = y(j) + a%val(k)*x(a%row_idx(k))
+            end do
+        end do
+    end function apply_zt
 
     pure function apply_z(a, x) result(y)
         type(csc_z_t), intent(in) :: a
