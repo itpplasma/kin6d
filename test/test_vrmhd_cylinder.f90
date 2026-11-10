@@ -13,7 +13,7 @@ program test_vrmhd_cylinder
     use milca_vrmhd_steady, only: vrmhd_steady_solve, vrmhd_steady_options_t, &
         vrmhd_steady_report_t, vrmhd_steady_spectrum
     use milca_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
-        vrmhd_evolve_consistent, vrmhd_evolve_expand
+        vrmhd_evolve_consistent, vrmhd_evolve_expand, prof_t, prof_n
     use fortsparse, only: csc_t, csc_from_triplet, fortsparse_status_t, status_ok
     use fortnum_ode_bdf, only: bdf_options_t, bdf_state_t, bdf_report_t, bdf_init, &
         bdf_integrate_to
@@ -230,7 +230,7 @@ contains
         real(dp) :: q(2, 1), energy(2), t_next
         logical, allocatable :: free(:)
         integer, allocatable :: kept(:)
-        integer :: i, status, newton, steps, nfree
+        integer :: i, status, newton, steps, nfree, krylov_total = 0
         integer(int64) :: t0, t1, rate
         allocate (free(op%ndof))
         free = .not. op%fixed
@@ -276,6 +276,9 @@ contains
             call bdf_integrate_to(problem, state, t_next, options, report, st)
             steps = steps + report%accepted
             newton = newton + report%newton_iterations
+            krylov_total = krylov_total + report%krylov_iterations
+            print '(a,i8,6(f9.2,i7))', '  prof krylov,eval,lin,apply,prec,factor,jac: ', krylov_total, &
+                (prof_t(i), prof_n(i), i=1, 6)
             if (st%code /= FORTNUM_OK) print *, report
             call require(st%code == FORTNUM_OK, 'BDF step')
         end do
