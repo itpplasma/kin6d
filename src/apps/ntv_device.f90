@@ -468,8 +468,16 @@ contains
             type(hp_mesh_t), intent(out) :: mesh
             type(hp_mesh_t), intent(in), optional :: start
             if (.not. present(start)) then
-                call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
-                    res%hp_delta, 0.3_dp, mesh)
+                ! Adaptation starts from at least 16 columns and rows: a p + 1
+                ! estimate does not see a resonance narrower than its element,
+                ! and from 4 rows the refinement settled 8 % off on AUG 30835.
+                if (res%hp_adapt > 0) then
+                    call hp_default_mesh(g, res%hp_order, max(res%hp_columns, 16), &
+                        max(res%hp_rows, 16), res%hp_delta, 0.3_dp, mesh)
+                else
+                    call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
+                        res%hp_delta, 0.3_dp, mesh)
+                end if
                 return
             end if
             mesh%p = start%p
@@ -501,19 +509,22 @@ contains
             ! changes by at most hp_adapt. MESH_CHECK: refine until eta is
             ! within hp_adapt of R + eta, so that R on the mesh is.
             integer, intent(in) :: mode
+            ! Refinement stops beyond this many unknowns.
+            integer, parameter :: max_dof = 250000
             real(dp) :: eta, val, prev
             real(dp), allocatable :: eta_el(:)
             type(hp_mesh_t) :: next
-            integer :: it
+            integer :: it, n_dof
             if (mode == MESH_FIXED .or. .not. res%hp_adapt > 0) then
                 call hp_ntv_kernel(g, mesh, op, rv, st)
                 return
             end if
             prev = huge(1.0_dp)
             do it = 1, 8
-                call hp_ntv_estimate(g, mesh, op, rv, eta, eta_el, st)
+                call hp_ntv_estimate(g, mesh, op, rv, eta, eta_el, st, n_dof)
                 if (st /= HP_OK) return
                 val = rv + eta
+                if (n_dof > max_dof) exit
                 if (mode == MESH_CHECK) then
                     if (abs(eta) <= res%hp_adapt*abs(val)) exit
                 else if (abs(val - prev) <= res%hp_adapt*abs(val)) then
