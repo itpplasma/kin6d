@@ -1,5 +1,5 @@
 module milca_vrmhd_section
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION
     use milca_vrmhd_parameters, only: vrmhd_parameters_t
     use milca_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix, vrmhd_point_flux, &
@@ -25,7 +25,13 @@ module milca_vrmhd_section
         integer :: offset(9) = 0, local_offset(9) = 0
         integer, allocatable :: map(:, :), row(:)
         logical, allocatable :: fixed(:)
+        !> Basis, point and weight per triangle and quadrature point. The mesh is
+        !> fixed, and recomputing them dominated every residual and Jacobian.
+        real(dp), allocatable :: basis_cache(:, :, :, :), x_cache(:, :, :), &
+            weight_cache(:, :)
     end type
+    !> Cached basis entries above this count are recomputed instead (8 bytes each).
+    integer(int64), parameter :: VRMHD_BASIS_CACHE_LIMIT = 1000000000_int64
     public :: vrmhd_section_build, vrmhd_section_basis, vrmhd_section_residual
     public :: vrmhd_section_jacobian, vrmhd_section_vjp, vrmhd_section_mass
     public :: vrmhd_section_trace, vrmhd_section_gauge_basis, vrmhd_section_test
@@ -143,9 +149,44 @@ contains
                 end if
             end do
         end do
+        call fill_basis_cache(op, status)
     end subroutine
 
     subroutine vrmhd_section_basis(op, t, q, x, weight, basis, status)
+        type(vrmhd_section_t), intent(in) :: op
+        integer, intent(in) :: t, q
+        real(dp), intent(out) :: x(2), weight, basis(36, op%nlocal)
+        integer, intent(out) :: status
+        if (allocated(op%basis_cache)) then
+            basis = op%basis_cache(:, :, q, t); x = op%x_cache(:, q, t)
+            weight = op%weight_cache(q, t); status = 0
+            return
+        end if
+        call section_basis_compute(op, t, q, x, weight, basis, status)
+    end subroutine
+
+    subroutine fill_basis_cache(op, status)
+        type(vrmhd_section_t), intent(inout) :: op
+        integer, intent(out) :: status
+        integer :: t, q, st, nt
+        nt = op%fs%mm%topology%n_triangles
+        status = 0
+        if (36_int64*op%nlocal*op%fs%nq*nt > VRMHD_BASIS_CACHE_LIMIT) return
+        allocate (op%basis_cache(36, op%nlocal, op%fs%nq, nt), &
+            op%x_cache(2, op%fs%nq, nt), op%weight_cache(op%fs%nq, nt))
+        !$omp parallel do default(shared) private(t, q, st) reduction(max:status)
+        do t = 1, nt
+            do q = 1, op%fs%nq
+                call section_basis_compute(op, t, q, op%x_cache(:, q, t), &
+                    op%weight_cache(q, t), op%basis_cache(:, :, q, t), st)
+                status = max(status, st)
+            end do
+        end do
+        !$omp end parallel do
+        if (status /= 0) deallocate (op%basis_cache, op%x_cache, op%weight_cache)
+    end subroutine
+
+    subroutine section_basis_compute(op, t, q, x, weight, basis, status)
         type(vrmhd_section_t), intent(in) :: op
         integer, intent(in) :: t, q
         real(dp), intent(out) :: x(2), weight, basis(36, op%nlocal)

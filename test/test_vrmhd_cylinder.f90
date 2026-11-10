@@ -21,7 +21,7 @@ program test_vrmhd_cylinder
     implicit none
     character(64) :: gate, arg
     integer :: rings = 16, degree = 1
-    real(dp) :: dtau = 0, strength = 0, t_end = 1.0e3_dp, dt_out = 10
+    real(dp) :: dtau = 0, strength = 0, t_end = 1.0e3_dp, dt_out = 10, dt_max = 0
     real(dp) :: beta_poloidal = 1, seed = 1.0e-6_dp
     integer :: frozen_eta = 0, k, e, check = 0
     real(dp) :: chi_ratio = 1.0e6_dp
@@ -38,6 +38,7 @@ program test_vrmhd_cylinder
         case ('cluster'); read (arg(e + 1:), *) strength
         case ('t_end'); read (arg(e + 1:), *) t_end
         case ('dt_out'); read (arg(e + 1:), *) dt_out
+        case ('dt_max'); read (arg(e + 1:), *) dt_max
         case ('frozen'); read (arg(e + 1:), *) frozen_eta
         case ('beta_p'); read (arg(e + 1:), *) beta_poloidal
         case ('seed'); read (arg(e + 1:), *) seed
@@ -254,7 +255,7 @@ contains
         call require(status == 0, 'consistent start')
         options%adaptive = .true.; options%initial_step = 1
         options%rtol = 1.0e-4_dp; options%atol = 1.0e-12_dp
-        options%max_step = dt_out
+        options%max_step = merge(dt_max, dt_out, dt_max > 0)
         call bdf_init(state, 0.0_dp, y, options, st, derivative=derivative)
         call require(st%code == FORTNUM_OK, 'BDF start')
         print '(a)', 'time, q(0.1) [Bz=1], q(0.1), E_B(m=1), E_K(m=1), '// &
