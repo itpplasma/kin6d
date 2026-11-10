@@ -17,7 +17,7 @@ module milca_nonnested_beltrami
         sparse_factor_stats_t, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, &
         FORTSPARSE_SYM_INDEFINITE, FORTSPARSE_INERTIA_RELIABLE, &
-        FORTSPARSE_ORDER_AMD, native_ordering_available, &
+        FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND, native_ordering_available, &
         FORTSPARSE_SINGULAR
     use fortnum_eigen, only: lanczos, eigen_options_t, eigen_stats_t, &
         EIGEN_NEAREST, EIGEN_OK
@@ -353,8 +353,13 @@ contains
         solver%refine = .true.
         solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
         solver%options%ldlt_blocked = .true.
-        if (native_ordering_available(FORTSPARSE_ORDER_AMD)) &
+        ! ND fills 8-9x less than AMD on 3-D mode-coupled systems (classical
+        ! stellarator vacuum, 15k-44k unknowns); AMD remains the fallback.
+        if (native_ordering_available(FORTSPARSE_ORDER_ND)) then
+            solver%options%ordering = FORTSPARSE_ORDER_ND
+        else if (native_ordering_available(FORTSPARSE_ORDER_AMD)) then
             solver%options%ordering = FORTSPARSE_ORDER_AMD
+        end if
         call sparse_factor(solver, a, fst)
         report%sparse_status = fst%code; report%message = fst%msg
         if (.not. status_ok(fst)) then
