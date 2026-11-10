@@ -49,7 +49,7 @@ module milca_ntv_device
             NTV_NO_CONVERGENCE, NTV_WEIGHT_FULL
     use milca_boozer_orbit, only: orbit_particle_t, orbit_set_potential, orbit_flux_p
     use milca_dk_hp, only: hp_operator_t, hp_mesh_t, hp_default_mesh, hp_ntv_kernel, HP_OK, &
-        HP_SINGULAR
+        HP_SINGULAR, hp_ntv_estimate, hp_refine, hp_geometry_t
     use milca_ntv_hp_line, only: hp_line_field_t, hp_line_field
     use milca_ntv_orbit_geometry, only: hp_orbit_geometry_t, hp_orbit_geometry, &
         hp_orbit_perturbation, hp_orbit_confined
@@ -106,6 +106,10 @@ module milca_ntv_device
         logical :: thin_legendre = .false.
         integer :: hp_order = 4, hp_columns = 24, hp_rows = 8
         real(dp) :: hp_delta = 1e-3_dp
+        ! Goal-oriented refinement of that mesh (hp_ntv_estimate) until the
+        ! corrected kernel R + eta changes by at most hp_adapt relative
+        ! between two refinements; 0 keeps the mesh.
+        real(dp) :: hp_adapt = 0
     end type
 
     !> Per surface and species: K_1j and K_2j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
@@ -410,8 +414,37 @@ contains
             op%source_dlf10 = res%sources
             call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
                 res%hp_delta, 0.3_dp, mesh)
-            call hp_ntv_kernel(g, mesh, op, rv, st)
+            call adapt_kernel(g, mesh, op, rv, st)
         end function thin_r
+
+        !> hp_ntv_kernel on mesh, or with res%hp_adapt the corrected kernel
+        !> R + eta of goal-oriented refinement from it (at most 8 estimates).
+        subroutine adapt_kernel(g, mesh, op, rv, st)
+            class(hp_geometry_t), intent(in) :: g
+            type(hp_mesh_t), intent(inout) :: mesh
+            type(hp_operator_t), intent(in) :: op
+            real(dp), intent(out) :: rv
+            integer, intent(out) :: st
+            real(dp) :: eta, val, prev
+            real(dp), allocatable :: eta_el(:)
+            type(hp_mesh_t) :: next
+            integer :: it
+            if (.not. res%hp_adapt > 0) then
+                call hp_ntv_kernel(g, mesh, op, rv, st)
+                return
+            end if
+            prev = huge(1.0_dp)
+            do it = 1, 8
+                call hp_ntv_estimate(g, mesh, op, rv, eta, eta_el, st)
+                if (st /= HP_OK) return
+                val = rv + eta
+                if (abs(val - prev) <= res%hp_adapt*abs(val)) exit
+                prev = val
+                call hp_refine(mesh, eta_el, 0.5_dp, next)
+                mesh = next
+            end do
+            rv = val
+        end subroutine adapt_kernel
 
         !> R of species a on surface i at x = v^2/v_th^2 with finite orbit width.
         real(dp) function orbit_r(i, a, xv, st) result(rv)
@@ -452,7 +485,7 @@ contains
                 prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
             call hp_default_mesh(g, res%hp_order, res%hp_columns, res%hp_rows, &
                 res%hp_delta, 0.3_dp, mesh)
-            call hp_ntv_kernel(g, mesh, op, rv, st)
+            call adapt_kernel(g, mesh, op, rv, st)
         end function orbit_r
 
         !> R of species a on surface i at x = v^2/v_th^2.
@@ -694,8 +727,8 @@ contains
 
     !> Reads the ntv_profile input: equilibrium and perturbation paths, then
     !> n_tor n_theta n_leg n_x chunk max_iterations sources(0|1), an optional
-    !> line 'orbit_width [order columns rows delta]' for the finite-width
-    !> kernel, 'hp [order columns rows delta]' for the mesh of the thin kernel
+    !> line 'orbit_width [order columns rows delta adapt]' for the finite-width
+    !> kernel, 'hp [order columns rows delta adapt]' for the mesh of the thin kernel
     !> (the default) or 'legendre' for the Legendre thin kernel (n_leg applies
     !> to it only), an optional
     !> line collision model x_max elements order [x_tol], the species (Z,
@@ -719,12 +752,10 @@ contains
         read (u, '(a)') line
         if (index(adjustl(line), 'orbit_width') == 1) then
             res%orbit_width = .true.
-            read (line(index(line, 'orbit_width') + 11:), *, iostat=status) res%hp_order, &
-                res%hp_columns, res%hp_rows, res%hp_delta
+            call read_mesh(line(index(line, 'orbit_width') + 11:), res)
             read (u, '(a)') line
         else if (index(adjustl(line), 'hp') == 1) then
-            read (line(index(line, 'hp') + 2:), *, iostat=status) res%hp_order, &
-                res%hp_columns, res%hp_rows, res%hp_delta
+            call read_mesh(line(index(line, 'hp') + 2:), res)
             read (u, '(a)') line
         else if (index(adjustl(line), 'legendre') == 1) then
             res%thin_legendre = .true.
@@ -757,6 +788,22 @@ contains
         end do
         close (u)
     end subroutine ntv_read_input
+
+    !> Optional mesh values 'order columns rows delta [adapt]' of an input line.
+    subroutine read_mesh(text, res)
+        character(*), intent(in) :: text
+        type(ntv_resolution_t), intent(inout) :: res
+        integer :: order, columns, rows, status
+        real(dp) :: delta, adapt
+        read (text, *, iostat=status) order, columns, rows, delta
+        if (status /= 0) return
+        res%hp_order = order
+        res%hp_columns = columns
+        res%hp_rows = rows
+        res%hp_delta = delta
+        read (text, *, iostat=status) order, columns, rows, delta, adapt
+        if (status == 0) res%hp_adapt = adapt
+    end subroutine read_mesh
 
     !> Axisymmetric transport matrix on every surface of the profile with
     !> the collision model res%collisions (nonzero) on the speed grid of res;
