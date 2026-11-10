@@ -499,7 +499,8 @@ contains
                 4.5_dp, 6.5_dp, 9.0_dp, 13.0_dp, 18.0_dp, 25.0_dp]
             real(dp) :: lo(max_panels), hi(max_panels), val(3, max_panels), err(max_panels), &
                 wt(2, max_panels)
-            real(dp) :: x6(6), w6(6), x12(12), w12(12), total(3), t, scale, a1, a2
+            real(dp) :: x6(6), w6(6), x12(12), w12(12), total(3), t, scale, a1, a2, &
+                pv(3, 2), pe(2), pw(2, 2)
             integer :: np, k, ks, nev
             st = DEVICE_SOLVE
             call gauss_legendre(6, x6, w6)
@@ -507,13 +508,10 @@ contains
             np = size(start) - 1
             lo(1:np) = start(1:np)
             hi(1:np) = start(2:)
-            nev = 0
-            do k = 1, np
-                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks, &
-                    wt(:, k))
-                if (ks /= NTV_OK) return
-                nev = nev + 18
-            end do
+            call panel_eval(i, a, lo(1:np), hi(1:np), x6, w6, x12, w12, val(:, 1:np), &
+                err(1:np), ks, wt(:, 1:np))
+            if (ks /= NTV_OK) return
+            nev = 18*np
             do
                 total = sum(val(:, 1:np), 2)
                 k = maxloc(err(1:np), 1)
@@ -523,12 +521,15 @@ contains
                 lo(np) = (lo(k) + hi(k))/2
                 hi(np) = hi(k)
                 hi(k) = lo(np)
-                call panel_eval(i, a, lo(k), hi(k), x6, w6, x12, w12, val(:, k), err(k), ks, &
-                    wt(:, k))
+                call panel_eval(i, a, [lo(k), lo(np)], [hi(k), hi(np)], x6, w6, x12, w12, &
+                    pv, pe, ks, pw)
                 if (ks /= NTV_OK) return
-                call panel_eval(i, a, lo(np), hi(np), x6, w6, x12, w12, val(:, np), err(np), &
-                    ks, wt(:, np))
-                if (ks /= NTV_OK) return
+                val(:, k) = pv(:, 1)
+                val(:, np) = pv(:, 2)
+                err(k) = pe(1)
+                err(np) = pe(2)
+                wt(:, k) = pw(:, 1)
+                wt(:, np) = pw(:, 2)
                 nev = nev + 36
             end do
             t = prof%temperature(i, a)
@@ -601,27 +602,45 @@ contains
         end subroutine record_kinks
 
         !> 6- and 12-point Gauss-Legendre values of int x^(5/2) e^-x (1, x) R
-        !> on [lo, hi] and their difference.
+        !> on the panels [lo, hi] and their differences.
         subroutine panel_eval(i, a, lo, hi, x6, w6, x12, w12, fine, err, ks, weight)
             integer, intent(in) :: i, a
-            real(dp), intent(in) :: lo, hi, x6(:), w6(:), x12(:), w12(:)
-            real(dp), intent(out) :: fine(3), err
+            real(dp), intent(in) :: lo(:), hi(:), x6(:), w6(:), x12(:), w12(:)
+            real(dp), intent(out) :: fine(:, :), err(:)
             integer, intent(out) :: ks
-            ! K_11 weight of the panel and its part on lost orbits.
-            real(dp), intent(out) :: weight(2)
-            real(dp) :: c, h, coarse(3), g, xs(size(x6) + size(x12)), rs(size(xs))
-            integer :: q, n6, sts(size(xs))
-            c = (lo + hi)/2
-            h = (hi - lo)/2
-            n6 = size(x6)
-            xs = c + h*[x6, x12]
-            ! The energies are independent; with orbit width the units run in
-            ! turn, so the nodes of a panel take the threads.
-            !$omp parallel do schedule(dynamic, 1) default(shared) private(q)
-            do q = 1, size(xs)
-                rs(q) = kernel_r(i, a, xs(q), sts(q))
+            ! K_11 weight of each panel and its part on lost orbits.
+            real(dp), intent(out) :: weight(:, :)
+            real(dp) :: xs(size(x6) + size(x12), size(lo)), rs(size(xs, 1), size(lo))
+            integer :: q, j, nq, sts(size(xs, 1), size(lo))
+            nq = size(xs, 1)
+            do j = 1, size(lo)
+                xs(:, j) = (lo(j) + hi(j))/2 + (hi(j) - lo(j))/2*[x6, x12]
+            end do
+            ! The energies of all panels are independent and take the threads
+            ! together (one surface and species at a time).
+            !$omp parallel do schedule(dynamic, 1) default(shared) private(q, j)
+            do q = 1, nq*size(lo)
+                j = (q - 1)/nq + 1
+                rs(q - (j - 1)*nq, j) = kernel_r(i, a, xs(q - (j - 1)*nq, j), &
+                    sts(q - (j - 1)*nq, j))
             end do
             !$omp end parallel do
+            do j = 1, size(lo)
+                call panel_sum(lo(j), hi(j), xs(:, j), rs(:, j), sts(:, j), w6, w12, &
+                    fine(:, j), err(j), ks, weight(:, j))
+                if (ks /= NTV_OK) return
+            end do
+        end subroutine panel_eval
+
+        subroutine panel_sum(lo, hi, xs, rs, sts, w6, w12, fine, err, ks, weight)
+            real(dp), intent(in) :: lo, hi, xs(:), rs(:), w6(:), w12(:)
+            integer, intent(in) :: sts(:)
+            real(dp), intent(out) :: fine(3), err, weight(2)
+            integer, intent(out) :: ks
+            real(dp) :: h, coarse(3), g
+            integer :: q, n6
+            h = (hi - lo)/2
+            n6 = size(w6)
             coarse = 0
             fine = 0
             err = 0
@@ -644,7 +663,7 @@ contains
                 end if
             end do
             err = maxval(abs(fine - coarse))
-        end subroutine panel_eval
+        end subroutine panel_sum
 
         subroutine assemble(i, a)
             integer, intent(in) :: i, a

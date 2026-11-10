@@ -64,13 +64,18 @@ contains
         real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
             torque
         real(dp) :: bb, db, k, drift(2), cm, sm
+        complex(dp) :: e, z
         integer :: m
         bb = g%a(0)
         db = 0
         drift = g%da(0, :)
+        ! cos(m th), sin(m th) by angle addition from one sincos.
+        e = cmplx(cos(th), sin(th), dp)
+        z = 1
         do m = 1, g%m
-            cm = cos(m*th)
-            sm = sin(m*th)
+            z = z*e
+            cm = real(z, dp)
+            sm = aimag(z)
             bb = bb + g%a(m)*cm + g%c(m)*sm
             db = db + m*(g%c(m)*cm - g%a(m)*sm)
             drift = drift + g%da(m, :)*cm + g%dc(m, :)*sm

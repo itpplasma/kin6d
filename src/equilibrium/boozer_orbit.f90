@@ -23,7 +23,8 @@ module milca_boozer_orbit
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_quadrature, only: gauss_legendre
     use fortnum_cubic_spline, only: cubic_spline_t, cubic_spline_init, cubic_spline_eval
-    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, BOOZER_OK
+    use milca_boozer_file, only: boozer_file_t, boozer_field_eval, boozer_iota, &
+        boozer_iota_integral, boozer_harmonics, BOOZER_OK
     use milca_boozer_orbit_leaves, only: orbit_pitch_residual, orbit_pitch_residual_jvp, &
         orbit_moment, orbit_moment_jvp, orbit_energy_residual, orbit_energy_residual_jvp
     implicit none
@@ -73,35 +74,62 @@ contains
         real(dp), intent(in) :: s
         real(dp), intent(out) :: phi, phi_s
         real(dp) :: v(1), dv(1), ref(1), ref_s(1)
-        type(boozer_surface_t) :: surf
-        integer :: st
         if (p%has_potential) then
             call cubic_spline_eval(p%potential, s, v, dv)
             call cubic_spline_eval(p%potential, p%s_ref, ref, ref_s)
             phi = v(1) - ref(1)
             phi_s = dv(1)
         else
-            call boozer_surface(bf, s, surf, st)
             phi = -p%omega_e*orbit_flux_p(bf, p%s_ref, s)
-            phi_s = -p%omega_e*surf%iota*surf%psi_prime
+            phi_s = -p%omega_e*boozer_iota(bf%axi, s)*inside(bf, s)
         end if
     end subroutine orbit_potential
 
-    !> psi_p(s) - psi_p(s0) = psi' int_s0^s iota ds by 8-point Gauss-Legendre.
+    !> psi_p(s) - psi_p(s0) = psi' int_s0^s iota ds of the iota spline, zero
+    !> when either end lies outside the file.
     function orbit_flux_p(bf, s0, s) result(dpsi_p)
         type(boozer_file_t), intent(in) :: bf
         real(dp), intent(in) :: s0, s
-        real(dp) :: dpsi_p, x(8), w(8)
-        type(boozer_surface_t) :: surf
-        integer :: k, st
-        call gauss_legendre(8, x, w)
+        real(dp) :: dpsi_p
         dpsi_p = 0
-        do k = 1, 8
-            call boozer_surface(bf, 0.5_dp*(s0 + s) + 0.5_dp*(s - s0)*x(k), surf, st)
-            dpsi_p = dpsi_p + w(k)*surf%iota
-        end do
-        dpsi_p = 0.5_dp*(s - s0)*dpsi_p*surf%psi_prime
+        if (inside(bf, s) == 0 .or. inside(bf, s0) == 0) return
+        dpsi_p = bf%axi%psi_prime*boozer_iota_integral(bf%axi, s0, s)
     end function orbit_flux_p
+
+    !> psi' of the file at s, zero outside its radial range.
+    pure real(dp) function inside(bf, s) result(psi_prime)
+        type(boozer_file_t), intent(in) :: bf
+        real(dp), intent(in) :: s
+        psi_prime = 0
+        if (.not. allocated(bf%axi%iota%x)) return
+        if (s < bf%axi%iota%x(1) .or. s > bf%axi%iota%x(size(bf%axi%iota%x))) return
+        psi_prime = bf%axi%psi_prime
+    end function inside
+
+    !> orbit_state with cm = cos(m theta), sm = sin(m theta) of the n = 0 modes
+    !> given, for repeated evaluation at one theta.
+    subroutine orbit_state_trig(bf, s, cm, sm, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
+            status)
+        type(boozer_file_t), intent(in) :: bf
+        real(dp), intent(in) :: s, cm(:), sm(:)
+        real(dp), intent(out) :: b, b_s, g, i, g_s, i_s, iota, psi_prime
+        integer, intent(out) :: status
+        real(dp), dimension(size(bf%axi%m)) :: bmn, bma, bmn_s, bma_s
+        integer :: k
+        call boozer_field_eval(bf%axi, s, iota, g, i, g_s, i_s, bmn, bma, bmn_s, bma_s, status)
+        if (status /= BOOZER_OK) then
+            status = ORBIT_BAD_INPUT
+            return
+        end if
+        b = 0
+        b_s = 0
+        do k = 1, size(bf%axi%m)
+            b = b + bmn(k)*cm(k) + bma(k)*sm(k)
+            b_s = b_s + bmn_s(k)*cm(k) + bma_s(k)*sm(k)
+        end do
+        psi_prime = bf%axi%psi_prime
+        status = ORBIT_OK
+    end subroutine orbit_state_trig
 
     !> Field quantities at (s, theta): B, dB/ds, G, I, dG/ds, dI/ds, iota, psi'.
     subroutine orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, status, &
@@ -112,9 +140,9 @@ contains
         integer, intent(out) :: status
         ! dB/dtheta and d2B/dtheta2 of the Fourier series.
         real(dp), intent(out), optional :: b_t, b_tt
-        type(boozer_surface_t) :: surf
-        integer :: k
-        call boozer_surface(bf, s, surf, status)
+        real(dp), dimension(size(bf%axi%m)) :: bmn, bma, bmn_s, bma_s, cm, sm
+        integer :: k, m
+        call boozer_field_eval(bf%axi, s, iota, g, i, g_s, i_s, bmn, bma, bmn_s, bma_s, status)
         if (status /= BOOZER_OK) then
             status = ORBIT_BAD_INPUT
             return
@@ -123,21 +151,15 @@ contains
         b_s = 0
         if (present(b_t)) b_t = 0
         if (present(b_tt)) b_tt = 0
-        do k = 1, size(surf%m)
-            if (surf%n(k) /= 0) cycle
-            b = b + surf%bmn(k)*cos(surf%m(k)*theta) + surf%bma(k)*sin(surf%m(k)*theta)
-            b_s = b_s + surf%bmn_s(k)*cos(surf%m(k)*theta) + surf%bma_s(k)*sin(surf%m(k)*theta)
-            if (present(b_t)) b_t = b_t + surf%m(k)*(surf%bma(k)*cos(surf%m(k)*theta) &
-                - surf%bmn(k)*sin(surf%m(k)*theta))
-            if (present(b_tt)) b_tt = b_tt - surf%m(k)**2*(surf%bmn(k)*cos(surf%m(k)*theta) &
-                + surf%bma(k)*sin(surf%m(k)*theta))
+        call boozer_harmonics(bf%axi%m, theta, cm, sm)
+        do k = 1, size(bf%axi%m)
+            m = bf%axi%m(k)
+            b = b + bmn(k)*cm(k) + bma(k)*sm(k)
+            b_s = b_s + bmn_s(k)*cm(k) + bma_s(k)*sm(k)
+            if (present(b_t)) b_t = b_t + m*(bma(k)*cm(k) - bmn(k)*sm(k))
+            if (present(b_tt)) b_tt = b_tt - m**2*(bmn(k)*cm(k) + bma(k)*sm(k))
         end do
-        g = surf%g_cov
-        i = surf%i_cov
-        g_s = surf%g_cov_s
-        i_s = surf%i_cov_s
-        iota = surf%iota
-        psi_prime = surf%psi_prime
+        psi_prime = bf%axi%psi_prime
         status = ORBIT_OK
     end subroutine orbit_state
 
@@ -152,10 +174,12 @@ contains
         type(orbit_point_t), intent(out) :: pt
         integer, intent(out) :: status
         real(dp) :: lo, hi, mid, f_lo, f_hi, f_mid, step, dir, df, edge
+        real(dp), dimension(size(bf%axi%m)) :: cm, sm
         integer :: it
         logical :: last
         status = ORBIT_BAD_INPUT
         if (p%mass <= 0 .or. p%charge == 0) return
+        call boozer_harmonics(bf%axi%m, theta, cm, sm)
         dir = sigma*sign(1.0_dp, leg_sign())
         lo = s_star
         f_lo = residual(lo)
@@ -229,7 +253,7 @@ contains
             real(dp), intent(out) :: r, r_s
             real(dp) :: bb, bs, gg, ii, gs, is, io, pp, ph, ph_s, dpsi_p
             integer :: st
-            call orbit_state(bf, s, theta, bb, bs, gg, ii, gs, is, io, pp, st)
+            call orbit_state_trig(bf, s, cm, sm, bb, bs, gg, ii, gs, is, io, pp, st)
             ! Outside the file counts as beyond the orbit.
             r = huge(1.0_dp)
             r_s = 0
@@ -257,23 +281,33 @@ contains
         real(dp), intent(in) :: s_star, s, theta
         type(orbit_point_t), intent(out) :: q
         integer, intent(out) :: st
-        real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, h_psi, h_rho, d, rho, phi, phi_s
+        real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, phi, phi_s
         call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
         if (st /= ORBIT_OK) return
-        rho = orbit_flux_p(bf, s_star, s)/g
+        call orbit_potential(bf, p, s, phi, phi_s)
+        call evaluate_at(p, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
+            orbit_flux_p(bf, s_star, s), phi_s, q)
+    end subroutine orbit_evaluate
+
+    !> orbit_evaluate from the field state at s and psi_p(s) - psi_p(s*).
+    pure subroutine evaluate_at(p, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s, q)
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s
+        type(orbit_point_t), intent(out) :: q
+        real(dp) :: h_psi, h_rho, d, rho
+        rho = dpsi_p/g
         q%s = s
         q%rho = rho
         q%b = b
         q%v_par = p%charge*rho*b/p%mass
         q%mu = p%mu
         ! Derivatives per unit psi (toroidal flux per radian) and per volt.
-        call orbit_potential(bf, p, s, phi, phi_s)
         h_psi = (p%charge*rho**2*b/p%mass + p%mu/p%charge)*b_s/psi_prime + phi_s/psi_prime
         h_rho = p%charge*rho*b**2/p%mass
         d = g + iota*i + rho*(g*i_s - i*g_s)/psi_prime
         q%theta_dot = (h_psi*g - h_rho*(rho*g_s/psi_prime - iota))/d
         q%zeta_dot = (h_rho*(1 + rho*i_s/psi_prime) - h_psi*i)/d
-    end subroutine orbit_evaluate
+    end subroutine evaluate_at
 
     !> The point at theta with local pitch xi = v_par/v of the orbit family
     !> with surface s_star and total energy p%energy (p%mu is ignored): s is
@@ -292,24 +326,30 @@ contains
         type(orbit_point_t), intent(out) :: pt
         integer, intent(out) :: status
         type(orbit_particle_t) :: q
-        real(dp) :: lo, hi, f_lo, f_hi, s, f, f_s, step, dir, b, b_s, g, i, g_s, i_s, &
-            iota, psi_prime, iota_star, psi_prime_star, phi, phi_s, r_xi, mu, mu_s, mu_xi, edge
+        real(dp) :: lo, hi, f_lo, f_hi, s, f, f_s, step, dir, iota_star, psi_prime_star, &
+            r_xi, mu, mu_s, mu_xi, edge
+        real(dp), dimension(size(bf%axi%m)) :: cm, sm
+        ! Field state of the last residual.
+        real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, phi, phi_s, dpsi_p
         logical :: last
         integer :: it
         status = ORBIT_BAD_INPUT
         if (p%mass <= 0 .or. p%charge == 0 .or. abs(xi) > 1) return
-        call orbit_state(bf, s_star, theta, b, b_s, g, i, g_s, i_s, iota_star, &
-            psi_prime_star, status)
-        if (status /= ORBIT_OK) return
+        call boozer_harmonics(bf%axi%m, theta, cm, sm)
         ! Bracket outwards from s*, where R = rho G has the sign of the root's
         ! displacement times iota psi'.
         call residual(s_star, f_lo, f_s)
         if (status /= ORBIT_OK) return
+        iota_star = iota
+        psi_prime_star = psi_prime
         s = s_star
         if (f_lo /= 0) then
             dir = sign(1.0_dp, f_lo*iota_star*psi_prime_star)
             lo = s_star
-            step = 1e-4_dp
+            ! Twice the first-order displacement usually brackets the root at
+            ! once; the step doubles from there.
+            step = 2*abs(f_lo/(iota_star*psi_prime_star))
+            if (.not. step > 1e-12_dp .or. step > 1e-1_dp) step = 1e-4_dp
             ! A doubled step beyond the file is clamped to its end, so that roots
             ! between the last step and the end are found.
             edge = merge(bf%d%s(size(bf%d%s)), bf%d%s(1), dir > 0)
@@ -355,10 +395,8 @@ contains
                 if (abs(step) <= 4*epsilon(1.0_dp)*max(1.0_dp, abs(s))) exit
             end do
         end if
-        call orbit_state(bf, s, theta, b, b_s, g, i, g_s, i_s, iota, psi_prime, status)
-        if (status /= ORBIT_OK) return
-        call orbit_potential(bf, p, s, phi, phi_s)
         call residual(s, f, f_s)
+        if (status /= ORBIT_OK) return
         call orbit_pitch_residual_jvp(xi, p%mass, p%charge, p%energy, phi, b, g, 0.0_dp, &
             1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, r_xi)
         call orbit_moment(xi, p%mass, p%charge, p%energy, phi, b, mu)
@@ -370,7 +408,7 @@ contains
         q%mu = mu
         ! Evaluated at the root itself: near a turning point the leg may pass
         ! theta at s /= s* where s* itself is out of reach.
-        call orbit_evaluate(bf, q, s_star, s, theta, pt, status)
+        call evaluate_at(q, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s, pt)
         ! ds/dxi = -R_xi/R_s; R depends on s* through -psi_p(s*) alone.
         pt%mu_xi = mu_xi - mu_s*r_xi/f_s
         pt%s_star_s = -iota_star*psi_prime_star/f_s
@@ -379,14 +417,14 @@ contains
         subroutine residual(s, r, r_s)
             real(dp), intent(in) :: s
             real(dp), intent(out) :: r, r_s
-            real(dp) :: bb, bs, gg, ii, gs, is, io, pp, ph, ph_s
-            call orbit_state(bf, s, theta, bb, bs, gg, ii, gs, is, io, pp, status)
+            call orbit_state_trig(bf, s, cm, sm, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
+                status)
             if (status /= ORBIT_OK) return
-            call orbit_potential(bf, p, s, ph, ph_s)
-            call orbit_pitch_residual(xi, p%mass, p%charge, p%energy, ph, bb, gg, &
-                orbit_flux_p(bf, s_star, s), r)
-            call orbit_pitch_residual_jvp(xi, p%mass, p%charge, p%energy, ph, bb, gg, 0.0_dp, &
-                0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, ph_s, bs, gs, io*pp, r_s)
+            call orbit_potential(bf, p, s, phi, phi_s)
+            dpsi_p = orbit_flux_p(bf, s_star, s)
+            call orbit_pitch_residual(xi, p%mass, p%charge, p%energy, phi, b, g, dpsi_p, r)
+            call orbit_pitch_residual_jvp(xi, p%mass, p%charge, p%energy, phi, b, g, 0.0_dp, &
+                0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, phi_s, b_s, g_s, iota*psi_prime, r_s)
         end subroutine residual
     end subroutine orbit_pitch_point
 
