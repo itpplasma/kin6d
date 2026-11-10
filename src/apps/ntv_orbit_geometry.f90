@@ -21,9 +21,10 @@
 !! Pitch-angle scattering acts at fixed psi* (first stage of collisions).
 module milca_ntv_orbit_geometry
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, BOOZER_OK
+    use milca_boozer_file, only: boozer_file_t, boozer_field_t, boozer_field, boozer_field_eval, &
+        boozer_harmonics, BOOZER_OK
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_pitch_point, &
-        orbit_state, orbit_potential, ORBIT_OK
+        orbit_point, orbit_state, orbit_potential, ORBIT_OK, ORBIT_NO_ROOT
     use milca_dk_hp, only: hp_geometry_t, hp_operator_t
     implicit none
     private
@@ -38,6 +39,8 @@ module milca_ntv_orbit_geometry
         type(boozer_file_t), pointer :: pert => null()
         integer :: n_tor = 0
         real(dp) :: pert_ref = 0
+        ! The harmonics of n_tor alone, cut from the perturbation file.
+        type(boozer_field_t) :: pert_field
         type(orbit_particle_t) :: p
         real(dp) :: s_star = 0, b_ref = 0, e_star = 0, v_star = 0
     contains
@@ -47,6 +50,7 @@ module milca_ntv_orbit_geometry
         procedure :: mu_hat
         procedure :: measure
         procedure :: perturbation => orbit_perturbation
+        procedure :: point_source => orbit_point_source
     end type
 
 contains
@@ -115,6 +119,7 @@ contains
         g%pert => pert
         g%n_tor = n_tor
         g%pert_ref = b_ref
+        call boozer_field(pert, n_tor, g%pert_field)
     end subroutine hp_orbit_perturbation
 
     !> Whether every orbit of g through an n_theta x n_xi sample of (theta, xi)
@@ -125,7 +130,6 @@ contains
         type(hp_orbit_geometry_t), intent(in) :: g
         integer, intent(in) :: n_theta, n_xi
         type(orbit_point_t) :: pt
-        type(boozer_surface_t) :: ps
         real(dp) :: mu, th, xi
         integer :: j, k, st
         ok = .false.
@@ -136,8 +140,7 @@ contains
                 mu = g%mu_hat(th, xi, pt, st)
                 if (st /= ORBIT_OK) return
                 if (associated(g%pert)) then
-                    call boozer_surface(g%pert, pt%s, ps, st)
-                    if (st /= BOOZER_OK) return
+                    if (pt%s < g%pert%d%s(1) .or. pt%s > g%pert%d%s(g%pert%d%nsurf)) return
                 end if
             end do
         end do
@@ -149,9 +152,8 @@ contains
         real(dp), intent(in) :: th, xi
         type(hp_operator_t), intent(in) :: op
         type(orbit_point_t) :: pt
-        type(boozer_surface_t) :: ps
         real(dp) :: mu
-        integer :: k, st
+        integer :: st
         if (.not. associated(g%pert)) then
             src = op_drive(op, th)
             return
@@ -159,13 +161,7 @@ contains
         src = 0
         mu = g%mu_hat(th, xi, pt, st)
         if (st /= ORBIT_OK) return
-        call boozer_surface(g%pert, pt%s, ps, st)
-        if (st /= BOOZER_OK) return
-        do k = 1, size(ps%m)
-            if (ps%n(k)*ps%nper /= g%n_tor) cycle
-            src = src + (0, 1)*op%n*cmplx(ps%bmn(k), ps%bma(k), dp)/g%pert_ref &
-                *exp(-(0, 1)*ps%m(k)*th)
-        end do
+        src = perturbation_at(g, th, op, pt)
     contains
         complex(dp) function op_drive(o, t)
             type(hp_operator_t), intent(in) :: o
@@ -178,6 +174,50 @@ contains
             end do
         end function op_drive
     end function orbit_perturbation
+
+    !> The drive of n_tor at the pitch point pt of theta (orbit_perturbation).
+    complex(dp) function perturbation_at(g, th, op, pt) result(src)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th
+        type(hp_operator_t), intent(in) :: op
+        type(orbit_point_t), intent(in) :: pt
+        real(dp), dimension(size(g%pert_field%m)) :: bmn, bma, bmn_s, bma_s, cm, sm
+        real(dp) :: iota, gc, ic, gc_s, ic_s
+        integer :: k, st
+        src = 0
+        call boozer_field_eval(g%pert_field, pt%s, iota, gc, ic, gc_s, ic_s, bmn, bma, bmn_s, &
+            bma_s, st)
+        if (st /= BOOZER_OK) return
+        call boozer_harmonics(g%pert_field%m, th, cm, sm)
+        do k = 1, size(g%pert_field%m)
+            src = src + (0, 1)*op%n*cmplx(bmn(k), bma(k), dp)/g%pert_ref &
+                *cmplx(cm(k), -sm(k), dp)
+        end do
+    end function perturbation_at
+
+    !> orbit_perturbation and orbit_point_coefficients on one pitch point.
+    subroutine orbit_point_source(g, th, xi, op, src, collide, drive_r, drive_e, density, &
+            phase, precess, drive, torque)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        complex(dp), intent(out) :: src
+        real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
+            torque
+        type(orbit_point_t) :: pt
+        real(dp) :: mu
+        integer :: st
+        mu = g%mu_hat(th, xi, pt, st)
+        if (.not. associated(g%pert)) then
+            src = g%perturbation(th, xi, op)
+        else if (st /= ORBIT_OK) then
+            src = 0
+        else
+            src = perturbation_at(g, th, op, pt)
+        end if
+        call point_at(g, th, xi, op, pt, collide, drive_r, drive_e, density, phase, precess, &
+            drive, torque)
+    end subroutine orbit_point_source
 
     real(dp) function mu_hat(g, th, xi, pt, status)
         class(hp_orbit_geometry_t), intent(in) :: g
@@ -199,9 +239,20 @@ contains
         real(dp), intent(in) :: th, xi
         type(hp_operator_t), intent(in) :: op
         type(orbit_point_t) :: pt
-        real(dp) :: b, b_s, gg, i, g_s, i_s, iota, psi_prime, iota_star, k, v, ds
+        real(dp) :: b
         integer :: st
         b = g%mu_hat(th, xi, pt, st)
+        m = measure_at(g, th, xi, op, pt)
+    end function measure
+
+    !> The measure at the pitch point pt of (theta, xi).
+    real(dp) function measure_at(g, th, xi, op, pt) result(m)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        type(orbit_point_t), intent(in) :: pt
+        real(dp) :: b, b_s, gg, i, g_s, i_s, iota, psi_prime, iota_star, k, v, ds
+        integer :: st
         ds = pt%s_star_s
         call orbit_state(g%bf, g%s_star, th, b, b_s, gg, i, g_s, i_s, iota_star, psi_prime, &
             st)
@@ -212,7 +263,7 @@ contains
         if (abs(xi) < 1e-12_dp) v = g%v_star
         ! dpsi/dpsi* with psi = int iota psi' ds: iota ds/(iota* ds*).
         m = 1/(b*k)*ds*iota/iota_star*v/g%v_star
-    end function measure
+    end function measure_at
 
     real(dp) function orbit_stream(g, th, xi) result(psi)
         class(hp_orbit_geometry_t), intent(in) :: g
@@ -241,12 +292,37 @@ contains
             xi = sign(xi, val)
         end if
     contains
+        !> xi on the side sigma where mu_hat = level. At fixed mu, H and P_zeta
+        !> the orbit point at theta is one root in s (orbit_point), and xi is
+        !> v_par/v there; it does not reach theta beyond the X point (xi = 0).
+        !> The Newton iteration in xi on nested pitch points is the fallback.
+        real(dp) function root(sigma, level) result(x)
+            real(dp), intent(in) :: sigma, level
+            type(orbit_particle_t) :: q
+            type(orbit_point_t) :: pt
+            real(dp) :: phi, phi_s
+            integer :: st
+            x = sigma
+            if (level <= 0) return
+            q = g%p
+            q%mu = level*g%e_star/g%b_ref
+            call orbit_point(g%bf, q, g%s_star, th, sigma, pt, st)
+            if (st == ORBIT_OK) then
+                call orbit_potential(g%bf, q, pt%s, phi, phi_s)
+                x = pt%v_par/sqrt(2*(q%energy - q%charge*phi)/q%mass)
+            else if (st == ORBIT_NO_ROOT .and. g%mu_hat(th, 0.0_dp, pt, st) <= level) then
+                x = 0
+            else
+                x = root_newton(sigma, level)
+            end if
+        end function root
+
         !> |xi| on the side sigma where mu_hat = level; zero where mu_hat on s*
         !> is already below the level (beyond the separatrix X point). mu_hat
         !> falls monotonically to zero at |xi| = 1, so [0, 1] brackets the root;
         !> Newton on the exact dmu_hat/dxi of the pitch point, bisecting a step
         !> that leaves the bracket.
-        real(dp) function root(sigma, level) result(x)
+        real(dp) function root_newton(sigma, level) result(x)
             real(dp), intent(in) :: sigma, level
             type(orbit_point_t) :: pt
             real(dp) :: lo, hi, f, f_x, step
@@ -271,10 +347,12 @@ contains
                 step = f/f_x
                 if (f_x == 0 .or. (x - step - lo)*(x - step - hi) > 0) step = x - 0.5_dp*(lo + hi)
                 x = x - step
-                if (abs(step) <= 4*epsilon(1.0_dp)) exit
+                ! mu_hat carries the rounding of its own root, so steps of a
+                ! few epsilon persist near the X point, where f_x is small.
+                if (abs(step) <= 64*epsilon(1.0_dp) .or. hi - lo <= 64*epsilon(1.0_dp)) exit
             end do
             x = sigma*x
-        end function root
+        end function root_newton
     end subroutine orbit_level
 
     subroutine orbit_point_coefficients(g, th, xi, op, collide, drive_r, drive_e, density, &
@@ -285,10 +363,24 @@ contains
         real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
             torque
         type(orbit_point_t) :: pt
-        real(dp) :: m, b, k
+        real(dp) :: b
         integer :: st
         b = g%mu_hat(th, xi, pt, st)
-        m = g%measure(th, xi, op)
+        call point_at(g, th, xi, op, pt, collide, drive_r, drive_e, density, phase, precess, &
+            drive, torque)
+    end subroutine orbit_point_coefficients
+
+    !> The coefficients of orbit_point_coefficients at the pitch point pt.
+    subroutine point_at(g, th, xi, op, pt, collide, drive_r, drive_e, density, phase, &
+            precess, drive, torque)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        type(orbit_point_t), intent(in) :: pt
+        real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
+            torque
+        real(dp) :: m, b, k
+        m = measure_at(g, th, xi, op, pt)
         b = pt%b/g%b_ref
         k = op%k*b**op%k_power
         collide = m*op%nu*(1 - xi*xi)/2
@@ -302,6 +394,6 @@ contains
         drive = m*(1 + xi*xi)/b
         ! As the thin field: the flux weight with the surface measure 1/b**k_power.
         torque = 2*k*drive/b**op%k_power
-    end subroutine orbit_point_coefficients
+    end subroutine point_at
 
 end module milca_ntv_orbit_geometry

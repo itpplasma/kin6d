@@ -25,16 +25,41 @@ module milca_boozer_file
     public :: boozer_file_t, boozer_surface_t, boozer_point_t
     public :: load_boozer_file, boozer_surface, boozer_point, boozer_average
     public :: boozer_jacobian_ratio
+    public :: boozer_field_t, boozer_field, boozer_field_eval, boozer_iota, &
+        boozer_iota_integral, boozer_harmonics
     integer, parameter, public :: BOOZER_OK = 0, BOOZER_OUTSIDE = 1
 
     real(dp), parameter :: twopi = 8*atan(1.0_dp)
     real(dp), parameter :: mu0 = 2*twopi*1e-7_dp
+
+    !> iota, G, I and the B harmonics of one toroidal mode number, cut from the
+    !> file's spline: the columns keep their nodes and slopes, so the values
+    !> are those of boozer_surface, without evaluating the other columns.
+    type :: boozer_field_t
+        integer :: n_tor = 0
+        real(dp) :: psi_prime = 0
+        ! File indices of the modes with n nper = n_tor, in file order.
+        integer, allocatable :: mode(:), m(:)
+        ! Radial power of each mode as a power of sqrt(s), and the largest.
+        integer, allocatable :: half_power(:)
+        integer :: max_half_power = 0
+        ! Hermite data of the columns node by node: values (column, node) and
+        ! slopes, so that one evaluation reads contiguous memory.
+        real(dp), allocatable :: y(:, :), slope(:, :)
+        ! int_{s_1}^{s_k} iota ds of the iota spline at its nodes.
+        real(dp), allocatable :: iota_int(:)
+        ! Columns: iota, G, I, bmnc and bmns of the modes divided by s^power.
+        type(cubic_spline_t) :: spline
+        type(cubic_spline_t) :: iota
+    end type
 
     type :: boozer_file_t
         type(bc_data_t) :: d
         ! Columns: iota, then rmnc, zmns, vmns, bmnc, rmns, zmnc, vmnc, bmns
         ! divided by s^radial_power(m), then the poloidal and toroidal currents.
         type(cubic_spline_t) :: spline
+        ! The axisymmetric part (n = 0), for guiding-centre orbits.
+        type(boozer_field_t) :: axi
     end type
 
     type :: boozer_surface_t
@@ -97,8 +122,190 @@ contains
             y(k, 3 + 8*nm) = bf%d%Itor(k)
         end do
         call cubic_spline_init(bf%d%s, y, bf%spline, status)
-        if (status /= 0) status = BOOZER_OUTSIDE
+        if (status /= 0) then
+            status = BOOZER_OUTSIDE
+            return
+        end if
+        call boozer_field(bf, 0, bf%axi)
     end subroutine load_boozer_file
+
+    !> The field of the modes with n nper = n_tor of a loaded file.
+    subroutine boozer_field(bf, n_tor, fld)
+        type(boozer_file_t), intent(in) :: bf
+        integer, intent(in) :: n_tor
+        type(boozer_field_t), intent(out) :: fld
+        integer, allocatable :: col(:)
+        real(dp) :: pw
+        integer :: nm, nk
+        nm = bf%d%nmode
+        fld%n_tor = n_tor
+        fld%psi_prime = bf%d%flux/twopi
+        fld%mode = pack([(nk, nk=1, nm)], bf%d%n*bf%d%nper == n_tor)
+        fld%m = bf%d%m(fld%mode)
+        allocate (fld%half_power(size(fld%m)))
+        do nk = 1, size(fld%m)
+            fld%half_power(nk) = nint(2*radial_power(fld%m(nk)))
+        end do
+        fld%max_half_power = max(0, maxval(fld%half_power))
+        col = [1, 2 + 8*nm, 3 + 8*nm, 1 + 3*nm + fld%mode, 1 + 7*nm + fld%mode]
+        fld%spline%x = bf%spline%x
+        allocate (fld%spline%y(size(bf%spline%x), size(col)), &
+            fld%spline%slope(size(bf%spline%x), size(col)))
+        do nk = 1, size(col)
+            fld%spline%y(:, nk) = bf%spline%y(:, col(nk))
+            fld%spline%slope(:, nk) = bf%spline%slope(:, col(nk))
+        end do
+        fld%y = transpose(fld%spline%y)
+        fld%slope = transpose(fld%spline%slope)
+        fld%iota%x = bf%spline%x
+        fld%iota%y = bf%spline%y(:, 1:1)
+        fld%iota%slope = bf%spline%slope(:, 1:1)
+        allocate (fld%iota_int(size(fld%iota%x)))
+        fld%iota_int(1) = 0
+        do nk = 2, size(fld%iota%x)
+            pw = fld%iota%x(nk) - fld%iota%x(nk - 1)
+            fld%iota_int(nk) = fld%iota_int(nk - 1) + pw*(fld%iota%y(nk - 1, 1) &
+                + fld%iota%y(nk, 1))/2 + pw**2*(fld%iota%slope(nk - 1, 1) &
+                - fld%iota%slope(nk, 1))/12
+        end do
+    end subroutine boozer_field
+
+    !> iota, G, I [T m], dG/ds, dI/ds and the harmonics bmnc, bmns [T] of fld
+    !> with their s derivatives at s, as boozer_surface gives them.
+    subroutine boozer_field_eval(fld, s, iota, g_cov, i_cov, g_cov_s, i_cov_s, bmn, bma, &
+            bmn_s, bma_s, status)
+        type(boozer_field_t), intent(in) :: fld
+        real(dp), intent(in) :: s
+        real(dp), intent(out) :: iota, g_cov, i_cov, g_cov_s, i_cov_s
+        real(dp), intent(out) :: bmn(:), bma(:), bmn_s(:), bma_s(:)
+        integer, intent(out) :: status
+        real(dp) :: g(3 + 2*size(fld%m)), g_s(3 + 2*size(fld%m)), f, f_s
+        real(dp) :: rs(0:fld%max_half_power), h, t, h00, h10, h01, h11, d00, d10, d01, d11
+        integer :: k, nm, n, lo, hi, mid
+        status = BOOZER_OUTSIDE
+        if (.not. allocated(fld%y)) return
+        n = size(fld%spline%x)
+        if (s < fld%spline%x(1) .or. s > fld%spline%x(n)) return
+        nm = size(fld%m)
+        ! The Hermite form of cubic_spline_eval on the node-major data.
+        lo = 1
+        hi = n - 1
+        do while (hi > lo)
+            mid = (lo + hi + 1)/2
+            if (s >= fld%spline%x(mid)) then
+                lo = mid
+            else
+                hi = mid - 1
+            end if
+        end do
+        h = fld%spline%x(lo + 1) - fld%spline%x(lo)
+        t = (s - fld%spline%x(lo))/h
+        h00 = (1 + 2*t)*(1 - t)**2
+        h10 = h*t*(1 - t)**2
+        h01 = t*t*(3 - 2*t)
+        h11 = h*t*t*(t - 1)
+        d00 = 6*t*(t - 1)/h
+        d10 = (1 - t)*(1 - 3*t)
+        d01 = -d00
+        d11 = t*(3*t - 2)
+        g = h00*fld%y(:, lo) + h10*fld%slope(:, lo) + h01*fld%y(:, lo + 1) &
+            + h11*fld%slope(:, lo + 1)
+        g_s = d00*fld%y(:, lo) + d10*fld%slope(:, lo) + d01*fld%y(:, lo + 1) &
+            + d11*fld%slope(:, lo + 1)
+        iota = g(1)
+        g_cov = mu0*g(2)/twopi
+        i_cov = mu0*g(3)/twopi
+        g_cov_s = mu0*g_s(2)/twopi
+        i_cov_s = mu0*g_s(3)/twopi
+        ! s^(j/2) of radial_power by products of sqrt(s), d/ds = (j/2) s^(j/2)/s.
+        rs(0) = 1
+        if (fld%max_half_power > 0) rs(1) = sqrt(s)
+        do k = 2, fld%max_half_power
+            rs(k) = rs(k - 1)*rs(1)
+        end do
+        do k = 1, nm
+            f = rs(fld%half_power(k))
+            f_s = 0.5_dp*fld%half_power(k)*f/s
+            bmn(k) = f*g(3 + k)
+            bma(k) = f*g(3 + nm + k)
+            bmn_s(k) = f_s*g(3 + k) + f*g_s(3 + k)
+            bma_s(k) = f_s*g(3 + nm + k) + f*g_s(3 + nm + k)
+        end do
+        status = BOOZER_OK
+    end subroutine boozer_field_eval
+
+    !> int_{s0}^s iota ds of the iota spline, exactly: the closed-form
+    !> integrals of its cubic pieces, node sums and partial pieces taken
+    !> apart so that short ranges keep their digits; zero outside the file.
+    pure real(dp) function boozer_iota_integral(fld, s0, s) result(v)
+        type(boozer_field_t), intent(in) :: fld
+        real(dp), intent(in) :: s0, s
+        integer :: n, k0, k1
+        v = 0
+        if (.not. allocated(fld%iota_int)) return
+        n = size(fld%iota%x)
+        if (min(s0, s) < fld%iota%x(1) .or. max(s0, s) > fld%iota%x(n)) return
+        k0 = interval(s0)
+        k1 = interval(s)
+        v = (fld%iota_int(k1) - fld%iota_int(k0)) + (piece(k1, s) - piece(k0, s0))
+    contains
+        pure integer function interval(x) result(lo)
+            real(dp), intent(in) :: x
+            integer :: hi, mid
+            lo = 1
+            hi = n - 1
+            do while (hi > lo)
+                mid = (lo + hi + 1)/2
+                if (x >= fld%iota%x(mid)) then
+                    lo = mid
+                else
+                    hi = mid - 1
+                end if
+            end do
+        end function interval
+
+        !> int from node lo to x of the Hermite piece (basis h00, h10, h01, h11).
+        pure real(dp) function piece(lo, x) result(q)
+            integer, intent(in) :: lo
+            real(dp), intent(in) :: x
+            real(dp) :: h, t
+            h = fld%iota%x(lo + 1) - fld%iota%x(lo)
+            t = (x - fld%iota%x(lo))/h
+            q = h*(fld%iota%y(lo, 1)*(t**4/2 - t**3 + t) &
+                + h*fld%iota%slope(lo, 1)*(t**4/4 - 2*t**3/3 + t**2/2) &
+                + fld%iota%y(lo + 1, 1)*(t**3 - t**4/2) &
+                + h*fld%iota%slope(lo + 1, 1)*(t**4/4 - t**3/3))
+        end function piece
+    end function boozer_iota_integral
+
+    !> cos(m theta) and sin(m theta) by angle addition from one sincos (rounding
+    !> grows like |m| epsilon).
+    pure subroutine boozer_harmonics(m, theta, cm, sm)
+        integer, intent(in) :: m(:)
+        real(dp), intent(in) :: theta
+        real(dp), intent(out) :: cm(:), sm(:)
+        complex(dp) :: z(0:max(0, maxval(abs(m)))), e
+        integer :: k
+        e = cmplx(cos(theta), sin(theta), dp)
+        z(0) = 1
+        do k = 1, ubound(z, 1)
+            z(k) = z(k - 1)*e
+        end do
+        cm = real(z(abs(m)), dp)
+        sm = sign(1, m)*aimag(z(abs(m)))
+    end subroutine boozer_harmonics
+
+    !> iota at s, zero outside the file as from boozer_surface.
+    real(dp) function boozer_iota(fld, s) result(iota)
+        type(boozer_field_t), intent(in) :: fld
+        real(dp), intent(in) :: s
+        real(dp) :: v(1), v_s(1)
+        iota = 0
+        if (.not. allocated(fld%iota%x)) return
+        if (s < fld%iota%x(1) .or. s > fld%iota%x(size(fld%iota%x))) return
+        call cubic_spline_eval(fld%iota, s, v, v_s)
+        iota = v(1)
+    end function boozer_iota
 
     subroutine boozer_surface(bf, s, surf, status)
         type(boozer_file_t), intent(in) :: bf

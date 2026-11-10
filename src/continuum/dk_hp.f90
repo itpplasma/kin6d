@@ -77,6 +77,9 @@ module milca_dk_hp
         procedure(level_i), deferred :: level
         procedure(point_i), deferred :: point
         procedure :: perturbation => op_perturbation
+        ! perturbation and point at one (theta, xi), for geometries that
+        ! share work between them.
+        procedure :: point_source => field_point_source
     end type
 
     abstract interface
@@ -238,9 +241,11 @@ contains
         ! f_10 per unit speed on the unknowns of the same mesh (source_dlf10).
         real(dp), intent(in), optional :: f10(:)
         integer :: p, n_col, n_row, n_lev, n_th, n_jr, ec, er, e, i, j, a1, a2, &
-            n_loc, j_lo, j_hi, n_el
+            n_loc, j_lo, j_hi, n_el, c
         integer, allocatable :: dof(:, :), curve_kind(:)
-        real(dp), allocatable :: curve_val(:)
+        real(dp), allocatable :: curve_val(:), node(:), wn(:), xq(:), wq(:), xi_n(:, :), &
+            xi_q(:, :)
+        real(dp) :: th_a, th, d
 
         status = HP_BAD_INPUT
         p = mesh%p
@@ -274,23 +279,43 @@ contains
         n_el = n_col*n_row
         allocate (sys%loc(n_loc, n_el), sys%load(n_loc, 4, n_el), &
             sys%dens(n_loc, n_el), mat(n_loc**2, n_el))
-        !$omp parallel do default(shared) private(e, ec, er, a1, a2) schedule(dynamic)
-        do e = 1, n_el
-            ec = 1 + mod(e - 1, n_col)
-            er = 1 + (e - 1)/n_col
-            do a2 = 0, p
-                do a1 = 0, p
-                    sys%loc(1 + a1 + (p + 1)*a2, e) = dof(mod((ec - 1)*p + a1, n_th), &
-                        (er - 1)*p + a2)
+        allocate (node(p + 1), wn(p + 1), xq(2*p + 3), wq(2*p + 3))
+        call gauss_lobatto_legendre(p + 1, node, wn)
+        call gauss_legendre(2*p + 3, xq, wq)
+        ! Column by column: every row curve once at the column's nodes and
+        ! quadrature angles, shared by the elements above and below it.
+        !$omp parallel do default(shared) schedule(dynamic) &
+        !$omp private(e, ec, er, a1, a2, c, th_a, th, d, xi_n, xi_q)
+        do ec = 1, n_col
+            allocate (xi_n(n_row + 1, p + 1), xi_q(n_row + 1, 2*p + 3))
+            th_a = (mesh%theta(ec + 1) - mesh%theta(ec))/2
+            do c = 1, n_row + 1
+                do a1 = 1, p + 1
+                    th = mesh%theta(ec) + th_a*(1 + node(a1))
+                    call f%level(curve_kind(c), curve_val(c), th, xi_n(c, a1), d)
+                end do
+                do a1 = 1, 2*p + 3
+                    th = mesh%theta(ec) + th_a*(1 + xq(a1))
+                    call f%level(curve_kind(c), curve_val(c), th, xi_q(c, a1), d)
                 end do
             end do
-            if (present(f10)) then
-                call element(f, mesh, op, curve_kind(er:er + 1), curve_val(er:er + 1), &
-                    ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e), f10(sys%loc(:, e)))
-            else
-                call element(f, mesh, op, curve_kind(er:er + 1), curve_val(er:er + 1), &
-                    ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e))
-            end if
+            do er = 1, n_row
+                e = ec + (er - 1)*n_col
+                do a2 = 0, p
+                    do a1 = 0, p
+                        sys%loc(1 + a1 + (p + 1)*a2, e) = dof(mod((ec - 1)*p + a1, n_th), &
+                            (er - 1)*p + a2)
+                    end do
+                end do
+                if (present(f10)) then
+                    call element(f, mesh, op, xi_n(er:er + 1, :), xi_q(er:er + 1, :), &
+                        ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e), f10(sys%loc(:, e)))
+                else
+                    call element(f, mesh, op, xi_n(er:er + 1, :), xi_q(er:er + 1, :), &
+                        ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e))
+                end if
+            end do
+            deallocate (xi_n, xi_q)
         end do
         !$omp end parallel do
         allocate (sys%drive(sys%n, 4), sys%density(sys%n))
@@ -350,19 +375,21 @@ contains
     !> Galerkin matrix of one element by tensor Gauss quadrature, column
     !> major in s, with its loads (radial and parallel drive, NTV drive and
     !> torque functional) and density weights.
-    subroutine element(f, mesh, op, kinds, vals, ec, load, dens, s, f10)
+    !> xi_n, xi_q: xi of the element's lower and upper row curve at its nodal
+    !> and quadrature angles.
+    subroutine element(f, mesh, op, xi_n, xi_q, ec, load, dens, s, f10)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
-        real(dp), intent(in) :: vals(2)
-        integer, intent(in) :: kinds(2), ec
+        real(dp), intent(in) :: xi_n(:, :), xi_q(:, :)
+        integer, intent(in) :: ec
         complex(dp), intent(out) :: load(:, :), s(:)
         real(dp), intent(out) :: dens(:)
         real(dp), intent(in), optional :: f10(:)
         integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc, j
         real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), dphi(:, :), &
             b_ab(:), d_ab(:), da(:), db_(:), psi(:, :)
-        real(dp) :: th, th_a, xi_lo, xi_hi, d_lo, d_hi, xi, xi_b, &
+        real(dp) :: th, th_a, xi_lo, xi_hi, xi, xi_b, &
             col, dr, de, den, ww, psi_a, psi_b, phase, precess, drive, torque
         complex(dp) :: loc_term, src, s_dpar, s_dlf, s_db
         real(dp) :: bb, bb_t, f10_xi
@@ -387,22 +414,22 @@ contains
         ! and right null vectors and the form is skew to rounding.
         do a1 = 0, p
             th = mesh%theta(ec) + th_a*(1 + node(a1 + 1))
-            call f%level(kinds(1), vals(1), th, xi_lo, d_lo)
-            call f%level(kinds(2), vals(2), th, xi_hi, d_hi)
+            xi_lo = xi_n(1, a1 + 1)
+            xi_hi = xi_n(2, a1 + 1)
             do a2 = 0, p
                 psi(a1 + 1, a2 + 1) = f%stream(th, xi_lo + (xi_hi - xi_lo)*(1 + node(a2 + 1))/2)
             end do
         end do
         do q1 = 1, nq
             th = mesh%theta(ec) + th_a*(1 + xq(q1))
-            call f%level(kinds(1), vals(1), th, xi_lo, d_lo)
-            call f%level(kinds(2), vals(2), th, xi_hi, d_hi)
+            xi_lo = xi_q(1, q1)
+            xi_hi = xi_q(2, q1)
             xi_b = (xi_hi - xi_lo)/2
             do q2 = 1, nq
                 xi = xi_lo + xi_b*(1 + xq(q2))
-                src = f%perturbation(th, xi, op)
                 ww = wq(q1)*wq(q2)*th_a*xi_b
-                call f%point(th, xi, op, col, dr, de, den, phase, precess, drive, torque)
+                call f%point_source(th, xi, op, src, col, dr, de, den, phase, precess, drive, &
+                    torque)
                 ! -i n q xi k + i (n/v)(omega_E + pre (1 + wsign xi^2)(cos - offset)/b)
                 loc_term = (0, 1)*op%n*(-op%q*phase + (op%omega_e*den + op%pre*precess) &
                     /op%v)
@@ -875,28 +902,62 @@ contains
         type(hp_operator_t), intent(in) :: op
         real(dp), intent(in) :: th, slope
         complex(dp), intent(out) :: s_dpar, s_dlf, s_db
-        complex(dp) :: e
+        complex(dp) :: e, z(size(op%m))
         integer :: j
         s_dpar = 0; s_dlf = 0; s_db = 0
+        z = phases(op%m, th)
         do j = 1, size(op%m)
-            e = op%c(j)*exp((0, 1)*op%m(j)*th)
+            e = op%c(j)*z(j)
             s_dpar = s_dpar + ((0, 1)*(op%m(j) - op%n*op%q) - 2*slope)/op%q*e
             s_dlf = s_dlf + ((0, 1)*(op%m(j) - op%n*op%q) - slope)*e
             s_db = s_db + e
         end do
     end subroutine perturbed_sources
 
+    subroutine field_point_source(g, th, xi, op, src, collide, drive_r, drive_e, density, &
+            phase, precess, drive, torque)
+        class(hp_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        complex(dp), intent(out) :: src
+        real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
+            torque
+        src = g%perturbation(th, xi, op)
+        call g%point(th, xi, op, collide, drive_r, drive_e, density, phase, precess, drive, &
+            torque)
+    end subroutine field_point_source
+
     complex(dp) function op_perturbation(g, th, xi, op) result(src)
         class(hp_geometry_t), intent(in) :: g
         real(dp), intent(in) :: th, xi
         type(hp_operator_t), intent(in) :: op
+        complex(dp) :: z(size(op%m))
         integer :: j
         src = 0
         if (.not. allocated(op%m)) return
+        z = phases(op%m, th)
         do j = 1, size(op%m)
-            src = src + (0, 1)*op%n*op%c(j)*exp((0, 1)*op%m(j)*th)
+            src = src + (0, 1)*op%n*op%c(j)*z(j)
         end do
     end function op_perturbation
+
+    !> exp(i m th) by angle addition from one sincos (rounding grows like |m|
+    !> epsilon).
+    pure function phases(m, th) result(z)
+        integer, intent(in) :: m(:)
+        real(dp), intent(in) :: th
+        complex(dp) :: z(size(m)), w(0:max(0, maxval(abs(m)))), e
+        integer :: k
+        e = cmplx(cos(th), sin(th), dp)
+        w(0) = 1
+        do k = 1, ubound(w, 1)
+            w(k) = w(k - 1)*e
+        end do
+        do k = 1, size(m)
+            z(k) = w(abs(m(k)))
+            if (m(k) < 0) z(k) = conjg(z(k))
+        end do
+    end function phases
 
     real(dp) function field_stream(g, th, xi) result(psi)
         class(hp_field_t), intent(in) :: g
@@ -933,30 +994,42 @@ contains
     pure real(dp) function field_b(f, th) result(b)
         type(hp_field_t), intent(in) :: f
         real(dp), intent(in) :: th
+        complex(dp) :: e, z
         integer :: k
         b = f%a(0)
+        e = cmplx(cos(th), sin(th), dp)
+        z = 1
         do k = 1, f%m
-            b = b + f%a(k)*cos(k*th) + f%c(k)*sin(k*th)
+            z = z*e
+            b = b + f%a(k)*real(z, dp) + f%c(k)*aimag(z)
         end do
     end function field_b
 
     pure real(dp) function field_db(f, th) result(b)
         type(hp_field_t), intent(in) :: f
         real(dp), intent(in) :: th
+        complex(dp) :: e, z
         integer :: k
         b = 0
+        e = cmplx(cos(th), sin(th), dp)
+        z = 1
         do k = 1, f%m
-            b = b + k*(f%c(k)*cos(k*th) - f%a(k)*sin(k*th))
+            z = z*e
+            b = b + k*(f%c(k)*real(z, dp) - f%a(k)*aimag(z))
         end do
     end function field_db
 
     pure real(dp) function field_d2b(f, th) result(b)
         type(hp_field_t), intent(in) :: f
         real(dp), intent(in) :: th
+        complex(dp) :: e, z
         integer :: k
         b = 0
+        e = cmplx(cos(th), sin(th), dp)
+        z = 1
         do k = 1, f%m
-            b = b - k*k*(f%a(k)*cos(k*th) + f%c(k)*sin(k*th))
+            z = z*e
+            b = b - k*k*(f%a(k)*real(z, dp) + f%c(k)*aimag(z))
         end do
     end function field_d2b
 
