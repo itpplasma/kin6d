@@ -24,6 +24,16 @@
 !!                    temperatures;
 !!   exchange_pair    momentum and temperature exchange between drifting or
 !!                    heated Maxwellians against the closed linearised rates;
+!!   weighted_blocks  the energy-scattering and field-particle rows with a
+!!                    speed basis function phi_p inside the speed integral
+!!                    (energy-dependent measure): their sums over p are the
+!!                    unweighted rows, for every p the sum over all test
+!!                    rows including x = 0 vanishes (density, energy part
+!!                    and l = 0 field part), the energy part is symmetric at
+!!                    equal temperatures, the weights x_p^2 reproduce the
+!!                    integrals of the leaves with x^2 in them (both parts,
+!!                    the field part for all pairs, l = 0, 1), and the lumped
+!!                    deflection rate has its closed form;
 !!   neo2_matrix FILE NEO-2's matrix elements for electrons and deuterons of
 !!                    the AUG 30835 benchmark (B-splines of order 3): the
 !!                    operator projected on the same basis.
@@ -33,6 +43,8 @@ program test_dk_collop
     use milca_dk_collop_leaves, only: collop_tp, collop_tp_series, &
         collop_fp_lo_moments, collop_fp_hi_moments
     use milca_rosenbluth_reference, only: homma_pair_t, homma_radial_quad, homma_gamma
+    use milca_dk_ntv, only: ntv_collision_rows, NTV_OK
+    use fortnum_quadrature, only: gauss_legendre
     implicit none
     character(64) :: check
     character(512) :: path
@@ -56,6 +68,7 @@ program test_dk_collop
     case ('self_adjoint'); ok = self_adjoint()
     case ('conservation_pair'); ok = conservation_pair()
     case ('exchange_pair'); ok = exchange_pair()
+    case ('weighted_blocks'); ok = weighted_blocks()
     case ('neo2_matrix')
         call get_command_argument(2, path)
         ok = neo2_matrix(trim(path))
@@ -586,6 +599,259 @@ contains
         ! wrong exchange term; the friction gate is untouched at 1e-12.
         ok = worst(1) < 1e-12_dp .and. worst(2) < 1e-11_dp
     end function exchange_pair
+
+    !> Measure-weighted rows of ntv_collision_rows against its unweighted
+    !> rows (collop_build) and the density null vector, at unequal and equal
+    !> temperatures, and both parts against the leaves for the weights x_p^2.
+    logical function weighted_blocks() result(ok)
+        type(collop_grid_t) :: grid
+        type(collop_species_t) :: sp(2)
+        real(dp), allocatable :: rows(:, :, :, :, :), ratio(:, :), d3(:), d4(:), d6(:), &
+            vt(:), tz(:), en(:, :, :), fp(:, :, :, :, :), nu(:, :), ew(:, :, :, :), &
+            fw(:, :, :, :, :, :), e0(:, :), f0(:, :, :, :), e0w(:, :, :), f0w(:, :, :, :, :), &
+            col(:), g(:, :)
+        real(dp) :: lnl(2, 2), sum_e, sum_f, dens_e, dens_f, asym, scale, moment, t_ratio(2), rate, y, &
+            nu_ref
+        integer :: status, n, nx, a, b, j, p, k, l, it
+        integer, parameter :: n_leg = 4
+
+        lnl = 17
+        t_ratio = [1.7_dp, 1.0_dp]
+        call collop_make_grid(5.0_dp, 3, 5, grid, status)
+        if (status /= COLLOP_OK) error stop 'grid failed'
+        n = grid%n
+        nx = n - 1
+        ok = .true.
+        do it = 1, 2
+            sp = plasma(t_ratio(it))
+            call ntv_collision_rows(sp, lnl, grid, COLLOP_FULL, n_leg, rows, ratio, d3, d4, &
+                d6, vt, tz, status, en, fp, nu, ew, fw, e0, f0, e0w, f0w)
+            if (status /= NTV_OK) error stop 'rows failed'
+            sum_e = maxval(abs(sum(ew, 1) - en))/maxval(abs(en))
+            sum_f = 0
+            do l = 0, n_leg - 1
+                sum_f = max(sum_f, maxval(abs(sum(fw(:, :, :, :, :, l), 1) - fp(:, :, :, :, l))) &
+                    /maxval(abs(fp(:, :, :, :, l))))
+            end do
+            dens_e = 0
+            dens_f = 0
+            asym = 0
+            rate = 0
+            allocate (col(n), g(nx, nx))
+            do a = 1, 2
+                do k = 1, nx
+                    g(k, :) = d3(k)*en(k, :, a)
+                end do
+                scale = maxval(abs(g))
+                ! Unweighted rows with their x = 0 rows, and the deflection
+                ! rate nu_D/v against its closed form (a difference of rows
+                ! dominated by energy scattering: 1e-11 measured).
+                do j = 1, nx
+                    dens_e = max(dens_e, abs(e0(j, a) + sum(vt(a)*d3*en(:, j, a))) &
+                        /(abs(e0(j, a)) + sum(abs(vt(a)*d3*en(:, j, a)))))
+                    do b = 1, 2
+                        dens_f = max(dens_f, abs(f0(j, a, b, 0) + sum(vt(a)*d3*fp(:, j, a, b, 0))) &
+                            /(abs(f0(j, a, b, 0)) + sum(abs(vt(a)*d3*fp(:, j, a, b, 0)))))
+                    end do
+                end do
+                do k = 1, nx
+                    nu_ref = 0
+                    do b = 1, 2
+                        y = grid%x(k + 1)*vt(a)/vt(b)
+                        nu_ref = nu_ref + collop_nuhat(sp(a), sp(b), lnl(a, b))*(erf(y) &
+                            - (erf(y) - 2*y*exp(-y*y)/sqrt(pi))/(2*y*y))
+                    end do
+                    nu_ref = nu_ref/(vt(a)*grid%x(k + 1)**4)
+                    rate = max(rate, abs(nu(k, a)/nu_ref - 1))
+                end do
+                do p = 1, n
+                    do j = 1, nx
+                        col = [e0w(p, j, a), vt(a)*d3*ew(p, :, j, a)]
+                        if (any(col /= 0)) dens_e = max(dens_e, abs(sum(col))/sum(abs(col)))
+                        do b = 1, 2
+                            col = [f0w(p, j, a, b, 0), vt(a)*d3*fw(p, :, j, a, b, 0)]
+                            if (any(col /= 0)) dens_f = max(dens_f, abs(sum(col))/sum(abs(col)))
+                        end do
+                    end do
+                    ! The Galerkin form: rows times their speed mass.
+                    do k = 1, nx
+                        g(k, :) = d3(k)*ew(p, k, :, a)
+                    end do
+                    asym = max(asym, maxval(abs(g - transpose(g)))/scale)
+                end do
+            end do
+            deallocate (col, g)
+            print '(a,f4.1,a,6es10.2)', 'T_i/T_e =', t_ratio(it), &
+                ' sum energy, field; density energy, field; asymmetry; nu:', &
+                sum_e, sum_f, dens_e, dens_f, asym, rate
+            ok = ok .and. sum_e < 1e-13_dp .and. sum_f < 1e-13_dp &
+                .and. dens_e < 1e-13_dp .and. dens_f < 1e-13_dp .and. rate < 1e-9_dp
+            if (it == 2) ok = ok .and. asym < 1e-13_dp
+            ! Not symmetric at unequal temperatures: the bound has teeth.
+            if (it == 1) ok = ok .and. asym > 1e-3_dp
+        end do
+        moment = weighted_moment(grid, sp(1:1), lnl(1:1, 1:1))
+        print '(a,es10.2)', 'weights x_p^2 against the leaves:', moment
+        ok = ok .and. moment < 1e-12_dp
+        moment = field_moment(grid, plasma(t_ratio(1)), lnl)
+        print '(a,es10.2)', 'field weights x_p^2 against the leaves:', moment
+        ok = ok .and. moment < 1e-12_dp
+    end function weighted_blocks
+
+    !> All pairs, l = 0 and 1: sum_p x_p^2 field_w(p) against nuhat_ab 4 pi/
+    !> ((2l+1) pi^(3/2)) int x^2 exp(-x^2) (x^2 phi_k' psi_j' + l(l+1) phi_k
+    !> psi_j) dx, psi_j from the leaves with inner moments by an own rule.
+    !> Only this pins which basis function carries the weight.
+    real(dp) function field_moment(grid, sp, lnl) result(err)
+        type(collop_grid_t), intent(in) :: grid
+        type(collop_species_t), intent(in) :: sp(2)
+        real(dp), intent(in) :: lnl(2, 2)
+        integer, parameter :: nq = 40, tail = 6
+        real(dp), allocatable :: rows(:, :, :, :, :), ratio(:, :), d3(:), d4(:), d6(:), &
+            vt(:), tz(:), fw(:, :, :, :, :, :), ref(:, :), mine(:, :), edges(:), brk(:)
+        real(dp), dimension(grid%n) :: lo0, lo2, hi0, hi2, psi, psix, psi_hi, psix_hi
+        real(dp) :: x0(nq), w0(nq), phi(grid%order), dphi(grid%order), yphi(grid%order), &
+            x, w, y, g, r, s, rho, mu, lo, hi, t
+        integer :: status, n, a, b, l, c, q, i, j, k, first, p, pass
+
+        n = grid%n
+        call ntv_collision_rows(sp, lnl, grid, COLLOP_FULL, 2, rows, ratio, d3, d4, d6, &
+            vt, tz, status, field_w=fw)
+        if (status /= NTV_OK) error stop 'rows failed'
+        call gauss_legendre(nq, x0, w0)
+        edges = [grid%edges, (grid%edges(grid%nelem) + k, k=1, tail)]
+        allocate (ref(n, n), mine(n - 1, n - 1))
+        err = 0
+        do a = 1, 2
+            do b = 1, 2
+                rho = vt(b)/vt(a)
+                mu = sp(a)%m/sp(b)%m
+                ! psi_j has kinks where x/rho crosses an edge.
+                brk = [edges, pack(rho*edges, rho*edges < edges(size(edges)))]
+                do i = 2, size(brk)
+                    t = brk(i)
+                    do j = i - 1, 1, -1
+                        if (brk(j) <= t) exit
+                        brk(j + 1) = brk(j)
+                    end do
+                    brk(j + 1) = t
+                end do
+                do l = 0, 1
+                    ref = 0
+                    do c = 1, size(brk) - 1
+                        if (brk(c + 1) - brk(c) < 1e-12_dp) cycle
+                        do q = 1, nq
+                            x = brk(c) + (x0(q) + 1)*(brk(c + 1) - brk(c))/2
+                            w = w0(q)*(brk(c + 1) - brk(c))/2
+                            s = min(x/rho, edges(size(edges)))
+                            lo0 = 0; lo2 = 0; hi0 = 0; hi2 = 0
+                            do pass = 1, 2
+                                do i = 1, size(edges) - 1
+                                    lo = merge(edges(i), max(edges(i), s), pass == 1)
+                                    hi = merge(min(edges(i + 1), s), edges(i + 1), pass == 1)
+                                    if (hi <= lo) cycle
+                                    do k = 1, nq
+                                        y = lo + (x0(k) + 1)*(hi - lo)/2
+                                        call collop_basis(grid, y, first, yphi, dphi)
+                                        yphi = yphi*w0(k)*(hi - lo)/2*y**2*exp(-y**2)
+                                        j = first + grid%order - 1
+                                        if (pass == 1) then
+                                            r = rho*y/x
+                                            lo0(first:j) = lo0(first:j) + yphi*r**l
+                                            lo2(first:j) = lo2(first:j) + yphi*r**(l + 2)
+                                        else
+                                            r = x/(rho*y)
+                                            hi0(first:j) = hi0(first:j) + yphi*r**(l - 1)
+                                            hi2(first:j) = hi2(first:j) + yphi*r**(l + 1)
+                                        end if
+                                    end do
+                                end do
+                            end do
+                            call collop_fp_lo_moments(x, real(l, dp), mu, lo0, lo2, psi, psix)
+                            call collop_fp_hi_moments(x, real(l, dp), mu, hi0, hi2, psi_hi, &
+                                psix_hi)
+                            psi = psi + psi_hi
+                            psix = psix + psix_hi
+                            call collop_basis(grid, x, first, phi, dphi)
+                            g = w*x**2*exp(-x**2)
+                            do i = 1, grid%order
+                                ref(first + i - 1, :) = ref(first + i - 1, :) &
+                                    + g*(x**2*dphi(i)*psix + l*(l + 1)*phi(i)*psi)
+                            end do
+                        end do
+                    end do
+                    ref = collop_nuhat(sp(a), sp(b), lnl(a, b))*4/((2*l + 1)*sqrt(pi))*ref
+                    mine = 0
+                    do p = 1, n
+                        do k = 1, n - 1
+                            mine(k, :) = mine(k, :) &
+                                + grid%x(p)**2*vt(a)*d3(k)*fw(p, k, :, a, b, l)
+                        end do
+                    end do
+                    err = max(err, maxval(abs(mine - ref(2:, 2:)))/maxval(abs(ref)))
+                end do
+            end do
+        end do
+    end function field_moment
+
+    !> Self-collisions: sum_p x_p^2 energy_w(p) against -nuhat int x^2 phi_k'
+    !> (energy phi_j' + thermal phi_j) dx of the leaves by an own rule (x^2
+    !> lies in the element space, so the interpolated weight is exact).
+    real(dp) function weighted_moment(grid, sp, lnl) result(err)
+        type(collop_grid_t), intent(in) :: grid
+        type(collop_species_t), intent(in) :: sp(1)
+        real(dp), intent(in) :: lnl(1, 1)
+        integer, parameter :: nq = 40, cells = 44
+        real(dp), allocatable :: rows(:, :, :, :, :), ratio(:, :), d3(:), d4(:), d6(:), &
+            vt(:), tz(:), ew(:, :, :, :), ref(:, :), mine(:, :)
+        real(dp) :: x0(nq), w0(nq), phi(grid%order), dphi(grid%order), x, w, lor, en, th, &
+            lo, hi
+        integer :: status, n, e, c, q, i, j, first, p, k
+
+        n = grid%n
+        call ntv_collision_rows(sp, lnl, grid, COLLOP_TEST_PARTICLE, 2, rows, ratio, d3, d4, &
+            d6, vt, tz, status, energy_w=ew)
+        if (status /= NTV_OK) error stop 'rows failed'
+        call gauss_legendre(nq, x0, w0)
+        allocate (ref(n, n), mine(n - 1, n - 1))
+        ref = 0
+        ! Elements in quarters, then the polynomial tail to x_max + 8.
+        do e = 1, grid%nelem + 1
+            do c = 1, merge(4, cells, e <= grid%nelem)
+                if (e <= grid%nelem) then
+                    lo = grid%edges(e - 1) + (c - 1)*(grid%edges(e) - grid%edges(e - 1))/4
+                    hi = grid%edges(e - 1) + c*(grid%edges(e) - grid%edges(e - 1))/4
+                else
+                    lo = grid%edges(grid%nelem) + (c - 1)*8.0_dp/cells
+                    hi = grid%edges(grid%nelem) + c*8.0_dp/cells
+                end if
+                do q = 1, nq
+                    x = lo + (x0(q) + 1)*(hi - lo)/2
+                    w = w0(q)*(hi - lo)/2
+                    if (x < 1) then
+                        call collop_tp_series(x, 1.0_dp, 1.0_dp, lor, en, th)
+                    else
+                        call collop_tp(x, 1.0_dp, 1.0_dp, lor, en, th)
+                    end if
+                    call collop_basis(grid, x, first, phi, dphi)
+                    do j = 1, grid%order
+                        do i = 1, grid%order
+                            ref(first + i - 1, first + j - 1) = ref(first + i - 1, &
+                                first + j - 1) + w*x**2*dphi(i)*(en*dphi(j) + th*phi(j))
+                        end do
+                    end do
+                end do
+            end do
+        end do
+        ref = -collop_nuhat(sp(1), sp(1), lnl(1, 1))*ref
+        mine = 0
+        do p = 1, n
+            do k = 1, n - 1
+                mine(k, :) = mine(k, :) + grid%x(p)**2*vt(1)*d3(k)*ew(p, k, :, 1)
+            end do
+        end do
+        err = maxval(abs(mine - ref(2:, 2:)))/maxval(abs(ref))
+    end function weighted_moment
 
     !> NEO-2 projects on x phi_m with phi_m its B-splines (order 3, knots
     !> 0:0.8:4, continued polynomially) and normalises the Lorentz, energy

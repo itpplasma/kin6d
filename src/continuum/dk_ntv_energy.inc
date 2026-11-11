@@ -471,8 +471,20 @@
     !> of node k after the same scaling (lumped over Galerkin speed mass); d3,
     !> d4, d6 the lumped moments w x^p exp(-x^2) of the nodes 2..n; vt, tz the
     !> thermal speed and T/(Z e) of each species.
+    !> On request, in the unit-streaming normalisation rows/ratio: energy(k,
+    !> kk, a) the energy scattering (the test-particle rows of l = 0),
+    !> field(k, kk, a, b, l) the field-particle part and nu(k, a) the lumped
+    !> deflection rate, the test-particle rows being energy - l (l + 1)/2 nu;
+    !> energy_w(p, k, kk, a) and field_w(p, k, kk, a, b, l) the same two parts
+    !> with the speed basis function of grid node p = 1..n inside the speed
+    !> integral, for an energy-dependent measure (their sums over p are energy
+    !> and field). Density conservation involves the dropped test row x = 0,
+    !> returned unscaled: sum_k vt(a) d3(k) energy_w(p, k, kk, a) +
+    !> energy0_w(p, kk, a) = 0, likewise field0_w for l = 0; energy0 and
+    !> field0 are their sums over p.
     subroutine ntv_collision_rows(species, lnlambda, grid, model, n_leg, rows, ratio, &
-            d3, d4, d6, vt, tz, status)
+            d3, d4, d6, vt, tz, status, energy, field, nu, energy_w, field_w, energy0, &
+            field0, energy0_w, field0_w)
         type(collop_species_t), intent(in) :: species(:)
         real(dp), intent(in) :: lnlambda(:, :)
         type(collop_grid_t), intent(in) :: grid
@@ -480,8 +492,13 @@
         real(dp), allocatable, intent(out) :: rows(:, :, :, :, :), ratio(:, :), d3(:), &
             d4(:), d6(:), vt(:), tz(:)
         integer, intent(out) :: status
+        real(dp), allocatable, intent(out), optional :: energy(:, :, :), &
+            field(:, :, :, :, :), nu(:, :), energy_w(:, :, :, :), field_w(:, :, :, :, :, :), &
+            energy0(:, :), field0(:, :, :, :), energy0_w(:, :, :), field0_w(:, :, :, :, :)
     type(energy_system_t) :: e
-    integer :: a, b, k, l
+    real(dp), allocatable :: ew(:, :, :, :), fw(:, :, :, :, :, :)
+    real(dp) :: c
+    integer :: a, b, k, l, st
     status = NTV_BAD_INPUT
     e%ns = size(species)
     e%nx = grid%n - 1
@@ -509,6 +526,55 @@
     d6 = e%d6
     vt = e%vt
     tz = e%tz
+
+    if (present(energy)) allocate (energy(e%nx, e%nx, e%ns))
+    if (present(nu)) allocate (nu(e%nx, e%ns))
+    if (present(field)) then
+        allocate (field(e%nx, e%nx, e%ns, e%ns, 0:n_leg - 1))
+        field = 0
+    end if
+    do a = 1, e%ns
+        do k = 1, e%nx
+            if (present(energy)) energy(k, :, a) = e%pre(k, :, a, a, 0)/ratio(k, a)
+            if (present(nu)) nu(k, a) = (e%pre(k, k, a, a, 0) - e%pre(k, k, a, a, 1))/ratio(k, a)
+            if (present(field) .and. e%coupled) field(k, :, a, :, :) = &
+                (e%full(k, :, a, :, :) - e%pre(k, :, a, :, :))/ratio(k, a)
+        end do
+    end do
+    if (.not. (present(energy_w) .or. present(field_w) .or. present(energy0) &
+        .or. present(field0) .or. present(energy0_w) .or. present(field0_w))) return
+    status = NTV_SINGULAR
+    call collop_weighted(species, lnlambda, grid, model, n_leg - 1, ew, fw, st)
+    if (st /= COLLOP_OK) return
+    ! The normalisation of scaled_rows; row/ratio = 1/(vt d3) on kept rows.
+    do a = 1, e%ns
+        c = pi**1.5_dp/(4*pi*species(a)%n)
+        ew(:, :, :, a) = c*ew(:, :, :, a)
+        do l = 0, n_leg - 1
+            fw(:, :, :, a, :, l) = (2*l + 1)*c*fw(:, :, :, a, :, l)
+        end do
+    end do
+    if (present(energy0_w)) energy0_w = ew(:, 1, 2:, :)
+    if (present(energy0)) energy0 = sum(ew(:, 1, 2:, :), 1)
+    ! Explicit bounds: a section would start the degree index at 1, not 0.
+    if (present(field0_w)) then
+        allocate (field0_w(grid%n, e%nx, e%ns, e%ns, 0:n_leg - 1))
+        field0_w = fw(:, 1, 2:, :, :, :)
+    end if
+    if (present(field0)) then
+        allocate (field0(e%nx, e%ns, e%ns, 0:n_leg - 1))
+        field0 = sum(fw(:, 1, 2:, :, :, :), 1)
+    end if
+    if (present(energy_w)) allocate (energy_w(grid%n, e%nx, e%nx, e%ns))
+    if (present(field_w)) allocate (field_w(grid%n, e%nx, e%nx, e%ns, e%ns, 0:n_leg - 1))
+    do a = 1, e%ns
+        do k = 1, e%nx
+            c = 1/(e%vt(a)*e%m3(k, k))
+            if (present(energy_w)) energy_w(:, k, :, a) = c*ew(:, k + 1, 2:, a)
+            if (present(field_w)) field_w(:, k, :, a, :, :) = c*fw(:, k + 1, 2:, a, :, :)
+        end do
+    end do
+    status = NTV_OK
     end subroutine ntv_collision_rows
 
     !> The system of one speed node: the node-diagonal part of the operator,

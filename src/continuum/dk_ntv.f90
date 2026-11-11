@@ -77,7 +77,7 @@ module milca_dk_ntv
     use milca_dk_ntv_leaves, only: dk_ntv_point, dk_ntv_point_jvp, dk_ntv_surface_point
     use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
     use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_t, collop_build, &
-        collop_moments, collop_vth, collop_nuhat, COLLOP_OK, COLLOP_FULL, &
+        collop_moments, collop_vth, collop_nuhat, collop_weighted, COLLOP_OK, COLLOP_FULL, &
         COLLOP_TEST_PARTICLE, COLLOP_LORENTZ
     use milca_dk_mono, only: mono_factor_t, mono_factor, mono_solve, mono_drives, &
         mono_surface_operators, MONO_OK

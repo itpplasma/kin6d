@@ -35,7 +35,7 @@ module milca_dk_collop
     private
     public :: collop_species_t, collop_grid_t, collop_t
     public :: collop_make_grid, collop_build, collop_build_jvp, collop_mass
-    public :: collop_basis, collop_nuhat, collop_vth, collop_moments
+    public :: collop_basis, collop_nuhat, collop_vth, collop_moments, collop_weighted
     integer, parameter, public :: COLLOP_LORENTZ = 1, COLLOP_TEST_PARTICLE = 2, &
         COLLOP_FULL = 3, COLLOP_KROOK = 4
     integer, parameter, public :: COLLOP_OK = 0, COLLOP_BAD_INPUT = 1
@@ -260,6 +260,47 @@ contains
         status = COLLOP_OK
     end subroutine collop_build_jvp
 
+    !> Energy-scattering and field-particle blocks with the basis function
+    !> phi_p inside the speed integral, for a phase-space measure m(x) =
+    !> sum_p m_p phi_p(x) that depends on the energy (finite orbit width):
+    !> energy(p, i, j, a) is the l = 0 test-particle block of species a
+    !> summed over its partners, field(p, i, j, a, b, l) the field-particle
+    !> blocks (zero unless the model is full), in the units of collop_t%a.
+    !> They vanish unless p shares an element with i, and their sums over p
+    !> are the unweighted blocks.
+    subroutine collop_weighted(species, lnlambda, grid, model, lmax, energy, field, status)
+        type(collop_species_t), intent(in) :: species(:)
+        real(dp), intent(in) :: lnlambda(:, :)
+        type(collop_grid_t), intent(in) :: grid
+        integer, intent(in) :: model, lmax
+        real(dp), allocatable, intent(out) :: energy(:, :, :, :), field(:, :, :, :, :, :)
+        integer, intent(out) :: status
+        type(collop_t) :: op
+        real(dp), allocatable :: zero(:), block(:, :, :), w(:, :, :)
+        integer :: n, sa, sb
+
+        status = COLLOP_BAD_INPUT
+        if (.not. setup(species, lnlambda, grid, model, lmax, op)) return
+        n = grid%n
+        allocate (zero(op%ns), w(n, n, n), energy(n, n, n, op%ns), &
+            field(n, n, n, op%ns, op%ns, 0:lmax))
+        zero = 0
+        energy = 0
+        field = 0
+        status = COLLOP_OK
+        if (model == COLLOP_KROOK .or. model == COLLOP_LORENTZ) return
+        do sa = 1, op%ns
+            do sb = 1, op%ns
+                call test_particle_block(op, sa, sb, zero, zero, block, w)
+                energy(:, :, :, sa) = energy(:, :, :, sa) + w
+                if (model /= COLLOP_FULL) cycle
+                call field_particle_sweep(op, collop_vth(op%sp(sb))/collop_vth(op%sp(sa)), &
+                    op%sp(sa)%m/op%sp(sb)%m, op%sp(sa)%n*collop_nuhat(op%sp(sa), op%sp(sb), &
+                    op%lnlambda(sa, sb)), block, field(:, :, :, sa, sb, :))
+            end do
+        end do
+    end subroutine collop_weighted
+
     logical function setup(species, lnlambda, grid, model, lmax, op) result(ok)
         type(collop_species_t), intent(in) :: species(:)
         real(dp), intent(in) :: lnlambda(:, :)
@@ -319,18 +360,20 @@ contains
     !> pref = 4 pi/(2l+1) n_a nuhat_ab pi^(-3/2):
     !>   -pref [l(l+1)/2 int phi_i phi_j lorentz + int phi_i' (energy phi_j'
     !>   + thermal phi_j)] dx.
-    subroutine test_particle_block(op, sa, sb, dt, dn, block)
+    !> weighted(p, i, j) is the energy part of l = 0 with phi_p in the integral.
+    subroutine test_particle_block(op, sa, sb, dt, dn, block, weighted)
         type(collop_t), intent(in) :: op
         integer, intent(in) :: sa, sb
         real(dp), intent(in) :: dt(:), dn(:)
         real(dp), allocatable, intent(out) :: block(:, :, :)
+        real(dp), intent(out), optional :: weighted(:, :, :)
         real(dp), allocatable :: xq(:), wq(:)
         real(dp) :: rinv, tau, nu, drinv, dtau, dnu, lor, en, th, dlor, den, dth
         real(dp) :: phi(op%grid%order), dphi(op%grid%order), pref, scale
         real(dp), allocatable :: edges(:)
         ! Resolve self-collision cancellation before interspecies heat exchange.
-        real(real128), allocatable :: lorentz(:, :), energy(:, :)
-        integer :: q, i, j, first, l, p, n
+        real(real128), allocatable :: lorentz(:, :), energy(:, :), ew(:, :, :)
+        integer :: q, i, j, first, l, p, n, m
         logical :: tangent
 
         n = op%grid%n
@@ -350,6 +393,10 @@ contains
         allocate (lorentz(n, n), energy(n, n))
         lorentz = 0
         energy = 0
+        if (present(weighted)) then
+            allocate (ew(n, n, n))
+            ew = 0
+        end if
         do q = 1, size(xq)
             if (xq(q)*rinv < 1) then
                 call collop_tp_series(xq(q), rinv, tau, lor, en, th)
@@ -377,9 +424,16 @@ contains
                         energy(first + i - 1, first + j - 1) = &
                         energy(first + i - 1, first + j - 1) &
                         + wq(q)*scale*dphi(i)*(en*dphi(j) + th*phi(j))
+                    if (.not. present(weighted)) cycle
+                    do m = 1, p
+                        ew(first + m - 1, first + i - 1, first + j - 1) = &
+                            ew(first + m - 1, first + i - 1, first + j - 1) &
+                            + wq(q)*scale*phi(m)*dphi(i)*(en*dphi(j) + th*phi(j))
+                    end do
                 end do
             end do
         end do
+        if (present(weighted)) weighted = real(-4*pi/pi**1.5_dp*ew, dp)
         allocate (block(n, n, 0:op%lmax))
         do l = 0, op%lmax
             pref = 4*pi/(2*l + 1)/pi**1.5_dp
@@ -498,16 +552,18 @@ contains
 
     !> Two scaled moment sweeps replace the repeated source integrals.
     !> Degrees are independent; the quadrature and basis tables are shared.
-    subroutine field_particle_sweep(op, rho, mu, nu, block)
+    !> weighted(p, i, j, l) has phi_p in the outer integral over x.
+    subroutine field_particle_sweep(op, rho, mu, nu, block, weighted)
         type(collop_t), intent(in) :: op
         real(dp), intent(in) :: rho, mu, nu
         real(dp), allocatable, intent(out) :: block(:, :, :)
+        real(dp), intent(out), optional :: weighted(:, :, :, 0:)
         type(potential_panel_t), allocatable :: panels(:)
         real(dp), allocatable :: edges(:), origin(:), xq(:), wq(:), phi(:, :), dphi(:, :)
         integer, allocatable :: first(:)
         real(dp) :: m0(op%grid%n), m2(op%grid%n), psi(op%grid%n), psix(op%grid%n)
         real(dp) :: oldx, oldy, y, ratio, power, scale, top, gauss
-        integer :: n, p, nq, q, r, i, j, l, side, p0, p2, begin, finish, step, k, base
+        integer :: n, p, nq, q, r, i, j, l, side, p0, p2, begin, finish, step, k, base, m
         logical :: lower
 
         n = op%grid%n
@@ -522,6 +578,7 @@ contains
             call collop_basis(op%grid, xq(q), first(q), phi(:, q), dphi(:, q))
         end do
         block = 0
+        if (present(weighted)) weighted = 0
         do side = 1, 2
             lower = side == 1
             begin = merge(1, nq, lower)
@@ -535,7 +592,7 @@ contains
                 oldy = y
             end do
             !$omp parallel do default(shared) schedule(static) &
-            !$omp private(l,p0,p2,m0,m2,psi,psix,oldx,q,r,ratio,power,base,j,scale,gauss,i)
+            !$omp private(l,p0,p2,m0,m2,psi,psix,oldx,q,r,ratio,power,base,j,scale,gauss,i,m)
             do l = 0, op%lmax
                 p0 = merge(l, l - 1, lower)
                 p2 = p0 + 2
@@ -567,6 +624,13 @@ contains
                     do i = 1, p
                         block(first(q) + i - 1, :, l) = block(first(q) + i - 1, :, l) &
                             + gauss*(xq(q)**2*dphi(i, q)*psix + l*(l + 1)*phi(i, q)*psi)
+                        if (.not. present(weighted)) cycle
+                        do m = 1, p
+                            weighted(first(q) + m - 1, first(q) + i - 1, :, l) = &
+                                weighted(first(q) + m - 1, first(q) + i - 1, :, l) &
+                                + phi(m, q)*gauss &
+                                *(xq(q)**2*dphi(i, q)*psix + l*(l + 1)*phi(i, q)*psi)
+                        end do
                     end do
                     oldx = xq(q)
                 end do
