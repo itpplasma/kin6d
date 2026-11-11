@@ -60,22 +60,26 @@ milca_test_labels(hasegawa_wakatani_result_contract fast CLASSES continuum apps
     TARGETS hasegawa_wakatani test_turbulence_output)
 
 # Saturated flux against published values (benchmarks/drift-turbulence). The
-# modified model, whose zonal flows suppress the flux, has to be rejected.
+# modified model, whose zonal flows suppress the flux, and a 20 % error in the
+# adiabaticity, which lowers the flux by about 10 %, have to be rejected.
 add_executable(test_hasegawa_wakatani_benchmark test/test_hasegawa_wakatani_benchmark.f90)
 target_link_libraries(test_hasegawa_wakatani_benchmark PRIVATE milca_io)
-foreach(variant flux zonal_mutant)
+foreach(variant flux zonal_mutant coupling_mutant)
+    set(alpha 1.0)
+    set(modified .false.)
+    set(reject TRUE)
     if(variant STREQUAL "flux")
-        set(modified .false.)
         set(reject FALSE)
-    else()
+    elseif(variant STREQUAL "zonal_mutant")
         set(modified .true.)
-        set(reject TRUE)
+    else()
+        set(alpha 1.2)
     endif()
     add_test(NAME hasegawa_wakatani_benchmark_${variant} COMMAND ${CMAKE_COMMAND}
         -DAPP=$<TARGET_FILE:hasegawa_wakatani>
         -DCHECK=$<TARGET_FILE:test_hasegawa_wakatani_benchmark>
         -DWORK=${CMAKE_BINARY_DIR}/hasegawa-wakatani-benchmark-${variant}
-        -DMODIFIED=${modified} -DREJECT=${reject}
+        -DALPHA=${alpha} -DMODIFIED=${modified} -DREJECT=${reject}
         -P ${CMAKE_SOURCE_DIR}/test/check_hasegawa_wakatani_benchmark.cmake)
     set_tests_properties(hasegawa_wakatani_benchmark_${variant} PROPERTIES TIMEOUT 3600
         ENVIRONMENT "OMP_NUM_THREADS=1")

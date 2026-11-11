@@ -309,8 +309,9 @@ normalised without the window power and a cross spectrum of the opposite sign
 are rejected. `hasegawa_wakatani_benchmark_flux` (slow) checks the saturated
 flux at \(\alpha = \kappa = 1\) against the values recorded in
 [benchmarks/drift-turbulence](../benchmarks/drift-turbulence/README.md);
-`hasegawa_wakatani_benchmark_zonal_mutant` requires that the check rejects the
-modified model.
+`hasegawa_wakatani_benchmark_zonal_mutant` and
+`hasegawa_wakatani_benchmark_coupling_mutant` require that the check rejects the
+modified model and a run with a 20 % larger adiabaticity.
 
 ## Admission record
 
