@@ -1138,7 +1138,8 @@ milca_test_labels(dk_mono_neo2_tok02 fast CLASSES continuum equilibrium
 add_executable(test_dk_hp test/test_dk_hp.f90)
 target_link_libraries(test_dk_hp PRIVATE milca)
 foreach(check reference onsager collisionless banana pfirsch_schlueter estimate
-        ntv_reference ntv_superbanana_plateau ntv_one_over_nu ntv_rotation)
+        ntv_reference ntv_superbanana_plateau ntv_one_over_nu ntv_rotation
+        ntv_deposit_conserves ntv_deposit_fallbacks)
     add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
     milca_test_labels(dk_hp_${check} fast CLASSES continuum TARGETS test_dk_hp)
 endforeach()
@@ -1749,6 +1750,11 @@ add_executable(test_ntv_orbit_geometry test/test_ntv_orbit_geometry.f90)
 target_link_libraries(test_ntv_orbit_geometry PRIVATE milca_ntv_geometry)
 add_test(NAME ntv_orbit_geometry_thin COMMAND test_ntv_orbit_geometry)
 milca_test_labels(ntv_orbit_geometry_thin fast CLASSES apps TARGETS test_ntv_orbit_geometry)
+foreach(check dwell_area deposit_pairing deposit_converges)
+    add_test(NAME ntv_orbit_geometry_${check} COMMAND test_ntv_orbit_geometry ${check})
+    milca_test_labels(ntv_orbit_geometry_${check} fast CLASSES apps
+        TARGETS test_ntv_orbit_geometry)
+endforeach()
 add_executable(test_ntv_device test/test_ntv_device.f90)
 target_link_libraries(test_ntv_device PRIVATE milca_ntv_geometry)
 add_test(NAME ntv_device COMMAND test_ntv_device)

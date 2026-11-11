@@ -51,8 +51,9 @@ module milca_boozer_orbit
     !> the point (set by orbit_pitch_point).
     type :: orbit_point_t
         real(dp) :: s = 0, rho = 0, v_par = 0, b = 0, theta_dot = 0, zeta_dot = 0, mu = 0
-        ! dmu/dxi along the ray and ds/ds* at fixed (theta, xi, H).
-        real(dp) :: mu_xi = 0, s_star_s = 0
+        ! dmu/dxi along the ray and ds/ds* at fixed (theta, xi, H); dmu/dtheta
+        ! at fixed (xi, s*, H).
+        real(dp) :: mu_xi = 0, s_star_s = 0, mu_theta = 0
     end type
 
 contains
@@ -108,11 +109,12 @@ contains
     !> orbit_state with cm = cos(m theta), sm = sin(m theta) of the n = 0 modes
     !> given, for repeated evaluation at one theta.
     subroutine orbit_state_trig(bf, s, cm, sm, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
-            status)
+            status, b_t)
         type(boozer_file_t), intent(in) :: bf
         real(dp), intent(in) :: s, cm(:), sm(:)
         real(dp), intent(out) :: b, b_s, g, i, g_s, i_s, iota, psi_prime
         integer, intent(out) :: status
+        real(dp), intent(out), optional :: b_t
         real(dp), dimension(size(bf%axi%m)) :: bmn, bma, bmn_s, bma_s
         integer :: k
         call boozer_field_eval(bf%axi, s, iota, g, i, g_s, i_s, bmn, bma, bmn_s, bma_s, status)
@@ -126,6 +128,7 @@ contains
             b = b + bmn(k)*cm(k) + bma(k)*sm(k)
             b_s = b_s + bmn_s(k)*cm(k) + bma_s(k)*sm(k)
         end do
+        if (present(b_t)) b_t = sum(bf%axi%m*(bma*cm - bmn*sm))
         psi_prime = bf%axi%psi_prime
         status = ORBIT_OK
     end subroutine orbit_state_trig
@@ -318,8 +321,9 @@ contains
     !> outwards from s* on the side of the sign of rho G/iota. pt%mu is the
     !> magnetic moment of the orbit through the point, so that mu over
     !> (theta, xi) is the stream function of the orbits at fixed (s*, H);
-    !> pt%mu_xi = dmu/dxi and pt%s_star_s = ds/ds* at fixed (theta, H) follow
-    !> from the tangents by the implicit function theorem.
+    !> pt%mu_xi = dmu/dxi and pt%s_star_s = ds/ds* at fixed (theta, H) and
+    !> pt%mu_theta = dmu/dtheta at fixed (xi, H) follow from the tangents by
+    !> the implicit function theorem.
     subroutine orbit_pitch_point(bf, p, s_star, theta, xi, pt, status)
         type(boozer_file_t), intent(in) :: bf
         type(orbit_particle_t), intent(in) :: p
@@ -327,7 +331,7 @@ contains
         type(orbit_point_t), intent(out) :: pt
         integer, intent(out) :: status
         real(dp) :: lo, hi, f_lo, f_hi, s, f, f_s, step, dir, iota_star, psi_prime_star, &
-            r_xi, mu, mu_s, mu_xi, edge
+            r_xi, mu, mu_s, mu_xi, edge, b_t, r_t, mu_t
         real(dp), dimension(size(bf%axi%m)) :: cm, sm
         ! Field state of the last residual.
         real(dp) :: b, b_s, g, i, g_s, i_s, iota, psi_prime, phi, phi_s, dpsi_p
@@ -406,9 +410,14 @@ contains
             0.0_dp, 0.0_dp, 0.0_dp, mu_xi)
         ! Evaluated at the root itself: near a turning point the leg may pass
         ! theta at s /= s* where s* itself is out of reach.
+        call orbit_pitch_residual_jvp(xi, p%mass, p%charge, p%energy, phi, b, g, 0.0_dp, &
+            0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, b_t, 0.0_dp, 0.0_dp, r_t)
+        call orbit_moment_jvp(xi, p%mass, p%charge, p%energy, phi, b, 0.0_dp, 0.0_dp, 0.0_dp, &
+            0.0_dp, 0.0_dp, b_t, mu_t)
         call evaluate_at(p, mu, s, b, b_s, g, i, g_s, i_s, iota, psi_prime, dpsi_p, phi_s, pt)
         ! ds/dxi = -R_xi/R_s; R depends on s* through -psi_p(s*) alone.
         pt%mu_xi = mu_xi - mu_s*r_xi/f_s
+        pt%mu_theta = mu_t - mu_s*r_t/f_s
         pt%s_star_s = -iota_star*psi_prime_star/f_s
     contains
         !> R(s) and dR/ds from the generated leaf and its tangent along s.
@@ -416,7 +425,7 @@ contains
             real(dp), intent(in) :: s
             real(dp), intent(out) :: r, r_s
             call orbit_state_trig(bf, s, cm, sm, b, b_s, g, i, g_s, i_s, iota, psi_prime, &
-                status)
+                status, b_t)
             if (status /= ORBIT_OK) return
             call orbit_potential(bf, p, s, phi, phi_s)
             dpsi_p = orbit_flux_p(bf, s_star, s)
@@ -481,7 +490,9 @@ contains
     !> Time [s] that the orbit of p (energy, magnetic moment) on s_star spends
     !> in each radial box edges(k) <= s < edges(k+1) during one poloidal
     !> period: a transit of the leg sigma for a passing orbit, both legs
-    !> between the turning points for a trapped one (sigma unused). Time
+    !> between the turning points on s* for a trapped one (sigma unused; the
+    !> stretch beyond them, where the drift carries the orbit on to theta_dot
+    !> = 0 and back, is left to the caller). Time
     !> outside the edges is not counted. Gauss-Legendre with n_quad nodes per
     !> theta panel and dt = dtheta/|theta_dot|; panels holds the increasing
     !> breakpoints, spanning 2 pi for a passing orbit and repeated with period
@@ -491,7 +502,8 @@ contains
     !> interval that reaches halfway to its neighbours on the same leg (to s*
     !> at a turning point) and divided among the boxes by overlap, so that the
     !> box times are continuous in the orbit and second order in the nodes.
-    subroutine orbit_dwell(bf, p, s_star, sigma, panels, n_quad, edges, time, trapped, status)
+    subroutine orbit_dwell(bf, p, s_star, sigma, panels, n_quad, edges, time, trapped, status, &
+            turn)
         type(boozer_file_t), intent(in) :: bf
         type(orbit_particle_t), intent(in) :: p
         real(dp), intent(in) :: s_star, sigma, panels(:), edges(:)
@@ -499,6 +511,8 @@ contains
         real(dp), intent(out) :: time(:)
         logical, intent(out) :: trapped
         integer, intent(out) :: status
+        ! The turning points on s* of a trapped orbit.
+        real(dp), intent(out), optional :: turn(2)
         real(dp) :: x(max(n_quad, 1)), w(max(n_quad, 1)), t1, t2, c
         real(dp), allocatable :: cut(:)
         integer :: n, m, j, k
@@ -511,6 +525,7 @@ contains
         call gauss_legendre(n_quad, x, w)
         call turning_points(bf, p, s_star, t1, t2, trapped, status)
         if (status /= ORBIT_OK) return
+        if (present(turn)) turn = [t1, t2]
         if (.not. trapped) then
             status = ORBIT_BAD_INPUT
             if (abs(panels(n) - panels(1) - 2*pi) > 1e-9_dp) return

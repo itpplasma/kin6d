@@ -41,10 +41,14 @@ module milca_dk_hp
     private
     public :: hp_geometry_t, hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, hp_system_t, &
         hp_assemble, hp_factor, hp_solve, hp_coefficients, hp_free, hp_estimate, &
-        hp_refine, hp_operator_t, hp_ntv_kernel, hp_ntv_estimate
+        hp_refine, hp_operator_t, hp_ntv_kernel, hp_ntv_estimate, hp_bands_t, &
+        hp_orbit_bands, hp_deposit
     integer, parameter, public :: HP_OK = 0, HP_BAD_INPUT = 1, HP_SINGULAR = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
+    ! Gauss levels of the dwell times per passing row and per interval of
+    ! trapped level nodes.
+    integer, parameter :: n_pass = 2, n_trap = 3
 
 
     !> Operator per unit speed: b.grad theta = k b**k_power, nu = nu_D/v; for
@@ -80,6 +84,10 @@ module milca_dk_hp
         ! perturbation and point at one (theta, xi), for geometries that
         ! share work between them.
         procedure :: point_source => field_point_source
+        ! Radial deposit: the time the orbits of one level spend in each
+        ! radial box, and the surface's own label in the units of the edges.
+        procedure :: dwell => thin_dwell
+        procedure :: label => thin_label
     end type
 
     abstract interface
@@ -152,9 +160,30 @@ module milca_dk_hp
         real(dp), allocatable :: density(:), mat(:, :), dens(:, :)
         complex(dp), allocatable :: drive(:, :), load(:, :, :)
         integer, allocatable :: loc(:, :)
+        ! For hp_deposit, at the Gauss points of the trapped-row elements
+        ! (rows from row_trap): the torque weight ww torque conj(src) and the
+        ! orbit level, negative where the point has no orbit.
+        complex(dp), allocatable :: pt_t(:, :)
+        real(dp), allocatable :: pt_level(:, :)
+        integer :: row_trap = 0
         type(csc_t) :: a
         type(sparse_solver_t) :: solver
         logical :: factored = .false.
+    end type
+
+    !> Orbit bands of a mesh for the radial deposit of the NTV kernel, in
+    !! row order: the passing rows of sign -1 (kind -1, levels lo < hi), the
+    !! trapped level nodes (kind 0, hat function with peak `level` on
+    !! [lo, hi]), the passing rows of sign +1 (kind 1). time(k, b) is the
+    !! phase-space measure of band b in box k, torque(b) the band's share of
+    !! the kernel, stray the share of Gauss points without an orbit, home
+    !! the box of the surface itself, unplaced the number of bands without
+    !! time in any box.
+    type :: hp_bands_t
+        integer, allocatable :: kind(:)
+        real(dp), allocatable :: lo(:), hi(:), level(:), time(:, :), torque(:)
+        real(dp) :: stray = 0
+        integer :: unplaced = 0, home = 0
     end type
 
 contains
@@ -239,7 +268,7 @@ contains
     !> Element matrices, loads and the map of local nodes to unknowns:
     !! periodic in theta, the trapped nodes on theta_x (the X point) one
     !! unknown. mat holds each element matrix column major.
-    subroutine elements(f, mesh, op, sys, mat, status, f10)
+    subroutine elements(f, mesh, op, sys, mat, status, f10, points)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
@@ -248,12 +277,15 @@ contains
         integer, intent(out) :: status
         ! f_10 per unit speed on the unknowns of the same mesh (source_dlf10).
         real(dp), intent(in), optional :: f10(:)
+        ! Keep the torque weights and levels of the trapped Gauss points.
+        logical, intent(in), optional :: points
         integer :: p, n_col, n_row, n_lev, n_th, n_jr, ec, er, e, i, j, a1, a2, &
-            n_loc, j_lo, j_hi, n_el, c
+            n_loc, j_lo, j_hi, n_el, c, k
         integer, allocatable :: dof(:, :), curve_kind(:)
         real(dp), allocatable :: curve_val(:), node(:), wn(:), xq(:), wq(:), xi_n(:, :), &
-            xi_q(:, :)
+            xi_q(:, :), f10_e(:)
         real(dp) :: th_a, th, d
+        logical :: keep
 
         status = HP_BAD_INPUT
         p = mesh%p
@@ -287,13 +319,18 @@ contains
         n_el = n_col*n_row
         allocate (sys%loc(n_loc, n_el), sys%load(n_loc, 4, n_el), &
             sys%dens(n_loc, n_el), mat(n_loc**2, n_el))
+        keep = .false.
+        if (present(points)) keep = points
+        sys%row_trap = n_lev
+        if (keep) allocate (sys%pt_t((2*p + 3)**2, n_col*(size(mesh%zeta) - 1)), &
+            sys%pt_level((2*p + 3)**2, n_col*(size(mesh%zeta) - 1)))
         allocate (node(p + 1), wn(p + 1), xq(2*p + 3), wq(2*p + 3))
         call gauss_lobatto_legendre(p + 1, node, wn)
         call gauss_legendre(2*p + 3, xq, wq)
         ! Column by column: every row curve once at the column's nodes and
         ! quadrature angles, shared by the elements above and below it.
         !$omp parallel do default(shared) schedule(dynamic) &
-        !$omp private(e, ec, er, a1, a2, c, th_a, th, d, xi_n, xi_q)
+        !$omp private(e, ec, er, a1, a2, c, k, th_a, th, d, xi_n, xi_q, f10_e)
         do ec = 1, n_col
             allocate (xi_n(n_row + 1, p + 1), xi_q(n_row + 1, 2*p + 3))
             th_a = (mesh%theta(ec + 1) - mesh%theta(ec))/2
@@ -315,12 +352,16 @@ contains
                             (er - 1)*p + a2)
                     end do
                 end do
-                if (present(f10)) then
+                ! Unallocated without f10: an absent argument of element.
+                if (present(f10)) f10_e = f10(sys%loc(:, e))
+                if (keep .and. curve_kind(er) == 0 .and. curve_kind(er + 1) == 0) then
+                    k = e - (n_lev - 1)*n_col
                     call element(f, mesh, op, xi_n(er:er + 1, :), xi_q(er:er + 1, :), &
-                        ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e), f10(sys%loc(:, e)))
+                        ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e), f10_e, &
+                        sys%pt_t(:, k), sys%pt_level(:, k))
                 else
                     call element(f, mesh, op, xi_n(er:er + 1, :), xi_q(er:er + 1, :), &
-                        ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e))
+                        ec, sys%load(:, :, e), sys%dens(:, e), mat(:, e), f10_e)
                 end if
             end do
             deallocate (xi_n, xi_q)
@@ -328,9 +369,13 @@ contains
         !$omp end parallel do
         allocate (sys%drive(sys%n, 4), sys%density(sys%n))
         sys%drive = 0; sys%density = 0
+        ! Node by node: a collapsed element holds the X point several times.
         do e = 1, n_el
-            sys%drive(sys%loc(:, e), :) = sys%drive(sys%loc(:, e), :) + sys%load(:, :, e)
-            sys%density(sys%loc(:, e)) = sys%density(sys%loc(:, e)) + sys%dens(:, e)
+            do a1 = 1, n_loc
+                i = sys%loc(a1, e)
+                sys%drive(i, :) = sys%drive(i, :) + sys%load(a1, :, e)
+                sys%density(i) = sys%density(i) + sys%dens(a1, e)
+            end do
         end do
         sys%norm = sum(sys%density)
         status = HP_OK
@@ -385,7 +430,7 @@ contains
     !> torque functional) and density weights.
     !> xi_n, xi_q: xi of the element's lower and upper row curve at its nodal
     !> and quadrature angles.
-    subroutine element(f, mesh, op, xi_n, xi_q, ec, load, dens, s, f10)
+    subroutine element(f, mesh, op, xi_n, xi_q, ec, load, dens, s, f10, pt_t, pt_level)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
@@ -394,13 +439,16 @@ contains
         complex(dp), intent(out) :: load(:, :), s(:)
         real(dp), intent(out) :: dens(:)
         real(dp), intent(in), optional :: f10(:)
+        complex(dp), intent(out), optional :: pt_t(:)
+        real(dp), intent(out), optional :: pt_level(:)
         integer :: p, nq, q1, q2, a1, a2, ia, ic, n_loc, j
         real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), dphi(:, :), &
             b_ab(:), d_ab(:), da(:), db_(:), psi(:, :), psi1(:)
         real(dp) :: th, th_a, xi_lo, xi_hi, xi, xi_b, &
             col, dr, de, den, ww, psi_a, psi_b, phase, precess, drive, torque
         complex(dp) :: loc_term, src, s_dpar, s_dlf, s_db
-        real(dp) :: bb, bb_t, f10_xi
+        real(dp) :: bb, bb_t, f10_xi, lv
+        logical :: ok
 
         p = mesh%p
         n_loc = (p + 1)**2
@@ -437,8 +485,15 @@ contains
             do q2 = 1, nq
                 xi = xi_lo + xi_b*(1 + xq(q2))
                 ww = wq(q1)*wq(q2)*th_a*xi_b
-                call f%point_source(th, xi, op, src, col, dr, de, den, phase, precess, drive, &
-                    torque)
+                if (present(pt_t)) then
+                    call f%point_source(th, xi, op, src, col, dr, de, den, phase, precess, &
+                        drive, torque, lv, ok)
+                    pt_t(q2 + nq*(q1 - 1)) = ww*torque*conjg(src)
+                    pt_level(q2 + nq*(q1 - 1)) = merge(lv, -1.0_dp, ok)
+                else
+                    call f%point_source(th, xi, op, src, col, dr, de, den, phase, precess, &
+                        drive, torque)
+                end if
                 ! -i n q xi k + i (n/v)(omega_E + pre (1 + wsign xi^2)(cos - offset)/b)
                 loc_term = (0, 1)*op%n*(-op%q*phase + (op%omega_e*den + op%pre*precess) &
                     /op%v)
@@ -679,18 +734,24 @@ contains
     !! toroidal harmonic (the kernel of milca_dk_ntv), op%k the constant
     !! b.grad theta (k_power = 0) or k b (k_power = 1). Without a null space
     !! the complex system is solved directly.
-    subroutine hp_ntv_kernel(f, mesh, op, r, status, n_dof)
+    !! With edges, the increasing bounds of radial boxes in the label of
+    !! f%dwell, dep(k) is the share of R in box k (sum(dep) = R) and bands
+    !! the orbit bands behind it (hp_orbit_bands, hp_deposit).
+    subroutine hp_ntv_kernel(f, mesh, op, r, status, n_dof, edges, dep, bands)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         real(dp), intent(out) :: r
         integer, intent(out) :: status
         integer, intent(out), optional :: n_dof
+        real(dp), intent(in), optional :: edges(:)
+        real(dp), intent(out), optional :: dep(:)
+        type(hp_bands_t), intent(out), optional :: bands
         type(hp_system_t) :: sys
         type(ntv_factor_t) :: fac
         complex(dp), allocatable :: mat(:, :), x(:)
 
-        call ntv_system(f, mesh, op, sys, mat, status)
+        call ntv_system(f, mesh, op, sys, mat, status, present(edges))
         if (status /= HP_OK) return
         if (present(n_dof)) n_dof = sys%n
         call ntv_factor(sys, mesh%p, mat, fac, status)
@@ -700,7 +761,230 @@ contains
         call ntv_free(fac)
         if (status /= HP_OK) return
         r = real(sum(sys%drive(:, 4)*x), dp)
+        if (present(edges)) call deposit(f, mesh, sys, x, edges, dep, bands, status)
     end subroutine hp_ntv_kernel
+
+    !> The deposit of the solution x of sys over the boxes edges.
+    subroutine deposit(f, mesh, sys, x, edges, dep, bands, status)
+        class(hp_geometry_t), intent(in) :: f
+        type(hp_mesh_t), intent(in) :: mesh
+        type(hp_system_t), intent(in) :: sys
+        complex(dp), intent(in) :: x(:)
+        real(dp), intent(in) :: edges(:)
+        real(dp), intent(out), optional :: dep(:)
+        type(hp_bands_t), intent(out), optional :: bands
+        integer, intent(out) :: status
+        type(hp_bands_t) :: bn
+        real(dp) :: d(max(0, size(edges) - 1))
+        call hp_orbit_bands(f, mesh, edges, bn, status)
+        if (status /= HP_OK) return
+        call hp_deposit(sys, mesh, x, bn, d, status)
+        if (status /= HP_OK) return
+        if (present(dep)) then
+            status = HP_BAD_INPUT
+            if (size(dep) /= size(d)) return
+            dep = d
+            status = HP_OK
+        end if
+        if (present(bands)) bands = bn
+    end subroutine deposit
+
+    !> The orbit bands of mesh and their time tables over the boxes edges,
+    !! from the geometry alone. A passing row is the band of orbits between
+    !! its two levels; the trapped rows are scaled separatrices, not level
+    !! curves, so the trapped bands are hat functions on the levels that the
+    !! rows zeta >= 0 reach opposite to the X point, from the separatrix to
+    !! the innermost row. Each table is the level integral of f%dwell by
+    !! Gauss-Legendre, two levels per passing row and three per interval of
+    !! trapped nodes, so that no level lies on the separatrix, where the
+    !! period diverges. A level whose orbit has no dwell time (it leaves the
+    !! domain) carries no weight.
+    subroutine hp_orbit_bands(f, mesh, edges, bands, status)
+        class(hp_geometry_t), intent(in) :: f
+        type(hp_mesh_t), intent(in) :: mesh
+        real(dp), intent(in) :: edges(:)
+        type(hp_bands_t), intent(out) :: bands
+        integer, intent(out) :: status
+        integer :: n_lev, n_node, n_band, n_box, n_task, j, g, t, b, st
+        real(dp), allocatable :: node(:), lev(:), w(:, :), tau(:, :)
+        integer, allocatable :: kind(:), band(:, :)
+        real(dp) :: xp(n_pass), wp(n_pass), xt(n_trap), wt(n_trap), u, xi, d, h, home
+
+        status = HP_BAD_INPUT
+        n_lev = size(mesh%lam)
+        n_box = size(edges) - 1
+        if (n_box < 1 .or. n_lev < 2) return
+        if (any(edges(2:) <= edges(:n_box))) return
+        node = pack(mesh%zeta, mesh%zeta >= 0)
+        n_node = size(node)
+        if (n_node < 2) return
+        node = node(n_node:1:-1)
+        do j = 1, n_node
+            call f%level(0, node(j), f%theta_x - pi, xi, d)
+            node(j) = -2*f%stream(f%theta_x - pi, xi)
+        end do
+        ! At finite width the level peaks beside xi = 0, where the drift
+        ! stops the poloidal motion: only rows whose level rises towards
+        ! that of the innermost row are nodes, and it is the last one.
+        t = 1
+        do j = 2, n_node - 1
+            if (node(j) <= node(t) .or. node(j) >= node(n_node)) cycle
+            t = t + 1
+            node(t) = node(j)
+        end do
+        if (node(n_node) <= node(t)) return
+        node = [node(:t), node(n_node)]
+        n_node = t + 1
+
+        n_band = 2*(n_lev - 1) + n_node
+        allocate (bands%kind(n_band), bands%lo(n_band), bands%hi(n_band), &
+            bands%level(n_band), bands%time(n_box, n_band), bands%torque(n_band))
+        bands%torque = 0
+        bands%time = 0
+        do j = 1, n_lev - 1
+            bands%kind([j, n_band + 1 - j]) = [-1, 1]
+            bands%lo([j, n_band + 1 - j]) = mesh%lam(j)
+            bands%hi([j, n_band + 1 - j]) = mesh%lam(j + 1)
+        end do
+        bands%level = (bands%lo + bands%hi)/2
+        do j = 1, n_node
+            b = n_lev - 1 + j
+            bands%kind(b) = 0
+            bands%level(b) = node(j)
+            bands%lo(b) = node(max(j - 1, 1))
+            bands%hi(b) = node(min(j + 1, n_node))
+        end do
+        home = f%label()
+        bands%home = max(1, min(n_box, count(edges(:n_box) <= home)))
+
+        ! One task per level: its orbit kind, and the bands it feeds with
+        ! their weights.
+        call gauss_legendre(n_pass, xp, wp)
+        call gauss_legendre(n_trap, xt, wt)
+        n_task = 2*n_pass*(n_lev - 1) + n_trap*(n_node - 1)
+        allocate (lev(n_task), kind(n_task), band(2, n_task), w(2, n_task), &
+            tau(n_box, n_task))
+        t = 0
+        do j = 1, n_lev - 1
+            h = (mesh%lam(j + 1) - mesh%lam(j))/2
+            do g = 1, n_pass
+                lev(t + 1:t + 2) = mesh%lam(j) + h*(1 + xp(g))
+                kind(t + 1:t + 2) = [-1, 1]
+                band(1, t + 1:t + 2) = [j, n_band + 1 - j]
+                w(1, t + 1:t + 2) = h*wp(g)
+                w(2, t + 1:t + 2) = 0
+                t = t + 2
+            end do
+        end do
+        band(2, :t) = band(1, :t)
+        do j = 1, n_node - 1
+            h = (node(j + 1) - node(j))/2
+            do g = 1, n_trap
+                t = t + 1
+                u = (1 + xt(g))/2
+                lev(t) = node(j) + 2*h*u
+                kind(t) = 0
+                band(:, t) = n_lev - 1 + [j, j + 1]
+                w(:, t) = h*wt(g)*[1 - u, u]
+            end do
+        end do
+        !$omp parallel do default(shared) schedule(dynamic) private(t, st)
+        do t = 1, n_task
+            call f%dwell(kind(t), lev(t), mesh%theta, edges, tau(:, t), st)
+            if (st /= HP_OK) tau(:, t) = 0
+        end do
+        !$omp end parallel do
+        do t = 1, n_task
+            do g = 1, 2
+                bands%time(:, band(g, t)) = bands%time(:, band(g, t)) + w(g, t)*tau(:, t)
+            end do
+        end do
+        bands%unplaced = count(sum(bands%time, 1) <= 0)
+        status = HP_OK
+    end subroutine hp_orbit_bands
+
+    !> Band torques of the solution x of sys (assembled with points) on mesh
+    !! and their deposit over the boxes of bands%time: dep(k) = sum_b G_b
+    !! T_b(k)/sum_k T_b(k), with sum(dep) = Re sum(drive(:, 4) x). The torque
+    !! of an orbit is spread over the boxes by the time the orbit spends in
+    !! them; binning the integrand by position would keep the reactive part,
+    !! which cancels only over the whole orbit. A passing row is one band
+    !! (its element loads); a trapped Gauss point gives its torque to the two
+    !! level nodes around its level. Points without an orbit (stray) and
+    !! bands without time go to the home box. x may be any vector on the
+    !! mesh, such as one speed node of a coupled solution.
+    subroutine hp_deposit(sys, mesh, x, bands, dep, status)
+        type(hp_system_t), intent(in) :: sys
+        type(hp_mesh_t), intent(in) :: mesh
+        complex(dp), intent(in) :: x(:)
+        type(hp_bands_t), intent(inout) :: bands
+        real(dp), intent(out) :: dep(:)
+        integer, intent(out) :: status
+        integer :: p, nq, n_col, n_lev, n_z, n_node, n_band, e, er, b, q1, q2, k, j
+        real(dp), allocatable :: node(:), wn(:), xq(:), wq(:), phi(:, :), lv(:)
+        complex(dp), allocatable :: fq(:, :)
+        real(dp) :: gq, l, u, total
+
+        status = HP_BAD_INPUT
+        p = mesh%p
+        nq = 2*p + 3
+        n_col = size(mesh%theta) - 1
+        n_lev = size(mesh%lam)
+        n_z = size(mesh%zeta)
+        if (.not. (allocated(sys%pt_t) .and. allocated(bands%time))) return
+        n_band = size(bands%kind)
+        n_node = n_band - 2*(n_lev - 1)
+        if (size(x) /= sys%n .or. size(dep) /= size(bands%time, 1) .or. n_node < 2 .or. &
+            size(sys%loc, 2) /= n_col*(n_band - n_node + n_z - 1) .or. &
+            size(sys%pt_t, 1) /= nq*nq .or. size(sys%pt_t, 2) /= n_col*(n_z - 1)) return
+        allocate (node(p + 1), wn(p + 1), xq(nq), wq(nq), phi(p + 1, nq))
+        call gauss_lobatto_legendre(p + 1, node, wn)
+        call gauss_legendre(nq, xq, wq)
+        do q1 = 1, nq
+            call lagrange_weights(p + 1, xq(q1), node, phi(:, q1))
+        end do
+        lv = bands%level(n_lev:n_lev + n_node - 1)
+        bands%torque = 0
+        bands%stray = 0
+        do e = 1, size(sys%loc, 2)
+            er = 1 + (e - 1)/n_col
+            if (er < sys%row_trap .or. er > sys%row_trap + n_z - 2) then
+                b = merge(er, er - (n_z - 1) + n_node, er < sys%row_trap)
+                bands%torque(b) = bands%torque(b) &
+                    + real(sum(sys%load(:, 4, e)*x(sys%loc(:, e))), dp)
+                cycle
+            end if
+            k = e - (sys%row_trap - 1)*n_col
+            fq = matmul(transpose(phi), matmul(reshape(x(sys%loc(:, e)), [p + 1, p + 1]), phi))
+            do q1 = 1, nq
+                do q2 = 1, nq
+                    gq = real(sys%pt_t(q2 + nq*(q1 - 1), k)*fq(q1, q2), dp)
+                    l = sys%pt_level(q2 + nq*(q1 - 1), k)
+                    if (l < 0) then
+                        bands%stray = bands%stray + gq
+                        cycle
+                    end if
+                    ! Hat weights of the two nodes around l, clamped at the ends.
+                    j = max(1, min(n_node - 1, count(lv <= l)))
+                    u = max(0.0_dp, min(1.0_dp, (l - lv(j))/(lv(j + 1) - lv(j))))
+                    b = n_lev - 1 + j
+                    bands%torque(b) = bands%torque(b) + (1 - u)*gq
+                    bands%torque(b + 1) = bands%torque(b + 1) + u*gq
+                end do
+            end do
+        end do
+        dep = 0
+        dep(bands%home) = bands%stray
+        do b = 1, n_band
+            total = sum(bands%time(:, b))
+            if (total > 0) then
+                dep = dep + bands%torque(b)*bands%time(:, b)/total
+            else
+                dep(bands%home) = dep(bands%home) + bands%torque(b)
+            end if
+        end do
+        status = HP_OK
+    end subroutine hp_deposit
 
     !> hp_ntv_kernel with the dual-weighted residual estimate eta of the
     !! error of R: the primal and adjoint solutions of the mesh are
@@ -708,7 +992,8 @@ contains
     !! eta = Re sum_e (z_f - I z)^T (b_f - A_f I x). R + eta is the
     !! corrected value; eta_el(e) = sum |(z_f - I z) (b_f - A_f I x)| over the
     !! nodes of element e marks it for refinement (hp_refine).
-    subroutine hp_ntv_estimate(f, mesh, op, r, eta, eta_el, status, n_dof)
+    !! edges, dep and bands as in hp_ntv_kernel, for the solution of mesh.
+    subroutine hp_ntv_estimate(f, mesh, op, r, eta, eta_el, status, n_dof, edges, dep, bands)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
@@ -716,6 +1001,9 @@ contains
         real(dp), allocatable, intent(out) :: eta_el(:)
         integer, intent(out) :: status
         integer, intent(out), optional :: n_dof
+        real(dp), intent(in), optional :: edges(:)
+        real(dp), intent(out), optional :: dep(:)
+        type(hp_bands_t), intent(out), optional :: bands
         type(hp_system_t) :: sys, fine
         type(hp_mesh_t) :: mesh_fine
         type(ntv_factor_t) :: fac
@@ -725,7 +1013,7 @@ contains
         complex(dp) :: acc
         integer :: p, e, a, n_loc
 
-        call ntv_system(f, mesh, op, sys, mat, status)
+        call ntv_system(f, mesh, op, sys, mat, status, present(edges))
         if (status /= HP_OK) return
         if (present(n_dof)) n_dof = sys%n
         call ntv_factor(sys, mesh%p, mat, fac, status)
@@ -736,6 +1024,8 @@ contains
         call ntv_free(fac)
         if (status /= HP_OK) return
         r = real(sum(sys%drive(:, 4)*x), dp)
+        if (present(edges)) call deposit(f, mesh, sys, x, edges, dep, bands, status)
+        if (status /= HP_OK) return
 
         mesh_fine = mesh
         mesh_fine%p = mesh%p + 1
@@ -776,13 +1066,15 @@ contains
     !> The NTV system of hp_ntv_kernel on mesh: element matrices mat, loads
     !! (drive 3) and output weights (drive 4); with source_dlf10, f_10 of the
     !! axisymmetric problem on the same mesh enters the loads.
-    subroutine ntv_system(f, mesh, op, sys, mat, status)
+    subroutine ntv_system(f, mesh, op, sys, mat, status, points)
         class(hp_geometry_t), intent(in) :: f
         type(hp_mesh_t), intent(in) :: mesh
         type(hp_operator_t), intent(in) :: op
         type(hp_system_t), intent(out) :: sys
         complex(dp), allocatable, intent(out) :: mat(:, :)
         integer, intent(out) :: status
+        ! Keep the trapped Gauss points for hp_deposit.
+        logical, intent(in), optional :: points
 
         status = HP_BAD_INPUT
         if (op%n == 0 .or. .not. allocated(op%m)) return
@@ -808,10 +1100,10 @@ contains
                 call hp_free(ax)
                 if (status /= HP_OK) return
                 f10 = -2/(op%v*op%q*f%kappa)*f10
-                call elements(f, mesh, op, sys, mat, status, f10)
+                call elements(f, mesh, op, sys, mat, status, f10, points)
             end block
         else
-            call elements(f, mesh, op, sys, mat, status)
+            call elements(f, mesh, op, sys, mat, status, points=points)
         end if
     end subroutine ntv_system
 
@@ -1068,18 +1360,47 @@ contains
         end do
     end subroutine perturbed_sources
 
+    !> level: the orbit level -2 stream of the point; valid: whether the
+    !> point has an orbit.
     subroutine field_point_source(g, th, xi, op, src, collide, drive_r, drive_e, density, &
-            phase, precess, drive, torque)
+            phase, precess, drive, torque, level, valid)
         class(hp_geometry_t), intent(in) :: g
         real(dp), intent(in) :: th, xi
         type(hp_operator_t), intent(in) :: op
         complex(dp), intent(out) :: src
         real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
             torque
+        real(dp), intent(out), optional :: level
+        logical, intent(out), optional :: valid
         src = g%perturbation(th, xi, op)
         call g%point(th, xi, op, collide, drive_r, drive_e, density, phase, precess, drive, &
             torque)
+        if (present(level)) level = -2*g%stream(th, xi)
+        if (present(valid)) valid = .true.
     end subroutine field_point_source
+
+    !> Time of the orbits of sign kind (0: trapped, both legs) at one level in
+    !> the radial boxes edges, per unit level in the measure of the weak form;
+    !> panels are the mesh columns. Thin orbits stay on their surface.
+    subroutine thin_dwell(g, kind, level, panels, edges, time, status)
+        class(hp_geometry_t), intent(in) :: g
+        integer, intent(in) :: kind
+        real(dp), intent(in) :: level, panels(:), edges(:)
+        real(dp), intent(out) :: time(:)
+        integer, intent(out) :: status
+        integer :: k
+        time = 0
+        do k = 1, size(time)
+            if (edges(k) <= g%label() .and. g%label() < edges(k + 1)) time(k) = 1
+        end do
+        status = HP_OK
+    end subroutine thin_dwell
+
+    !> Thin orbits are labelled by their offset from the surface.
+    real(dp) function thin_label(g) result(s)
+        class(hp_geometry_t), intent(in) :: g
+        s = 0
+    end function thin_label
 
     complex(dp) function op_perturbation(g, th, xi, op) result(src)
         class(hp_geometry_t), intent(in) :: g

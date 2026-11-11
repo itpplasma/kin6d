@@ -7,6 +7,55 @@
 !!   test_dk_hp scan nu p n_col n_bulk delta   uniform mesh
 !!   test_dk_hp adapt nu p tol                 adaptive D31 to relative tol
 !!   test_dk_hp mono nu n_theta n_leg          Legendre-Fourier reference
+!> The thin field with the fallbacks of the radial deposit forced: points
+!! with cos theta > 1/2 have no orbit, orbits of sign +1 have no dwell time
+!! and orbits of sign -1 spend all their time in box away.
+module hp_fallback_field
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use milca_dk_hp, only: hp_field_t, hp_operator_t, HP_OK
+    implicit none
+    type, extends(hp_field_t) :: fallback_t
+        integer :: away = 1
+    contains
+        procedure :: point_source => fallback_source
+        procedure :: dwell => fallback_dwell
+    end type
+contains
+    subroutine fallback_source(g, th, xi, op, src, collide, drive_r, drive_e, density, &
+            phase, precess, drive, torque, level, valid)
+        class(fallback_t), intent(in) :: g
+        real(dp), intent(in) :: th, xi
+        type(hp_operator_t), intent(in) :: op
+        complex(dp), intent(out) :: src
+        real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
+            torque
+        real(dp), intent(out), optional :: level
+        logical, intent(out), optional :: valid
+        call g%hp_field_t%point_source(th, xi, op, src, collide, drive_r, drive_e, &
+            density, phase, precess, drive, torque, level, valid)
+        if (present(valid)) valid = cos(th) <= 0.5_dp
+    end subroutine fallback_source
+
+    subroutine fallback_dwell(g, kind, level, panels, edges, time, status)
+        class(fallback_t), intent(in) :: g
+        integer, intent(in) :: kind
+        real(dp), intent(in) :: level, panels(:), edges(:)
+        real(dp), intent(out) :: time(:)
+        integer, intent(out) :: status
+        select case (kind)
+        case (1)
+            time = 0
+            status = HP_OK + 1
+        case (-1)
+            time = 0
+            time(g%away) = 1
+            status = HP_OK
+        case default
+            call g%hp_field_t%dwell(kind, level, panels, edges, time, status)
+        end select
+    end subroutine fallback_dwell
+end module hp_fallback_field
+
 program test_dk_hp
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_dk_hp, only: hp_field_t, hp_field, hp_mesh_t, hp_default_mesh, &
@@ -29,6 +78,8 @@ program test_dk_hp
     case ('ntv_superbanana_plateau'); ok = ntv_superbanana_plateau()
     case ('ntv_one_over_nu'); ok = ntv_one_over_nu()
     case ('ntv_rotation'); ok = ntv_rotation()
+    case ('ntv_deposit_conserves'); ok = ntv_deposit_conserves()
+    case ('ntv_deposit_fallbacks'); ok = ntv_deposit_fallbacks()
     case ('ntv_scan'); ok = ntv_scan()
     case ('ntv_legendre'); ok = ntv_legendre()
     case ('scan'); ok = scan()
@@ -292,6 +343,75 @@ contains
         call hp_ntv_kernel(f, mesh, op, r, status)
         if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
     end function stage1_kernel
+
+    !> The radial deposit of a thin kernel: the band torques and the box
+    !> shares both sum to the kernel functional, which is unchanged by asking
+    !> for them, and thin orbits leave all of it in the box of offset zero.
+    !> Sums are compared on the scale of the band torques, which can cancel.
+    !> hp_ntv_estimate deposits the same solution.
+    logical function ntv_deposit_conserves() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel, hp_ntv_estimate, hp_bands_t
+        type(hp_operator_t) :: op
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh
+        type(hp_bands_t) :: bands
+        real(dp), parameter :: edges(4) = [-1.0_dp, -0.1_dp, 0.2_dp, 1.0_dp]
+        real(dp) :: r, r0, dep(3), dep_e(3), scale, eta
+        real(dp), allocatable :: eta_el(:)
+        integer :: status, j
+        op = stage1(1e-3_dp, 0.3_dp, 0.0_dp)
+        call hp_field([(1 - 0.05_dp*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f, status)
+        call hp_default_mesh(f, 4, 16, 6, 1e-3_dp, 0.3_dp, mesh)
+        call hp_ntv_kernel(f, mesh, op, r0, status)
+        if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
+        call hp_ntv_estimate(f, mesh, op, r, eta, eta_el, status, edges=edges, dep=dep_e)
+        if (status /= HP_OK) error stop 'hp_ntv_estimate with deposit failed'
+        call hp_ntv_kernel(f, mesh, op, r, status, edges=edges, dep=dep, bands=bands)
+        if (status /= HP_OK) error stop 'hp_ntv_kernel with deposit failed'
+        scale = sum(abs(bands%torque))
+        print '(a,es20.12,a,3es11.3,a,es10.3)', 'R ', r, ' sums-R, off-centre ', &
+            sum(dep) - r, sum(bands%torque) - r, maxval(abs(dep([1, 3]))), ' scale ', scale
+        print '(a,i0,a,i0,a,es10.3)', 'bands ', size(bands%torque), ' unplaced ', &
+            bands%unplaced, ' stray ', bands%stray
+        ok = r == r0 .and. all(dep_e == dep) .and. abs(sum(dep) - r) < 1e-10_dp*scale &
+            .and. abs(sum(bands%torque) - r) < 1e-10_dp*scale .and. all(dep([1, 3]) == 0) &
+            .and. bands%unplaced == 0 .and. bands%stray == 0 .and. bands%home == 2 &
+            .and. count(abs(bands%torque) > 1e-6_dp*scale) > size(bands%torque)/2
+    end function ntv_deposit_conserves
+
+    !> Torque of points without an orbit (stray) and of bands without time
+    !> (unplaced, here all passing rows of sign +1) goes to the home box,
+    !> bands of sign -1 go to box 3, and the deposit still sums to R.
+    logical function ntv_deposit_fallbacks() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel, hp_bands_t
+        use hp_fallback_field, only: fallback_t
+        type(hp_operator_t) :: op
+        type(fallback_t) :: f
+        type(hp_mesh_t) :: mesh
+        type(hp_bands_t) :: bands
+        real(dp), parameter :: edges(4) = [-1.0_dp, -0.1_dp, 0.2_dp, 1.0_dp]
+        real(dp) :: r, dep(3), scale, home, away
+        integer :: status, j
+        op = stage1(1e-3_dp, 0.3_dp, 0.0_dp)
+        call hp_field([(1 - 0.05_dp*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f%hp_field_t, &
+            status)
+        f%away = 3
+        call hp_default_mesh(f, 4, 16, 6, 1e-3_dp, 0.3_dp, mesh)
+        call hp_ntv_kernel(f, mesh, op, r, status, edges=edges, dep=dep, bands=bands)
+        if (status /= HP_OK) error stop 'hp_ntv_kernel with deposit failed'
+        scale = sum(abs(bands%torque)) + abs(bands%stray)
+        home = bands%stray + sum(bands%torque, mask=bands%kind >= 0)
+        away = sum(bands%torque, mask=bands%kind < 0)
+        print '(a,es10.3,a,i0,a,i0,a,i0)', 'stray/scale ', abs(bands%stray)/scale, &
+            ' unplaced ', bands%unplaced, ' of ', count(bands%kind == 1), ' home ', bands%home
+        print '(a,4es11.3)', 'sum-R, dep(1), home and away errors / scale ', &
+            (sum(dep) - r)/scale, dep(1)/scale, (dep(2) - home)/scale, (dep(3) - away)/scale
+        ok = abs(bands%stray) > 1e-3_dp*scale .and. bands%home == 2 &
+            .and. bands%unplaced == count(bands%kind == 1) .and. bands%unplaced > 0 &
+            .and. abs(sum(dep) - r) < 1e-10_dp*scale .and. dep(1) == 0 &
+            .and. abs(dep(2) - home) < 1e-12_dp*scale .and. abs(dep(3) - away) < 1e-12_dp*scale &
+            .and. abs(away) > 1e-3_dp*scale
+    end function ntv_deposit_fallbacks
 
     !> As nu -> 0 with a precession reversal inside the trapped region the
     !> kernel tends to the resonant limit of the bounce-averaged equation

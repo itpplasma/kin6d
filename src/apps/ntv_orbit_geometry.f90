@@ -19,18 +19,27 @@
 !! torque weights are those of the full drift weight (wsign = +1) with b at
 !! the orbit point; the perturbation harmonics are taken at s* (first stage).
 !! Pitch-angle scattering acts at fixed psi* (first stage of collisions).
+!!
+!! For the radial deposit of the kernel the orbit level is mu_hat, and the
+!! radial boxes are intervals of the file's flux label s. An orbit of one
+!! level spends the time v*/2 dt per unit level in the measure above
+!! (Liouville), with dt along the legs from orbit_dwell and beyond the
+!! turning points of a trapped orbit from the measure itself (add_cap).
 module milca_ntv_orbit_geometry
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, boozer_field_t, boozer_field, boozer_field_eval, &
         boozer_harmonics, BOOZER_OK
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_pitch_point, &
-        orbit_point, orbit_state, orbit_potential, ORBIT_OK, ORBIT_NO_ROOT
+        orbit_point, orbit_state, orbit_potential, orbit_dwell, ORBIT_OK, ORBIT_NO_ROOT
+    use fortnum_quadrature, only: gauss_legendre
     use milca_dk_hp, only: hp_geometry_t, hp_operator_t
     implicit none
     private
     public :: hp_orbit_geometry_t, hp_orbit_geometry, hp_orbit_perturbation, hp_orbit_confined
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
+    ! Gauss nodes per mesh column of the dwell times.
+    integer, parameter :: n_dwell = 6
 
     type, extends(hp_geometry_t) :: hp_orbit_geometry_t
         type(boozer_file_t), pointer :: bf => null()
@@ -51,6 +60,8 @@ module milca_ntv_orbit_geometry
         procedure :: measure
         procedure :: perturbation => orbit_perturbation
         procedure :: point_source => orbit_point_source
+        procedure :: dwell => orbit_dwell_levels
+        procedure :: label => orbit_label
     end type
 
 contains
@@ -197,13 +208,15 @@ contains
 
     !> orbit_perturbation and orbit_point_coefficients on one pitch point.
     subroutine orbit_point_source(g, th, xi, op, src, collide, drive_r, drive_e, density, &
-            phase, precess, drive, torque)
+            phase, precess, drive, torque, level, valid)
         class(hp_orbit_geometry_t), intent(in) :: g
         real(dp), intent(in) :: th, xi
         type(hp_operator_t), intent(in) :: op
         complex(dp), intent(out) :: src
         real(dp), intent(out) :: collide, drive_r, drive_e, density, phase, precess, drive, &
             torque
+        real(dp), intent(out), optional :: level
+        logical, intent(out), optional :: valid
         type(orbit_point_t) :: pt
         real(dp) :: mu
         integer :: st
@@ -217,7 +230,126 @@ contains
         end if
         call point_at(g, th, xi, op, pt, collide, drive_r, drive_e, density, phase, precess, &
             drive, torque)
+        if (present(level)) level = mu
+        if (present(valid)) valid = st == ORBIT_OK
     end subroutine orbit_point_source
+
+    !> Time in the boxes edges (file s) of the orbit with mu_hat = level on
+    !> the leg kind, or of a whole trapped orbit (kind = 0), per unit level in
+    !> the measure: v*/2 times orbit_dwell for the legs, and the caps beyond
+    !> the turning points of a trapped orbit. An orbit that leaves the file
+    !> has no time.
+    subroutine orbit_dwell_levels(g, kind, level, panels, edges, time, status)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        integer, intent(in) :: kind
+        real(dp), intent(in) :: level, panels(:), edges(:)
+        real(dp), intent(out) :: time(:)
+        integer, intent(out) :: status
+        type(orbit_particle_t) :: q
+        real(dp) :: turn(2)
+        logical :: trapped
+        q = g%p
+        q%mu = level*g%e_star/g%b_ref
+        call orbit_dwell(g%bf, q, g%s_star, real(kind, dp), panels, n_dwell, edges, time, &
+            trapped, status, turn)
+        ! orbit_dwell classes a level next to the separatrix on its own scan.
+        if (status /= ORBIT_OK .or. (trapped .neqv. kind == 0)) time = 0
+        time = time*g%v_star/2
+        if (status /= ORBIT_OK .or. .not. trapped .or. kind /= 0) return
+        call add_cap(g, level, turn(1), -1.0_dp, pi - 0.5_dp*(turn(2) - turn(1)), edges, time)
+        call add_cap(g, level, turn(2), 1.0_dp, pi - 0.5_dp*(turn(2) - turn(1)), edges, time)
+    end subroutine orbit_dwell_levels
+
+    !> Adds the cap of the trapped orbit of mu_hat = level at its turning
+    !> point turn. The legs end where the orbit crosses s* (rho = 0); the
+    !> drift carries it on in theta, on one side of s*, to theta_dot = 0 and
+    !> back to its other leg. Its time is first order in the orbit width. In
+    !> (theta, xi) the cap is the level curve from xi = 0 to the other root
+    !> xi_end at turn, and by Liouville v*/2 dt = |measure| dxi/|d mu_hat/d
+    !> theta|, regular where theta_dot vanishes; Gauss-Legendre in xi. dir is
+    !> the direction of theta away from the orbit, reach the distance to the
+    !> X point, beyond which a level next to the separatrix has no cap of its
+    !> own and gets none.
+    subroutine add_cap(g, level, turn, dir, reach, edges, time)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        real(dp), intent(in) :: level, turn, dir, reach, edges(:)
+        real(dp), intent(inout) :: time(:)
+        type(hp_operator_t) :: op
+        type(orbit_point_t) :: pt
+        real(dp) :: x(n_dwell), w(n_dwell), s(0:n_dwell + 1), dt(n_dwell), side, slope, &
+            lo, hi, xi, f, f_x, th, step, a, b
+        integer :: q, it, st, k
+        ! The measure of Boozer coordinates, b.grad theta = kappa b.
+        op%k = g%kappa
+        op%k_power = 1
+        f = g%mu_hat(turn, 0.0_dp, pt, st)
+        if (st /= ORBIT_OK) return
+        slope = pt%mu_xi*g%b_ref/g%e_star
+        side = sign(1.0_dp, slope)
+        s(0) = pt%s
+        ! mu_hat - level ~ |slope| x - level x^2 on the ray xi = side x.
+        xi = abs(slope)/level
+        if (xi < 1e-9_dp .or. xi > 0.5_dp) return
+        lo = 0.5_dp*xi
+        hi = 2*xi
+        if (g%mu_hat(turn, side*lo, pt, st) <= level) return
+        if (g%mu_hat(turn, side*hi, pt, st) >= level) return
+        do it = 1, 60
+            f = g%mu_hat(turn, side*xi, pt, st) - level
+            if (st /= ORBIT_OK) return
+            f_x = side*pt%mu_xi*g%b_ref/g%e_star
+            if (f > 0) then
+                lo = xi
+            else
+                hi = xi
+            end if
+            step = f/f_x
+            if (f_x == 0 .or. (xi - step - lo)*(xi - step - hi) > 0) step = xi - 0.5_dp*(lo + hi)
+            xi = xi - step
+            if (abs(step) <= 1e-12_dp*xi) exit
+        end do
+        f = g%mu_hat(turn, side*xi, pt, st)
+        s(n_dwell + 1) = pt%s
+        call gauss_legendre(n_dwell, x, w)
+        th = turn
+        do q = 1, n_dwell
+            do it = 1, 60
+                f = g%mu_hat(th, side*0.5_dp*xi*(1 + x(q)), pt, st) - level
+                if (st /= ORBIT_OK .or. pt%mu_theta == 0) return
+                step = f/(pt%mu_theta*g%b_ref/g%e_star)
+                th = th - step
+                if (.not. abs(th - turn) < reach) return
+                if (abs(step) <= 1e-13_dp) exit
+            end do
+            if (it > 60 .or. (th - turn)*dir < -1e-9_dp) return
+            f = g%mu_hat(th, side*0.5_dp*xi*(1 + x(q)), pt, st)
+            if (st /= ORBIT_OK .or. pt%mu_theta == 0) return
+            s(q) = pt%s
+            dt(q) = 0.5_dp*xi*w(q)*abs(measure_at(g, th, side*0.5_dp*xi*(1 + x(q)), op, pt) &
+                /(pt%mu_theta*g%b_ref/g%e_star))
+        end do
+        ! As orbit_dwell: the time of a node uniform in s halfway to its
+        ! neighbours, the end nodes up to the ends of the cap.
+        do q = 1, n_dwell
+            a = merge(s(0), 0.5_dp*(s(q - 1) + s(q)), q == 1)
+            b = merge(s(n_dwell + 1), 0.5_dp*(s(q) + s(q + 1)), q == n_dwell)
+            lo = min(a, b)
+            hi = max(a, b)
+            do k = 1, size(time)
+                if (hi > lo) then
+                    time(k) = time(k) + dt(q)*max(0.0_dp, min(hi, edges(k + 1)) &
+                        - max(lo, edges(k)))/(hi - lo)
+                else if (lo >= edges(k) .and. lo < edges(k + 1)) then
+                    time(k) = time(k) + dt(q)
+                end if
+            end do
+        end do
+    end subroutine add_cap
+
+    real(dp) function orbit_label(g) result(s)
+        class(hp_orbit_geometry_t), intent(in) :: g
+        s = g%s_star
+    end function orbit_label
 
     real(dp) function mu_hat(g, th, xi, pt, status)
         class(hp_orbit_geometry_t), intent(in) :: g
