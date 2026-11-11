@@ -933,6 +933,27 @@ one dense factorisation of all nodes and species for the two lowest Legendre
 pair blocks and pair-block factorisations per node and species above them.
 `ntv_profile` selects it with a collision model on its fourth input line.
 
+`milca_dk_hp_energy` (`hp_energy_setup`, `hp_energy_coefficients`) solves the
+same equation with the spectral-element angular discretisation of `dk_hp`
+instead of the Legendre-Fourier one, with the Lorentz and test-particle
+models; the field-particle part is not yet included. Each speed node has its
+own mesh and geometry. Energy scattering couples node k to node k' through
+the mass of the mesh and measure of every speed basis function p in the
+speed integral, P_{p<-k}^T M_p P_{p<-k'}, with P the interpolation between
+meshes (`hp_transfer`); on a common mesh this is the mass M times the
+Legendre kernel's energy rows. The coefficients K and q are those of
+`ntv_energy_coefficients`. Conservation holds as follows: pitch-angle
+scattering conserves density exactly in pitch and theta on every mesh, and
+energy scattering conserves the density moment except for the defect of the
+dropped x = 0 node, -sum_k' a_0(1, k') <h_k'>, with <h_k'> taken on the mesh
+of the measure node. Momentum and energy are not conserved by the
+test-particle model. The system is solved by GMRES, which minimises the
+residual weighted by the speed mass v_a d3_k. It is right-preconditioned by
+a coarse Galerkin correction (per node the low pitch-theta harmonics, those
+near the perturbation harmonics and functions of the stream function)
+followed by three symmetric block Gauss-Seidel passes over the speed nodes
+with sparse factors of the node blocks.
+
 ## Axisymmetric Boozer oracle adapter
 
 `milca_ntv_geometry` adapts an axisymmetric Boozer surface to the existing

@@ -14,6 +14,8 @@ program test_dk_hp
     use milca_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp)
+    ! nu_D/v (1/m) at x = 1 of the energy-coupled cases.
+    real(dp), parameter :: energy_kappa = 3e-2_dp
     character(32) :: check
     logical :: ok
 
@@ -32,6 +34,11 @@ program test_dk_hp
     case ('terms_recombine'); ok = terms_recombine()
     case ('line_moments'); ok = line_moments()
     case ('transfer'); ok = transfer()
+    case ('energy_lorentz'); ok = energy_lorentz()
+    case ('energy_test_particle'); ok = energy_test_particle()
+    case ('energy_two_mesh'); ok = energy_two_mesh()
+    case ('energy_density'); ok = energy_density()
+    case ('energy_iterations'); ok = energy_iterations()
     case ('ntv_scan'); ok = ntv_scan()
     case ('ntv_legendre'); ok = ntv_legendre()
     case ('scan'); ok = scan()
@@ -859,6 +866,393 @@ contains
         real(dp), intent(out) :: x(n), w(n)
         call gauss_legendre(n, x, w)
     end subroutine gauss_legendre_local
+
+    !> One deuterium species at 2 keV, nu_D/v about kappa_coll (1/m) at x
+    !> = 1, on a speed grid of nelem elements of order 4 to x = 5.
+    subroutine energy_plasma(kappa_coll, nelem, sp, lnl, grid)
+        use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_make_grid, &
+            collop_nuhat, collop_vth, COLLOP_OK
+        real(dp), intent(in) :: kappa_coll
+        integer, intent(in) :: nelem
+        type(collop_species_t), intent(out) :: sp(1)
+        real(dp), intent(out) :: lnl(1, 1)
+        type(collop_grid_t), intent(out) :: grid
+        real(dp), parameter :: kev = 1.602176634e-16_dp
+        integer :: st
+        sp(1) = collop_species_t(3.3435837768e-27_dp, 1.0_dp, 3e19_dp, 2*kev)
+        lnl = 3*sqrt(pi)/8*collop_vth(sp(1))*kappa_coll/collop_nuhat(sp(1), sp(1), 1.0_dp)
+        call collop_make_grid(5.0_dp, nelem, 4, grid, st)
+        if (st /= COLLOP_OK) error stop 'collop_make_grid failed'
+    end subroutine energy_plasma
+
+    !> The stage-1 harmonic at the speed nodes 2..n: pre = (T/(Z e)) x_k^2,
+    !> as the Legendre kernel scales its precession with the node energy.
+    function energy_ops(sp, x, omega) result(ops)
+        use milca_dk_hp, only: hp_operator_t
+        use milca_dk_collop, only: collop_species_t
+        type(collop_species_t), intent(in) :: sp
+        real(dp), intent(in) :: x(:), omega
+        type(hp_operator_t), allocatable :: ops(:, :)
+        real(dp), parameter :: charge = 1.602176634e-19_dp
+        integer :: k
+        allocate (ops(size(x) - 1, 1))
+        do k = 1, size(x) - 1
+            ops(k, 1) = stage1(0.0_dp, sp%t/(sp%z*charge)*x(k + 1)**2, omega)
+        end do
+    end function energy_ops
+
+    subroutine stage1_field(f)
+        type(hp_field_t), intent(out) :: f
+        integer :: status, j
+        call hp_field([(1 - 0.05_dp*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f, status)
+        if (status /= HP_OK) error stop 'hp_field failed'
+    end subroutine stage1_field
+
+    !> K and q of the energy-coupled hp kernel on the stage-1 surface, node k
+    !> on meshes(mid(k)); J_0 = int dtheta/b^2 = 2 pi (1 - eps^2)^(-3/2).
+    subroutine energy_run(kappa_coll, model, meshes, mid, kc, qc, node_r, its, status, &
+            max_its, budget, omega, factors, setup_only)
+        use milca_dk_hp_energy, only: hp_energy_system_t, hp_energy_setup, &
+            hp_energy_coefficients, hp_energy_free
+        use milca_dk_collop, only: collop_species_t, collop_grid_t
+        real(dp), intent(in) :: kappa_coll
+        integer, intent(in) :: model, mid(:)
+        type(hp_mesh_t), intent(in) :: meshes(:)
+        real(dp), intent(out) :: kc(1, 1, 2), qc(1, 1, 2)
+        real(dp), allocatable, intent(out) :: node_r(:, :, :, :)
+        integer, intent(out) :: its, status
+        integer, intent(in), optional :: max_its
+        integer(8), intent(in), optional :: budget
+        real(dp), intent(in), optional :: omega
+        ! factors: n_factors, factor_bytes and factor_peak after setup.
+        integer(8), intent(out), optional :: factors(3)
+        logical, intent(in), optional :: setup_only
+        type(hp_field_t) :: f
+        type(hp_field_t), allocatable :: geom(:, :)
+        type(collop_species_t) :: sp(1)
+        type(collop_grid_t) :: grid
+        type(hp_energy_system_t) :: sys
+        real(dp) :: lnl(1, 1), om
+        integer(8) :: b
+
+        call stage1_field(f)
+        call energy_plasma(kappa_coll, 3, sp, lnl, grid)
+        allocate (geom(grid%n - 1, 1))
+        geom = f
+        b = huge(b)
+        if (present(budget)) b = budget
+        om = 0
+        if (present(omega)) om = omega
+        its = 0
+        call hp_energy_setup(geom, energy_ops(sp(1), grid%x, om), meshes, &
+            reshape(mid, [grid%n - 1, 1]), grid, sp, lnl, model, b, sys, status)
+        if (present(factors)) factors = [int(sys%n_factors, 8), sys%factor_bytes, &
+            sys%factor_peak]
+        if (status /= HP_OK) return
+        if (present(setup_only)) then
+            if (setup_only) then
+                call hp_energy_free(sys)
+                return
+            end if
+        end if
+        call hp_energy_coefficients(sys, 2*pi*(1 - 0.05_dp**2)**(-1.5_dp), kc, qc, node_r, &
+            its, status, max_iterations=max_its)
+        call hp_energy_free(sys)
+    end subroutine energy_run
+
+    !> Pitch-angle scattering alone: every node is the monoenergetic kernel
+    !> on its own mesh at nu = sum_b nuhat_ab (erf(y) - G(y))/x^3/(v_a x) and
+    !> speed v_a x, with the drive tz x^2 (A_1) and tz x^4 (A_2), so that
+    !> K(j) = tz/(2 sqrt(pi) J_0) sum_k w_k x_k^4 exp(-x_k^2) tz x_k^(2j) R_k.
+    !> Nodes on two band meshes; omega_E and precession on.
+    logical function energy_lorentz() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel
+        use milca_dk_hp_energy, only: HP_NO_MEMORY
+        use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_vth, &
+            collop_nuhat, COLLOP_LORENTZ
+        real(dp), parameter :: charge = 1.602176634e-19_dp, kappa_coll = 1e-2_dp, &
+            omega = 300.0_dp
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: meshes(2)
+        type(hp_operator_t), allocatable :: ops(:, :)
+        type(hp_operator_t) :: op
+        type(collop_species_t) :: sp(1)
+        type(collop_grid_t) :: grid
+        real(dp), allocatable :: node_r(:, :, :, :), r(:), x(:), d4(:), d6(:)
+        real(dp) :: lnl(1, 1), kc(1, 1, 2), qc(1, 1, 2), vt, tz, y, g, j0, want(3), err(2)
+        integer :: its, status, k, mid(9), nx
+        integer(8) :: whole(3), half(3)
+        logical :: fits
+
+        call stage1_field(f)
+        call hp_default_mesh(f, 5, 12, 3, 1e-2_dp, 0.3_dp, meshes(1))
+        call hp_default_mesh(f, 5, 16, 4, 3e-3_dp, 0.3_dp, meshes(2))
+        mid = [1, 1, 1, 1, 2, 2, 2, 2, 2]
+        call energy_run(kappa_coll, COLLOP_LORENTZ, meshes, mid, kc, qc, node_r, its, &
+            status, omega=omega)
+        if (status /= HP_OK) error stop 'hp energy kernel failed'
+        print '(a,i0)', 'GMRES iterations ', its
+
+        call energy_plasma(kappa_coll, 3, sp, lnl, grid)
+        nx = grid%n - 1
+        x = grid%x(2:)
+        vt = collop_vth(sp(1))
+        tz = sp(1)%t/(sp(1)%z*charge)
+        ops = energy_ops(sp(1), grid%x, omega)
+        allocate (r(nx))
+        do k = 1, nx
+            y = x(k)
+            g = (erf(y) - 2*y*exp(-y*y)/sqrt(pi))/(2*y*y)
+            op = ops(k, 1)
+            op%nu = collop_nuhat(sp(1), sp(1), lnl(1, 1))*(erf(y) - g)/x(k)**3/(vt*x(k))
+            op%v = vt*x(k)
+            call hp_ntv_kernel(f, meshes(mid(k)), op, r(k), status)
+            if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
+        end do
+        err(1) = maxval(abs(node_r(:, 1, 1, 1) - tz*x**2*r))/maxval(abs(tz*x**2*r))
+        err(2) = maxval(abs(node_r(:, 1, 1, 2) - tz*x**4*r))/maxval(abs(tz*x**4*r))
+        ok = below('node responses A_1, relative', err(1), 1e-8_dp)
+        ok = below('node responses A_2, relative', err(2), 1e-8_dp) .and. ok
+        j0 = 2*pi*(1 - 0.05_dp**2)**(-1.5_dp)
+        d4 = grid%w(2:)*x**4*exp(-x**2)
+        d6 = grid%w(2:)*x**6*exp(-x**2)
+        want = tz/(2*sqrt(pi)*j0)*[sum(d4*tz*x**2*r), sum(d4*tz*x**4*r), sum(d6*tz*x**2*r)]
+        ok = close_to('K11', kc(1, 1, 1), want(1), 1e-9_dp) .and. ok
+        ok = close_to('K12', kc(1, 1, 2), want(2), 1e-9_dp) .and. ok
+        ok = close_to('q11', qc(1, 1, 1), want(3), 1e-9_dp) .and. ok
+
+        ! Half the bytes of all factors: refused from one factor per mesh,
+        ! before the others are built.
+        call energy_run(kappa_coll, COLLOP_LORENTZ, meshes, mid, kc, qc, node_r, its, &
+            status, omega=omega, factors=whole, setup_only=.true.)
+        call energy_run(kappa_coll, COLLOP_LORENTZ, meshes, mid, kc, qc, node_r, its, &
+            status, omega=omega, budget=whole(2)/2, factors=half, setup_only=.true.)
+        print '(a,i0,a,i0,a,i0,a,i0,a,i0)', 'budget ', whole(2)/2, ' of ', whole(2), &
+            ': status ', status, ', factors ', half(1), ', peak bytes ', half(3)
+        fits = status == HP_NO_MEMORY .and. whole(1) == nx .and. half(1) == nx .and. &
+            half(2) == 0 .and. half(3) < whole(2)/2
+        print '(a,l2)', 'refused within the budget pass', fits
+        ok = ok .and. fits
+
+        call energy_run(kappa_coll, COLLOP_LORENTZ, meshes, mid, kc, qc, node_r, its, &
+            status, budget=1_8)
+        print '(a,i0,a,l2)', 'factors beyond a budget of one byte: status ', status, &
+            ' pass', status == HP_NO_MEMORY
+        ok = ok .and. status == HP_NO_MEMORY
+    end function energy_lorentz
+
+    !> Test-particle operator against the Legendre-Fourier energy-coupled
+    !> kernel ntv_energy_coefficients on the same speed grid and surface
+    !> (sources off): the same equation in another angular discretisation,
+    !> so the difference must fall when both resolutions rise.
+    logical function energy_test_particle() result(ok)
+        use milca_dk_collop, only: COLLOP_TEST_PARTICLE
+        real(dp) :: diff(2), kc(1, 1, 2), qc(1, 1, 2), kl(1, 1, 2), ql(1, 1, 2)
+        integer :: ir
+        ok = .true.
+        do ir = 1, 2
+            call energy_pair(ir, kc, qc, kl, ql)
+            diff(ir) = max(maxval(abs(kc - kl)/abs(kl)), maxval(abs(qc - ql)/abs(ql)))
+            print '(a,i0,a,4es14.6)', 'resolution ', ir, ' hp K11 K12 q11 q12', kc, qc
+            print '(a,i0,a,4es14.6)', 'resolution ', ir, ' Legendre         ', kl, ql
+        end do
+        ok = below('largest relative difference', diff(2), 1e-5_dp)
+        ok = below('falls with resolution', diff(2) - diff(1), 0.0_dp) .and. ok
+    end function energy_test_particle
+
+    !> The hp and Legendre coefficients of the stage-1 surface at resolution
+    !> ir (1 coarse, 2 fine), test-particle operator.
+    subroutine energy_pair(ir, kc, qc, kl, ql)
+        use milca_dk_ntv, only: ntv_surface_t, ntv_energy_coefficients, NTV_OK
+        use milca_dk_collop, only: collop_species_t, collop_grid_t, COLLOP_TEST_PARTICLE
+        integer, intent(in) :: ir
+        real(dp), intent(out) :: kc(1, 1, 2), qc(1, 1, 2), kl(1, 1, 2), ql(1, 1, 2)
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh(1)
+        type(ntv_surface_t) :: sf
+        type(collop_species_t) :: sp(1)
+        type(collop_grid_t) :: grid
+        real(dp), allocatable :: node_r(:, :, :, :)
+        real(dp) :: lnl(1, 1)
+        integer :: its, status
+        call stage1_field(f)
+        mesh(1) = energy_mesh(f, ir)
+        call energy_run(energy_kappa, COLLOP_TEST_PARTICLE, mesh, [1, 1, 1, 1, 1, 1, 1, 1, 1], kc, qc, &
+            node_r, its, status)
+        print '(a,i0,a,i0)', 'hp status ', status, ' GMRES iterations ', its
+        if (status /= HP_OK) error stop 'hp energy kernel failed'
+        sf%eps = 0.05_dp; sf%q = 2.2_dp; sf%k = 1/(sf%q*6.2_dp); sf%offset = 0
+        sf%n = 3; sf%m = [6]; sf%c = [(1e-3_dp, 0.0_dp)]
+        call energy_plasma(energy_kappa, 3, sp, lnl, grid)
+        call ntv_energy_coefficients(sf, sp, lnl, grid, COLLOP_TEST_PARTICLE, 0.0_dp, &
+            merge(17, 33, ir == 1), merge(24, 48, ir == 1), kl, its, status, ql)
+        print '(a,i0,a,i0)', 'Legendre status ', status, ' GMRES iterations ', its
+        if (status /= NTV_OK) error stop 'ntv_energy_coefficients failed'
+    end subroutine energy_pair
+
+    !> Mesh of resolution ir: 1 coarse, 2 fine, 3 the fine mesh with more
+    !> rows, 4 with more columns.
+    function energy_mesh(f, ir) result(mesh)
+        type(hp_field_t), intent(in) :: f
+        integer, intent(in) :: ir
+        type(hp_mesh_t) :: mesh
+        select case (ir)
+        case (1); call hp_default_mesh(f, 4, 8, 2, 3e-2_dp, 0.3_dp, mesh)
+        case (2); call hp_default_mesh(f, 6, 12, 3, 1e-2_dp, 0.3_dp, mesh)
+        case (3); call hp_default_mesh(f, 6, 12, 5, 5e-3_dp, 0.3_dp, mesh)
+        case default; call hp_default_mesh(f, 6, 20, 3, 1e-2_dp, 0.3_dp, mesh)
+        end select
+    end function energy_mesh
+
+    !> Nodes alternating between a mesh refined in rows and one refined in
+    !> columns, against all nodes on the fine common mesh: energy scattering
+    !> then couples every node to the other mesh through the transfers.
+    logical function energy_two_mesh() result(ok)
+        use milca_dk_collop, only: COLLOP_TEST_PARTICLE
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: common(1), two(2)
+        real(dp), allocatable :: node_r(:, :, :, :)
+        real(dp) :: kc(1, 1, 2), qc(1, 1, 2), k2(1, 1, 2), q2(1, 1, 2), diff
+        integer :: its, status
+        call stage1_field(f)
+        common(1) = energy_mesh(f, 2)
+        two(1) = energy_mesh(f, 3)
+        two(2) = energy_mesh(f, 4)
+        call energy_run(energy_kappa, COLLOP_TEST_PARTICLE, common, [1, 1, 1, 1, 1, 1, 1, 1, 1], kc, &
+            qc, node_r, its, status)
+        if (status /= HP_OK) error stop 'hp energy kernel failed'
+        call energy_run(energy_kappa, COLLOP_TEST_PARTICLE, two, [1, 2, 1, 2, 1, 2, 1, 2, 1], k2, q2, &
+            node_r, its, status)
+        if (status /= HP_OK) error stop 'hp energy kernel on two meshes failed'
+        print '(a,i0)', 'GMRES iterations on two meshes ', its
+        print '(a,4es14.6)', 'common mesh K11 K12 q11 q12', kc, qc
+        print '(a,4es14.6)', 'two meshes  K11 K12 q11 q12', k2, q2
+        diff = max(maxval(abs(k2 - kc)/abs(kc)), maxval(abs(q2 - qc)/abs(qc)))
+        ok = below('largest relative difference', diff, 5e-4_dp)
+    end function energy_two_mesh
+
+    !> The density moment of the collision operator, sum_k v_a d3_k 1^T y_k,
+    !> on a random vector over three meshes: pitch-angle scattering and
+    !> energy scattering conserve it except for the dropped x = 0 node,
+    !> whose test row a_0(1, k') (energy0_w of the collop matrices) gives
+    !>   -sum_p sum_k' energy0_w(p, k') <P_{p<-k'} h_k'>_p,
+    !> <g>_p the density moment on the mesh of grid node p (built here from
+    !> the terms and transfers of each mesh).
+    logical function energy_density() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_terms_t, hp_ntv_terms, hp_transfer
+        use milca_dk_hp_energy, only: hp_energy_system_t, hp_energy_setup, &
+            hp_energy_collide, hp_energy_free
+        use milca_dk_ntv, only: ntv_collision_rows, NTV_OK
+        use milca_dk_collop, only: collop_species_t, collop_grid_t, collop_vth, &
+            COLLOP_TEST_PARTICLE
+        use fortsparse, only: csc_t
+        type(hp_field_t) :: f
+        type(hp_field_t), allocatable :: geom(:, :)
+        type(hp_mesh_t) :: meshes(3)
+        type(hp_terms_t) :: terms(3)
+        type(hp_operator_t), allocatable :: ops(:, :)
+        type(hp_energy_system_t) :: sys
+        type(collop_species_t) :: sp(1)
+        type(collop_grid_t) :: grid
+        type(csc_t) :: t
+        real(dp), allocatable :: rows(:, :, :, :, :), ratio(:, :), d3(:), d4(:), d6(:), &
+            vt(:), tz(:), e0w(:, :, :), re(:), im(:), moved(:)
+        complex(dp), allocatable :: h(:), y(:)
+        real(dp) :: lnl(1, 1), got, want, size_
+        integer :: status, k, j, p, nx, mid(9), m, mp
+        integer, allocatable :: off(:)
+
+        call stage1_field(f)
+        do m = 1, 3
+            meshes(m) = energy_mesh(f, m + 1)
+        end do
+        mid = [1, 2, 3, 1, 2, 3, 1, 2, 3]
+        call energy_plasma(energy_kappa, 3, sp, lnl, grid)
+        nx = grid%n - 1
+        ops = energy_ops(sp(1), grid%x, 0.0_dp)
+        do m = 1, 3
+            call hp_ntv_terms(f, meshes(m), ops(1, 1), terms(m), status)
+            if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+        end do
+        allocate (geom(nx, 1), off(nx + 1))
+        geom = f
+        call hp_energy_setup(geom, ops, meshes, reshape(mid, [nx, 1]), grid, sp, lnl, &
+            COLLOP_TEST_PARTICLE, huge(1_8), sys, status)
+        if (status /= HP_OK) error stop 'hp_energy_setup failed'
+        off(1) = 0
+        do k = 1, nx
+            off(k + 1) = off(k) + terms(mid(k))%n
+        end do
+        ok = sys%n_dof == off(nx + 1)
+        allocate (re(off(nx + 1)), im(off(nx + 1)), y(off(nx + 1)))
+        call random_number(re)
+        call random_number(im)
+        h = cmplx(re - 0.5_dp, im - 0.5_dp, dp)
+        call hp_energy_collide(sys, h, y)
+        call hp_energy_free(sys)
+
+        call ntv_collision_rows(sp, lnl, grid, COLLOP_TEST_PARTICLE, 2, rows, ratio, d3, d4, &
+            d6, vt, tz, status, energy0_w=e0w)
+        if (status /= NTV_OK) error stop 'ntv_collision_rows failed'
+        d3 = grid%w(2:)*grid%x(2:)**3*exp(-grid%x(2:)**2)
+        got = 0
+        size_ = 0
+        do k = 1, nx
+            got = got + collop_vth(sp(1))*d3(k)*real(sum(y(off(k) + 1:off(k + 1))), dp)
+            size_ = size_ + collop_vth(sp(1))*d3(k)*sum(abs(y(off(k) + 1:off(k + 1))))
+        end do
+        want = 0
+        do p = 1, grid%n
+            mp = mid(max(p - 1, 1))
+            do j = 1, nx
+                if (e0w(p, j, 1) == 0) cycle
+                if (mid(j) == mp) then
+                    moved = real(h(off(j) + 1:off(j + 1)), dp)
+                else
+                    call hp_transfer(f, meshes(mp), meshes(mid(j)), terms(mp)%loc, &
+                        terms(mid(j))%loc, t, status)
+                    if (status /= HP_OK) error stop 'hp_transfer failed'
+                    moved = csc_apply(t, real(h(off(j) + 1:off(j + 1)), dp))
+                end if
+                want = want - e0w(p, j, 1)*sum(terms(mp)%density*moved)
+            end do
+        end do
+        print '(a,es14.6,a,es14.6,a,es9.2)', 'density moment ', got, ' defect ', want, &
+            ' scale ', size_
+        ok = below('density moment minus defect, relative', abs(got - want)/size_, &
+            1e-10_dp) .and. ok
+        ! The defect is far above the error: the bound has teeth.
+        ok = below('error over defect', abs(got - want)/abs(want), 1e-6_dp) .and. ok
+    end function energy_density
+
+    !> GMRES iterations of the test-particle kernel at the collisionality of
+    !> the comparison case and 100 times above and below it, and the
+    !> iteration limit.
+    logical function energy_iterations() result(ok)
+        use milca_dk_hp, only: HP_NO_CONVERGENCE
+        use milca_dk_collop, only: COLLOP_TEST_PARTICLE
+        real(dp), parameter :: factor(3) = [1.0_dp, 1e2_dp, 1e-2_dp]
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh(1)
+        real(dp), allocatable :: node_r(:, :, :, :)
+        real(dp) :: kc(1, 1, 2), qc(1, 1, 2)
+        integer :: its, status, i
+        call stage1_field(f)
+        mesh(1) = energy_mesh(f, 2)
+        ok = .true.
+        do i = 1, 3
+            call energy_run(energy_kappa*factor(i), COLLOP_TEST_PARTICLE, mesh, &
+                [1, 1, 1, 1, 1, 1, 1, 1, 1], kc, qc, node_r, its, status)
+            print '(a,es9.2,a,i0,a,i0,a,es14.6)', 'nu_D/v at x = 1 ', energy_kappa*factor(i), &
+                ' status ', status, ' iterations ', its, ' K11 ', kc(1, 1, 1)
+            ok = ok .and. status == HP_OK .and. its <= 60
+        end do
+        call energy_run(energy_kappa, COLLOP_TEST_PARTICLE, mesh, [1, 1, 1, 1, 1, 1, 1, 1, 1], kc, qc, &
+            node_r, its, status, max_its=2)
+        print '(a,i0,a,l2)', 'max_iterations = 2: status ', status, ' pass', &
+            status == HP_NO_CONVERGENCE
+        ok = ok .and. status == HP_NO_CONVERGENCE
+    end function energy_iterations
 
     logical function scan() result(ok)
         real(dp), parameter :: eps = 0.1_dp

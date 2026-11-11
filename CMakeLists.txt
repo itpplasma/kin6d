@@ -273,6 +273,7 @@ target_sources(milca_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/milca_dk_mono_leaves.f90 src/continuum/dk_mono.f90
     src/continuum/dk_mono_thermal.f90
     src/generated/milca_dk_hp_leaves.f90 src/continuum/dk_hp.f90
+    src/continuum/dk_hp_energy.f90
     src/generated/milca_dk_ntv_leaves.f90 src/continuum/dk_ntv.f90
     src/continuum/dk_surface.f90
     src/generated/milca_dk_collop_leaves.f90 src/continuum/dk_collop.f90
@@ -1138,9 +1139,14 @@ add_executable(test_dk_hp test/test_dk_hp.f90)
 target_link_libraries(test_dk_hp PRIVATE milca)
 foreach(check reference onsager collisionless banana pfirsch_schlueter estimate
         ntv_reference ntv_superbanana_plateau ntv_one_over_nu ntv_rotation
-        terms_recombine line_moments transfer)
+        terms_recombine line_moments transfer energy_lorentz energy_density)
     add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
     milca_test_labels(dk_hp_${check} fast CLASSES continuum TARGETS test_dk_hp)
+endforeach()
+# Minutes each: nine speed nodes of fine meshes and the Legendre reference.
+foreach(check energy_test_particle energy_two_mesh energy_iterations)
+    add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
+    milca_test_labels(dk_hp_${check} slow CLASSES continuum TARGETS test_dk_hp)
 endforeach()
 add_executable(test_dk_pitch test/test_dk_pitch.f90)
 target_link_libraries(test_dk_pitch PRIVATE milca)
