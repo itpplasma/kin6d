@@ -80,6 +80,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
 - [Strip jets and preconditioning](response-strip-jets.md),
   [response calibration and qualification](response-qualification.md)
 - [Drift kinetics: neoclassical transport and NTV](drift-kinetics.md) (design)
+- [Drift-wave turbulence: spectra and transport coefficients](drift-turbulence.md) (design)
 
 ## Microscopic classical and quantum references
 

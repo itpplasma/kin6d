@@ -1,0 +1,138 @@
+# Drift-wave turbulence: spectra and transport coefficients
+
+Status: design specification. No drift-turbulence code is implemented yet;
+each stage below becomes active with the pull request that brings its tests.
+
+## Consumer
+
+Models of the plasma response to a resonant magnetic perturbation resolve a
+thin layer around a rational surface. Inside that layer the perturbed electron
+motion along the field competes with cross-field transport that turbulence
+supplies. Present layer models take this transport as a constant diffusivity
+or viscosity chosen by hand. The consumer of this branch is such a layer model:
+it needs, at the plasma parameters of one rational surface,
+
+- the fluctuation spectrum \(S(k_x,k_y,\omega)\) of the electrostatic
+  potential (later also of the parallel vector potential), with the cross
+  spectra that fix the fluxes;
+- correlation times and lengths, since a layer narrower than a correlation
+  length, or a response faster than a correlation time, does not see a
+  diffusion;
+- particle, heat and momentum fluxes with the diffusivities derived from
+  them, each with a statistical standard error;
+- the same quantities from a cheap quasilinear rule that is calibrated against
+  the nonlinear runs where both apply.
+
+Spectra are delivered in the frame without mean \(E\times B\) flow. The
+consumer applies the Doppler shift \(\omega+k_yV_E\).
+
+This is the "prescribed electromagnetic turbulence cross-spectrum" that
+[TR0](../ROADMAP.md#tr0--macro-transport-core-and-cheap-integrated-modelling-cross-cutting-starts-before-r6)
+asks for before a live provider, and it uses the closure contract of
+[transport-multiscale.md](transport-multiscale.md).
+
+## Stages
+
+| Stage | Model | Geometry | Role |
+|---|---|---|---|
+| L | local linear roots of the fluid models below | one wave vector | linear oracle, quasilinear rule |
+| HW | Hasegawa--Wakatani, original and modified | doubly periodic \((x,y)\) | verification of bracket, ledger, statistics and output; calibration case |
+| DA | electromagnetic drift-Alfvén, isothermal electrons, gyrofluid ions | sheared slab, \(k_\parallel=k_yx/L_s\) | first model with electron inertia, \(A_\parallel\) and magnetic shear |
+| K | kinetic local dispersion (gyrokinetic ions, drift-kinetic electrons) | one wave vector | quasilinear provider where no collisional fluid closure holds |
+
+The order follows [S0](../ROADMAP.md#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3):
+the linear spectrum precedes the nonlinear run.
+
+## Regime statement
+
+The Hasegawa--Wakatani model describes resistive drift waves with a single
+constant parallel wave number. Its control parameter is the adiabaticity
+\(\alpha\) divided by the drive \(\kappa\); the model produces strong
+turbulence for \(\alpha/\kappa\) of order one. At the top of an H-mode
+pedestal the electrons are nearly collisionless, \(\alpha/\kappa\gg1\), the
+electron skin depth is comparable to \(\rho_s\) and \(\nu_{*e}<1\). There the
+parallel electron response is inductive and inertial, not resistive, and
+trapped electrons are not detrapped by collisions. Stage HW is therefore
+verification infrastructure and a calibration case, not a predictor of
+pedestal-top transport. Stage DA contains the electromagnetic and inertial
+response but no trapped particles, curvature, temperature-gradient dynamics or
+microtearing. Any output of this branch names its model and carries the claim
+label `candidate`.
+
+## Stage HW: equations and ledger
+
+Normalisation of Numata, Ball and Dewar, Phys. Plasmas 14, 102312 (2007):
+lengths in \(\rho_s=c_s/\Omega_i\), time in \(1/\Omega_i\),
+\(\phi=e\varphi/T_e\), \(n=n_1/n_0\), vorticity \(\zeta=\nabla^2\phi\),
+\(\{a,b\}=\partial_xa\,\partial_yb-\partial_ya\,\partial_xb\),
+
+\[
+\partial_t\zeta+\{\phi,\zeta\}=\alpha(\phi-n)-D(-\nabla^2)^p\zeta,\qquad
+\partial_tn+\{\phi,n\}=\alpha(\phi-n)-\kappa\,\partial_y\phi-D(-\nabla^2)^pn .
+\]
+
+Here \(\kappa=-\mathrm d\ln n_0/\mathrm dx=\rho_s/L_n\), so that a positive
+flux \(\Gamma_n\) runs down the gradient. Numata et al. use \(p=2\). The
+modified model applies the coupling \(\alpha(\phi-n)\) to the non-zonal parts
+only (\(k_y\neq0\)). With \(n=\kappa n'\), \(\phi=\kappa\phi'\),
+\(t=t'/\kappa\) the equations depend on \(\alpha/\kappa\) and
+\(D/\kappa\) alone; the normalisation of Camargo, Biskamp and Scott,
+Phys. Plasmas 2, 48 (1995), is the case \(\kappa=1\).
+
+Energy and potential enstrophy per unit area, with \(\langle\cdot\rangle\) the
+box average,
+
+\[
+E=\tfrac12\langle n^2+|\nabla\phi|^2\rangle,\qquad
+W=\tfrac12\langle(n-\zeta)^2\rangle,
+\]
+\[
+\dot E=\Gamma_n-D_\alpha-D_E,\qquad \dot W=\Gamma_n-D_W,\qquad
+\Gamma_n=-\kappa\langle n\,\partial_y\phi\rangle,\qquad
+D_\alpha=\alpha\langle(n-\phi)^2\rangle .
+\]
+
+\(D_E\) and \(D_W\) are the hyperviscous sinks. The discrete system keeps both
+balances: the bracket is evaluated in a form for which
+\(\langle f\{g,f\}\rangle=0\) holds after dealiasing, and every reported run
+carries the residual of both balances.
+
+Linear modes \(\exp[i(k_xx+k_yy-\omega t)]\), \(k_y\ne0\), obey
+
+\[
+\mu^2+b\mu+ib\omega_*=0,\qquad \mu=-i\omega+Dk^{2p},\qquad
+b=\alpha\frac{1+k^2}{k^2},\qquad \omega_*=\frac{k_y\kappa}{1+k^2},
+\]
+
+which is Eq. (8) of Numata et al. for \(p=2\). For \(D=0\) and
+\(\alpha\to\infty\), \(\omega\to\omega_*+i\omega_*^2k^2/[\alpha(1+k^2)]\).
+
+## Admission record
+
+1. Use case: the consumer above; teaching use as the R3 gallery entry.
+2. Model and ledger: the equations and balances above for stage HW; stages DA
+   and K add theirs with their derivation before code.
+3. Structural oracles: bracket identities, the two balances, the exact linear
+   propagator of each Fourier mode.
+4. Literature oracles: the dispersion relation above; saturated particle flux
+   against adiabaticity from published two-dimensional runs. The published
+   values differ between codes by tens of percent, so the acceptance band is
+   stated per source.
+5. Derivatives: the right-hand side and the linear roots carry JVP/VJP. A time
+   average over a chaotic state has no usable derivative; it reports a
+   statistical standard error and the status "derivative unavailable".
+6. Certification: `candidate`. Linear roots carry their residual. Time
+   averages carry a statistical interval from the autocorrelation time, which
+   is never a deterministic enclosure.
+7. Performance: one saturated \(256^2\) run of stage HW to \(10^3\) time
+   units within minutes on one node; measured with the first benchmark.
+
+## What the stages cannot represent
+
+- HW: any parallel structure beyond one constant \(k_\parallel\); magnetic
+  shear, Alfvén dynamics, magnetic flutter; ion temperature and finite Larmor
+  radius; temperature gradients; curvature; trapped particles.
+- DA: trapped-electron modes, toroidal drift resonances, curvature drive,
+  electron-temperature-gradient turbulence, microtearing, shaping.
+- L and K: saturation amplitudes (one declared constant per rule), zonal
+  flows, radially non-local effects.
