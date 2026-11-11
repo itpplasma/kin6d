@@ -468,6 +468,14 @@ contains
             capped(1, 1)%mesh_unknowns > 0 .and. capped(1, 1)%mesh_unknowns <= 45000)
         call check('adaptive: a mesh stopped at the limit counts as unsettled', &
             capped(1, 1)%unsettled > 0 .and. capped(1, 1)%mesh_error > 1e-9_dp)
+        ! Four energies: the band meshes joined from neighbouring seeds and
+        ! solved without refinement stay below the limit too.
+        res%n_x = 4
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, capped, status)
+        call check('adaptive: limited bands', status == DEVICE_OK)
+        print '(a,i0)', 'adaptive: largest band mesh ', capped(1, 1)%mesh_unknowns
+        call check('adaptive: no band mesh above the size limit', &
+            capped(1, 1)%mesh_unknowns > 0 .and. capped(1, 1)%mesh_unknowns <= 45000)
     end subroutine hp_adaptive
 
     !> Circular surfaces with a toroidal current and shear; the perturbation

@@ -142,7 +142,8 @@ module milca_ntv_device
     !> hp_adapt, mesh_error is the largest final |eta|/|R + eta| over the seed
     !> and check energies of the mesh adaptation, and unsettled counts those
     !> whose refinement stopped at its size or round limit before the
-    !> tolerance was met; mesh_unknowns is the largest of their meshes.
+    !> tolerance was met; mesh_unknowns is the largest mesh solved, adapted or
+    !> on a fixed band mesh.
     type :: ntv_species_result_t
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
             heat_flux = 0, torque = 0, offset_rotation = 0, lost_weight = 0, mesh_error = 0
@@ -535,7 +536,8 @@ contains
             type(hp_mesh_t) :: next
             integer :: it, n_dof
             if (mode == MESH_FIXED .or. .not. res%hp_adapt > 0) then
-                call hp_ntv_kernel(g, mesh, op, rv, st)
+                call hp_ntv_kernel(g, mesh, op, rv, st, n_dof)
+                if (present(info)) info = adapt_info_t(0.0_dp, n_dof, .true.)
                 return
             end if
             prev = huge(1.0_dp)
@@ -631,10 +633,13 @@ contains
             integer, intent(in), optional :: mode
             type(adapt_info_t), intent(out), optional :: info
             type(ntv_kernel_t) :: kern
+            type(adapt_info_t) :: inf
             real(dp), allocatable :: f10(:, :)
             real(dp) :: v, nu
             if (res%orbit_width) then
-                rv = orbit_r(i, a, xv, st, start, used, mode, info)
+                rv = orbit_r(i, a, xv, st, start, used, mode, inf)
+                call note_unknowns(i, a, st, inf)
+                if (present(info)) info = inf
                 if (orbit_outside(st)) then
                     rv = 0
                     st = DEVICE_ORBIT_LOST
@@ -642,7 +647,9 @@ contains
                 return
             end if
             if (.not. thin_legendre(res)) then
-                rv = thin_r(i, a, xv, st, start, used, mode, info)
+                rv = thin_r(i, a, xv, st, start, used, mode, inf)
+                call note_unknowns(i, a, st, inf)
+                if (present(info)) info = inf
                 if (st == HP_OK) st = NTV_OK
                 return
             end if
@@ -657,6 +664,17 @@ contains
                 kern, st, indicators=.false., f10=f10)
             rv = kern%r
         end function kernel_r
+
+        !> Raises mesh_unknowns of surface i and species a to the mesh of a
+        !> successful hp kernel, also one solved on a fixed band mesh.
+        subroutine note_unknowns(i, a, st, info)
+            integer, intent(in) :: i, a, st
+            type(adapt_info_t), intent(in) :: info
+            if (st /= HP_OK .or. .not. allocated(result)) return
+            !$omp critical (ntv_unknowns)
+            result(i, a)%mesh_unknowns = max(result(i, a)%mesh_unknowns, info%n_dof)
+            !$omp end critical (ntv_unknowns)
+        end subroutine note_unknowns
 
         !> int x^(5/2) e^-x (1, x) R dx by adaptive composite Gauss-Legendre
         !> panels: a panel is bisected while its 6- and 12-point rules differ
@@ -739,7 +757,7 @@ contains
             type(adapt_info_t), allocatable :: info(:)
             integer, allocatable :: sts(:)
             integer :: k, n
-            real(dp) :: r
+            real(dp) :: r, dof
             if (present(nodes)) then
                 seeds = nodes
             else
@@ -761,6 +779,7 @@ contains
                 ok_mesh(n) = used(k)
             end do
             if (n == 0) return
+            dof = per_element(used, sts, info)
             n = min(n, max_bands + 1)
             ! One seed: one band, checked at the seed itself.
             nband(i, a) = max(1, n - 1)
@@ -771,7 +790,7 @@ contains
             else
                 do k = 1, n - 1
                     band(k, i, a) = ok_mesh(k)
-                    call join(band(k, i, a), ok_mesh(k + 1))
+                    call join_within(band(k, i, a), ok_mesh(k + 1), dof)
                 end do
                 checks = sqrt(ok_x(1:n - 1)*ok_x(2:n))
             end if
@@ -784,11 +803,45 @@ contains
             end do
             !$omp end parallel do
             call note_adaptation(i, a, checks, sts, info)
+            dof = max(dof, per_element(used, sts, info))
             do k = 1, size(checks)
                 if (sts(k) == NTV_OK .and. allocated(used(k)%theta)) &
-                    call join(band(k, i, a), used(k))
+                    call join_within(band(k, i, a), used(k), dof)
             end do
         end subroutine seed_bands
+
+        !> The largest number of unknowns per element of the meshes used.
+        real(dp) function per_element(used, sts, info) result(dof)
+            type(hp_mesh_t), intent(in) :: used(:)
+            integer, intent(in) :: sts(:)
+            type(adapt_info_t), intent(in) :: info(:)
+            integer :: k
+            dof = 0
+            do k = 1, size(used)
+                if (sts(k) == NTV_OK .and. allocated(used(k)%theta)) &
+                    dof = max(dof, info(k)%n_dof/elements(used(k)))
+            end do
+        end function per_element
+
+        !> Joins m into mesh unless the union, at dof unknowns per element,
+        !> would exceed hp_max_unknowns. The union of two meshes has up to the
+        !> sum of their columns times the sum of their rows, and the energies
+        !> of a band are solved on it in parallel without a size check; past
+        !> the limit the finer mesh is kept and the band's check energy
+        !> refines it within the limit.
+        subroutine join_within(mesh, m, dof)
+            type(hp_mesh_t), intent(inout) :: mesh
+            type(hp_mesh_t), intent(in) :: m
+            real(dp), intent(in) :: dof
+            type(hp_mesh_t) :: joined
+            joined = mesh
+            call join(joined, m)
+            if (dof*elements(joined) <= real(res%hp_max_unknowns, dp)) then
+                mesh = joined
+            else if (elements(m) > elements(mesh)) then
+                mesh = m
+            end if
+        end subroutine join_within
 
         !> Records the adaptation at energies x in mesh_error and unsettled of
         !> surface i and species a, and reports each unsettled energy.
@@ -800,7 +853,6 @@ contains
             do k = 1, size(x)
                 if (sts(k) /= NTV_OK) cycle
                 result(i, a)%mesh_error = max(result(i, a)%mesh_error, info(k)%eta_rel)
-                result(i, a)%mesh_unknowns = max(result(i, a)%mesh_unknowns, info(k)%n_dof)
                 if (info(k)%settled) cycle
                 result(i, a)%unsettled = result(i, a)%unsettled + 1
                 write (error_unit, '(a,f10.6,a,i0,a,f8.4,a,es10.3,a,i0)') &
