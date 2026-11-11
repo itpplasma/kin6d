@@ -1,7 +1,8 @@
 # Drift-wave turbulence: spectra and transport coefficients
 
-Status: design specification with the fluid part of stage L and the periodic
-spectral grid implemented.
+Status: design specification with the fluid part of stage L and the time
+stepping of stage HW implemented; statistics, output and the nonlinear
+benchmark follow.
 Each further stage becomes active with the pull request that brings its tests.
 
 ## Consumer
@@ -164,6 +165,32 @@ term by term. The bracket is bilinear; under the box average its adjoint in
 these identities to rounding and spectral convergence; a collocated advective
 bracket on untruncated fields violates the quadratic invariant and is
 rejected.
+
+## Stage HW: implementation
+
+`milca_hasegawa_wakatani` advances the coefficients of \(\zeta\) and \(n\).
+One step is the Strang composition of the exact propagator
+\(\exp[(M-\nu)\,\Delta t/2]\) of each mode, the bracket terms over
+\(\Delta t\) with the third-order strong-stability-preserving Runge--Kutta
+scheme, and the propagator again. Coupling, drive and hyperviscosity therefore
+carry no time-step error for a single mode, and the scheme is second order for
+the coupled system. After every step the mirror symmetry
+\(\hat f(-k)=\hat f(k)^*\) of both fields is restored exactly: rounding leaves
+a part of the opposite symmetry, which the linear instability would otherwise
+amplify to order one after about \(37/\gamma_{\max}\). The propagator, the matrix \(M\) and the ledger terms of
+one mode are leaves of `gen/gen_drift_fluid.f90`. `hw_ledger` returns \(E\),
+\(W\), \(\Gamma_n\), \(D_\alpha\), \(D_E\), \(D_W\) and the zonal share of the
+kinetic energy. `hw_rhs`, `hw_rhs_jvp` and `hw_rhs_vjp` give the right-hand
+side with its tangent and adjoint under the box average.
+
+`hasegawa_wakatani_oracles` checks: seeded eigenmodes of both roots against
+the dispersion relation in the hydrodynamic, intermediate and adiabatic regime
+for both models (error below \(10^{-11}\) after 40 steps); conservation of
+\(E\) and \(W\) for \(\alpha=\kappa=D=0\) with third-order convergence of the
+drift; closure of both balances in a driven dissipative nonlinear state with
+second-order convergence; the zonal modes of the modified model; the tangent
+against central differences and the adjoint identity. A run whose propagator
+has the opposite sign of \(\kappa\) is rejected.
 
 ## Admission record
 

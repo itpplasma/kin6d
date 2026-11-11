@@ -22,7 +22,7 @@ module milca_drift_spectral
     private
     public :: drift_grid_t, drift_work_t, drift_grid_init, drift_work_init
     public :: drift_to_spectral, drift_to_physical, drift_bracket
-    public :: drift_poisson_inverse, drift_mean_product
+    public :: drift_poisson_inverse, drift_mean_product, drift_enforce_reality
 
     real(dp), parameter :: pi = 3.141592653589793238462643383279502884_dp
 
@@ -218,6 +218,29 @@ contains
         elsewhere
             phih = 0
         end where
+    end subroutine
+
+    !> Restore fh(-k) = conjg(fh(k)) exactly. Rounding leaves a part of the
+    !> opposite symmetry, the coefficients of an imaginary field; an evolution
+    !> with a linear instability amplifies it without bound unless it is
+    !> removed every step.
+    subroutine drift_enforce_reality(grid, fh)
+        type(drift_grid_t), intent(in) :: grid
+        complex(dp), intent(inout) :: fh(:, :)
+        integer :: i, j, im, jm
+
+        !$omp parallel do private(i, j, im, jm) schedule(static)
+        do j = 1, grid%ny/2 + 1
+            jm = grid%my(j)
+            do i = 1, grid%nx
+                im = grid%mx(i)
+                ! Each pair once; a mode that is its own mirror image is real.
+                if (jm == j .and. im < i) cycle
+                fh(i, j) = (fh(i, j) + conjg(fh(im, jm)))/2
+                fh(im, jm) = conjg(fh(i, j))
+            end do
+        end do
+        !$omp end parallel do
     end subroutine
 
     !> Box average <a b> of two real fields from their coefficients.
