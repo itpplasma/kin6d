@@ -158,6 +158,14 @@ contains
         call hw_ledger(state, at)
         call hw_step(state)
         call hw_ledger(state, after)
+        ! The state is exactly the transform of real fields after any step.
+        associate (g => state%grid)
+            if (any(state%zeta /= conjg(state%zeta(g%mx, g%my))) .or. &
+                any(state%n /= conjg(state%n(g%mx, g%my)))) then
+                write (*, '(a)') 'FAIL mirror symmetry of the coefficients'
+                failures = failures + 1
+            end if
+        end associate
         scale = abs(at%flux) + at%d_alpha + at%d_e
         if (.not. (at%d_alpha > 0.05_dp*scale .and. abs(at%flux) > 0.05_dp*scale &
                    .and. at%d_e > 1e-3_dp*scale)) failures = failures + 1

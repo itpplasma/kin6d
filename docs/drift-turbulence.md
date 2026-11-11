@@ -174,7 +174,10 @@ One step is the Strang composition of the exact propagator
 \(\Delta t\) with the third-order strong-stability-preserving Runge--Kutta
 scheme, and the propagator again. Coupling, drive and hyperviscosity therefore
 carry no time-step error for a single mode, and the scheme is second order for
-the coupled system. The propagator, the matrix \(M\) and the ledger terms of
+the coupled system. After every step the mirror symmetry
+\(\hat f(-k)=\hat f(k)^*\) of both fields is restored exactly: rounding leaves
+a part of the opposite symmetry, which the linear instability would otherwise
+amplify to order one after about \(37/\gamma_{\max}\). The propagator, the matrix \(M\) and the ledger terms of
 one mode are leaves of `gen/gen_drift_fluid.f90`. `hw_ledger` returns \(E\),
 \(W\), \(\Gamma_n\), \(D_\alpha\), \(D_E\), \(D_W\) and the zonal share of the
 kinetic energy. `hw_rhs`, `hw_rhs_jvp` and `hw_rhs_vjp` give the right-hand

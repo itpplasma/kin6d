@@ -6,12 +6,13 @@
 !> propagator over dt/2, the bracket terms over dt with the third-order
 !> strong-stability-preserving Runge-Kutta scheme, and the propagator again.
 !> The linear part (coupling, drive, hyperviscosity) is therefore free of
-!> time-step error for a single mode.
+!> time-step error for a single mode. The state stays the transform of real
+!> fields: its mirror symmetry is restored after every step.
 module milca_hasegawa_wakatani
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_drift_dispersion, only: hw_parameters_t
     use milca_drift_spectral, only: drift_grid_t, drift_work_t, drift_grid_init, &
-        drift_work_init, drift_bracket, drift_poisson_inverse
+        drift_work_init, drift_bracket, drift_poisson_inverse, drift_enforce_reality
     use milca_drift_fluid_leaves, only: drift_hyperviscosity, hw_linear_matrix, &
         hw_propagator, hw_propagator_decoupled, hw_mode_ledger
     implicit none
@@ -105,6 +106,8 @@ contains
             n = (n + 2*(u(:, :, 2) + dt*k(:, :, 2)))/3
         end associate
         call propagate_half(state)
+        call drift_enforce_reality(state%grid, state%zeta)
+        call drift_enforce_reality(state%grid, state%n)
         state%time = state%time + dt
     end subroutine
 
