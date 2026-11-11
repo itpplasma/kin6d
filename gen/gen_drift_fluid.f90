@@ -1,5 +1,5 @@
 program gen_drift_fluid
-    use fortsym_expr, only: expr_t, sym, sqrt, &
+    use fortsym_expr, only: expr_t, sym, num, sqrt, exp, sin, cos, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     use milca_gen_support, only: leaf_writer_t, fortsym_revision
@@ -8,11 +8,15 @@ program gen_drift_fluid
     type(expr_t) :: alpha, kappa, kx, ky, k2, d, order, b, wstar, nu
     type(expr_t) :: s, r, p, gam, om, beta, mu, c, kpar
     type(expr_t) :: px, py, ph, fx, fy, f
+    type(expr_t) :: t, q, grow, decay, ch(2), sh(2), g(2), m(2, 2, 2), e(2, 2, 2)
+    type(expr_t) :: zr, zi, nr, ni, pr, pi, half
+    integer :: a, c2
 
     alpha = sym('alpha'); kappa = sym('kappa'); kx = sym('kx'); ky = sym('ky')
     d = sym('d'); order = sym('order'); b = sym('b'); wstar = sym('wstar')
     nu = sym('nu'); gam = sym('gam'); om = sym('om')
     beta = sym('beta'); mu = sym('mu'); c = sym('c'); kpar = sym('kpar')
+    t = sym('t'); zr = sym('zr'); zi = sym('zi'); nr = sym('nr'); ni = sym('ni')
     px = sym('px'); py = sym('py'); ph = sym('p')
     fx = sym('fx'); fy = sym('fy'); f = sym('f')
     k2 = kx**2 + ky**2
@@ -69,9 +73,64 @@ program gen_drift_fluid
     call w%emit('bracket_split_products', &
         ['px', 'py', 'p ', 'fx', 'fy', 'f '], ['p1', 'p2', 'p3'], &
         [px*fy - py*fx, ph*fy - py*f, px*f - ph*fx], ad=.true.)
+    ! Linear part of Hasegawa-Wakatani for one mode in (zeta, n), phi = -zeta/k^2:
+    ! d/dt (zeta, n) = (M - nu) (zeta, n), M = [[-alpha/k^2, -alpha],
+    ! [(-alpha + i kappa ky)/k^2, -alpha]], trace -b, determinant i b wstar.
+    m(1, 1, :) = [-alpha/k2, num(0)]
+    m(1, 2, :) = [-alpha, num(0)]
+    m(2, 1, :) = [-alpha/k2, kappa*ky/k2]
+    m(2, 2, :) = [-alpha, num(0)]
+    call w%emit('hw_linear_matrix', ['alpha', 'kappa', 'kx   ', 'ky   '], &
+        ['m11 ', 'm12 ', 'm21r', 'm21i', 'm22 '], &
+        [m(1, 1, 1), m(1, 2, 1), m(2, 1, 1), m(2, 1, 2), m(2, 2, 1)], ad=.true.)
+    ! exp[(M - nu) t] = e^{-nu t} e^{-b t/2} [cosh(z) + (2/Delta) sinh(z) (M + b/2)],
+    ! Delta = b (p - i q), q = s/(2 p), z = Delta t/2 = u - i v. The factor
+    ! e^{-b t/2} is combined with e^{+-u} so that no term overflows. Requires b > 0.
+    b = alpha*(1 + k2)/k2
+    s = 4*(ky*kappa/(1 + k2))/b
+    r = sqrt(1 + s**2)
+    p = sqrt((r + 1)/2)
+    q = s/(2*p)
+    half = b*t/2
+    grow = exp(half*(s**2/(2*(r + 1)*(p + 1))) - nu*t)
+    decay = exp(-half*(p + 1) - nu*t)
+    ch = [(grow + decay)/2*cos(half*q), -(grow - decay)/2*sin(half*q)]
+    sh = [(grow - decay)/2*cos(half*q), -(grow + decay)/2*sin(half*q)]
+    g = cmul(sh, [2*p/(b*(p**2 + q**2)), 2*q/(b*(p**2 + q**2))])
+    do a = 1, 2
+        do c2 = 1, 2
+            e(a, c2, :) = cmul(g, m(a, c2, :))
+        end do
+        e(a, a, :) = [e(a, a, 1) + ch(1) + g(1)*b/2, e(a, a, 2) + ch(2) + g(2)*b/2]
+    end do
+    call w%emit('hw_propagator', ['alpha', 'kappa', 'kx   ', 'ky   ', 'nu   ', 't    '], &
+        ['e11r', 'e11i', 'e12r', 'e12i', 'e21r', 'e21i', 'e22r', 'e22i'], &
+        [e(1, 1, 1), e(1, 1, 2), e(1, 2, 1), e(1, 2, 2), &
+         e(2, 1, 1), e(2, 1, 2), e(2, 2, 1), e(2, 2, 2)])
+    ! Without coupling (alpha = 0) M is nilpotent: exp = e^{-nu t} (1 + M t).
+    call w%emit('hw_propagator_decoupled', ['kappa', 'kx   ', 'ky   ', 'nu   ', 't    '], &
+        ['e11 ', 'e21i'], [exp(-nu*t), exp(-nu*t)*kappa*ky*t/k2])
+    ! Contributions of one coefficient pair to the box averages of the ledger
+    ! (docs/drift-turbulence.md): energy, potential enstrophy, flux,
+    ! resistive sink and the two hyperviscous sinks.
+    pr = -zr/k2; pi = -zi/k2
+    call w%emit('hw_mode_ledger', &
+        ['alpha', 'kappa', 'kx   ', 'ky   ', 'nu   ', 'zr   ', 'zi   ', 'nr   ', 'ni   '], &
+        ['energy   ', 'enstrophy', 'flux     ', 'd_alpha  ', 'd_e      ', 'd_w      '], &
+        [(nr**2 + ni**2 + k2*(pr**2 + pi**2))/2, ((nr - zr)**2 + (ni - zi)**2)/2, &
+         kappa*ky*(nr*pi - ni*pr), alpha*((nr - pr)**2 + (ni - pi)**2), &
+         nu*(nr**2 + ni**2 + k2*(pr**2 + pi**2)), nu*((nr - zr)**2 + (ni - zi)**2)], &
+        ad=.true.)
     call w%line('end module milca_drift_fluid_leaves')
     call w%close()
 contains
+    !> Product of two complex numbers given as (real, imaginary).
+    function cmul(x, y) result(z)
+        type(expr_t), intent(in) :: x(2), y(2)
+        type(expr_t) :: z(2)
+        z = [x(1)*y(1) - x(2)*y(2), x(1)*y(2) + x(2)*y(1)]
+    end function
+
     function str_sqrt() result(name)
         use fortsym_string, only: str_t, str
         type(str_t) :: name
