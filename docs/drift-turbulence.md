@@ -1,7 +1,7 @@
 # Drift-wave turbulence: spectra and transport coefficients
 
-Status: design specification. No drift-turbulence code is implemented yet;
-each stage below becomes active with the pull request that brings its tests.
+Status: design specification with the fluid part of stage L implemented.
+Each further stage becomes active with the pull request that brings its tests.
 
 ## Consumer
 
@@ -106,6 +106,41 @@ b=\alpha\frac{1+k^2}{k^2},\qquad \omega_*=\frac{k_y\kappa}{1+k^2},
 
 which is Eq. (8) of Numata et al. for \(p=2\). For \(D=0\) and
 \(\alpha\to\infty\), \(\omega\to\omega_*+i\omega_*^2k^2/[\alpha(1+k^2)]\).
+
+## Stage L: fluid roots
+
+`milca_drift_dispersion` returns, for one wave vector,
+
+- `hw_linear_roots`: both Hasegawa--Wakatani roots in closed form, written so
+  that the growth rate keeps its relative accuracy for \(\alpha\to\infty\),
+  with the eigenvector \(n/\phi=1+k^2\mu/\alpha\); `hw_linear_roots_jvp` is
+  the tangent in \(\alpha,\kappa,D,k_x,k_y\);
+- `drift_alfven_roots`: the three roots of the homogeneous drift-Alfvén
+  dispersion relation of stage DA for cold ions without the sound wave,
+
+  \[
+  \omega^2\left[\hat\beta(\omega-k_y)+\hat\mu k^2\omega+iCk^2\right]
+  =k_\parallel^2\left[(1+k^2)\omega-k_y\right],
+  \]
+
+  in the units of that stage (lengths \(\rho_s\), time \(L_n/c_s\),
+  parallel length \(L_\parallel\),
+  \(\hat\beta=(\beta_e/2)(L_\parallel/L_n)^2\),
+  \(\hat\mu=(m_e/m_i)(L_\parallel/L_n)^2\),
+  \(C=0.51\,(\nu_eL_n/c_s)\hat\mu\)), with the residual of each call;
+  `drift_alfven_root_tangent` applies the implicit rule at a simple root.
+
+For \(\hat\beta,\hat\mu\to0\) the cubic reduces to the Hasegawa--Wakatani
+relation with \(\alpha=k_\parallel^2/C\), \(\kappa=1\); for
+\(k_\parallel\to\infty\) one root tends to the drift wave
+\(k_y/(1+k^2)\); for \(k_y=0\), \(C=0\) the roots are \(0\) and the kinetic
+or inertial Alfvén wave
+\(\pm k_\parallel[(1+k^2)/(\hat\beta+\hat\mu k^2)]^{1/2}\). The formulas are
+the leaves of `gen/gen_drift_fluid.f90`. `drift_dispersion_fluid_roots` checks
+the roots against binary128 eigenvalues of the linearised equations, Eq. (8)
+of Numata et al., these limits and central differences of the tangents; its
+oracle with the density-gradient drive moved to the vorticity equation is
+rejected.
 
 ## Admission record
 

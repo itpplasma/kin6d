@@ -3040,6 +3040,7 @@ include(cmake/milca_mhd_batches.cmake)
 include(cmake/milca_e21.cmake)
 include(cmake/milca_separatrix.cmake)
 include(cmake/milca_current_sheet.cmake)
+include(cmake/milca_drift_turbulence.cmake)
 # Existing PR47 R2 consumer, recovered on current providers; no selector adoption.
 target_sources(milca_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
