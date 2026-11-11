@@ -1,7 +1,7 @@
 # Drift-wave turbulence: spectra and transport coefficients
 
-Status: design specification with the fluid part of stage L, stage HW and
-the output contract implemented; the nonlinear benchmark follows.
+Status: design specification with the fluid part of stage L, stage HW, the
+output contract and the saturated-flux benchmark of stage HW implemented.
 Each further stage becomes active with the pull request that brings its tests.
 
 ## Consumer
@@ -233,7 +233,11 @@ errors and within 5 %, and the standard error of a correlated series within
 and reads the file back: Parseval identity, the flux recovered from the cross
 spectrum, the mean balance and the unit and status attributes. A spectrum
 normalised without the window power and a cross spectrum of the opposite sign
-are rejected.
+are rejected. `hasegawa_wakatani_benchmark_flux` (slow) checks the saturated
+flux at \(\alpha = \kappa = 1\) against the values recorded in
+[benchmarks/drift-turbulence](../benchmarks/drift-turbulence/README.md);
+`hasegawa_wakatani_benchmark_zonal_mutant` requires that the check rejects the
+modified model.
 
 ## Admission record
 
@@ -253,7 +257,9 @@ are rejected.
    averages carry a statistical interval from the autocorrelation time, which
    is never a deterministic enclosure.
 7. Performance: one saturated \(256^2\) run of stage HW to \(10^3\) time
-   units within minutes on one node; measured with the first benchmark.
+   units within minutes on one node. Measured: about 35 minutes on four or
+   twelve threads ([benchmarks/drift-turbulence](../benchmarks/drift-turbulence/README.md)),
+   so the target is not met yet.
 
 ## What the stages cannot represent
 
