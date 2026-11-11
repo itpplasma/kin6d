@@ -334,7 +334,10 @@ certificate; analytic dispersion/growth and discrete free-energy/source/sink
 ledgers are mandatory.
 
 This branch is a technology and teaching demonstrator, not the main research
-spine.
+spine. Its first consumer outside teaching is a resonant-layer response model
+that needs fluctuation spectra, correlation scales and transport coefficients
+at one rational surface; [drift-turbulence.md](docs/drift-turbulence.md)
+states that contract, the stages and the regime in which each model applies.
 
 ## S0 — stability/response consumer (cross-cutting, starts with R1/R3)
 
