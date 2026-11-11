@@ -167,6 +167,17 @@ program hasegawa_wakatani_main
     write (*, '(a,es12.5,a,es9.2)') 'W       = ', enstrophy%value, ' +- ', enstrophy%error
     write (*, '(a,es12.5,a,es9.2)') 'zonal   = ', zonal%value, ' +- ', zonal%error
     write (*, '(a,2es11.3)') 'balance residuals (E, W): ', balance
+    write (*, '(a,es12.5,a,es9.2)') 'D_E     = ', hyper_e%value, ' +- ', hyper_e%error
+    write (*, '(a,es12.5,a,es9.2)') 'tau_eul = ', spectrum%tau_euler%value, ' +- ', &
+        spectrum%tau_euler%error
+    write (*, '(a,es12.5,a,es9.2)') 'tau_mod = ', spectrum%tau_mode%value, ' +- ', &
+        spectrum%tau_mode%error
+    write (*, '(a,es12.5,a,es9.2)') 'ell_x   = ', spectrum%ell_x%value, ' +- ', &
+        spectrum%ell_x%error
+    write (*, '(a,es12.5,a,es9.2)') 'ell_y   = ', spectrum%ell_y%value, ' +- ', &
+        spectrum%ell_y%error
+    write (*, '(a,es12.5,a,es9.2)') 'kubo    = ', spectrum%kubo%value, ' +- ', &
+        spectrum%kubo%error
 contains
     !> Band-limited Gaussian noise of standard deviation `amplitude` per grid
     !> point in zeta and n.
