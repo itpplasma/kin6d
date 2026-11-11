@@ -30,7 +30,7 @@ module milca_boozer_orbit
     implicit none
     private
     public :: orbit_particle_t, orbit_point_t, orbit_state, orbit_point, orbit_frequencies, &
-        orbit_flux_p, orbit_pitch_point, orbit_set_potential, orbit_potential
+        orbit_flux_p, orbit_pitch_point, orbit_set_potential, orbit_potential, orbit_dwell
     integer, parameter, public :: ORBIT_OK = 0, ORBIT_BAD_INPUT = 1, ORBIT_NO_ROOT = 2
 
     real(dp), parameter :: pi = 4*atan(1.0_dp)
@@ -447,7 +447,7 @@ contains
         type(orbit_point_t) :: pt
         integer :: k, leg
         call gauss_legendre(n_quad, x, w)
-        call turning_points(t1, t2, trapped, status)
+        call turning_points(bf, p, s_star, t1, t2, trapped, status)
         if (status /= ORBIT_OK) return
         tau = 0
         dzeta = 0
@@ -476,79 +476,223 @@ contains
         omega_b = 2*pi/tau
         omega_zeta = dzeta/tau
         status = ORBIT_OK
-    contains
-        !> Roots of mu B(s*, theta) = H - Z e Phi(s*) around the minimum of B
-        !> bracketed on a 512-point scan and refined by Newton on mu dB/dtheta;
-        !> none means passing.
-        subroutine turning_points(a, b, trap, st)
-            real(dp), intent(out) :: a, b
-            logical, intent(out) :: trap
-            integer, intent(out) :: st
-            integer, parameter :: m = 512
-            real(dp) :: th(0:m), f(0:m)
-            integer :: j, jmin
-            do j = 0, m
-                th(j) = 2*pi*j/m
-                f(j) = level(th(j), st)
-                if (st /= ORBIT_OK) return
-            end do
-            trap = any(f > 0)
-            a = 0
-            b = 0
-            if (.not. trap) return
-            jmin = minloc(f, 1) - 1
-            ! Walk from the minimum of B to both sides until the level is crossed.
-            a = root(th(jmin), th(jmin) - 2*pi, st)
-            if (st /= ORBIT_OK) return
-            b = root(th(jmin), th(jmin) + 2*pi, st)
-            if (a > b) a = a - 2*pi
-        end subroutine turning_points
-
-        real(dp) function level(th, st, level_t)
-            real(dp), intent(in) :: th
-            integer, intent(out) :: st
-            real(dp), intent(out), optional :: level_t
-            real(dp) :: bb, b_s, g, i, g_s, i_s, iota, psi_prime, phi, phi_s, b_t
-            call orbit_state(bf, s_star, th, bb, b_s, g, i, g_s, i_s, iota, psi_prime, st, &
-                b_t=b_t)
-            call orbit_potential(bf, p, s_star, phi, phi_s)
-            level = p%mu*bb + p%charge*phi - p%energy
-            if (present(level_t)) level_t = p%mu*b_t
-        end function level
-
-        !> First crossing of level = 0 going from inside (level < 0) at th_in
-        !> towards th_out.
-        real(dp) function root(th_in, th_out, st)
-            real(dp), intent(in) :: th_in, th_out
-            integer, intent(out) :: st
-            real(dp) :: lo, hi, mid, step, f, f_t
-            integer :: j
-            lo = th_in
-            step = (th_out - th_in)/512
-            hi = lo
-            do j = 1, 512
-                hi = th_in + j*step
-                if (level(hi, st) > 0) exit
-                lo = hi
-            end do
-            ! Newton on level' = mu dB/dtheta inside the bracket [lo, hi].
-            mid = 0.5_dp*(lo + hi)
-            do j = 1, 100
-                f = level(mid, st, f_t)
-                if (f == 0) exit
-                if (f > 0) then
-                    hi = mid
-                else
-                    lo = mid
-                end if
-                step = f/f_t
-                if (f_t == 0 .or. (mid - step - lo)*(mid - step - hi) > 0) &
-                    step = mid - 0.5_dp*(lo + hi)
-                mid = mid - step
-                if (abs(step) <= 4*epsilon(1.0_dp)*max(1.0_dp, abs(mid))) exit
-            end do
-            root = mid
-        end function root
     end subroutine orbit_frequencies
+
+    !> Time [s] that the orbit of p (energy, magnetic moment) on s_star spends
+    !> in each radial box edges(k) <= s < edges(k+1) during one poloidal
+    !> period: a transit of the leg sigma for a passing orbit, both legs
+    !> between the turning points for a trapped one (sigma unused). Time
+    !> outside the edges is not counted. Gauss-Legendre with n_quad nodes per
+    !> theta panel and dt = dtheta/|theta_dot|; panels holds the increasing
+    !> breakpoints, spanning 2 pi for a passing orbit and repeated with period
+    !> 2 pi between the turning points of a trapped one, where the two end
+    !> panels use theta = t + Delta u^2, which removes the inverse square root
+    !> of thin orbits. The time of a node is spread uniformly over the s
+    !> interval that reaches halfway to its neighbours on the same leg (to s*
+    !> at a turning point) and divided among the boxes by overlap, so that the
+    !> box times are continuous in the orbit and second order in the nodes.
+    subroutine orbit_dwell(bf, p, s_star, sigma, panels, n_quad, edges, time, trapped, status)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, sigma, panels(:), edges(:)
+        integer, intent(in) :: n_quad
+        real(dp), intent(out) :: time(:)
+        logical, intent(out) :: trapped
+        integer, intent(out) :: status
+        real(dp) :: x(max(n_quad, 1)), w(max(n_quad, 1)), t1, t2, c
+        real(dp), allocatable :: cut(:)
+        integer :: n, m, j, k
+        time = 0
+        trapped = .false.
+        status = ORBIT_BAD_INPUT
+        n = size(panels)
+        if (n_quad < 1 .or. n < 2 .or. size(edges) < 2 .or. size(time) /= size(edges) - 1) return
+        if (any(panels(2:) <= panels(:n - 1)) .or. any(edges(2:) <= edges(:size(edges) - 1))) return
+        call gauss_legendre(n_quad, x, w)
+        call turning_points(bf, p, s_star, t1, t2, trapped, status)
+        if (status /= ORBIT_OK) return
+        if (.not. trapped) then
+            status = ORBIT_BAD_INPUT
+            if (abs(panels(n) - panels(1) - 2*pi) > 1e-9_dp) return
+            call leg(panels, sigma)
+            return
+        end if
+        ! Breakpoints strictly between the turning points, panels repeated.
+        allocate (cut(0))
+        do k = floor((t1 - panels(n))/(2*pi)), ceiling((t2 - panels(1))/(2*pi))
+            do j = 1, n
+                c = panels(j) + 2*pi*k
+                if (c <= t1 .or. c >= t2) cycle
+                if (size(cut) > 0) then
+                    if (c <= cut(size(cut))) cycle
+                end if
+                cut = [cut, c]
+            end do
+        end do
+        ! An end panel much shorter than its neighbour would leave that one
+        ! with the square root just outside it; the two are merged.
+        do
+            m = size(cut)
+            if (m == 0) exit
+            if (cut(1) - t1 >= 0.5_dp*(merge(cut(min(2, m)), t2, m > 1) - cut(1))) exit
+            cut = cut(2:)
+        end do
+        do
+            m = size(cut)
+            if (m == 0) exit
+            if (t2 - cut(m) >= 0.5_dp*(cut(m) - merge(cut(max(m - 1, 1)), t1, m > 1))) exit
+            cut = cut(:m - 1)
+        end do
+        ! Each turning point needs an end panel of its own.
+        if (size(cut) == 0) cut = [0.5_dp*(t1 + t2)]
+        cut = [t1, cut, t2]
+        call leg(cut, 1.0_dp)
+        if (status /= ORBIT_OK) return
+        call leg(cut, -1.0_dp)
+    contains
+        !> Adds the box times of one leg over the panels brk to time.
+        subroutine leg(brk, sg)
+            real(dp), intent(in) :: brk(:), sg
+            real(dp) :: s((size(brk) - 1)*n_quad), dt((size(brk) - 1)*n_quad), width, u, &
+                theta, jac, before, after
+            type(orbit_point_t) :: pt
+            integer :: np, nn, jp, kq, q
+            np = size(brk) - 1
+            nn = np*n_quad
+            do jp = 1, np
+                width = brk(jp + 1) - brk(jp)
+                do kq = 1, n_quad
+                    if (trapped .and. jp == 1) then
+                        u = 0.5_dp*(1 + x(kq))
+                        theta = brk(1) + width*u**2
+                        jac = width*u
+                    else if (trapped .and. jp == np) then
+                        u = 0.5_dp*(1 - x(kq))
+                        theta = brk(np + 1) - width*u**2
+                        jac = width*u
+                    else
+                        theta = brk(jp) + 0.5_dp*width*(1 + x(kq))
+                        jac = 0.5_dp*width
+                    end if
+                    call orbit_point(bf, p, s_star, theta, sg, pt, status)
+                    if (status /= ORBIT_OK) then
+                        time = 0
+                        return
+                    end if
+                    q = (jp - 1)*n_quad + kq
+                    s(q) = pt%s
+                    dt(q) = w(kq)*jac/abs(pt%theta_dot)
+                end do
+            end do
+            do q = 1, nn
+                ! A passing orbit closes on itself; a trapped leg ends on s*.
+                if (trapped) then
+                    before = s_star
+                    after = s_star
+                else
+                    before = 0.5_dp*(s(q) + s(nn))
+                    after = 0.5_dp*(s(q) + s(1))
+                end if
+                if (q > 1) before = 0.5_dp*(s(q) + s(q - 1))
+                if (q < nn) after = 0.5_dp*(s(q) + s(q + 1))
+                call spread(dt(q), min(before, after, s(q)), max(before, after, s(q)))
+            end do
+        end subroutine leg
+
+        !> Adds dt, uniform over [lo, hi] in s, to the boxes.
+        subroutine spread(dt, lo, hi)
+            real(dp), intent(in) :: dt, lo, hi
+            integer :: kb
+            do kb = 1, size(time)
+                if (hi > lo) then
+                    time(kb) = time(kb) + dt*max(0.0_dp, min(hi, edges(kb + 1)) &
+                        - max(lo, edges(kb)))/(hi - lo)
+                else if (lo >= edges(kb) .and. lo < edges(kb + 1)) then
+                    time(kb) = time(kb) + dt
+                end if
+            end do
+        end subroutine spread
+    end subroutine orbit_dwell
+
+    !> Roots of mu B(s*, theta) = H - Z e Phi(s*) around the minimum of B
+    !> bracketed on a 512-point scan and refined by Newton on mu dB/dtheta;
+    !> none means passing.
+    subroutine turning_points(bf, p, s_star, a, b, trap, st)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star
+        real(dp), intent(out) :: a, b
+        logical, intent(out) :: trap
+        integer, intent(out) :: st
+        integer, parameter :: m = 512
+        real(dp) :: th(0:m), f(0:m)
+        integer :: j, jmin
+        do j = 0, m
+            th(j) = 2*pi*j/m
+            f(j) = level(bf, p, s_star, th(j), st)
+            if (st /= ORBIT_OK) return
+        end do
+        trap = any(f > 0)
+        a = 0
+        b = 0
+        if (.not. trap) return
+        jmin = minloc(f, 1) - 1
+        ! Walk from the minimum of B to both sides until the level is crossed.
+        a = root(bf, p, s_star, th(jmin), th(jmin) - 2*pi, st)
+        if (st /= ORBIT_OK) return
+        b = root(bf, p, s_star, th(jmin), th(jmin) + 2*pi, st)
+        if (a > b) a = a - 2*pi
+    end subroutine turning_points
+
+    !> mu B(s*, th) + Z e Phi(s*) - H [J], negative where the orbit passes.
+    real(dp) function level(bf, p, s_star, th, st, level_t)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, th
+        integer, intent(out) :: st
+        real(dp), intent(out), optional :: level_t
+        real(dp) :: bb, b_s, g, i, g_s, i_s, iota, psi_prime, phi, phi_s, b_t
+        call orbit_state(bf, s_star, th, bb, b_s, g, i, g_s, i_s, iota, psi_prime, st, &
+            b_t=b_t)
+        call orbit_potential(bf, p, s_star, phi, phi_s)
+        level = p%mu*bb + p%charge*phi - p%energy
+        if (present(level_t)) level_t = p%mu*b_t
+    end function level
+
+    !> First crossing of level = 0 going from inside (level < 0) at th_in
+    !> towards th_out.
+    real(dp) function root(bf, p, s_star, th_in, th_out, st)
+        type(boozer_file_t), intent(in) :: bf
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: s_star, th_in, th_out
+        integer, intent(out) :: st
+        real(dp) :: lo, hi, mid, step, f, f_t
+        integer :: j
+        lo = th_in
+        step = (th_out - th_in)/512
+        hi = lo
+        do j = 1, 512
+            hi = th_in + j*step
+            if (level(bf, p, s_star, hi, st) > 0) exit
+            lo = hi
+        end do
+        ! Newton on level' = mu dB/dtheta inside the bracket [lo, hi].
+        mid = 0.5_dp*(lo + hi)
+        do j = 1, 100
+            f = level(bf, p, s_star, mid, st, f_t)
+            if (f == 0) exit
+            if (f > 0) then
+                hi = mid
+            else
+                lo = mid
+            end if
+            step = f/f_t
+            if (f_t == 0 .or. (mid - step - lo)*(mid - step - hi) > 0) &
+                step = mid - 0.5_dp*(lo + hi)
+            mid = mid - step
+            if (abs(step) <= 4*epsilon(1.0_dp)*max(1.0_dp, abs(mid))) exit
+        end do
+        root = mid
+    end function root
 
 end module milca_boozer_orbit

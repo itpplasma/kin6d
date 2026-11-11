@@ -22,13 +22,20 @@
 !!   pitch_map       the pitch map returns the magnetic moment of the orbit at
 !!                   every point of it (mu is the stream function of the
 !!                   orbits at fixed s* and H), and mu B(s*, theta)/E tends to
-!!                   1 - xi^2 for thin orbits.
+!!                   1 - xi^2 for thin orbits;
+!!   dwell_times     the times per radial box of a co-passing, counter-passing,
+!!                   deeply and barely trapped orbit add up to the period of
+!!                   orbit_frequencies (one global quadrature against panels),
+!!                   lie on the side of s* where the parallel velocity puts
+!!                   each leg, and their error falls by more than 3 per
+!!                   doubling of the nodes (second order).
 program test_boozer_orbit
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_boozer_file, only: boozer_file_t, load_boozer_file, boozer_surface_t, &
         boozer_surface, BOOZER_OK
     use milca_boozer_orbit, only: orbit_particle_t, orbit_point_t, orbit_point, &
-        orbit_frequencies, orbit_state, orbit_pitch_point, orbit_set_potential, ORBIT_OK
+        orbit_frequencies, orbit_state, orbit_pitch_point, orbit_set_potential, orbit_dwell, &
+        ORBIT_OK
     use fortnum_quadrature, only: gauss_legendre
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp), e = 1.602176634e-19_dp
@@ -52,6 +59,7 @@ program test_boozer_orbit
     case ('shear'); ok = shear()
     case ('potential'); ok = potential()
     case ('pitch_bracket'); ok = pitch_bracket()
+    case ('dwell_times'); ok = dwell_times()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -322,6 +330,104 @@ contains
             ok = ok .and. (abs(s_last - 0.95_dp) < 0.02_dp .or. abs(s_last - 0.05_dp) < 0.02_dp)
         end do
     end function pitch_bracket
+
+    logical function dwell_times() result(ok)
+        character(16), parameter :: names(4) = [character(16) :: 'co-passing', &
+            'counter-passing', 'deeply trapped', 'barely trapped']
+        type(orbit_particle_t) :: p
+        type(orbit_point_t) :: pt
+        real(dp) :: panels(25), time(2), box(3), frac(3, 3), b0, bx, b_s, g, i, g_s, i_s, &
+            iota, psi_prime, lam(4), sg, ob, oz, s_a, s_b, want(2), coarse, fine
+        logical :: trapped
+        integer :: c, k, st, side
+        ! Eight panels over [-pi, pi], halved eight times towards the maximum
+        ! of B at +-pi, where orbits near the separatrix slow down.
+        panels(1) = -pi
+        panels(25) = pi
+        panels(10:16) = [(-pi + 0.25_dp*pi*k, k=1, 7)]
+        do k = 1, 8
+            panels(10 - k) = -pi + 0.25_dp*pi*0.5_dp**k
+            panels(16 + k) = pi - 0.25_dp*pi*0.5_dp**k
+        end do
+        call orbit_state(bf, s_star, 0.0_dp, b0, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+        call orbit_state(bf, s_star, pi, bx, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+        ! Trapped above lambda = B_min/B_max.
+        lam = [0.5_dp, 0.5_dp, 0.99_dp, (1 + 1e-3_dp)*b0/bx]
+        ok = .true.
+        do c = 1, 4
+            print '(a)', trim(names(c))
+            p = particle(1.0_dp, lam(c), 0.0_dp)
+            sg = merge(-1.0_dp, 1.0_dp, c == 2)
+            ! rho G = psi_p(s) - psi_p(s*): the leg sg lies outside s* for
+            ! sg iota psi' G > 0.
+            side = merge(2, 1, sg*iota*psi_prime*g > 0)
+            call orbit_frequencies(bf, p, s_star, sg, 512, ob, oz, trapped, st)
+            ok = ok .and. st == ORBIT_OK .and. (trapped .eqv. c > 2)
+            call orbit_dwell(bf, p, s_star, sg, panels, 32, [0.05_dp, s_star, 0.95_dp], time, &
+                trapped, st)
+            ok = ok .and. st == ORBIT_OK .and. (trapped .eqv. c > 2)
+            ok = close('period', sum(time), 2*pi/ob, 1e-8_dp) .and. ok
+            if (trapped) then
+                want(side) = leg_time(p, sg)
+                want(3 - side) = leg_time(p, -sg)
+                ok = close('inner leg', time(1), want(1), 1e-8_dp) .and. ok
+                ok = close('outer leg', time(2), want(2), 1e-8_dp) .and. ok
+                call orbit_point(bf, p, s_star, 0.0_dp, -1.0_dp, pt, st)
+                s_a = pt%s
+                call orbit_point(bf, p, s_star, 0.0_dp, 1.0_dp, pt, st)
+                s_b = pt%s
+            else
+                print '(a,2es12.4,a,i2)', 'time inside and outside s*', time, ' expected side', side
+                ok = ok .and. time(3 - side) == 0 .and. time(side) > 0
+                call orbit_point(bf, p, s_star, 0.0_dp, sg, pt, st)
+                s_a = pt%s
+                call orbit_point(bf, p, s_star, pi, sg, pt, st)
+                s_b = pt%s
+            end if
+            ! Boxes cutting the radial extent of the orbit into thirds, with 8,
+            ! 64 and 256 nodes per panel: a first-order rule gains 8, not 64.
+            do k = 1, 3
+                call orbit_dwell(bf, p, s_star, sg, panels, 2**merge(8, 3*k, k == 3), [0.05_dp, &
+                    min(s_a, s_b) + abs(s_b - s_a)/3, max(s_a, s_b) - abs(s_b - s_a)/3, &
+                    0.95_dp], box, trapped, st)
+                ok = ok .and. st == ORBIT_OK
+                frac(:, k) = box/sum(box)
+            end do
+            coarse = maxval(abs(frac(:, 1) - frac(:, 3)))
+            fine = maxval(abs(frac(:, 2) - frac(:, 3)))
+            print '(a,3f10.6,a,2es10.2)', 'box fractions', frac(:, 3), ' errors', coarse, fine
+            ok = ok .and. minval(frac(:, 3)) > 0.05_dp .and. fine < coarse/27
+        end do
+    end function dwell_times
+
+    !> Time of one leg of a trapped orbit between its turning points +-Theta
+    !> (B even in theta) by theta = Theta sin(u), independent of the panels.
+    real(dp) function leg_time(p, sg) result(tau)
+        type(orbit_particle_t), intent(in) :: p
+        real(dp), intent(in) :: sg
+        real(dp) :: x(512), w(512), b, b_s, g, i, g_s, i_s, iota, psi_prime, tmax, lo, hi, u
+        type(orbit_point_t) :: pt
+        integer :: k, st
+        call gauss_legendre(512, x, w)
+        lo = 0
+        hi = pi
+        do k = 1, 200
+            tmax = 0.5_dp*(lo + hi)
+            call orbit_state(bf, s_star, tmax, b, b_s, g, i, g_s, i_s, iota, psi_prime, st)
+            if (p%mu*b > p%energy) then
+                hi = tmax
+            else
+                lo = tmax
+            end if
+        end do
+        tau = 0
+        do k = 1, 512
+            u = 0.5_dp*pi*x(k)
+            call orbit_point(bf, p, s_star, lo*sin(u), sg, pt, st)
+            if (st /= ORBIT_OK) error stop 'leg_time: no orbit point'
+            tau = tau + w(k)*lo*cos(u)*0.5_dp*pi/abs(pt%theta_dot)
+        end do
+    end function leg_time
 
     subroutine write_file(name)
         character(*), intent(in) :: name
