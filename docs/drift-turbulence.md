@@ -191,6 +191,79 @@ second-order convergence; the zonal modes of the modified model; the tangent
 against central differences and the adjoint identity. A run whose propagator
 has the opposite sign of \(\kappa\) is rejected.
 
+## Stage DA: equations and ledger
+
+Units of stage L: lengths \(\rho_s\), time \(L_n/c_s\), fluctuations
+\(\phi=e\varphi/T_e\) and \(n=n_1/n_0\) times \(L_n/\rho_s\), parallel
+lengths \(L_\parallel\). Isothermal electrons with inertia and \(A_\parallel\),
+cold ions without parallel motion (no sound wave) as in stage L, so the
+warm gyrofluid ions of the table are not yet included, and the parameters
+\(\hat\beta\), \(\hat\mu\), \(C\) of stage L. With \(\zeta=\nabla_\perp^2\phi\),
+\(J=-\nabla_\perp^2A\), \(\nabla_\parallel f=\partial_zf-\hat\beta\{A,f\}\) and
+the drive \(\kappa\) (one for the gradient that sets \(L_n\)),
+
+\[
+\begin{aligned}
+\partial_t\zeta+\{\phi,\zeta\}&=\nabla_\parallel J,\\
+\partial_tn+\{\phi,n\}+\kappa\,\partial_y\phi&=\nabla_\parallel J,\\
+\hat\beta\,\partial_tA+\hat\mu\,(\partial_t J+\{\phi,J\})
+&=\nabla_\parallel(n-\phi)-\hat\beta\kappa\,\partial_yA-CJ .
+\end{aligned}
+\]
+
+The term \(-\hat\beta\kappa\,\partial_yA=-\hat\beta\{A,n_0\}\) is the
+background density gradient along the perturbed field line. For
+\(\nabla_\parallel\to ik_\parallel\) these equations give the cubic of
+stage L. The energy
+
+\[
+E=\tfrac12\langle n^2+|\nabla\phi|^2+\hat\beta|\nabla A|^2+\hat\mu J^2\rangle,
+\qquad \dot E=\Gamma_n-C\langle J^2\rangle,\qquad
+\Gamma_n=-\kappa\langle n\,\partial_y\phi\rangle,
+\]
+
+follows because \(\nabla_\parallel\) is antisymmetric under the average,
+\(\langle\phi\{\phi,\zeta\}\rangle=\langle n\{\phi,n\}\rangle=\langle J\{\phi,J\}\rangle=0\)
+and \(\langle J\,\partial_yA\rangle=0\). The potential enstrophy
+\(W=\tfrac12\langle(n-\zeta)^2\rangle\) obeys \(\dot W=\Gamma_n\), since
+\(\nabla_\parallel J\) cancels in \(n-\zeta\). Damping adds the sinks
+\(D_E\) and \(D_W\).
+
+**Homogeneous two-dimensional step.** One parallel wave number and no
+magnetic shear: \(\phi,n\propto\cos k_\parallel z\) and
+\(A,J\propto\sin k_\parallel z\), with the products truncated to that
+harmonic as in stage HW. Then \(\nabla_\parallel J\to k_\parallel J\),
+\(\nabla_\parallel(n-\phi)\to-k_\parallel(n-\phi)\), the magnetic
+nonlinearity \(\hat\beta\{A,\cdot\}\) drops out (it couples to
+\(2k_\parallel\)), and on the doubly periodic box
+
+\[
+\begin{aligned}
+\partial_t\zeta+\{\phi,\zeta\}&=k_\parallel J-\nu\zeta,\\
+\partial_tn+\{\phi,n\}&=k_\parallel J-\kappa\,\partial_y\phi-\nu n,\\
+\partial_t\psi+\hat\mu\{\phi,J\}&=-k_\parallel(n-\phi)-\hat\beta\kappa\,\partial_yA-CJ-\nu\psi,
+\end{aligned}
+\qquad \psi=\hat\beta A+\hat\mu J,
+\]
+
+with \(\nu=D(-\nabla^2)^p\) on every field. The ledger of stage HW carries
+over with \(D_\alpha\) replaced by \(D_C=C\langle J^2\rangle\):
+\(\dot E=\Gamma_n-D_C-D_E\), \(\dot W=\Gamma_n-D_W\). Linear modes obey the
+cubic of stage L exactly. For \(\hat\beta,\hat\mu\to0\) at fixed \(C\),
+\(J\to-k_\parallel(n-\phi)/C\) and the system becomes the original
+Hasegawa--Wakatani model with \(\alpha=k_\parallel^2/C\), nonlinearly and
+not only for the roots. This step tests the electromagnetic and inertial
+parallel response and the time integrator; it does not contain magnetic
+shear, flutter or a radial structure of \(k_\parallel\).
+
+**Sheared slab (next steps).** Step 2a is single-helicity: \(x\) bounded,
+\(y\) periodic, \(\nabla_\parallel=(x/L_s)\,\partial_y-\hat\beta\{A,\cdot\}\)
+on real fields, which keeps the flutter nonlinearity, is the geometry of the
+layer-response problem and admits an imposed small-\(k_y\) boundary
+perturbation of \(A\). Step 2b is a three-dimensional local slab with
+shear-periodic boundaries. Both reuse the equations and the ledger above and
+need a non-periodic radial discretisation with its own conservation proof.
+
 ## Output contract
 
 `milca_turbulence_statistics` turns equally spaced samples of the coefficients
@@ -242,8 +315,8 @@ modified model.
 ## Admission record
 
 1. Use case: the consumer above; teaching use as the R3 gallery entry.
-2. Model and ledger: the equations and balances above for stage HW; stages DA
-   and K add theirs with their derivation before code.
+2. Model and ledger: the equations and balances above for stages HW and DA;
+   stage K adds its own with its derivation before code.
 3. Structural oracles: bracket identities, the two balances, the exact linear
    propagator of each Fourier mode.
 4. Literature oracles: the dispersion relation above; saturated particle flux
@@ -267,6 +340,8 @@ modified model.
   shear, Alfvén dynamics, magnetic flutter; ion temperature and finite Larmor
   radius; temperature gradients; curvature; trapped particles.
 - DA: trapped-electron modes, toroidal drift resonances, curvature drive,
-  electron-temperature-gradient turbulence, microtearing, shaping.
+  electron-temperature-gradient turbulence, microtearing, shaping. The
+  homogeneous step in addition has no magnetic shear, no magnetic flutter
+  and one parallel wave number, and its ions are cold.
 - L and K: saturation amplitudes (one declared constant per rule), zonal
   flows, radially non-local effects.
