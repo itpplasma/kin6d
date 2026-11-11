@@ -44,7 +44,7 @@ Resolution and dissipation at \(\alpha = 1\):
 | \(256^2\), \(\Delta t = 0.005\) | 0.590 ± 0.006 |
 | \(512^2\), \(\Delta t = 0.005\) | 0.616 ± 0.008 |
 | \(256^2\), \(d = 10^{-6}\) | 0.659 ± 0.005 |
-| \(128^2\), \(d = 10^{-5}\) (the CTest case) | 0.665 ± 0.009 |
+| \(128^2\), \(d = 10^{-5}\) (the CTest case) | 0.668 ± 0.002 (twelve seeds) |
 | \(128^2\), \(d = 5\times10^{-8}\) | 0.140 ± 0.0002 |
 | \(256^2\), \(d = 5\times10^{-9}\) | 0.303 ± 0.005 |
 | \(256^2\), \(p = 2\), \(d = 10^{-4}\) (Numata et al.) | 0.700 ± 0.008 |
@@ -65,15 +65,27 @@ kinetic energy in the zonal flow, against 4 % in the original model.
 
 ## Acceptance tests
 
-`hasegawa_wakatani_benchmark_flux` (label `slow`, about 10 minutes on one
+`hasegawa_wakatani_benchmark_flux` (label `slow`, about 11 minutes on one
 core) runs the \(128^2\) case with \(d = 10^{-5}\) to \(t = 1000\) and
-requires the flux within 0.10 of 0.584, a standard error below 5 % of the
+requires the flux within 0.04 of 0.668, a standard error below 5 % of the
 flux, the mean energy balance within 1 % of the flux, the flux balanced by
 the resistive sink within 10 % and the hyperviscous sink below 10 % of the
 flux, as Numata et al. state for the saturated state, and a zonal share of
-the kinetic energy below 0.2. `hasegawa_wakatani_benchmark_zonal_mutant` runs
-the same case with the modified model and requires that the check rejects
-it.
+the kinetic energy below 0.2.
+
+The reference is the mean of this case over the seeds 1 to 12 (0.659 to
+0.685, standard deviation 0.008, standard error 0.002). The test runs seed 1;
+another seed, thread count or compiler changes the chaotic trajectory, and
+the band of five seed standard deviations covers that. It lies below a 10 %
+error of the flux (0.067). The flux at this resolution and damping is 14 %
+above the \(256^2\), \(d = 5\times10^{-8}\) value of the table above; the
+test checks this case, not the converged flux.
+
+Two variants have to be rejected. `hasegawa_wakatani_benchmark_zonal_mutant`
+runs the modified model (flux 0.021). `hasegawa_wakatani_benchmark_coupling_mutant`
+runs \(\alpha = 1.2\), a 20 % error in the parallel coupling, which gives
+0.588 to 0.599 over three seeds: only the flux band rejects it, and the
+earlier band (0.584 ± 0.10) accepted it.
 
 ## Cost
 

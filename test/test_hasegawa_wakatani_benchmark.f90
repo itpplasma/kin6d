@@ -1,13 +1,13 @@
 !> Checks output/hasegawa_wakatani.nc of the saturated benchmark case
 !> alpha = kappa = 1 on the box 2 pi/0.15 at 128^2 against the band recorded
-!> in benchmarks/drift-turbulence/README.md.
+!> in benchmarks/drift-turbulence/README.md for this resolution and damping.
 program test_hasegawa_wakatani_benchmark
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortio, only: fortio_file_t, fortio_status_t
     implicit none
-    !> Flux of the 256^2 and 512^2 runs and the half-width that covers the
-    !> spread between resolutions, seeds and dissipation settings.
-    real(dp), parameter :: flux_reference = 0.584_dp, flux_band = 0.10_dp
+    !> Mean flux of twelve seeds of this case (standard deviation 0.008) and a
+    !> half-width of five seed standard deviations, below a 10 % error (0.067).
+    real(dp), parameter :: flux_reference = 0.668_dp, flux_band = 0.04_dp
     type(fortio_file_t) :: file
     type(fortio_status_t) :: status
     real(dp) :: flux, flux_error, sink, hyper, zonal, residual
