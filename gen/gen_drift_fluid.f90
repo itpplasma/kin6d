@@ -9,7 +9,7 @@ program gen_drift_fluid
     type(expr_t) :: s, r, p, gam, om, beta, mu, c, kpar
     type(expr_t) :: px, py, ph, fx, fy, f
     type(expr_t) :: t, q, grow, decay, ch(2), sh(2), g(2), m(2, 2, 2), e(2, 2, 2)
-    type(expr_t) :: zr, zi, nr, ni, pr, pi, half
+    type(expr_t) :: zr, zi, nr, ni, pr, pi, half, sr, si, ind, jr, ji
     integer :: a, c2
 
     alpha = sym('alpha'); kappa = sym('kappa'); kx = sym('kx'); ky = sym('ky')
@@ -17,6 +17,7 @@ program gen_drift_fluid
     nu = sym('nu'); gam = sym('gam'); om = sym('om')
     beta = sym('beta'); mu = sym('mu'); c = sym('c'); kpar = sym('kpar')
     t = sym('t'); zr = sym('zr'); zi = sym('zi'); nr = sym('nr'); ni = sym('ni')
+    sr = sym('sr'); si = sym('si')
     px = sym('px'); py = sym('py'); ph = sym('p')
     fx = sym('fx'); fy = sym('fy'); f = sym('f')
     k2 = kx**2 + ky**2
@@ -121,6 +122,35 @@ program gen_drift_fluid
          kappa*ky*(nr*pi - ni*pr), alpha*((nr - pr)**2 + (ni - pi)**2), &
          nu*(nr**2 + ni**2 + k2*(pr**2 + pi**2)), nu*((nr - zr)**2 + (ni - zi)**2)], &
         ad=.true.)
+    ! Two-dimensional drift-Alfven model of stage DA with one parallel wave
+    ! number (docs/drift-turbulence.md), lengths rho_s, time L_n/c_s. Per mode
+    ! the state is (zeta, n, psi), phi = -zeta/k^2, psi = beta a + mu j =
+    ! ind j with the inductance ind = beta/k^2 + mu.
+    ind = beta/k2 + mu
+    call w%emit('da_inductance', ['beta', 'mu  ', 'kx  ', 'ky  '], ['ind'], [ind], &
+                ad=.true.)
+    ! d/dt (zeta, n, psi) = (L - nu) (zeta, n, psi) with the nonzero entries
+    ! L13 = L23 = kpar/ind, L21 = i kappa ky/k^2, L31 = -kpar/k^2, L32 = -kpar,
+    ! L33 = -(c + i beta kappa ky/k^2)/ind.
+    call w%emit('da_linear_matrix', &
+        ['beta ', 'mu   ', 'c    ', 'kpar ', 'kappa', 'kx   ', 'ky   '], &
+        ['l13 ', 'l21i', 'l31 ', 'l32 ', 'l33r', 'l33i'], &
+        [kpar/ind, kappa*ky/k2, -kpar/k2, -kpar, -c/ind, -beta*kappa*ky/(k2*ind)], &
+        ad=.true.)
+    ! Contributions of one coefficient triple to the box averages: energy
+    ! (n^2 + |grad phi|^2 + beta |grad a|^2 + mu j^2)/2, potential enstrophy,
+    ! flux, resistive sink c j^2 and the two hyperviscous sinks.
+    pr = -zr/k2; pi = -zi/k2
+    jr = sr/ind; ji = si/ind
+    call w%emit('da_mode_ledger', &
+        ['beta ', 'mu   ', 'c    ', 'kappa', 'kx   ', 'ky   ', 'nu   ', 'zr   ', &
+         'zi   ', 'nr   ', 'ni   ', 'sr   ', 'si   '], &
+        ['energy   ', 'enstrophy', 'flux     ', 'd_c      ', 'd_e      ', 'd_w      '], &
+        [(nr**2 + ni**2 + k2*(pr**2 + pi**2) + (sr**2 + si**2)/ind)/2, &
+         ((nr - zr)**2 + (ni - zi)**2)/2, kappa*ky*(nr*pi - ni*pr), &
+         c*(jr**2 + ji**2), &
+         nu*(nr**2 + ni**2 + k2*(pr**2 + pi**2) + (sr**2 + si**2)/ind), &
+         nu*((nr - zr)**2 + (ni - zi)**2)], ad=.true.)
     call w%line('end module milca_drift_fluid_leaves')
     call w%close()
 contains

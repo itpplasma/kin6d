@@ -1,7 +1,8 @@
 # Drift-wave turbulence branch (docs/drift-turbulence.md).
 target_sources(milca_continuum PRIVATE src/generated/milca_drift_fluid_leaves.f90
     src/continuum/drift_dispersion.f90 src/continuum/drift_spectral.f90
-    src/continuum/hasegawa_wakatani.f90 src/continuum/turbulence_statistics.f90)
+    src/continuum/hasegawa_wakatani.f90 src/continuum/turbulence_statistics.f90
+    src/continuum/drift_alfven.f90)
 set_source_files_properties(src/generated/milca_drift_fluid_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 if(MILCA_FORTSYM_BUILD)
@@ -37,6 +38,13 @@ add_test(NAME hasegawa_wakatani_oracles COMMAND test_hasegawa_wakatani)
 set_tests_properties(hasegawa_wakatani_oracles PROPERTIES TIMEOUT 120)
 milca_test_labels(hasegawa_wakatani_oracles fast CLASSES continuum
     TARGETS test_hasegawa_wakatani)
+
+add_executable(test_drift_alfven test/test_drift_alfven.f90)
+target_link_libraries(test_drift_alfven PRIVATE milca_continuum)
+add_test(NAME drift_alfven_oracles COMMAND test_drift_alfven)
+set_tests_properties(drift_alfven_oracles PROPERTIES TIMEOUT 120)
+milca_test_labels(drift_alfven_oracles fast CLASSES continuum
+    TARGETS test_drift_alfven)
 
 add_executable(test_turbulence_statistics test/test_turbulence_statistics.f90)
 target_link_libraries(test_turbulence_statistics PRIVATE milca_continuum)

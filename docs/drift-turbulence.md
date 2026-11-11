@@ -1,8 +1,9 @@
 # Drift-wave turbulence: spectra and transport coefficients
 
 Status: design specification with the fluid part of stage L, stage HW, the
-output contract and the saturated-flux benchmark of stage HW implemented.
-Each further stage becomes active with the pull request that brings its tests.
+output contract, the saturated-flux benchmark of stage HW and the homogeneous
+two-dimensional step of stage DA implemented. Each further stage becomes
+active with the pull request that brings its tests.
 
 ## Consumer
 
@@ -263,6 +264,37 @@ layer-response problem and admits an imposed small-\(k_y\) boundary
 perturbation of \(A\). Step 2b is a three-dimensional local slab with
 shear-periodic boundaries. Both reuse the equations and the ledger above and
 need a non-periodic radial discretisation with its own conservation proof.
+
+## Stage DA: implementation of the homogeneous step
+
+`milca_drift_alfven` advances the coefficients of \(\zeta\), \(n\) and
+\(\psi\); per mode \(\phi=-\zeta/k^2\) and \(J=\psi/(\hat\beta/k^2+\hat\mu)\).
+One step is the Strang composition of the exact propagator
+\(\exp[(L-\nu)\,\Delta t/2]\) of each mode, the bracket terms over
+\(\Delta t\) with the third-order strong-stability-preserving Runge--Kutta
+scheme, and the propagator again; the mirror symmetry of all three fields is
+restored after every step. The \(3\times3\) matrix \(L\) of one mode and its
+ledger terms are leaves of `gen/gen_drift_fluid.f90`, its exponential is
+computed once per run with `fortnum_matrix_exponential`. The resistive
+relaxation of \(J\), at rate \(Ck^2/(\hat\beta+\hat\mu k^2)\), is stiff near
+the Hasegawa--Wakatani limit; the exponential has no stability limit there.
+`da_rhs`, `da_rhs_jvp` and `da_rhs_vjp` give the right-hand side with its
+tangent and adjoint under the box average, `da_ledger` the ledger and the
+magnetic energy \(\hat\beta\langle|\nabla A|^2\rangle/2\).
+
+`drift_alfven_oracles` checks: seeded eigenmodes of all three roots of
+`drift_alfven_roots` in an electromagnetic, an inertial and a nearly
+resistive regime (error below \(10^{-10}\) after 40 steps); conservation of
+\(E\) and \(W\) for \(\kappa=C=D=0\) with third-order convergence of the
+drift; closure of both balances in a driven, dissipative, electromagnetic
+nonlinear state with second-order convergence; a nonlinear run with
+\(\hat\beta=\hat\mu=\epsilon\) from the slow manifold against the
+Hasegawa--Wakatani run at the same time step, whose distance falls as
+\(\epsilon\) (\(1.2\times10^{-4}\) of the field size at
+\(\epsilon=10^{-4}\)); the \(E\times B\) advection of the electron inertia
+against \(\{\phi,J\}\) of two manufactured fields; the tangent against central
+differences and the adjoint identity. A propagator without the term
+\(-\hat\beta\kappa\,\partial_yA\) is rejected by the root check.
 
 ## Output contract
 
