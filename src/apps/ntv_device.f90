@@ -38,7 +38,7 @@
 !! surface and solves the following ones by GMRES preconditioned with that
 !! factorisation, refactorising when the iteration count exceeds a bound.
 module milca_ntv_device
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
     !$ use omp_lib, only: omp_get_max_threads
     use fortnum_quadrature, only: gauss_gen_laguerre, gauss_legendre
     use milca_boozer_file, only: boozer_file_t, boozer_surface_t, boozer_surface, &
@@ -65,6 +65,14 @@ module milca_ntv_device
         DEVICE_NO_CONVERGENCE = 3, DEVICE_ORBIT_LOST = 4
     ! Mesh refinement modes of one kernel evaluation (adapt_kernel).
     integer, parameter :: MESH_FIXED = 0, MESH_SETTLE = 1, MESH_CHECK = 2
+
+    !> End of one mesh adaptation: |eta|/|R + eta|, the unknowns and whether
+    !> the tolerance was met before the size or round limit.
+    type :: adapt_info_t
+        real(dp) :: eta_rel = 0
+        integer :: n_dof = 0
+        logical :: settled = .true.
+    end type
 
     real(dp), parameter :: pi = 4*atan(1.0_dp), elementary = 1.602176634e-19_dp
 
@@ -128,11 +136,15 @@ module milca_ntv_device
     !> profile status is DEVICE_SOLVE when any of them failed. With finite
     !> orbit width on Gauss-Laguerre nodes, energies whose orbits leave the
     !> file (lost to the wall or across the axis) carry no NTV in this model and
-    !> contribute zero; lost_weight is their share of the K_11 weight.
+    !> contribute zero; lost_weight is their share of the K_11 weight. With
+    !> hp_adapt, mesh_error is the largest final |eta|/|R + eta| over the seed
+    !> and check energies of the mesh adaptation, and unsettled counts those
+    !> whose refinement stopped at its size or round limit before the
+    !> tolerance was met.
     type :: ntv_species_result_t
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
-            heat_flux = 0, torque = 0, offset_rotation = 0, lost_weight = 0
-        integer :: factorisations = 0, iterations = 0, status = DEVICE_OK
+            heat_flux = 0, torque = 0, offset_rotation = 0, lost_weight = 0, mesh_error = 0
+        integer :: factorisations = 0, iterations = 0, status = DEVICE_OK, unsettled = 0
     end type
 
     !> Axisymmetric transport matrix of one surface: d(a, b, i, j) of
@@ -282,7 +294,7 @@ contains
                 result, status)
             return
         end if
-        allocate (x(res%n_x), w(res%n_x))
+        allocate (x(res%n_x), w(res%n_x), result(ns, nsp))
         call gauss_gen_laguerre(res%n_x, 2.5_dp, x, w)
         if (res%hp_adapt > 0 .and. .not. thin_legendre(res)) then
             do a = 1, nsp
@@ -325,7 +337,6 @@ contains
         end do
         !$omp end parallel do
 
-        allocate (result(ns, nsp))
         do a = 1, nsp
             do i = 1, ns
                 call assemble(i, a)
@@ -421,13 +432,14 @@ contains
 
         !> R of species a on surface i at x = v^2/v_th^2, thin orbits, on the
         !> spectral elements of the Boozer line.
-        real(dp) function thin_r(i, a, xv, st, start, used, mode) result(rv)
+        real(dp) function thin_r(i, a, xv, st, start, used, mode, info) result(rv)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: xv
             integer, intent(out) :: st
             type(hp_mesh_t), intent(in), optional :: start
             type(hp_mesh_t), intent(out), optional :: used
             integer, intent(in), optional :: mode
+            type(adapt_info_t), intent(out), optional :: info
             type(hp_line_field_t) :: g
             type(hp_operator_t) :: op
             type(hp_mesh_t) :: mesh
@@ -451,7 +463,7 @@ contains
             op%source_dpar = res%sources
             op%source_dlf10 = res%sources
             call start_mesh(g, mesh, start)
-            call adapt_kernel(g, mesh, op, rv, st, kernel_mode(start, mode))
+            call adapt_kernel(g, mesh, op, rv, st, kernel_mode(start, mode), info)
             if (present(used)) call normalised(g, mesh, used)
         end function thin_r
 
@@ -503,7 +515,7 @@ contains
         !> hp_ntv_kernel on mesh, or with res%hp_adapt the corrected kernel
         !> R + eta of goal-oriented refinement from it (at most 8 estimates),
         !> refined until R + eta has settled and eta is within the tolerance.
-        subroutine adapt_kernel(g, mesh, op, rv, st, mode)
+        subroutine adapt_kernel(g, mesh, op, rv, st, mode, info)
             class(hp_geometry_t), intent(in) :: g
             type(hp_mesh_t), intent(inout) :: mesh
             type(hp_operator_t), intent(in) :: op
@@ -513,9 +525,11 @@ contains
             ! changes by at most hp_adapt. MESH_CHECK: refine until eta is
             ! within hp_adapt of R + eta, so that R on the mesh is.
             integer, intent(in) :: mode
+            type(adapt_info_t), intent(out), optional :: info
             ! Refinement stops beyond this many unknowns.
             integer, parameter :: max_dof = 250000
             real(dp) :: eta, val, prev
+            logical :: settled
             real(dp), allocatable :: eta_el(:)
             type(hp_mesh_t) :: next
             integer :: it, n_dof
@@ -524,31 +538,35 @@ contains
                 return
             end if
             prev = huge(1.0_dp)
+            settled = .false.
             do it = 1, 8
                 call hp_ntv_estimate(g, mesh, op, rv, eta, eta_el, st, n_dof)
                 if (st /= HP_OK) return
                 val = rv + eta
-                if (n_dof > max_dof) exit
                 if (mode == MESH_CHECK) then
-                    if (abs(eta) <= res%hp_adapt*abs(val)) exit
-                else if (abs(val - prev) <= res%hp_adapt*abs(val)) then
-                    exit
+                    settled = abs(eta) <= res%hp_adapt*abs(val)
+                else
+                    settled = abs(val - prev) <= res%hp_adapt*abs(val)
                 end if
+                if (settled .or. n_dof > max_dof) exit
                 prev = val
                 call hp_refine(mesh, eta_el, 0.5_dp, next)
                 mesh = next
             end do
             rv = val
+            if (present(info)) info = adapt_info_t(abs(eta)/max(abs(val), tiny(val)), &
+                n_dof, settled)
         end subroutine adapt_kernel
 
         !> R of species a on surface i at x = v^2/v_th^2 with finite orbit width.
-        real(dp) function orbit_r(i, a, xv, st, start, used, mode) result(rv)
+        real(dp) function orbit_r(i, a, xv, st, start, used, mode, info) result(rv)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: xv
             integer, intent(out) :: st
             type(hp_mesh_t), intent(in), optional :: start
             type(hp_mesh_t), intent(out), optional :: used
             integer, intent(in), optional :: mode
+            type(adapt_info_t), intent(out), optional :: info
             type(orbit_particle_t) :: p
             type(hp_orbit_geometry_t) :: g
             type(hp_operator_t) :: op
@@ -582,12 +600,12 @@ contains
             op%nu = deflection_frequency(species, prof%density(i, :), &
                 prof%temperature(i, :), prof%kappa(i, :), a, xv)/v
             call start_mesh(g, mesh, start)
-            call adapt_kernel(g, mesh, op, rv, st, kernel_mode(start, mode))
+            call adapt_kernel(g, mesh, op, rv, st, kernel_mode(start, mode), info)
             if (present(used)) call normalised(g, mesh, used)
         end function orbit_r
 
         !> R of species a on surface i at x = v^2/v_th^2.
-        real(dp) function kernel_r(i, a, xv, st, start, used, mode) result(rv)
+        real(dp) function kernel_r(i, a, xv, st, start, used, mode, info) result(rv)
             integer, intent(in) :: i, a
             real(dp), intent(in) :: xv
             integer, intent(out) :: st
@@ -596,11 +614,12 @@ contains
             type(hp_mesh_t), intent(in), optional :: start
             type(hp_mesh_t), intent(out), optional :: used
             integer, intent(in), optional :: mode
+            type(adapt_info_t), intent(out), optional :: info
             type(ntv_kernel_t) :: kern
             real(dp), allocatable :: f10(:, :)
             real(dp) :: v, nu
             if (res%orbit_width) then
-                rv = orbit_r(i, a, xv, st, start, used, mode)
+                rv = orbit_r(i, a, xv, st, start, used, mode, info)
                 if (orbit_outside(st)) then
                     rv = 0
                     st = DEVICE_ORBIT_LOST
@@ -608,7 +627,7 @@ contains
                 return
             end if
             if (.not. thin_legendre(res)) then
-                rv = thin_r(i, a, xv, st, start, used, mode)
+                rv = thin_r(i, a, xv, st, start, used, mode, info)
                 if (st == HP_OK) st = NTV_OK
                 return
             end if
@@ -702,6 +721,7 @@ contains
             real(dp), intent(in), optional :: nodes(:)
             real(dp), allocatable :: seeds(:), checks(:), ok_x(:)
             type(hp_mesh_t), allocatable :: used(:), ok_mesh(:)
+            type(adapt_info_t), allocatable :: info(:)
             integer, allocatable :: sts(:)
             integer :: k, n
             real(dp) :: r
@@ -710,12 +730,13 @@ contains
             else
                 seeds = [0.4_dp, 0.8_dp, 1.5_dp, 2.5_dp, 4.0_dp, 6.0_dp, 9.0_dp, 14.0_dp]
             end if
-            allocate (used(size(seeds)), sts(size(seeds)))
+            allocate (used(size(seeds)), sts(size(seeds)), info(size(seeds)))
             !$omp parallel do schedule(dynamic, 1) default(shared) private(k, r)
             do k = 1, size(seeds)
-                r = kernel_r(i, a, seeds(k), sts(k), used=used(k))
+                r = kernel_r(i, a, seeds(k), sts(k), used=used(k), info=info(k))
             end do
             !$omp end parallel do
+            call note_adaptation(i, a, seeds, sts, info)
             ok_x = pack(seeds, sts == NTV_OK)
             allocate (ok_mesh(size(ok_x)))
             n = 0
@@ -739,19 +760,38 @@ contains
                 end do
                 checks = sqrt(ok_x(1:n - 1)*ok_x(2:n))
             end if
-            deallocate (used, sts)
-            allocate (used(size(checks)), sts(size(checks)))
+            deallocate (used, sts, info)
+            allocate (used(size(checks)), sts(size(checks)), info(size(checks)))
             !$omp parallel do schedule(dynamic, 1) default(shared) private(k, r)
             do k = 1, size(checks)
                 r = kernel_r(i, a, checks(k), sts(k), start=band(k, i, a), used=used(k), &
-                    mode=MESH_CHECK)
+                    mode=MESH_CHECK, info=info(k))
             end do
             !$omp end parallel do
+            call note_adaptation(i, a, checks, sts, info)
             do k = 1, size(checks)
                 if (sts(k) == NTV_OK .and. allocated(used(k)%theta)) &
                     call join(band(k, i, a), used(k))
             end do
         end subroutine seed_bands
+
+        !> Records the adaptation at energies x in mesh_error and unsettled of
+        !> surface i and species a, and reports each unsettled energy.
+        subroutine note_adaptation(i, a, x, sts, info)
+            integer, intent(in) :: i, a, sts(:)
+            real(dp), intent(in) :: x(:)
+            type(adapt_info_t), intent(in) :: info(:)
+            integer :: k
+            do k = 1, size(x)
+                if (sts(k) /= NTV_OK) cycle
+                result(i, a)%mesh_error = max(result(i, a)%mesh_error, info(k)%eta_rel)
+                if (info(k)%settled) cycle
+                result(i, a)%unsettled = result(i, a)%unsettled + 1
+                write (error_unit, '(a,f10.6,a,i0,a,f8.4,a,es10.3,a,i0)') &
+                    'mesh not settled: s ', prof%s(i), ' species ', a, ' x ', x(k), &
+                    ' |eta|/|R + eta| ', info(k)%eta_rel, ' unknowns ', info(k)%n_dof
+            end do
+        end subroutine note_adaptation
 
         !> The band of energy x: band k spans seeds k to k + 1, the outer bands
         !> extend to all lower and higher energies.

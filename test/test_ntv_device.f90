@@ -455,6 +455,10 @@ contains
             abs(coarse(1, 1)%k11/legendre(1, 1)%k11 - 1) > 2e-3_dp)
         call close_to('adaptive K11', adapted(1, 1)%k11, legendre(1, 1)%k11, 2e-3_dp)
         call close_to('adaptive K12', adapted(1, 1)%k12, legendre(1, 1)%k12, 2e-3_dp)
+        call check('adaptive: the mesh error estimate is recorded', &
+            adapted(1, 1)%mesh_error > 0 .and. adapted(1, 1)%unsettled == 0)
+        call check('adaptive: a fixed mesh records no estimate', &
+            coarse(1, 1)%mesh_error == 0 .and. coarse(1, 1)%unsettled == 0)
     end subroutine hp_adaptive
 
     !> Circular surfaces with a toroidal current and shear; the perturbation
