@@ -1,8 +1,7 @@
 # Drift-wave turbulence: spectra and transport coefficients
 
-Status: design specification with the fluid part of stage L and the time
-stepping of stage HW implemented; statistics, output and the nonlinear
-benchmark follow.
+Status: design specification with the fluid part of stage L, stage HW and
+the output contract implemented; the nonlinear benchmark follows.
 Each further stage becomes active with the pull request that brings its tests.
 
 ## Consumer
@@ -191,6 +190,50 @@ drift; closure of both balances in a driven dissipative nonlinear state with
 second-order convergence; the zonal modes of the modified model; the tangent
 against central differences and the adjoint identity. A run whose propagator
 has the opposite sign of \(\kappa\) is rejected.
+
+## Output contract
+
+`milca_turbulence_statistics` turns equally spaced samples of the coefficients
+\(\hat\phi(k_x,k_y)\), \(\hat n(k_x,k_y)\) of a stationary homogeneous run
+into `turbulence_spectrum_t`; `milca_turbulence_output` writes it into the
+result file of [interface-reproducibility.md](interface-reproducibility.md).
+Every provider of this branch writes the same variables.
+
+| Variable | Dimensions | Meaning |
+|---|---|---|
+| `kx`, `ky`, `omega` | axes | symmetric about zero; time dependence \(e^{-i\omega t}\) |
+| `S_phi_phi` | (kx, ky, omega) | power spectral density; its sum times \(\Delta k_x\Delta k_y\Delta\omega\) is the variance of \(\phi\) |
+| `S_n_phi_re`, `S_n_phi_im` | (kx, ky, omega) | cross spectral density \(\langle\hat n\hat\phi^*\rangle\); \(\Gamma_n=-\kappa\sum k_y\,\mathrm{Im}\,S_{n\phi}\,\Delta k_x\Delta k_y\Delta\omega\) |
+| `lag_t`, `lag_x`, `lag_y`, `C_phi_t`, `C_phi_x`, `C_phi_y` | lags | cuts of the correlation function of \(\phi\) through the origin |
+| `tau_c_euler` | scalar | first \(1/e\) crossing of the single-point autocorrelation |
+| `tau_c_mode` | scalar | first \(1/e\) crossing of \(\sum_k\lvert\langle\hat\phi_k(t+s)\hat\phi_k^*(t)\rangle\rvert\): decay of the mode amplitudes without their phase rotation |
+| `ell_x`, `ell_y` | scalars | first \(1/e\) crossings of the correlation cuts |
+| `kubo` | scalar | `tau_c_euler` times the rms radial \(E\times B\) velocity over `ell_x` |
+| `Gamma_n`, `D_n`, `D_alpha`, `D_E`, `D_W`, `E`, `W`, `zonal_fraction` | scalars | time averages of the ledger; \(D_n=\Gamma_n/\kappa^2\) |
+| `unit_length`, `unit_time`, `unit_potential` | scalars | size of the normalised units in cm, s and statvolt (Gaussian cgs) |
+
+Each scalar `X` has a companion `X_error`, one statistical standard error;
+a negative value means "not available". Arrays are in the normalised units of
+the model. Spectra are Welch estimates from Hann-windowed, half-overlapping
+segments, normalised by the window power. Correlation functions are
+transforms of the spectrum divided by the autocorrelation of the window, and
+their lag range is a quarter of a segment. Errors of correlation scales come
+from batches of contiguous segments, errors of time averages from the
+integrated autocorrelation time of the series. `tau_c_mode` sums absolute
+values of estimates and is therefore biased upward when few segments are
+available. Global attributes name the model, the provider (`nonlinear` or a
+quasilinear rule), the frame, the parallel structure and the derivative status.
+
+`turbulence_statistics_oracles` recovers a synthetic Ornstein--Uhlenbeck mode:
+Parseval identity to rounding, the Lorentzian spectrum, both correlation
+times, both correlation lengths and the Kubo number within their standard
+errors and within 5 %, and the standard error of a correlated series within
+10 %. `hasegawa_wakatani_result_contract` runs the application
+`hasegawa_wakatani` (namelist `&hasegawa_wakatani`) on a small saturated case
+and reads the file back: Parseval identity, the flux recovered from the cross
+spectrum, the mean balance and the unit and status attributes. A spectrum
+normalised without the window power and a cross spectrum of the opposite sign
+are rejected.
 
 ## Admission record
 
