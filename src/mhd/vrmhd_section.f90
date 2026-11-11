@@ -2,7 +2,7 @@ module milca_vrmhd_section
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_gs_symmetry, only: gs_symmetry_t, GS_ROTATION
     use milca_vrmhd_parameters, only: vrmhd_parameters_t
-    use milca_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix, &
+    use milca_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix, vrmhd_point_flux, &
         VRMHD_POINT_MATRIX_CALLS
     use milca_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
@@ -347,12 +347,12 @@ contains
         real(dp) :: local(op%nlocal), dlocal(op%nlocal), dotlocal(op%nlocal)
         real(dp) :: ddotlocal(op%nlocal), lr(op%nlocal), lj(op%nlocal)
         real(dp) :: basis(36, op%nlocal), x(2), weight, v(36), dv(36), vd(12), dvd(12)
-        real(dp) :: test(19), value, tangent
+        real(dp) :: test(19), flux(19, 6), dflux(19, 6)
         integer :: t, q, i, st, fail
         r = 0; jv = 0; fail = 0
         !$omp parallel do default(shared) schedule(static) &
         !$omp private(t,q,i,st,local,dlocal,dotlocal,ddotlocal,lr,lj, &
-        !$omp basis,x,weight,v,dv,vd,dvd,test,value,tangent) reduction(max:fail)
+        !$omp basis,x,weight,v,dv,vd,dvd,test,flux,dflux) reduction(max:fail)
         do t = 1, op%fs%mm%topology%n_triangles
             local = u(op%map(:, t)); dlocal = du(op%map(:, t))
             dotlocal = ud(op%map(:, t)); ddotlocal = dud(op%map(:, t))
@@ -365,11 +365,12 @@ contains
                 v = matmul(basis, local); dv = matmul(basis, dlocal)
                 vd = matmul(basis(:12, :), dotlocal)
                 dvd = matmul(basis(:12, :), ddotlocal)
+                call vrmhd_point_flux(p, v(:33), dv(:33), vd, dvd, source(:, q, t), &
+                    flux, dflux)
                 do i = 1, op%nlocal
                     call test_data(op%row(i), basis(:, i), test)
-                    call vrmhd_point(p, op%row(i), v(:33), dv(:33), vd, dvd, &
-                        test, source(:, q, t), value, tangent)
-                    lr(i) = lr(i) + weight*value; lj(i) = lj(i) + weight*tangent
+                    lr(i) = lr(i) + weight*dot_product(test, flux(:, op%row(i)))
+                    lj(i) = lj(i) + weight*dot_product(test, dflux(:, op%row(i)))
                 end do
             end do
             do i = 1, op%nlocal

@@ -129,10 +129,39 @@ on an unaligned mesh.
 ## Probes
 
 `test_vrmhd_cylinder` takes `key=value` options (`rings`, `degree`, `cluster`,
-`dtau`, `beta_p`, `chi_ratio`, `frozen`, `seed`, `t_end`, `dt_out`). The
+`dtau`, `beta_p`, `chi_ratio`, `frozen`, `seed`, `t_end`, `dt_out`, `dt_max`,
+`state`, `check`). The
 `evolve` mode solves the stationary state, seeds BDF2 with its unstable
 `m = 1` eigenvector scaled to a peak velocity `seed`, and prints `q` at
 `r = 0.1` (annulus 0.09-0.11, from the mean of `B_theta/r`) and the magnetic
 and kinetic energy of the `m = 1` part (Fourier projection on 400 annuli).
+`dt_max` caps the adaptive step separately from the output interval `dt_out`
+(the step also ends on every output time). `check=2` prints every
+linearization and factorization. With `state=FILE` the final section state is
+written to `FILE`. The `pumped` mode evolves as `evolve` (or reads `FILE` if it
+exists), then solves the stationary helical state from it by the same
+pseudo-transient Newton iteration and prints the six eigenvalues of its
+linearisation nearest zero: a stable pumped state has all of them in
+`Re < 0`.
 These trajectories are candidates; the comparison with the reduced model and
 with JOREK is not a registered gate.
+
+### Cost of the evolution
+
+The BDF2 Newton systems are solved by FGMRES on the exact Jacobian-vector
+product, preconditioned by a lagged supernodal factor of the assembled
+Jacobian. The factor is replaced when the BDF shift changes by more than
+`shift_tolerance`, after `lag` linearizations, or when the previous solve
+needed more than `krylov_refactor` (8) products. Perturbed or grown pivots are
+accepted (`verify_perturbed`, `pivot_growth_limit`), since FGMRES iterates on
+the original matrix; otherwise fortsparse replaces such factors by its serial
+scalar LU, which takes minutes at 1e5 unknowns. The residual and its
+Jacobian-vector product evaluate the pointwise form once per test slot and
+contract it with the basis.
+
+On 24 rings (90817 unknowns), 16 OpenMP threads on one sCluster node, the
+eta(T) case with `chi_ratio=1e6` reaches t = 3500 tau_A in 441 s, against
+35741 s before these changes, where the lagged factor went stale and FGMRES
+hit its 200-product limit. A solve then needs about 1.5 FGMRES products per
+Newton iteration, and the run covers about 2e4 tau_A per wall hour through
+the first saturation of the m = 1 mode.

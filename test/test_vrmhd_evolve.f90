@@ -43,6 +43,8 @@ program test_vrmhd_evolve
         call steady_gate()
     case ('waves')
         call wave_gate([0.25_dp, 0.125_dp, 0.0625_dp, 0.03125_dp])
+    case ('refactor')
+        call refactor_gate()
     case default
         error stop 'unknown evolution gate'
     end select
@@ -264,6 +266,45 @@ contains
         complex(dp), intent(out) :: a(3)
         a = cmplx([0.5_dp*cos(x(2)), 0.3_dp*sin(x(1)), 0.4_dp*cos(x(1) - x(2))], &
             0.0_dp, dp)
+    end subroutine
+
+    subroutine refactor_gate()
+        !! A lagged factor is kept while FGMRES needs at most krylov_refactor
+        !! products per linear solve and replaced at the next linearization
+        !! once a solve needs more, even inside the lag and shift windows.
+        type(periodic_slab_t), target :: slab
+        type(vrmhd_parameters_t) :: p
+        type(vrmhd_evolve_t) :: problem
+        real(dp), allocatable :: lift(:), y(:), ydot(:), source(:, :, :), v(:), w(:)
+        integer :: status, k
+        call periodic_slab_build(4, 1, slab, status)
+        call require(status == 0, 'periodic slab')
+        p%mi = 1; p%mu0 = 1; p%t0 = 0.3_dp; p%eta0 = 0.02_dp; p%nu0 = 0.02_dp
+        allocate (lift(slab%op%ndof), y(slab%nred), ydot(slab%nred), &
+            source(6, slab%op%fs%nq, slab%op%fs%mm%topology%n_triangles), &
+            v(slab%nred), w(slab%nred))
+        source = 0
+        call background_lift(slab, 1.0_dp, 0.3_dp, 0.3_dp, [0.6_dp, 0.0_dp, 0.8_dp], lift)
+        call perturbed_state(slab, 0.1_dp, y)
+        call vrmhd_evolve_build(problem, slab%op, p, source, lift, slab%reduction, &
+            status, lag=huge(1))
+        call require(status == 0, 'evolution problem')
+        ydot = 0; v = 1
+        call problem%linearize(0.0_dp, y, ydot, 10.0_dp, status)
+        call require(status == 0 .and. problem%factorizations == 1, 'first factor')
+        do k = 1, 8
+            call problem%apply(v, w)
+        end do
+        call problem%linearize(0.0_dp, y, ydot, 10.0_dp, status)
+        call require(status == 0 .and. problem%factorizations == 1, &
+            'factor kept after a cheap solve')
+        do k = 1, 9
+            call problem%apply(v, w)
+        end do
+        call problem%linearize(0.0_dp, y, ydot, 10.0_dp, status)
+        call require(status == 0 .and. problem%factorizations == 2, &
+            'factor replaced after an expensive solve')
+        print '(a,i0)', 'factorizations ', problem%factorizations
     end subroutine
 
     subroutine energy_gate(dts)

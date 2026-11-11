@@ -10,7 +10,8 @@ module milca_vrmhd_evolve
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_matmul, &
         csc_from_triplet, sparse_solver_t, sparse_factor, sparse_refactor, &
         sparse_solve, &
-        sparse_free, fortsparse_status_t, status_ok, &
+        sparse_free, fortsparse_status_t, status_ok, sparse_factor_stats, &
+        sparse_factor_stats_t, &
         FORTSPARSE_LU_SUPERNODAL
     implicit none
     private
@@ -29,6 +30,11 @@ module milca_vrmhd_evolve
         !> Relative change of the BDF shift alpha that forces a new factor.
         real(dp) :: shift_tolerance = 0.05_dp
         integer :: since = 0, factorizations = 0
+        !> FGMRES products since the last linearization; a stale factor that
+        !> needs more than krylov_refactor of them is replaced at the next one.
+        integer :: applies = 0, krylov_refactor = 8
+        !> Print one line per linearization: time, shift, products of the last solve.
+        logical :: verbose = .false.
         real(dp), allocatable :: u(:), ud(:)
         real(dp) :: alpha = 0, factored_alpha = 0
         logical :: factored = .false.
@@ -91,6 +97,14 @@ contains
             problem%algebraic(j) = any_current
         end do
         problem%solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+        ! The factor only preconditions FGMRES, so an unrefined static-pivot
+        ! factor is accepted instead of the serial scalar fallback.
+        problem%solver%options%verify_factor = .false.
+        ! FGMRES works on the original matrix, so perturbed or grown pivots
+        ! only weaken the preconditioner; the serial scalar refactorization
+        ! they would otherwise trigger takes minutes at 1e5 unknowns.
+        problem%solver%options%verify_perturbed = .false.
+        problem%solver%options%pivot_growth_limit = huge(1.0_dp)
         status = 0
     end subroutine
 
@@ -138,13 +152,19 @@ contains
         integer, intent(out) :: status
         type(csc_t) :: reduced
         type(fortsparse_status_t) :: st
+        type(sparse_factor_stats_t) :: stats
         status = 1
         if (.not. ieee_is_finite(t)) return
         call vrmhd_evolve_expand(self, y, self%u)
         self%ud = csc_matvec(self%reduction, ydot)
         self%alpha = alpha
         status = 0
-        ! A lagged factor stays a good preconditioner while the shift is close.
+        ! A lagged factor stays a good preconditioner while the shift is close
+        ! and FGMRES still converges in a few products.
+        if (self%verbose) print '(a,es14.6,es11.3,i6,i4)', '  linearize t, alpha, products, since ', &
+            t, alpha, self%applies, self%since
+        if (self%applies > self%krylov_refactor) self%since = self%lag
+        self%applies = 0
         if (self%factored .and. self%since < self%lag .and. &
             abs(alpha - self%factored_alpha) <= &
             self%shift_tolerance*abs(self%factored_alpha)) then
@@ -159,6 +179,12 @@ contains
             call sparse_refactor(self%solver, reduced, st)
         else
             call sparse_factor(self%solver, reduced, st)
+        end if
+        if (self%verbose .and. status_ok(st)) then
+            call sparse_factor_stats(self%solver, stats, st)
+            print '(a,l2,1x,a,i8,es11.3)', '  factor fallback, reason, perturbed, growth ', &
+                stats%lu_fallback, trim(stats%lu_fallback_reason), &
+                stats%perturbed_pivots, stats%pivot_growth
         end if
         self%factored = .false.
         status = 1
@@ -178,6 +204,7 @@ contains
         integer :: status
         allocate (du(self%op%ndof), dud(self%op%ndof), r(self%op%ndof), &
             jv(self%op%ndof))
+        self%applies = self%applies + 1
         du = csc_matvec(self%reduction, input)
         dud = self%alpha*du
         call vrmhd_section_residual(self%op, self%p, self%u, self%ud, du, dud, &

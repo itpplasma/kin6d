@@ -15,7 +15,7 @@ module milca_vrmhd_point
         leaf_transport, leaf_viscosity, leaf_viscous_heat
     implicit none
     private
-    public :: vrmhd_point, vrmhd_point_matrix
+    public :: vrmhd_point, vrmhd_point_matrix, vrmhd_point_flux
     integer, parameter :: ntest(6) = [4, 12, 6, 6, 4, 4]
     !> Cost of one vrmhd_point_matrix call in vrmhd_point evaluations: one
     !> reverse sweep, about two evaluations, per test slot.
@@ -29,6 +29,25 @@ module milca_vrmhd_point
         1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0], [12, 6])
 
 contains
+    !> Value and tangent against unit tests in every slot of every row. Both are
+    !> linear in the test, so one call per slot replaces one call per local basis.
+    subroutine vrmhd_point_flux(p, v, dv, vd, dvd, source, flux, dflux)
+        type(vrmhd_parameters_t), intent(in) :: p
+        real(dp), intent(in) :: v(33), dv(33), vd(12), dvd(12), source(6)
+        real(dp), intent(out) :: flux(19, 6), dflux(19, 6)
+        real(dp) :: test(19)
+        integer :: row, it, slot
+        flux = 0; dflux = 0
+        do row = 1, 6
+            do it = 1, ntest(row)
+                slot = test_slots(it, row)
+                test = 0; test(slot) = 1
+                call vrmhd_point(p, row, v, dv, vd, dvd, test, source, &
+                    flux(slot, row), dflux(slot, row))
+            end do
+        end do
+    end subroutine
+
     ! Pointwise bilinear form of the JVP: kmat(:, j, row) is the tangent
     ! against unit tests for unit trial data j (33 values, 12 rates). The
     ! residual is linear in the test, so one reverse sweep per test slot gives
