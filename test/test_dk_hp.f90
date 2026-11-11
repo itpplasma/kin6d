@@ -29,6 +29,9 @@ program test_dk_hp
     case ('ntv_superbanana_plateau'); ok = ntv_superbanana_plateau()
     case ('ntv_one_over_nu'); ok = ntv_one_over_nu()
     case ('ntv_rotation'); ok = ntv_rotation()
+    case ('terms_recombine'); ok = terms_recombine()
+    case ('line_moments'); ok = line_moments()
+    case ('transfer'); ok = transfer()
     case ('ntv_scan'); ok = ntv_scan()
     case ('ntv_legendre'); ok = ntv_legendre()
     case ('scan'); ok = scan()
@@ -393,6 +396,350 @@ contains
         limit = 16/15.0_dp*nu*1e-6_dp/omega**2*pi*(2 + eps**2)/(1 - eps**2)**2.5_dp
         ok = close_to('R/limit at omega_E = 1', r/limit, 1.0_dp, 2e-3_dp)
     end function ntv_rotation
+
+    !> The system recombined from its split terms and solved through the
+    !> exported factor against the monoenergetic kernel on the same mesh, at
+    !> three (nu, v, omega_E, pre) and with both quasilinear sources, where
+    !> f_10 enters through the operators mir and ls.
+    logical function terms_recombine() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_ntv_kernel, hp_terms_t, hp_ntv_terms, &
+            hp_system_t, hp_assemble, hp_factor, hp_solve, hp_free
+        real(dp), parameter :: par(4, 3) = reshape([1e-2_dp, 1.0_dp, 0.0_dp, 1e-3_dp, &
+            1e-3_dp, 2.5_dp, 0.3_dp, -2e-3_dp, 1e-4_dp, 0.5_dp, -0.1_dp, 5e-4_dp], [4, 3])
+        type(hp_operator_t) :: op
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh
+        type(hp_terms_t) :: terms
+        type(hp_system_t) :: ax
+        real(dp), allocatable :: f10(:)
+        complex(dp), allocatable :: rhs(:)
+        real(dp) :: r, mu
+        integer :: status, i, j, e, n_loc
+
+        ok = .true.
+        call hp_field([(1 - 0.05_dp*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f, status)
+        if (status /= HP_OK) error stop 'hp_field failed'
+        call hp_default_mesh(f, 4, 8, 2, 0.1_dp, 0.3_dp, mesh)
+        ! nu = 0 and v = 1 of the default operator must not enter the terms.
+        op = stage1(0.0_dp, 0.0_dp, 0.0_dp)
+        call hp_ntv_terms(f, mesh, op, terms, status)
+        if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+        do i = 1, 3
+            op%nu = par(1, i); op%v = par(2, i); op%omega_e = par(3, i); op%pre = par(4, i)
+            call hp_ntv_kernel(f, mesh, op, r, status)
+            if (status /= HP_OK) error stop 'hp_ntv_kernel failed'
+            ok = close_to('R from terms', solved(terms, op, terms%load3/op%v), r, 1e-10_dp) .and. ok
+            ! Without refinement the equilibrated factor alone is accurate here.
+            if (i == 1) ok = close_to('R, no refinement', &
+                solved(terms, op, terms%load3/op%v, 0), r, 1e-6_dp) .and. ok
+        end do
+
+        ! Both sources on a field with b.grad theta = kappa b; f_10 as the
+        ! kernel builds it, -2/(v q kappa) times the radial-drive solution.
+        op = stage1(1e-3_dp, 1e-3_dp, 0.1_dp)
+        op%k = f%kappa; op%k_power = 1; op%v = 1.5_dp
+        op%source_dpar = .true.; op%source_dlf10 = .true.
+        call hp_ntv_kernel(f, mesh, op, r, status)
+        if (status /= HP_OK) error stop 'hp_ntv_kernel with sources failed'
+        call hp_ntv_terms(f, mesh, op, terms, status)
+        if (status /= HP_OK) error stop 'hp_ntv_terms with sources failed'
+        call hp_assemble(f, mesh, op%nu, ax, status)
+        if (status == HP_OK) call hp_factor(ax, status)
+        allocate (f10(ax%n))
+        if (status == HP_OK) call hp_solve(ax, terms%load1, f10, mu, status)
+        call hp_free(ax)
+        if (status /= HP_OK) error stop 'axisymmetric solve failed'
+        f10 = -2/(op%v*op%q*f%kappa)*f10
+        rhs = terms%load3/op%v
+        n_loc = size(terms%loc, 1)
+        do e = 1, size(terms%loc, 2)
+            rhs(terms%loc(:, e)) = rhs(terms%loc(:, e)) + matmul(reshape(terms%mir(:, e) &
+                + op%nu*terms%ls(:, e), [n_loc, n_loc]), f10(terms%loc(:, e)))
+        end do
+        ok = close_to('R with sources', solved(terms, op, rhs), r, 1e-10_dp) .and. ok
+        ! The f_10 load is not a rounding-level part of this R.
+        ok = below('R without the f_10 load, -relative change', &
+            -abs(solved(terms, op, terms%load3/op%v)/r - 1), -1e-4_dp) .and. ok
+    end function terms_recombine
+
+    !> Re(load4 . x) of the node system of op built from terms, A x = b.
+    real(dp) function solved(terms, op, b, refine) result(rt)
+        use milca_dk_hp, only: hp_operator_t, hp_terms_t, hp_node_matrix, hp_ntv_factor_t, &
+            hp_ntv_factor, hp_ntv_solve, hp_ntv_free
+        use fortsparse, only: csc_z_t
+        type(hp_terms_t), intent(in) :: terms
+        type(hp_operator_t), intent(in) :: op
+        complex(dp), intent(in) :: b(:)
+        integer, intent(in), optional :: refine
+        type(csc_z_t) :: a
+        type(hp_ntv_factor_t) :: fac
+        complex(dp), allocatable :: x(:)
+        integer :: st
+        call hp_node_matrix(terms, op%nu, op%v, op%omega_e, op%pre, op%n, op%q, a)
+        call hp_ntv_factor(a, fac, st)
+        if (st /= HP_OK) error stop 'hp_ntv_factor failed'
+        allocate (x(terms%n))
+        call hp_ntv_solve(fac, b, x, .false., st, refine)
+        call hp_ntv_free(fac)
+        if (st /= HP_OK) error stop 'hp_ntv_solve failed'
+        rt = real(sum(terms%load4*x), dp)
+    end function solved
+
+    pure function csc_apply(a, x) result(y)
+        use fortsparse, only: csc_t
+        type(csc_t), intent(in) :: a
+        real(dp), intent(in) :: x(:)
+        real(dp) :: y(a%nrow)
+        integer :: j, k
+        y = 0
+        do j = 1, a%ncol
+            do k = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                y(a%row_idx(k)) = y(a%row_idx(k)) + a%val(k)*x(j)
+            end do
+        end do
+    end function csc_apply
+
+    pure function csc_column_sums(a) result(y)
+        use fortsparse, only: csc_t
+        type(csc_t), intent(in) :: a
+        real(dp) :: y(a%ncol)
+        integer :: j
+        y = [(sum(a%val(a%col_ptr(j):a%col_ptr(j + 1) - 1)), j=1, a%ncol)]
+    end function csc_column_sums
+
+    logical function below(name, got, bound) result(ok)
+        character(*), intent(in) :: name
+        real(dp), intent(in) :: got, bound
+        ok = got <= bound
+        print '(a,es10.2,a,es10.2,a,l2)', name//' ', got, ' bound ', bound, ' pass', ok
+    end function below
+
+    !> Mass, pitch moments and their loads on b = 1 + eps cos theta with
+    !> b.grad theta = kappa b, measure 1/(kappa b^2), against closed forms:
+    !>   sum M = 2 int dtheta/(kappa b^2) = 4 pi (1 - eps^2)^(-3/2)/kappa;
+    !>   G_l of P_3(xi)(1 + cos theta) is delta_l3 (1 + cos theta_t) up to
+    !>     the interpolation error in theta;
+    !>   column t of D_l sums to w_t int P_l dxi/(kappa b^2), and with the
+    !>     mesh's own quadrature angles 1^T D_0 G_0 g = d^T g for every g;
+    !>   on a node angle the interpolant of xi^3 is xi^3 along the line, whose
+    !>     moments are 3/5 (l = 1) and 2/5 (l = 3).
+    logical function line_moments() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_terms_t, hp_ntv_terms, hp_mass, hp_lines_t, &
+            hp_lines, hp_line_ops
+        use fortsparse, only: csc_t
+        use fortnum_quadrature, only: gauss_lobatto_legendre
+        real(dp), parameter :: eps = 0.1_dp, kappa = 1.3_dp
+        type(hp_operator_t) :: op
+        type(hp_field_t) :: f
+        type(hp_mesh_t) :: mesh
+        type(hp_terms_t) :: terms
+        type(hp_lines_t) :: lines
+        type(csc_t) :: mass
+        type(csc_t), allocatable :: g(:), d(:)
+        real(dp), allocatable :: data(:), want(:), b2(:)
+        real(dp) :: err(2), e_all, node(4), wn(4)
+        integer :: status, j, l, ip, ec
+
+        ok = .true.
+        call hp_field([(1 + eps*cos(2*pi*(j - 1)/33), j=1, 33)], kappa, f, status)
+        if (status /= HP_OK) error stop 'hp_field failed'
+        op%k = kappa; op%k_power = 1; op%n = 1; op%m = [1]; op%c = [(1e-3_dp, 0.0_dp)]
+        do ip = 1, 2
+            call hp_default_mesh(f, 3*ip, 8, 2, 0.1_dp, 0.3_dp, mesh)
+            call hp_ntv_terms(f, mesh, op, terms, status)
+            if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+            call hp_lines([mesh], lines)
+            call hp_line_ops(f, mesh, op, lines, 4, g, d, status)
+            if (status /= HP_OK) error stop 'hp_line_ops failed'
+            data = (5*terms%xi**3 - 3*terms%xi)/2*(1 + cos(terms%theta))
+            err(ip) = 0
+            do l = 0, 4
+                want = merge(1.0_dp, 0.0_dp, l == 3)*(1 + cos(lines%theta))
+                err(ip) = max(err(ip), maxval(abs(csc_apply(g(l), data) - want)))
+            end do
+        end do
+        ok = below('P_3 moments, p = 3', err(1), 1e-3_dp) .and. ok
+        ok = below('P_3 moments, p = 6', err(2), 1e-3_dp*err(1)) .and. ok
+
+        ! On the mesh of degree 6.
+        call hp_mass(terms, mass)
+        ok = close_to('sum of mass', sum(mass%val), 4*pi*(1 - eps**2)**(-1.5_dp)/kappa, &
+            1e-12_dp) .and. ok
+        ok = close_to('sum of line weights', sum(lines%w), 2*pi, 1e-14_dp) .and. ok
+        b2 = (1 + eps*cos(lines%theta))**2
+        ok = below('load of P_0', maxval(abs(csc_column_sums(d(0))*kappa*b2/(2*lines%w) &
+            - 1)), 1e-12_dp) .and. ok
+        ok = below('load of P_2', maxval(abs(csc_column_sums(d(2))*kappa*b2/lines%w)), &
+            1e-12_dp) .and. ok
+        call random_number(data)
+        ok = close_to('1^T D_0 G_0 g', sum(csc_column_sums(d(0))*csc_apply(g(0), data)), &
+            sum(terms%density*data), 1e-12_dp) .and. ok
+
+        ! Lines on the interior node angles of every column, degree 3.
+        call hp_default_mesh(f, 3, 8, 2, 0.1_dp, 0.3_dp, mesh)
+        call hp_ntv_terms(f, mesh, op, terms, status)
+        if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+        call gauss_lobatto_legendre(4, node, wn)
+        lines%theta = [((mesh%theta(ec) + (mesh%theta(ec + 1) - mesh%theta(ec)) &
+            *(1 + node(j))/2, j=2, 3), ec=1, size(mesh%theta) - 1)]
+        lines%w = 0*lines%theta + 1
+        call hp_line_ops(f, mesh, op, lines, 20, g, d, status)
+        if (status /= HP_OK) error stop 'hp_line_ops failed'
+        e_all = 0
+        do l = 0, 20
+            want = 0*lines%theta
+            if (l == 1) want = 0.6_dp
+            if (l == 3) want = 0.4_dp
+            e_all = max(e_all, maxval(abs(csc_apply(g(l), terms%xi**3) - want)))
+        end do
+        ok = below('moments of xi^3 to l = 20', e_all, 1e-10_dp) .and. ok
+    end function line_moments
+
+    !> Transfer of exp(xi) cos(theta), given on the nodes of one mesh, to the
+    !> nodes of another mesh of the same field with other columns, bulk rows
+    !> and separatrix layers, none nested: the error is that of the
+    !> interpolant and falls spectrally with p. Onto the mesh of another
+    !> surface (theta_x, lambda_c) the nodes are taken at equal angle from the
+    !> X point and equal row labels. The constant must be reproduced, equal
+    !> meshes must give the identity, and the mass matrix applied to 1 is the
+    !> density weight because the basis sums to 1.
+    logical function transfer() result(ok)
+        use milca_dk_hp, only: hp_operator_t, hp_terms_t, hp_ntv_terms, hp_mass, hp_transfer, &
+            hp_mesh_join
+        use fortsparse, only: csc_t
+        type(hp_operator_t) :: op
+        type(hp_field_t) :: f1, f2
+        type(hp_mesh_t) :: mesh1, mesh2, mesh3, joined
+        type(hp_terms_t) :: t1, t2, t3
+        type(csc_t) :: t, mass
+        real(dp), allocatable :: one(:), th(:), xi(:)
+        real(dp) :: err(3), err_xi(3)
+        integer :: status, j, k, p
+        logical :: same
+
+        ok = .true.
+        call hp_field([(1 + 0.1_dp*cos(2*pi*(j - 1)/33), j=1, 33)], 1.0_dp, f1, status)
+        if (status == HP_OK) call hp_field([(1 + 0.2_dp*cos(2*pi*(j - 1)/33 - 1), &
+            j=1, 33)], 1.0_dp, f2, status)
+        if (status /= HP_OK) error stop 'hp_field failed'
+        op%k = 1; op%k_power = 1; op%n = 1; op%m = [1]; op%c = [(1e-3_dp, 0.0_dp)]
+
+        do k = 1, 3
+            p = 2*k + 1
+            call hp_default_mesh(f1, p, 6, 3, 0.1_dp, 0.3_dp, mesh1)
+            call hp_default_mesh(f1, p, 9, 4, 0.01_dp, 0.3_dp, mesh3)
+            call hp_ntv_terms(f1, mesh1, op, t1, status)
+            if (status == HP_OK) call hp_ntv_terms(f1, mesh3, op, t3, status)
+            if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+            call hp_transfer(f1, mesh3, mesh1, t3%loc, t1%loc, t, status)
+            if (status /= HP_OK) error stop 'hp_transfer failed'
+            err(k) = maxval(abs(csc_apply(t, smooth(t1%theta, t1%xi)) &
+                - smooth(t3%theta, t3%xi)))
+            err_xi(k) = maxval(abs(csc_apply(t, t1%xi) - t3%xi))
+        end do
+        ok = below('exp(xi) cos(theta), p = 3', err(1), 5e-3_dp) .and. ok
+        ok = below('exp(xi) cos(theta), p = 5', err(2), 3e-2_dp*err(1)) .and. ok
+        ok = below('exp(xi) cos(theta), p = 7', err(3), 3e-2_dp*err(2)) .and. ok
+        ok = below('xi, p = 7', err_xi(3), 3e-2_dp*err_xi(2)) .and. ok
+
+        call hp_default_mesh(f1, 4, 6, 3, 0.05_dp, 0.3_dp, mesh1)
+        call hp_default_mesh(f2, 5, 9, 2, 0.01_dp, 0.3_dp, mesh2)
+        call hp_ntv_terms(f1, mesh1, op, t1, status)
+        if (status == HP_OK) call hp_ntv_terms(f2, mesh2, op, t2, status)
+        if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+        call hp_transfer(f1, mesh2, mesh1, t2%loc, t1%loc, t, status)
+        if (status /= HP_OK) error stop 'hp_transfer failed'
+        ok = t%nrow == t2%n .and. t%ncol == t1%n .and. ok
+        call labelled_nodes(f1, mesh2, t2, th, xi)
+        ok = below('other surface, equal labels', maxval(abs(csc_apply(t, &
+            smooth(t1%theta, t1%xi)) - smooth(th, xi))), 5e-4_dp) .and. ok
+        allocate (one(t1%n))
+        one = 1
+        ok = below('constant', maxval(abs(csc_apply(t, one) - 1)), 1e-13_dp) .and. ok
+
+        ! Into the union with a finer mesh of the same surface.
+        call hp_default_mesh(f1, 4, 9, 2, 0.01_dp, 0.3_dp, mesh3)
+        joined = mesh1
+        call hp_mesh_join(joined, mesh3)
+        ok = holds(joined%theta, mesh1%theta) .and. holds(joined%theta, mesh3%theta) &
+            .and. holds(joined%lam, mesh1%lam) .and. holds(joined%lam, mesh3%lam) &
+            .and. holds(joined%zeta, mesh1%zeta) .and. holds(joined%zeta, mesh3%zeta) &
+            .and. size(joined%theta) < size(mesh1%theta) + size(mesh3%theta) .and. ok
+        print '(a,3i4,a,l2)', 'joined breakpoints ', size(joined%theta), size(joined%lam), &
+            size(joined%zeta), ' pass', ok
+        call hp_ntv_terms(f1, joined, op, t3, status)
+        if (status /= HP_OK) error stop 'hp_ntv_terms failed'
+        call hp_transfer(f1, joined, mesh1, t3%loc, t1%loc, t, status)
+        if (status /= HP_OK) error stop 'hp_transfer failed'
+        ok = below('joined mesh', maxval(abs(csc_apply(t, smooth(t1%theta, t1%xi)) &
+            - smooth(t3%theta, t3%xi))), 5e-4_dp) .and. ok
+
+        call hp_transfer(f1, mesh1, mesh1, t1%loc, t1%loc, t, status)
+        if (status /= HP_OK) error stop 'hp_transfer failed'
+        same = t%nnz == t1%n .and. t%nrow == t1%n .and. t%ncol == t1%n
+        if (same) same = all(t%val(:t%nnz) == 1) .and. &
+            all(t%row_idx(:t%nnz) == [(k, k=1, t1%n)])
+        print '(a,l2)', 'equal meshes give the identity pass', same
+        ok = same .and. ok
+
+        call hp_mass(t1, mass)
+        ok = below('mass times 1 against density', maxval(abs(csc_apply(mass, one) &
+            - t1%density))/maxval(t1%density), 1e-13_dp) .and. ok
+    end function transfer
+
+    elemental real(dp) function smooth(th, xi)
+        real(dp), intent(in) :: th, xi
+        smooth = exp(xi)*cos(th)
+    end function smooth
+
+    !> whole increases and holds every point of part, to the tolerance of the union.
+    pure logical function holds(whole, part)
+        real(dp), intent(in) :: whole(:), part(:)
+        integer :: k
+        holds = all(whole(2:) > whole(:size(whole) - 1))
+        do k = 1, size(part)
+            holds = holds .and. minval(abs(whole - part(k))) <= 1e-12_dp
+        end do
+    end function holds
+
+    !> The nodes of mesh, in the numbering of terms, placed in the geometry f
+    !> of another surface: at their angle from the X point and at the xi of
+    !> their row labels (passing levels as fractions of lambda_c, trapped
+    !> rows zeta), linear between the two curves of a row.
+    subroutine labelled_nodes(f, mesh, terms, th, xi)
+        use milca_dk_hp, only: hp_terms_t
+        use fortnum_quadrature, only: gauss_lobatto_legendre
+        type(hp_field_t), intent(in) :: f
+        type(hp_mesh_t), intent(in) :: mesh
+        type(hp_terms_t), intent(in) :: terms
+        real(dp), allocatable, intent(out) :: th(:), xi(:)
+        real(dp), allocatable :: val(:)
+        integer, allocatable :: kind(:)
+        real(dp) :: node(mesh%p + 1), wn(mesh%p + 1), x(2), d
+        integer :: n_col, n_lev, ec, er, a1, a2, k, c
+        n_col = size(mesh%theta) - 1
+        n_lev = size(mesh%lam)
+        val = [mesh%lam(:n_lev - 1)/mesh%lam(n_lev)*f%lambda_c, mesh%zeta, &
+            mesh%lam(n_lev - 1:1:-1)/mesh%lam(n_lev)*f%lambda_c]
+        kind = [(-1, c=1, n_lev - 1), (0, c=1, size(mesh%zeta)), (1, c=1, n_lev - 1)]
+        call gauss_lobatto_legendre(mesh%p + 1, node, wn)
+        allocate (th(terms%n), xi(terms%n))
+        do er = 1, size(val) - 1
+            do ec = 1, n_col
+                do a2 = 0, mesh%p
+                    do a1 = 0, mesh%p
+                        k = terms%loc(1 + a1 + (mesh%p + 1)*a2, ec + (er - 1)*n_col)
+                        th(k) = f%theta_x + mesh%theta(ec) + (mesh%theta(ec + 1) &
+                            - mesh%theta(ec))*(1 + node(a1 + 1))/2 - mesh%theta(n_col + 1)
+                        do c = 1, 2
+                            call f%level(kind(er + c - 1), val(er + c - 1), th(k), x(c), d)
+                        end do
+                        xi(k) = x(1) + (x(2) - x(1))*(1 + node(a2 + 1))/2
+                    end do
+                end do
+            end do
+        end do
+    end subroutine labelled_nodes
 
     !> R of the stage-1 harmonic (eps 0.05, q 2.2, n 3, m 6) on a uniform
     !> mesh, with its superbanana-plateau limit.

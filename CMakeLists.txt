@@ -1137,7 +1137,8 @@ milca_test_labels(dk_mono_neo2_tok02 fast CLASSES continuum equilibrium
 add_executable(test_dk_hp test/test_dk_hp.f90)
 target_link_libraries(test_dk_hp PRIVATE milca)
 foreach(check reference onsager collisionless banana pfirsch_schlueter estimate
-        ntv_reference ntv_superbanana_plateau ntv_one_over_nu ntv_rotation)
+        ntv_reference ntv_superbanana_plateau ntv_one_over_nu ntv_rotation
+        terms_recombine line_moments transfer)
     add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
     milca_test_labels(dk_hp_${check} fast CLASSES continuum TARGETS test_dk_hp)
 endforeach()
