@@ -14,7 +14,8 @@
 !! did not converge, 4 orbits leave the file with adaptive energy panels; the
 !! row is then zero), then with hp adaptation the largest final mesh error
 !! estimate |eta|/|R + eta| and the number of seed and check energies whose
-!! refinement stopped before the tolerance (both 0 without it). The program
+!! refinement stopped before the tolerance, and the largest number of unknowns
+!! of their meshes (all 0 without it). The program
 !! ends with an error when any status is not 0.
 program ntv_profile
     use, intrinsic :: iso_fortran_env, only: dp => real64, error_unit
@@ -50,13 +51,13 @@ program ntv_profile
     end if
     do i = 1, ns
         do a = 1, nsp
-            print '(f12.8,i3,5es18.9,2i8,5es18.9,i3,es12.3,i4)', prof%s(i), a, &
+            print '(f12.8,i3,5es18.9,2i8,5es18.9,i3,es12.3,i4,i9)', prof%s(i), a, &
                 result(i, a)%k11, &
                 result(i, a)%k12, result(i, a)%dpsi_dr, result(i, a)%gamma_psi, &
                 result(i, a)%torque, result(i, a)%factorisations, result(i, a)%iterations, &
                 result(i, a)%k21, result(i, a)%k22, result(i, a)%heat_flux, &
                 result(i, a)%offset_rotation, result(i, a)%lost_weight, result(i, a)%status, &
-                result(i, a)%mesh_error, result(i, a)%unsettled
+                result(i, a)%mesh_error, result(i, a)%unsettled, result(i, a)%mesh_unknowns
         end do
     end do
     write (error_unit, '(a,f10.2)') 'wall s ', real(c1 - c0, dp)/rate

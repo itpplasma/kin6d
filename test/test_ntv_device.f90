@@ -418,7 +418,7 @@ contains
         type(ntv_species_t) :: sp(1)
         type(ntv_profile_t) :: prof
         type(ntv_resolution_t) :: res
-        type(ntv_species_result_t), allocatable :: coarse(:, :), adapted(:, :), legendre(:, :)
+        type(ntv_species_result_t), allocatable :: coarse(:, :), adapted(:, :), legendre(:, :), capped(:, :)
         integer :: status
         call write_file(eq_name, .false.)
         call write_file(pert_name, .true.)
@@ -459,6 +459,15 @@ contains
             adapted(1, 1)%mesh_error > 0 .and. adapted(1, 1)%unsettled == 0)
         call check('adaptive: a fixed mesh records no estimate', &
             coarse(1, 1)%mesh_error == 0 .and. coarse(1, 1)%unsettled == 0)
+        ! A limit between the start mesh and the adapted one: refinement stops below it.
+        res%hp_adapt = 1e-9_dp
+        res%hp_max_unknowns = 45000
+        call ntv_device_profile(eq, pert, 3, sp, prof, res, capped, status)
+        call check('adaptive: limited mesh', status == DEVICE_OK)
+        call check('adaptive: no mesh above the size limit', &
+            capped(1, 1)%mesh_unknowns > 0 .and. capped(1, 1)%mesh_unknowns <= 45000)
+        call check('adaptive: a mesh stopped at the limit counts as unsettled', &
+            capped(1, 1)%unsettled > 0 .and. capped(1, 1)%mesh_error > 1e-9_dp)
     end subroutine hp_adaptive
 
     !> Circular surfaces with a toroidal current and shear; the perturbation

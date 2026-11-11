@@ -122,6 +122,8 @@ module milca_ntv_device
         ! energy is then solved on the union of its two neighbouring seed
         ! meshes. 0 keeps the mesh.
         real(dp) :: hp_adapt = 0
+        ! Refinement produces no mesh with more unknowns than this.
+        integer :: hp_max_unknowns = 250000
     end type
 
     !> Per surface and species: K_1j and K_2j [m^2/s Wb^2/m^2], dpsi_pol/dr [Wb/m],
@@ -140,11 +142,12 @@ module milca_ntv_device
     !> hp_adapt, mesh_error is the largest final |eta|/|R + eta| over the seed
     !> and check energies of the mesh adaptation, and unsettled counts those
     !> whose refinement stopped at its size or round limit before the
-    !> tolerance was met.
+    !> tolerance was met; mesh_unknowns is the largest of their meshes.
     type :: ntv_species_result_t
         real(dp) :: k11 = 0, k12 = 0, k21 = 0, k22 = 0, dpsi_dr = 0, gamma_psi = 0, &
             heat_flux = 0, torque = 0, offset_rotation = 0, lost_weight = 0, mesh_error = 0
-        integer :: factorisations = 0, iterations = 0, status = DEVICE_OK, unsettled = 0
+        integer :: factorisations = 0, iterations = 0, status = DEVICE_OK, unsettled = 0, &
+            mesh_unknowns = 0
     end type
 
     !> Axisymmetric transport matrix of one surface: d(a, b, i, j) of
@@ -521,15 +524,13 @@ contains
             type(hp_operator_t), intent(in) :: op
             real(dp), intent(out) :: rv
             integer, intent(out) :: st
-            ! MESH_FIXED: solve on mesh. MESH_SETTLE: refine until R + eta
-            ! changes by at most hp_adapt. MESH_CHECK: refine until eta is
+            ! MESH_FIXED: solve on mesh. MESH_CHECK: refine until eta is
             ! within hp_adapt of R + eta, so that R on the mesh is.
+            ! MESH_SETTLE: in addition until R + eta changes by at most hp_adapt.
             integer, intent(in) :: mode
             type(adapt_info_t), intent(out), optional :: info
-            ! Refinement stops beyond this many unknowns.
-            integer, parameter :: max_dof = 250000
-            real(dp) :: eta, val, prev
-            logical :: settled
+            real(dp) :: eta, val, prev, fraction
+            logical :: settled, full
             real(dp), allocatable :: eta_el(:)
             type(hp_mesh_t) :: next
             integer :: it, n_dof
@@ -543,20 +544,34 @@ contains
                 call hp_ntv_estimate(g, mesh, op, rv, eta, eta_el, st, n_dof)
                 if (st /= HP_OK) return
                 val = rv + eta
-                if (mode == MESH_CHECK) then
-                    settled = abs(eta) <= res%hp_adapt*abs(val)
-                else
-                    settled = abs(val - prev) <= res%hp_adapt*abs(val)
-                end if
-                if (settled .or. n_dof > max_dof) exit
+                ! The other energies of a band are solved on this mesh without
+                ! the correction eta, so eta has to be small in both modes.
+                settled = abs(eta) <= res%hp_adapt*abs(val)
+                if (mode == MESH_SETTLE) settled = settled &
+                    .and. abs(val - prev) <= res%hp_adapt*abs(val)
+                if (settled) exit
                 prev = val
-                call hp_refine(mesh, eta_el, 0.5_dp, next)
+                ! Mark less while the refined mesh would exceed the size limit.
+                fraction = 0.5_dp
+                do
+                    call hp_refine(mesh, eta_el, fraction, next)
+                    full = real(n_dof, dp)*elements(next) &
+                        > real(res%hp_max_unknowns, dp)*elements(mesh)
+                    if (.not. full .or. fraction < 0.05_dp) exit
+                    fraction = fraction/2
+                end do
+                if (full) exit
                 mesh = next
             end do
             rv = val
             if (present(info)) info = adapt_info_t(abs(eta)/max(abs(val), tiny(val)), &
                 n_dof, settled)
         end subroutine adapt_kernel
+
+        pure real(dp) function elements(m)
+            type(hp_mesh_t), intent(in) :: m
+            elements = real(size(m%theta) - 1, dp)*(2*(size(m%lam) - 1) + size(m%zeta) - 1)
+        end function elements
 
         !> R of species a on surface i at x = v^2/v_th^2 with finite orbit width.
         real(dp) function orbit_r(i, a, xv, st, start, used, mode, info) result(rv)
@@ -785,6 +800,7 @@ contains
             do k = 1, size(x)
                 if (sts(k) /= NTV_OK) cycle
                 result(i, a)%mesh_error = max(result(i, a)%mesh_error, info(k)%eta_rel)
+                result(i, a)%mesh_unknowns = max(result(i, a)%mesh_unknowns, info(k)%n_dof)
                 if (info(k)%settled) cycle
                 result(i, a)%unsettled = result(i, a)%unsettled + 1
                 write (error_unit, '(a,f10.6,a,i0,a,f8.4,a,es10.3,a,i0)') &
