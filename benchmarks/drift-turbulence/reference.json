@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "quantity": "saturated particle flux Gamma_n = -<n d phi/dy> of the original Hasegawa-Wakatani model, kappa = 1, box 2 pi/0.15, box average, units of the Camargo normalisation (lengths rho_s, time L_n/c_s, fluctuations times L_n/rho_s)",
+  "sources": [
+    {
+      "id": "hw2d",
+      "citation": "R. Greif, HW2D, J. Open Source Softw. 8, 5959 (2023), doi:10.21105/joss.05959",
+      "location": "README.md of github.com/the-rccg/hw2d at commit 623841f16fa5e1d9bcd4cf2a05d33dd762cd2b85, read 2026-11-11; the refereed text contains no numbers",
+      "method": "second-order Arakawa bracket, fourth-order Runge-Kutta, 512x512, hyperviscosity nu laplace^3",
+      "note": "the README gives nu = 5e-8 in the text and 5e-9 in the table of flux against adiabaticity; the table error is the standard deviation in time, the reference-value error the standard deviation over 25 runs",
+      "status": "read from the source",
+      "flux_table": [
+        {"c1": 0.1, "gamma_n": 1.51, "time_std": 0.21},
+        {"c1": 0.25, "gamma_n": 1.17, "time_std": 0.13},
+        {"c1": 0.5, "gamma_n": 0.89, "time_std": 0.09},
+        {"c1": 1.0, "gamma_n": 0.60, "time_std": 0.05},
+        {"c1": 2.0, "gamma_n": 0.38, "time_std": 0.03},
+        {"c1": 5.0, "gamma_n": 0.13, "time_std": 0.02}
+      ],
+      "reference_c1_1": {"gamma_n": 0.60, "gamma_n_run_std": 0.01, "gamma_c": 0.60,
+                         "energy": 3.78, "energy_run_std": 0.07,
+                         "enstrophy": 13.2, "enstrophy_run_std": 0.91}
+    },
+    {
+      "id": "camargo1995",
+      "citation": "S. J. Camargo, D. Biskamp, B. D. Scott, Phys. Plasmas 2, 48 (1995), doi:10.1063/1.871116",
+      "location": "values quoted in the hw2d README table; the paper itself was not read",
+      "status": "unverified: second-hand",
+      "reference_c1_1": {"gamma_n": 0.73, "gamma_c": 0.72, "energy": 4.4, "enstrophy": 12.8}
+    },
+    {
+      "id": "stegmeir2018",
+      "citation": "A. Stegmeir et al., Plasma Phys. Control. Fusion 60, 035005 (2018), doi:10.1088/1361-6587/aaa373",
+      "location": "values quoted in the hw2d README table (columns Stegmeir and HW); the paper itself was not read",
+      "status": "unverified: second-hand",
+      "reference_c1_1": {"gamma_n": [0.64, 0.61], "energy": [3.97, 3.82]}
+    },
+    {
+      "id": "zeiler1996",
+      "citation": "A. Zeiler et al., doi:10.1063/1.871566",
+      "location": "values quoted in the hw2d README table; the paper itself was not read",
+      "status": "unverified: second-hand",
+      "reference_c1_1": {"gamma_n": 0.8, "energy": 6.1}
+    },
+    {
+      "id": "numata2007",
+      "citation": "R. Numata, R. Ball, R. L. Dewar, Phys. Plasmas 14, 102312 (2007), arXiv:0708.4317",
+      "location": "Secs. II and III of the arXiv version",
+      "status": "read from the source; no tabulated flux, figures not digitised",
+      "statements": [
+        "dispersion relation Eq. (8) (checked by drift_dispersion_fluid_roots)",
+        "most unstable modes on kx = 0 for alpha = 1, D = 1e-4 (checked by drift_dispersion_fluid_roots)",
+        "saturated state: Gamma_n ~ D_alpha >> D_E, D_W",
+        "modified model develops zonal flows that carry nearly all kinetic energy; the original model does not"
+      ]
+    }
+  ]
+}
