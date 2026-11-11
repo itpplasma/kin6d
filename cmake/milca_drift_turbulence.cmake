@@ -1,6 +1,6 @@
 # Drift-wave turbulence branch (docs/drift-turbulence.md).
 target_sources(milca_continuum PRIVATE src/generated/milca_drift_fluid_leaves.f90
-    src/continuum/drift_dispersion.f90)
+    src/continuum/drift_dispersion.f90 src/continuum/drift_spectral.f90)
 set_source_files_properties(src/generated/milca_drift_fluid_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 if(MILCA_FORTSYM_BUILD)
@@ -22,3 +22,10 @@ add_test(NAME drift_dispersion_fluid_roots COMMAND test_drift_dispersion)
 set_tests_properties(drift_dispersion_fluid_roots PROPERTIES TIMEOUT 60)
 milca_test_labels(drift_dispersion_fluid_roots fast CLASSES continuum
     TARGETS test_drift_dispersion)
+
+add_executable(test_drift_spectral test/test_drift_spectral.f90)
+target_link_libraries(test_drift_spectral PRIVATE milca_continuum)
+add_test(NAME drift_spectral_bracket COMMAND test_drift_spectral)
+set_tests_properties(drift_spectral_bracket PROPERTIES TIMEOUT 60)
+milca_test_labels(drift_spectral_bracket fast CLASSES continuum
+    TARGETS test_drift_spectral)

@@ -1,6 +1,7 @@
 # Drift-wave turbulence: spectra and transport coefficients
 
-Status: design specification with the fluid part of stage L implemented.
+Status: design specification with the fluid part of stage L and the periodic
+spectral grid implemented.
 Each further stage becomes active with the pull request that brings its tests.
 
 ## Consumer
@@ -140,6 +141,28 @@ the leaves of `gen/gen_drift_fluid.f90`. `drift_dispersion_fluid_roots` checks
 the roots against binary128 eigenvalues of the linearised equations, Eq. (8)
 of Numata et al., these limits and central differences of the tangents; its
 oracle with the density-gradient drive moved to the vorticity equation is
+rejected.
+
+## Periodic spectral grid
+
+`milca_drift_spectral` holds a real field on a doubly periodic box as its
+Fourier coefficients. Per direction the modes \(|m|\le(n-1)/3\) are retained,
+which removes the aliases of quadratic products. `drift_bracket` evaluates
+
+\[
+\{\phi,f\}=\tfrac13\left[\phi_xf_y-\phi_yf_x
++\partial_x(\phi f_y-\phi_yf)+\partial_y(\phi_xf-\phi f_x)\right],
+\]
+
+the average of the advective and the two conservative forms, with the
+pointwise products from the leaf `bracket_split_products`. Summation by parts
+of the collocated derivative then gives
+\(\langle\{\phi,f\}\rangle=\langle f\{\phi,f\}\rangle=\langle\phi\{\phi,f\}\rangle=0\)
+term by term. The bracket is bilinear; under the box average its adjoint in
+\(f\) is \(g\mapsto-\{\phi,g\}\) and its adjoint in \(\phi\) is
+\(g\mapsto\{f,g\}\). `drift_spectral_bracket` checks a manufactured solution,
+these identities to rounding and spectral convergence; a collocated advective
+bracket on untruncated fields violates the quadratic invariant and is
 rejected.
 
 ## Admission record

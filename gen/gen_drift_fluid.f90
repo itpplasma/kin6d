@@ -7,11 +7,14 @@ program gen_drift_fluid
     type(leaf_writer_t) :: w
     type(expr_t) :: alpha, kappa, kx, ky, k2, d, order, b, wstar, nu
     type(expr_t) :: s, r, p, gam, om, beta, mu, c, kpar
+    type(expr_t) :: px, py, ph, fx, fy, f
 
     alpha = sym('alpha'); kappa = sym('kappa'); kx = sym('kx'); ky = sym('ky')
     d = sym('d'); order = sym('order'); b = sym('b'); wstar = sym('wstar')
     nu = sym('nu'); gam = sym('gam'); om = sym('om')
     beta = sym('beta'); mu = sym('mu'); c = sym('c'); kpar = sym('kpar')
+    px = sym('px'); py = sym('py'); ph = sym('p')
+    fx = sym('fx'); fy = sym('fy'); f = sym('f')
     k2 = kx**2 + ky**2
 
     call w%open('gen_drift_fluid', 'src/generated/milca_drift_fluid_leaves.f90')
@@ -59,6 +62,13 @@ program gen_drift_fluid
     call w%emit('drift_alfven_limits', ['beta', 'mu  ', 'kpar', 'kx  ', 'ky  '], &
         ['om_drift  ', 'om_alfven2'], &
         [ky/(1 + k2), kpar**2*(1 + k2)/(beta + mu*k2)], ad=.true.)
+    ! Pointwise products of the split bracket {phi, f} = (p1 + d/dx p2 + d/dy p3)/3,
+    ! p1 = phi_x f_y - phi_y f_x, p2 = phi f_y - phi_y f, p3 = phi_x f - phi f_x.
+    ! The three equal forms of the bracket are averaged so that the collocated
+    ! sums of f {phi, f} and phi {phi, f} vanish term by term.
+    call w%emit('bracket_split_products', &
+        ['px', 'py', 'p ', 'fx', 'fy', 'f '], ['p1', 'p2', 'p3'], &
+        [px*fy - py*fx, ph*fy - py*f, px*f - ph*fx], ad=.true.)
     call w%line('end module milca_drift_fluid_leaves')
     call w%close()
 contains
