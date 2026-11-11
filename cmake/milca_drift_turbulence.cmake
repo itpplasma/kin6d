@@ -1,7 +1,7 @@
 # Drift-wave turbulence branch (docs/drift-turbulence.md).
 target_sources(milca_continuum PRIVATE src/generated/milca_drift_fluid_leaves.f90
     src/continuum/drift_dispersion.f90 src/continuum/drift_spectral.f90
-    src/continuum/hasegawa_wakatani.f90)
+    src/continuum/hasegawa_wakatani.f90 src/continuum/turbulence_statistics.f90)
 set_source_files_properties(src/generated/milca_drift_fluid_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 if(MILCA_FORTSYM_BUILD)
@@ -37,3 +37,24 @@ add_test(NAME hasegawa_wakatani_oracles COMMAND test_hasegawa_wakatani)
 set_tests_properties(hasegawa_wakatani_oracles PROPERTIES TIMEOUT 120)
 milca_test_labels(hasegawa_wakatani_oracles fast CLASSES continuum
     TARGETS test_hasegawa_wakatani)
+
+add_executable(test_turbulence_statistics test/test_turbulence_statistics.f90)
+target_link_libraries(test_turbulence_statistics PRIVATE milca_continuum)
+add_test(NAME turbulence_statistics_oracles COMMAND test_turbulence_statistics)
+set_tests_properties(turbulence_statistics_oracles PROPERTIES TIMEOUT 120)
+milca_test_labels(turbulence_statistics_oracles fast CLASSES continuum
+    TARGETS test_turbulence_statistics)
+
+target_sources(milca_io PRIVATE src/apps/turbulence_output.f90)
+add_executable(hasegawa_wakatani app/hasegawa_wakatani.f90)
+target_link_libraries(hasegawa_wakatani PRIVATE milca_io)
+add_executable(test_turbulence_output test/test_turbulence_output.f90)
+target_link_libraries(test_turbulence_output PRIVATE milca_io)
+add_test(NAME hasegawa_wakatani_result_contract COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:hasegawa_wakatani> -DCHECK=$<TARGET_FILE:test_turbulence_output>
+    -DWORK=${CMAKE_BINARY_DIR}/hasegawa-wakatani-result
+    -P ${CMAKE_SOURCE_DIR}/test/check_hasegawa_wakatani_result.cmake)
+set_tests_properties(hasegawa_wakatani_result_contract PROPERTIES TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=1")
+milca_test_labels(hasegawa_wakatani_result_contract fast CLASSES continuum apps
+    TARGETS hasegawa_wakatani test_turbulence_output)
