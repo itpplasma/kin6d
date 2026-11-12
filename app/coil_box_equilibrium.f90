@@ -13,7 +13,7 @@ program coil_box_equilibrium
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use milca_nonnested_mapped, only: nn_map_t, nn_mapped_cartesian_data, nn_map_point
     use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
-        nc_layout, nc_continue, nc_solve
+        nc_layout, nc_continue, nc_solve, nc_store
     use fortfem_meridian_feec_n, only: meridian_qgrad
     implicit none
     character(len=512) :: coils_file = '', wall_file = '', arg
@@ -41,8 +41,8 @@ program coil_box_equilibrium
     type(nn_map_t), target :: map
     type(nc_problem_t) :: problem
     type(nc_layout_t) :: lay
-    type(nc_report_t) :: report
-    real(dp), allocatable :: data(:), x(:)
+    type(nc_report_t) :: report, report_last
+    real(dp), allocatable :: data(:), x(:), x_last(:)
     real(dp) :: pmax, pmean, b2mean, volume, peak
     integer :: unit, st, c0, c1, rate, step
 
@@ -81,11 +81,24 @@ program coil_box_equilibrium
     if (st /= 0) error stop 'coupled solve'
     do step = 2, source_steps
         source_peak = peak*step/source_steps
+        x_last = x
+        report_last = report
         call nc_solve(field, problem, x, report, st, tol=newton_tolerance)
-        write (*, '(a,i0,a,i0,a,i0,a,es9.2)') 'source step ', step, &
+        write (*, '(a,i0,a,i0,a,i0,a,es9.2,a,a)') 'source step ', step, &
             ' Newton steps ', report%newton_steps, ' status ', st, &
-            ' divergence ', report%divergence
-        if (st /= 0) error stop 'coupled solve (source step)'
+            ' divergence ', report%divergence, ' ', trim(report%message)
+        if (st /= 0) then
+            ! Keep the last converged state: its source fraction is reported
+            ! and the moments and traces below describe it.
+            x = x_last
+            report = report_last
+            source_peak = peak*(step - 1)/source_steps
+            call nc_store(field, x, st)
+            if (st /= 0) error stop 'store of the last converged state'
+            write (*, '(a,f6.3,a)') 'reached source fraction ', &
+                real(step - 1, dp)/source_steps, ' (later steps not converged)'
+            exit
+        end if
     end do
     call moments(field, map, nphi, pmax, pmean, b2mean, volume)
     call system_clock(c1)
