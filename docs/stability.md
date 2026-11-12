@@ -239,7 +239,7 @@ finite-amplitude theorem; a linear eigenvalue interval does not prove it.
 
 ## Global 3D ideal-MHD stability (P1e)
 
-Status (2026-11-12): stages P1e.1 and P1e.2 implemented (see
+Status (2026-11-12): stages P1e.1 and P1e.2 implemented, P1e.3 in progress (see
 [implementation status](#p1e-implementation-status)); later stages planned.
 This section is the plan
 for roadmap item P1e: a global ideal-MHD stability capability for 3D
@@ -464,6 +464,27 @@ Compression (gamma = 5/3) raises the kink eigenvalue to -0.149, as it must.
 The perpendicular kinetic norm is not offered yet: it leaves the parallel
 displacement without inertia, which needs the field-aligned components of
 P1e.4. Newcomb and Suydam (O7) belong to P1e.7.
+
+**P1e.3 (in progress): general flux-coordinate space.** `milca_ideal_flux`
+takes any nested chart x(rho, theta, zeta) with its first and second
+derivatives, the toroidal flux per radian psi(rho), iota(rho), the jets of a
+stream function lambda (B = grad psi x grad(theta + lambda) + iota grad zeta x
+grad psi, so that VMEC, Boozer and PEST coordinates all fit) and p(rho). The
+unknowns are the contravariant densities D^u = sqrt(g) xi^u of one mode
+family on the hybrid radial pair; `gen/gen_ideal_flux.f90` emits B, grad B,
+grad p and the linear map from density jets to (xi, grad xi), and the
+coefficient matrix C of the Eulerian form, so that the stiffness integrand is
+J^H T^T C T J. Harmonics couple through the angular Fourier coefficients of
+T^T C T on a uniform angle grid. Checks (`ideal_flux_*`): on a
+non-axisymmetric chart with lambda, B agrees with an independent dual-basis
+formula to 1e-13, grad B and grad xi with central differences to 1e-7, and
+div B = 0 and sqrt(g) div xi = d_u D^u hold to rounding (the general symbolic
+proof of these two identities did not finish in 9 minutes and is replaced by
+this check). On a straight-cylinder chart the m = 1 kink agrees with the
+independent oracle to 1.3e-10, also with m = 0, 1, 2 coupled, and the uniform
+cylinder with m = 1, 2, 3 gives the union of the single-harmonic spectra to
+2e-11. Toroidal equilibria (EQDSK with PEST angles, Boozer files) and rung R3
+follow.
 
 ### Verification ladder
 
