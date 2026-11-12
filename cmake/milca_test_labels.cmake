@@ -41,7 +41,8 @@ endforeach()
 milca_test_labels(nonnested_actions_invalid fast CLASSES mhd
     TARGETS test_nonnested_actions)
 # Class and tier labels of every registered test (ROADMAP "Build structure").
-foreach(case waves rates outer newcomb convergence saturation table)
+foreach(case waves rates outer newcomb convergence saturation table bussac
+        shafranov torus_closed)
     milca_test_labels(rm_oracle_${case} fast CLASSES mhd TARGETS test_rm_oracles)
 endforeach()
 milca_test_labels(rm_oracle_regeneration fast CLASSES mhd TARGETS gen_rm_oracles)

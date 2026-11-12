@@ -2449,7 +2449,8 @@ set_tests_properties(vrmhd_pairing_benchmark PROPERTIES PROCESSORS 8 TIMEOUT 360
     LABELS benchmark ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(test_rm_oracles test/test_rm_oracles.f90)
 target_link_libraries(test_rm_oracles PRIVATE milca_rm_oracles milca_mhd)
-foreach(case waves rates outer newcomb convergence saturation table)
+foreach(case waves rates outer newcomb convergence saturation table bussac
+        shafranov torus_closed)
     add_test(NAME rm_oracle_${case} COMMAND test_rm_oracles ${case})
     set_tests_properties(rm_oracle_${case} PROPERTIES TIMEOUT 60
         LABELS rm-oracle ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
