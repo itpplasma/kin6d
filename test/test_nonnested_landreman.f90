@@ -25,6 +25,9 @@ module nn_landreman_case
     integer, parameter :: nfine = 32 ! phi points of the exact Fourier projections
     real(dp) :: chi_perp = 1, shift = 0
     integer :: block = 1
+    ! Field period of the solve; the state is pi-periodic (x, y -> -x, -y),
+    ! so period 2 retains exactly its even modes.
+    integer :: period = 1
 contains
     subroutine closed_bj(x, b, j)
         complex(dp), intent(in) :: x(3)
@@ -103,9 +106,9 @@ contains
         if (bk == 1) then
             c = 1
         else if (mod(bk, 2) == 0) then
-            c = 2*cos((bk/2)*phi)
+            c = 2*cos((bk/2)*period*phi)
         else
-            c = 2*sin((bk/2)*phi)
+            c = 2*sin((bk/2)*period*phi)
         end if
     end function
 
@@ -216,8 +219,13 @@ program test_nonnested_landreman
         call get_command_argument(6, arg)
         read (arg, *) nr0
     end if
+    ! Optional argument 7: the field period (1 or 2), block n is mode n period.
+    if (command_argument_count() >= 7) then
+        call get_command_argument(7, arg)
+        read (arg, *) period
+    end if
     if (k < 2 .or. k > 4 .or. ratio < 1 .or. nlev < 2 .or. decades <= 0 .or. &
-        nr0 < 2) &
+        nr0 < 2 .or. period < 1 .or. period > 2) &
         error stop 'arguments'
     allocate (eb(nlev), ep(nlev), ed(nlev), ev(nlev))
     do lev = 1, nlev
@@ -256,6 +264,7 @@ contains
         if (st /= 0) error stop 'mesh'
         call nn_build(fm, k, modes, [rc, 0.0_dp], rw, fvac, 1.0_dp, field, st)
         if (st /= 0) error stop 'build'
+        field%period = period
         call meridian_lagrange_nodes(field%fs, nodes)
         lay = nc_layout(field)
         ! Net toroidal current of the exact state on the discrete domain.

@@ -2766,7 +2766,11 @@ add_executable(test_nonnested_landreman test/test_nonnested_landreman.f90)
 target_link_libraries(test_nonnested_landreman PRIVATE milca)
 add_test(NAME nonnested_coupled_landreman_family1_p2
     COMMAND test_nonnested_landreman 2 1 3 2)
+# The same state with field period 2: block n is mode 2 n, modes 0 and 2.
+add_test(NAME nonnested_coupled_landreman_period2_p2
+    COMMAND test_nonnested_landreman 2 1 3 1 1 4 2)
 set_tests_properties(nonnested_coupled_landreman_family1_p2
+    nonnested_coupled_landreman_period2_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # G0: retain the published P3 high-ratio closed-line oracle and its gates.
