@@ -11,7 +11,8 @@ inertia, sparse real/complex shift targeting and real-shift inertia diagnostics
 for caller-supplied displacement spaces.
 A positive shifted-iteration result does not establish an inertia count or
 continuous stability. A general consumer covering the hierarchy below
-remains planned; no ITER n=3 continuous stability certificate is available.
+remains planned; the plan for global 3D ideal-MHD stability is
+[the P1e section](#global-3d-ideal-mhd-stability-p1e); no ITER n=3 continuous stability certificate is available.
 
 ## Principle
 
@@ -235,5 +236,275 @@ Each stability capability requires:
 
 Nonlinear stability/saturation additionally requires a trajectory or
 finite-amplitude theorem; a linear eigenvalue interval does not prove it.
+
+## Global 3D ideal-MHD stability (P1e)
+
+Status (2026-11-12): specification, not implemented. This section is the plan
+for roadmap item P1e: a global ideal-MHD stability capability for 3D
+equilibria, fixed and free boundary, that covers the published capabilities of
+CAS3D, CASTOR3D, TERPSICHORE and DCON and goes beyond them in certified errors,
+derivatives and cost at matched accuracy. Every source below is a publication
+or an open-source repository; the provenance rule is "Source provenance
+(strict)" in [AGENTS.md](../AGENTS.md).
+
+### Reference codes as published
+
+Each entry gives its evidence: **P** stated in the title or abstract of the
+cited paper, **S** taken from a secondary description (another paper or a
+conference abstract) because the full text has not been read yet, **?** not
+established. Stage P1e.0 below replaces every S and ? by a full-text reading
+or removes the entry. A closed code enters only through these publications and
+their published inputs and results.
+
+| Capability | CAS3D | CASTOR3D | TERPSICHORE | DCON / DCON3D |
+|---|---|---|---|---|
+| Equilibria | 3D nested (P) [1,2] | 2D and 3D tokamak (P) [5]; stellarator applications (S) | 3D nested (P) [7] | axisymmetric (P) [9]; 3D nested (P) [10] |
+| Model | compressible ideal, kinetic energy with density (P) [2] | resistive MHD with viscosity and toroidal flow (S) [5]; two-fluid terms added later (S) | ideal (P) [7,19] | ideal, no kinetic energy (P) [9] |
+| Output | unstable global modes, stable spectra, Alfven eigenmodes (P) [2] | growth rates over five orders, from no-wall to resistive-wall time scales (S) [5] | low-n global modes (P) [7] | stable/unstable decision without eigenvalues; plasma response matrix (P) [9,10] |
+| Boundary | free boundary (P) [3] | ideal and resistive 3D thin walls, coils (S) [5,6] | ? | free boundary via plasma plus vacuum response matrix (P) [9]; 3D: ? |
+| Walls and feedback | conducting structures and feedback design with STARWALL (P) [4] | STARWALL thin-wall model (S) [4,5] | ? | ? |
+| Local criteria | ? | ? | Mercier (P) [7] | singular-surface crossing (P) [9] |
+| Coordinates | Boozer (S) | ? | ? | straight field line flux coordinates (P) [9,10] |
+| Derivatives, error bounds | none found so far | none found so far | none found so far | none found so far |
+| Availability | closed | closed | Apache-2.0 [R1] | MIT within GPEC [R2,R3]; DCON3D: ? |
+
+The P1e target is the union of the ideal rows, plus what no publication found
+so far reports: an error estimate or bound, or an explicit unavailable status,
+on every reported number; derivatives of every observable with respect to
+equilibrium and design parameters; and measured cost at a declared accuracy.
+The resistive, viscous, flow and two-fluid rows of CASTOR3D are not ideal MHD;
+they enter only after the ideal gates, as stage P1e.11.
+
+### Notation
+
+B, J, p and rho are the equilibrium magnetic field, current density
+(J = curl B / mu_0), pressure and mass density; mu_0 is the vacuum
+permeability and gamma the adiabatic index. xi is the plasma displacement,
+nu the outward unit normal of the plasma boundary, and n the toroidal mode
+number. A perturbation proportional to exp(-i omega t) has eigenvalue
+lambda = omega^2, and lambda < 0 means growth rate sqrt(-lambda). The unit of
+frequency is the on-axis Alfven frequency omega_A = v_A0/R_0, with
+v_A0 = B_0/sqrt(mu_0 rho_0) from the field and density on the magnetic axis
+and R_0 the major radius of the axis. After discretization, A is the
+Hermitian stiffness matrix (twice delta W) and M the mass matrix (twice the
+kinetic energy), and A x = lambda M x.
+
+### Model hierarchy
+
+1. **M0 fixed boundary.** Static equilibrium without flow on nested 3D flux
+   surfaces, potential energy [11,12]
+
+   \[
+   \delta W_p=\frac12\int\Big[\frac{|Q|^2}{\mu_0}
+   -\xi^*\cdot(J\times Q)
+   +\gamma p|\nabla\!\cdot\xi|^2
+   +(\xi\cdot\nabla p)\,\nabla\!\cdot\xi^*\Big]dV,\qquad
+   Q=\nabla\times(\xi\times B),
+   \]
+
+   which is real on an equilibrium because the force operator is
+   self-adjoint, and kinetic energy \(\tfrac12\int\rho|\xi|^2dV\), with the
+   boundary condition \(\nu\cdot\xi=0\). Three closures are required:
+   gamma = 0 (no pressure perturbation from compression), gamma > 0
+   (compressible, the CAS3D model [2]) and the incompressible limit. The
+   perpendicular kinetic norm \(\rho|\xi_\perp|^2\) is kept as a second
+   option, because published growth rates use either norm; the norm changes
+   growth rates, not the unstable count or marginal points. Toroidal
+   harmonics couple within one mode family (n fixed modulo the number of
+   field periods).
+2. **M1 free boundary.** M0 plus the vacuum energy
+   \(\delta W_v=\int|\delta B_v|^2/(2\mu_0)\,dV\) outside the plasma and the
+   surface term on the plasma boundary [11,12], with either no wall (exterior
+   to infinity), an ideal conducting wall of arbitrary 3D shape, or
+   fixed-current coils.
+3. **M2 resistive thin wall.** M1 with a thin 3D wall of finite
+   conductivity: the plasma stays ideal and the wall currents add a
+   first-order time derivative, so growth rates span the ideal (no-wall) to
+   resistive-wall time scales [4,6]. The wall time tau_w is the slowest decay
+   time of free currents in the wall without plasma.
+4. **M3 local criteria.** Mercier and ideal ballooning on each flux surface
+   [7,13,14], as diagnostics and as the high-mode-number limit that the
+   global result must approach.
+
+M0 to M3 are P1e. Resistive plasma, viscosity, flow and two-fluid terms
+(stage P1e.11) linearize the residual of
+[nonlinear-resistive-mhd.md](nonlinear-resistive-mhd.md) instead of adding a
+second stability model.
+
+### Observables and acceptance tolerances
+
+Frozen with this specification. A change needs the escalation rule in
+[AGENTS.md](../AGENTS.md) and must not be made in the same step as an
+implementation change. The internal column bounds the estimated discretization
+error: the difference between the two finest levels of a refinement sequence
+that shows the expected convergence rate, or an a posteriori estimate once one
+is available. The reference column bounds the difference to a named
+reference. Every tolerance is relative, with the absolute floor given where
+the observable can cross zero.
+
+| Id | Observable | Internal | Against references |
+|---|---|---|---|
+| O1 | number of eigenvalues below -delta, delta = 1e-4 omega_A^2, per mode family (inertia of A + delta M) | exact; floating-point count until stage P1e.9, certified after | exact where the reference states it |
+| O2 | growth rate of the most unstable mode, units of omega_A | 1 % | analytic: 1e-4; published codes: 3 % for growth rates above 1e-2 omega_A, smaller ones recorded |
+| O3 | marginal point: parameter value (beta, current, boundary coefficient) where the lowest eigenvalue crosses zero | 1 %, floor 1e-3 of the scan range | 2 %, same floor |
+| O4 | discrete stable eigenvalues and continuum edges | 1e-3 | analytic: 1e-4; published codes: 1 % |
+| O5 | spectral pollution: an eigenvalue that is not in the exact spectrum (where it is known) or that does not converge at the element's rate over three refinement levels | none | none |
+| O6 | lowest eigenvalues of the plasma, vacuum and total boundary response matrices W_P, W_V, W_T, harmonics normalized as in [9] | 1e-3 | 2 % against DCON |
+| O7 | Mercier criterion and ballooning eigenvalue per surface | 1e-3, floor 1e-3 of the largest magnitude on the profile | 1 %, same floor |
+| O8 | resistive-wall-mode growth rate, units of 1/tau_w | 1 % | 3 % |
+| O9 | derivatives of O2, O3 and O6 with respect to equilibrium and boundary parameters | tangent and adjoint agree to 1e-10; both agree with central finite differences (complex step on real-arithmetic paths) to 1e-6 | not applicable |
+| O10 | wall time and peak memory to reach O2 at 1 % | measured | same hardware as the running comparators |
+
+O1 counts below -delta because the continua accumulate at zero, and at
+gamma = 0 the parallel displacements form a neutral subspace. When O7 shows a
+locally unstable surface, the continuous problem has infinitely many unstable
+modes and O1 grows under refinement; it is then reported with that status and
+not as converged. A disagreement with a published or running code beyond
+these bands is recorded as unresolved with its suspected cause; tolerances are
+not widened to absorb it.
+
+### Formulation decisions
+
+- **Energy source.** One FortSym definition of M0 and M1 generates the
+  primal, tangent and adjoint leaves. It is derived from [11,12] in MILCA and
+  replaces the externally pinned generator behind
+  `src/generated/ideal_mhd_*`. Independent checks: equivalence with the
+  intuitive form of delta W [12], proved in FortSym and repeated in SymPy;
+  reduction to Newcomb's cylinder Lagrangian [16]; agreement of the potential
+  energy with the pinned leaves on the existing tests before the pin is
+  removed. The kinetic leaf changes from the perpendicular norm of the pinned
+  package ([ideal-xi.md](ideal-xi.md)) to the full norm of M0, with the
+  perpendicular norm kept as the option above.
+- **Discretization.** Radial finite elements aligned with flux surfaces,
+  Fourier harmonics in the two angles, one mode family at a time. The radial
+  pair generalizes the hybrid elements of [1,15]: the normal component of xi
+  continuous of degree p, the tangential components discontinuous of degree
+  p-1, designed so that the divergence and field-line bending terms are
+  approximated compatibly and the continua stay unpolluted, as analysed in
+  [15] for one- and two-dimensional equilibria; in 3D, O5 checks it. Degree,
+  radial mesh and harmonic set adapt, with refinement at rational surfaces.
+  Unaligned meshes are out of P1e because the published codes and the
+  pollution analysis assume alignment.
+- **Equilibria.** The native nested map equilibrium
+  ([nested-equilibrium-input.md](nested-equilibrium-input.md)) and imported
+  VMEC, GVEC and DESC states through an adapter, both transformed to
+  straight field line coordinates. The equilibrium force residual and its
+  error enter the error ledger of every stability result.
+- **Vacuum.** The exterior energy uses the Steklov-Poincare map of the
+  existing boundary-element operators
+  ([ideal-free-boundary.md](ideal-free-boundary.md)): exact to infinity,
+  with an ideal wall or coils as additional boundaries. The thin resistive
+  wall is a surface current potential on the wall, following the
+  formulation published in [4].
+- **Spectrum.** A real-shift LDL factorization of A - sigma M gives the
+  number of eigenvalues below sigma by Sylvester's law of inertia, as in
+  [s0-spectrum.md](s0-spectrum.md); shift-invert Lanczos [8] gives the
+  eigenpairs. W_P, W_V and W_T are Schur complements on the boundary
+  harmonics.
+- **Derivatives.** For a simple eigenvalue,
+  \(\lambda'=x^H(A'-\lambda M')x/x^HMx\), where the prime is the
+  derivative with respect to a parameter mu and A', M' come from the tangent
+  leaves, including the shape derivative of the vacuum boundary-element map
+  when the boundary moves. Derivatives through the equilibrium use the
+  adjoint of the equilibrium residual, not the solver iterations. Marginal
+  points are Newton roots of lambda(mu) = 0. Degenerate and crossing
+  eigenvalues report a failed status instead of a derivative.
+- **Certification.** The discrete claim is an interval bound on the inertia
+  count and on isolated eigenvalues. Continuous claims are made only where a
+  discretization bound exists; elsewhere the status is certified-discrete
+  with an empirical convergence estimate, stated as such.
+
+### Verification ladder
+
+Each rung is a frozen gate; a later rung does not start before the earlier
+one passes or its failure is recorded.
+
+| Rung | Case | Reference | Observables |
+|---|---|---|---|
+| R0 | algebraic identities of delta W: self-adjointness, equivalence of the two forms, the three gamma closures | FortSym proof, repeated in SymPy | - |
+| R1 | homogeneous slab and cylinder | exact Alfven and slow continua and fast modes [12] | O4, O5 |
+| R2 | screw pinch | Newcomb criterion [16], Suydam [12], external kink of the uniform-current cylinder, all already in [linear-mhd-oracles.md](linear-mhd-oracles.md) and [ideal-free-boundary.md](ideal-free-boundary.md) | O1, O2, O7 |
+| R3 | axisymmetric torus | Bussac internal kink (existing oracle), published PEST cases [17], DCON in GPEC run on the same input [R2]; toroidal Alfven gap and its eigenmodes | O1, O2, O4, O5, O6, O7 |
+| R4 | low-shear stellarator, low-n and Mercier modes | TERPSICHORE published cases [7] and runs on the same VMEC input [R1] | O1, O2, O7 |
+| R5 | W7-X-type configurations | CAS3D published results [1,2,3] where the published inputs suffice | O1, O2, O3, O4 |
+| R6 | 3D tokamak, vertical and resistive wall modes | CASTOR3D and STARWALL published results [4,5,6] | O2, O8 |
+| R7 | compact quasi-axisymmetric stellarator | published TERPSICHORE results [18]; DCON3D [10] if P1e.0 finds it available | O1, O2, O6 |
+
+A case whose published input data are incomplete is listed as not comparable,
+not reconstructed from figures by fitting.
+
+### Stages
+
+| Stage | Content | Exit gate | Needs |
+|---|---|---|---|
+| P1e.0 | confirm every S and ? entry above from full text; collect published inputs for R3 to R7; establish DCON3D availability | matrix holds only P and full-text entries | - |
+| P1e.1 | MILCA-owned delta W (M0, M1) in FortSym; retire the external pin | R0; potential energy agrees with the pinned leaves on the existing tests, then the pin is removed | P1e.0 |
+| P1e.2 | radial hybrid element times Fourier space, fixed boundary, one mode family, with the existing shift-invert eigen solver | R1; R2 fixed boundary (O1 as floating-point count, O2) | P1e.1 |
+| P1e.3 | axisymmetric toroidal equilibria in straight field line coordinates; stable spectrum with gap targeting | R3 fixed boundary (O1, O2, O4, O5) | P1e.2 |
+| P1e.4 | 3D equilibria, native and imported; mode-family coupling | R4, R5 fixed boundary | P1e.3 |
+| P1e.5 | free boundary: vacuum to infinity, ideal wall, coils; W_P, W_V, W_T | R2 external kink; R3 O6 against DCON; R5 free boundary and R7 | P1e.3; P1e.4 for R5 and R7 |
+| P1e.6 | thin resistive 3D wall | R6 | P1e.4, P1e.5 |
+| P1e.7 | Mercier and ballooning; global-to-local limit at high n | O7 on R2 and R3; on R4 | P1e.2; P1e.4 for R4 |
+| P1e.8 | derivatives and marginal points | O9 on R2 and R3; O3 as beta scans on R3; R5 | P1e.3; P1e.4 and P1e.5 for R5 and free-boundary derivatives |
+| P1e.9 | interval certificates for inertia and isolated eigenvalues | O1 certified on R2 and R3; on R4 and R5 | P1e.3; P1e.4 for R4 and R5 |
+| P1e.10 | performance on the clusters at 1 % on R3 to R5; CUDA optional | O10 against TERPSICHORE and DCON at matched accuracy | P1e.4, P1e.5 |
+| P1e.11 | resistive plasma, viscosity, flow, two-fluid terms (CASTOR3D rows) | published CASTOR3D cases [5] | P1e.6 and a linearization of the resistive MHD residual |
+
+Library work follows step 3 of the P1e procedure in
+[ROADMAP.md](../ROADMAP.md): interval LDL inertia and shift-invert Lanczos in
+FortSparse and FortNum, the radial hybrid element in FortFEM, the straight
+field line transform in libneo if it owns one, else in the MILCA adapter.
+
+### Sources
+
+Publications (S and ? entries above are still to be read in full):
+
+1. C. Schwab, Phys. Fluids B 5, 3195 (1993).
+2. C. Nührenberg, Phys. Plasmas 6, 137 (1999).
+3. C. Nührenberg, Nucl. Fusion 56, 076010 (2016),
+   doi:10.1088/0029-5515/56/7/076010.
+4. P. Merkel and E. Strumberger, arXiv:1508.04911 (2015).
+5. E. Strumberger and S. Günter, Nucl. Fusion 57, 016032 (2017),
+   doi:10.1088/0029-5515/57/1/016032.
+6. S. Günter, E. Strumberger, P. Merkel and M. Sempf, Phys. Plasmas 15,
+   056110 (2008), doi:10.1063/1.2884579.
+7. W. A. Cooper, U. Schwenn, G. Y. Fu, R. Gruber and D. V. Anderson,
+   Phys. Fluids B 4, 1401 (1992).
+8. N. Nakajima, M. Okamoto and J. Chen, Comput. Phys. Commun. 113, 1 (1998),
+   doi:10.1016/S0010-4655(98)00078-2.
+9. A. H. Glasser, Phys. Plasmas 23, 072505 (2016), doi:10.1063/1.4958328.
+10. A. H. Glasser, Phys. Plasmas 32, 082504 (2025), doi:10.1063/5.0274154.
+11. I. B. Bernstein, E. A. Frieman, M. D. Kruskal and R. M. Kulsrud,
+    Proc. R. Soc. A 244, 17 (1958).
+12. J. P. Goedbloed and S. Poedts, *Principles of Magnetohydrodynamics*,
+    Cambridge University Press (2004); J. P. Freidberg, *Ideal MHD*,
+    Cambridge University Press (2014).
+13. C. Mercier, Nucl. Fusion Suppl. 2, 801 (1962).
+14. J. W. Connor, R. J. Hastie and J. B. Taylor, Phys. Rev. Lett. 40, 396
+    (1978).
+15. R. Gruber and J. Rappaz, *Finite Element Methods in Linear Ideal
+    Magnetohydrodynamics*, Springer (1985).
+16. W. A. Newcomb, Ann. Phys. 10, 232 (1960).
+17. R. C. Grimm, R. L. Dewar and J. Manickam, J. Comput. Phys. 49, 94
+    (1983), doi:10.1016/0021-9991(83)90116-X.
+18. W. A. Cooper et al., Comput. Phys. Commun. 141, 55 (2001),
+    doi:10.1016/S0010-4655(01)00396-4.
+19. D. V. Anderson, W. A. Cooper, R. Gruber, S. Merazzi and U. Schwenn,
+    in *Scientific Computing on Supercomputers II*, Springer (1990),
+    doi:10.1007/978-1-4613-0659-7_8.
+
+Open-source comparators, to be studied and run, no code taken from them. The
+commit is the one inspected on 2026-11-12; each comparison run replaces it
+with the commit it ran.
+
+- R1. TERPSICHORE, Apache-2.0, https://gitlab.epfl.ch/spc/public/terpsichore,
+  master at 04dcf9af3ceea7ef36198508f2beb5fafd9cef20.
+- R2. GPEC (Fortran, includes DCON), MIT,
+  https://github.com/PrincetonUniversity/GPEC, develop at
+  02f90d4a432a3e7f8586dbd1d22f0c2e84db2c20.
+- R3. GPEC (Julia), MIT, https://github.com/OpenFUSIONToolkit/GPEC, develop
+  at 052978b42404e53b2ba80d433ede3680f87fe995.
+
+STARWALL is used only through [4]; its code is not public.
 
 Chris&AI
