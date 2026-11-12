@@ -239,7 +239,8 @@ finite-amplitude theorem; a linear eigenvalue interval does not prove it.
 
 ## Global 3D ideal-MHD stability (P1e)
 
-Status (2026-11-12): stages P1e.1 and P1e.2 implemented, P1e.3 in progress (see
+Status (2026-11-12): stages P1e.1 and P1e.2 implemented, P1e.3 and P1e.5 in
+progress (see
 [implementation status](#p1e-implementation-status)); later stages planned.
 This section is the plan
 for roadmap item P1e: a global ideal-MHD stability capability for 3D
@@ -507,6 +508,21 @@ input, and the sparse complex LDL^H of FortSparse, which takes 95 s for an
 the tests. Its real symmetric embedding [[Re, -Im], [Im, Re]] factors in
 20 s with the real front-based LDL^T and twice the inertia; dense-front
 complex factorization in FortSparse is part of P1e.10.
+
+**P1e.5 (in progress): free boundary.** In the cylinder the edge density
+X(a) is free and the vacuum adds 2 delta W_V = -(a/mu) F_a^2 G |xi_r(a)|^2 per
+unit 4 pi^2 R0, with G = phi/phi' at the edge from modified Bessel functions
+(conducting wall at b, or decay to infinity). On the uniform-current case of
+[ideal-free-boundary.md](ideal-free-boundary.md#independent-cylindrical-external-kink)
+(`ideal_cylinder_free`, q = 0.5): the rigid m = 1 displacement, exactly
+representable in the hybrid space, has the analytic plasma-plus-vacuum
+quotient q^2 - 1 + f (q - 1)^2 = -0.5060096 to 8e-13; the lowest eigenvalue
+lies below it (-0.52682 at ka = 0.1, the Ritz bound) and tends to
+2q(q - 1) = -0.5 as ka -> 0 (8e-6 at ka = 1e-3, O2). A conducting wall
+stabilizes monotonically as it approaches, and the mode switches from
+unstable to stable between b/a = 1.43 and 1.40 around the analytic marginal
+wall sqrt(2) (O3). The toroidal vacuum (boundary elements) and W_P, W_V, W_T
+follow.
 
 ### Verification ladder
 

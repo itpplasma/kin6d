@@ -23,10 +23,11 @@ set_tests_properties(ideal_dw_pinch_equivalence_and_derivatives PROPERTIES
 target_sources(milca_mhd PRIVATE src/mhd/ideal_cylinder.f90)
 add_executable(test_ideal_cylinder test/test_ideal_cylinder.f90)
 target_link_libraries(test_ideal_cylinder PRIVATE milca_mhd)
-foreach(case uniform kink limit)
+foreach(case uniform kink limit free)
     add_test(NAME ideal_cylinder_${case} COMMAND test_ideal_cylinder ${case})
 endforeach()
 set_tests_properties(ideal_cylinder_uniform ideal_cylinder_kink ideal_cylinder_limit
+    ideal_cylinder_free
     PROPERTIES TIMEOUT 120 LABELS "mhd;stability;fast"
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 target_sources(milca_mhd PRIVATE src/generated/milca_ideal_flux_leaves.f90)
