@@ -14,8 +14,11 @@ direct Biot-Savart at 24 interior points. With one ring, the relative field
 error is 5.1e-3, 2.0e-3, 4.2e-4 and 2.6e-4 for 1, 3, 6 and 10 toroidal modes
 (8, 16, 24 and 40 BEM planes): the remote test coil has 4.3e-3 of its field in
 n = 2-6. The pilot runs at 6 modes. Its Jacobian, weak-interface and
-seed-return gates hold at every resolution. G8 additionally needs a
-virtual-casing comparison and a geometrically displaced seed.
+seed-return gates hold at every resolution. Virtual casing over the
+swept boundary (192 x 384 trapezoidal points, kernel 1/(4 pi r)) reproduces the
+interior field at 12 points to 2.4e-4 and vanishes at 12 points 0.2 m outside the
+boundary to 6.8e-5 of the coil field. The remaining G8 item, a geometrically
+displaced seed, needs a finite-pressure case; in vacuum the problem is linear.
 `nn_attach_exterior_operators` factors only its frozen algebra. Its caller
 supplies a qualified positive symmetric exterior energy matrix S, the full
 physical normal-moment map T, the coil normal moments g, and the interior

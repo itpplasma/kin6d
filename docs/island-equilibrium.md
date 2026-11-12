@@ -928,9 +928,9 @@ at 6 toroidal modes, 2.6e-4 at 10). I4, I5b, I8-I11 are open.
 [H] Work proceeds in this order. Each step is one or more bounded PRs with the
 gate named in the table above; a failed gate is reported, not relaxed.
 
-1. **I7 qualification (G8).** Add the virtual-casing comparison and a
-   geometrically displaced seed to the coil-driven pilot; its field,
-   interface and coefficient-seed checks pass.
+1. **I7 qualification (G8).** The coil-driven pilot passes its field,
+   interface, coefficient-seed and virtual-casing checks; the geometrically
+   displaced seed waits for a finite-pressure free-boundary case.
 2. **Classical-stellarator benchmark** of [S11] Sec. X.B: N_p = 3, analytic
    boundary (S11 eq. 10.1), <beta> about 1e-4, no net current, islands at
    iota = 1/2 (m = 6) and 3/5 (m = 5). Fixed boundary, so it does not wait
