@@ -3,11 +3,16 @@ program test_rm_oracles
     use rm_mhd_oracles
     use milca_response_strip, only: cyl_step_t, step_delta_prime, &
         ri_dispersion_gamma
+    use milca_vrmhd_cylinder, only: vrmhd_cylinder_case_t, &
+        vrmhd_cylinder_profile_t, vrmhd_cylinder_profiles
+    use milca_rm_oracle_leaves, only: rm_bussac_energy, rm_bussac_growth, &
+        rm_gam_frequency, rm_suydam
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t
     implicit none
     character(32) :: mode
     integer :: failures = 0
+    real(dp), allocatable :: xgrid(:), qgrid(:)
     call get_command_argument(1, mode)
     select case (trim(mode))
     case ('waves')
@@ -24,8 +29,14 @@ program test_rm_oracles
         call saturation()
     case ('table')
         call table()
+    case ('bussac')
+        call bussac()
+    case ('shafranov')
+        call shafranov()
+    case ('torus_closed')
+        call torus_closed()
     case default
-        error stop 'expected waves|rates|outer|newcomb|convergence|saturation|table'
+        error stop 'expected waves|rates|outer|newcomb|convergence|saturation|table|bussac|shafranov|torus_closed'
     end select
     if (failures /= 0) error stop 'RM oracle checks failed'
 contains
@@ -38,6 +49,125 @@ contains
             print '(2a)', 'FAIL ', description
             failures = failures + 1
         end if
+    end subroutine
+
+    ! Bussac et al. (1975) Eq. (4) against their small-Delta q formula, and
+    ! the values of docs/vrmhd-torus.md from an independent Python evaluation
+    ! (adaptive shooting and cubic splines of q).
+    subroutine bussac()
+        type(bussac_t) :: b
+        type(vrmhd_cylinder_case_t) :: c
+        real(dp) :: crit, energy, expected, integral, growth
+        integer :: status, i
+        call bussac_reference(small_shear, 1.0_dp, 1e-10_dp, b)
+        call check(b%status == 0, 'small-Delta q shooting converged')
+        integral = (1 - (b%r1/b%r2)**2)/2
+        do i = 0, 1
+            call rm_bussac_energy(b%sb, b%b, b%c, 0.05_dp*i, energy)
+            expected = 6e-4_dp*(13.0_dp/288 - (0.05_dp*i)**2*integral)
+            call check(abs(energy/expected - 1) < 1e-3_dp, &
+                'Eq. (4) reproduces the small-Delta q limit')
+        end do
+        call bussac_reference(parabolic, 1.0_dp, 1e-10_dp, b)
+        call bussac_critical(b, crit, status)
+        call check(b%status == 0 .and. status == 0, 'parabolic case solved')
+        call check(abs(b%b - 0.03630388_dp) < 1e-6_dp .and. &
+            abs(b%c - 0.27579537_dp) < 1e-6_dp .and. &
+            abs(b%sb - 0.01802578_dp) < 1e-7_dp .and. &
+            abs(b%r2 - 0.99498744_dp) < 1e-7_dp, 'parabolic b, c, s_B, r2')
+        call check(abs(crit - 0.23213666_dp) < 1e-6_dp, &
+            'parabolic critical beta_p1 = 0.2321')
+        call cylinder_q(c)
+        call bussac_reference(ohmic, 1.0_dp, 1e-10_dp, b)
+        call bussac_critical(b, crit, status)
+        call check(b%status == 0 .and. status == 0, 'Ohmic case solved')
+        call check(abs(b%r1 - 0.26372522_dp) < 1e-5_dp .and. &
+            abs(b%s1 - 0.21625952_dp) < 1e-4_dp, 'Ohmic r1 and s1')
+        call check(abs(b%b - 0.03784880_dp) < 1e-4_dp .and. &
+            abs(b%c - 0.32420695_dp) < 1e-4_dp .and. &
+            abs(b%sb - 0.01877921_dp) < 1e-5_dp, 'Ohmic b, c, s_B')
+        call check(abs(crit - 0.20570688_dp) < 2e-4_dp, &
+            'Ohmic critical beta_p1 = 0.206')
+        ! beta_p1 = 0.23397 beta_p for this profile (independent evaluation)
+        call rm_bussac_energy(b%sb, b%b, b%c, 3*0.23397377_dp, energy)
+        call rm_bussac_growth(b%r1, 3.0_dp, b%s1, energy, 3.0_dp, growth)
+        call check(abs(growth/1.0108367e-2_dp - 1) < 1e-3_dp, &
+            'Ohmic layer growth rate at beta_p = 3, R0/a = 3')
+    end subroutine
+
+    ! q = 1 - dq (1 - (r/rs)^2) with dq = 1e-4, rs = 1e-3
+    pure subroutine small_shear(r, q, qp)
+        real(dp), intent(in) :: r
+        real(dp), intent(out) :: q, qp
+        q = 1 - 1e-4_dp*(1 - (r/1e-3_dp)**2); qp = 2e-4_dp*r/1e-6_dp
+    end subroutine
+
+    pure subroutine parabolic(r, q, qp)
+        real(dp), intent(in) :: r
+        real(dp), intent(out) :: q, qp
+        q = 0.9_dp + 0.1_dp*(r/0.3_dp)**2; qp = 0.2_dp*r/0.09_dp
+    end subroutine
+
+    subroutine shafranov()
+        type(vrmhd_cylinder_case_t) :: c
+        type(vrmhd_cylinder_profile_t) :: prof
+        real(dp) :: shift, slope
+        real(dp) :: expected(3, 4)
+        integer :: i, status
+        ! R0/a, beta_p, Delta(0), max |dDelta/dr| (independent evaluation)
+        expected = reshape([3.0_dp, 1.0_dp, 0.15864323_dp, 0.505586_dp, &
+            10.0_dp, 1.0_dp, 0.04759297_dp, 0.151676_dp, &
+            3.0_dp, 0.02_dp, 0.07436982_dp, 0.220712_dp], [3, 4], order=[2, 1])
+        do i = 1, 3
+            c%r0 = expected(i, 1); c%beta_poloidal = expected(i, 2)
+            call vrmhd_cylinder_profiles(c, prof, status)
+            call check(status == 0, 'cylinder profiles')
+            call shafranov_formula(prof%x, prof%t, prof%x*prof%btheta_over_r, &
+                c%r0, shift, slope)
+            call check(abs(shift/expected(i, 3) - 1) < 1e-4_dp .and. &
+                abs(slope/expected(i, 4) - 1) < 1e-4_dp, &
+                'Shafranov axis shift and largest slope')
+        end do
+        ! Delta(0) scales as a/R0 at fixed beta_p and profile.
+        call check(abs(expected(1, 3)*3 - expected(2, 3)*10) &
+            < 1e-2_dp*expected(1, 3)*3, 'Shafranov shift scales as a/R0')
+    end subroutine
+
+    subroutine torus_closed()
+        real(dp) :: omega2, ds
+        ! omega^2 = 2 Gamma p/(rho R0^2) (1 + 1/(2 q^2)) at q = 1: 3 Gamma p/(rho R0^2)
+        call rm_gam_frequency(5.0_dp/3, 2e-3_dp, 1.0_dp, 10.0_dp, 1.0_dp, omega2)
+        call check(abs(omega2 - 1e-4_dp) < 1e-18_dp, 'GAM frequency at q = 1')
+        ! q_s = 1.5, r_s = 0.5, r q'/q = 0.1, B_z = 1: D_S = 100 |p'|
+        call rm_suydam(0.5_dp, -1e-2_dp, 1.5_dp, 0.3_dp, 1.0_dp, ds)
+        call check(abs(ds - 1) < 1e-14_dp, 'Suydam index of the weak-shear case')
+    end subroutine
+
+    subroutine cylinder_q(c)
+        type(vrmhd_cylinder_case_t), intent(out) :: c
+        type(vrmhd_cylinder_profile_t) :: prof
+        integer :: status
+        c%r0 = 10
+        call vrmhd_cylinder_profiles(c, prof, status)
+        if (status /= 0) error stop 'cylinder profiles failed'
+        ! Reduced-model q = r/(R0 B_theta), as in the reference generator.
+        qgrid = 1/(c%r0*prof%btheta_over_r)
+        xgrid = prof%x
+    end subroutine
+
+    pure subroutine ohmic(r, q, qp)
+        real(dp), intent(in) :: r
+        real(dp), intent(out) :: q, qp
+        real(dp) :: h, w
+        integer :: i
+        h = xgrid(2) - xgrid(1)
+        i = min(size(xgrid) - 2, max(2, int(r/h) + 1))
+        w = (r - xgrid(i))/h
+        ! Quadratic through three nodes: q and q' continuous to O(h^2).
+        q = qgrid(i) + w*(qgrid(i + 1) - qgrid(i - 1))/2 &
+            + w**2*(qgrid(i + 1) - 2*qgrid(i) + qgrid(i - 1))/2
+        qp = ((qgrid(i + 1) - qgrid(i - 1))/2 &
+            + w*(qgrid(i + 1) - 2*qgrid(i) + qgrid(i - 1)))/h
     end subroutine
 
     subroutine waves()

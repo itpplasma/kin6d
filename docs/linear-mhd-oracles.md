@@ -4,7 +4,11 @@ These test-side references supply candidate comparison values for the linear
 wave and instability benchmark RM-B2 and the Rutherford island benchmark RM-B5
 in [the nonlinear resistive MHD design](nonlinear-resistive-mhd.md).
 They do not establish either gate for a nonlinear solver. Here MHD means
-magnetohydrodynamics, and all dimensional interfaces use SI units.
+magnetohydrodynamics, and all dimensional interfaces use SI units. The same
+library holds the toroidal references of [the torus case](vrmhd-torus.md):
+the Bussac internal-kink energy and threshold, the large-aspect-ratio
+Shafranov shift, the geodesic-acoustic frequency and the Suydam index, in
+the nondimensional units of that page.
 
 Build `test_rm_oracles` with the native CPU preset, then run:
 

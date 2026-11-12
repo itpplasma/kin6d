@@ -6,7 +6,8 @@ module rm_mhd_oracles
         rm_rutherford, rm_symmetric_saturation, rm_cylinder_saturation, &
         rm_wesson_radial, rm_wesson_series, rm_wesson_curvature, &
         rm_outer_rhs, rm_frobenius_fit, &
-        rm_newcomb_coefficients, rm_reduced_coefficients
+        rm_newcomb_coefficients, rm_reduced_coefficients, &
+        rm_bussac_coefficients, rm_bussac_energy, rm_shafranov_slope
     use fortnum_ode, only: ode_problem_t, ode_workspace_t, ode_solution_t, &
         ode_integrate
     use fortnum_roots, only: root_brent
@@ -19,6 +20,8 @@ module rm_mhd_oracles
     public :: uniform_waves, tearing_rates, rutherford_speed, symmetric_width
     public :: shoot_outer, wesson_t, wesson_reference, newcomb_coefficients
     public :: cylinder_saturated_width, outer_result_t, outer_coefficients
+    public :: q_profile, bussac_t, bussac_reference, bussac_critical
+    public :: shafranov_formula
     type :: outer_result_t
         real(dp) :: rs = 0, delta = 0, slope_minus = 0, slope_plus = 0
         real(dp) :: flux_minus = 0, flux_plus = 0
@@ -30,11 +33,21 @@ module rm_mhd_oracles
     contains
         procedure :: evaluate => wesson_evaluate
     end type
+    ! s_B, b, c of Bussac et al. (1975) Eq. (4) for one q profile.
+    type :: bussac_t
+        real(dp) :: r1 = 0, r2 = 0, s1 = 0, sb = 0, b = 0, c = 0
+        integer :: status = oracle_domain
+    end type
     abstract interface
         subroutine outer_coefficients(r, p, u)
             import :: dp
             real(dp), intent(in) :: r
             real(dp), intent(out) :: p, u
+        end subroutine
+        pure subroutine q_profile(r, q, qp)
+            import :: dp
+            real(dp), intent(in) :: r
+            real(dp), intent(out) :: q, qp
         end subroutine
     end interface
 contains
@@ -245,5 +258,119 @@ contains
             dy(1) = y(2)
             call rm_outer_rhs(p, u, y(1), y(2), dy(2))
         end subroutine
+    end subroutine
+    ! u1 is regular at the axis (u ~ r^2); u2 is regular at q = 2, where
+    ! u' = u/r, or vanishes at the wall when q(wall) < 2.
+    subroutine bussac_reference(profile, wall, tolerance, result)
+        procedure(q_profile) :: profile
+        real(dp), intent(in) :: wall, tolerance
+        type(bussac_t), intent(out) :: result
+        type(fortnum_status_t) :: stat
+        real(dp) :: q, qp, start, gap, y(3), level
+        result%status = oracle_domain
+        if (wall <= 0 .or. tolerance <= 0) return
+        call profile(wall, q, qp)
+        if (q <= 1) return
+        level = 1
+        call root_brent(shifted_q, 1e-6_dp*wall, wall, result%r1, stat, &
+            xtol=1e-13_dp*wall)
+        if (stat%code /= 0) return
+        call profile(result%r1, q, qp)
+        result%s1 = result%r1*qp
+        start = 1e-4_dp*result%r1
+        call integrate(start, result%r1, [start**2, 2*start, 0.0_dp], y)
+        if (result%status /= oracle_ok) return
+        result%b = result%r1/4*(y(2)/y(1) - 2/result%r1)
+        result%sb = y(3)
+        call profile(wall, q, qp)
+        if (q > 2) then
+            level = 2
+            call root_brent(shifted_q, result%r1, wall, result%r2, stat, &
+                xtol=1e-13_dp*wall)
+            if (stat%code /= 0) then
+                result%status = stat%code; return
+            end if
+            gap = 1e-7_dp*result%r2
+            call integrate(result%r2 - gap, result%r1, &
+                [1 - gap/result%r2, 1/result%r2, 0.0_dp], y)
+        else
+            result%r2 = wall
+            call integrate(wall, result%r1, [0.0_dp, 1.0_dp, 0.0_dp], y)
+        end if
+        if (result%status /= oracle_ok) return
+        result%c = result%r1/4*(y(2)/y(1) + 2/result%r1)
+    contains
+        pure real(dp) function shifted_q(r) result(value)
+            real(dp), intent(in) :: r
+            real(dp) :: dq
+            call profile(r, value, dq)
+            value = value - level
+        end function
+        subroutine integrate(a, b, initial, final)
+            real(dp), intent(in) :: a, b, initial(3)
+            real(dp), intent(out) :: final(3)
+            type(ode_problem_t) :: problem
+            type(ode_workspace_t) :: work
+            type(ode_solution_t) :: sol
+            type(fortnum_status_t) :: ode_stat
+            problem%rhs => rhs
+            problem%t0 = a; problem%t1 = b; problem%y0 = initial
+            problem%rtol = tolerance; problem%atol = tolerance*1e-6_dp*abs(initial(1) + a*initial(2))
+            problem%hmax = 0.01_dp*wall
+            call ode_integrate(problem, work, sol, ode_stat)
+            result%status = ode_stat%code
+            final = initial
+            if (ode_stat%code == 0) final = sol%y(:, size(sol%t))
+        end subroutine
+        subroutine rhs(r, y, dy, ctx)
+            real(dp), intent(in) :: r, y(:)
+            real(dp), intent(out) :: dy(:)
+            class(*), intent(in), optional :: ctx
+            real(dp) :: p, u, q, qp
+            call profile(r, q, qp)
+            call rm_bussac_coefficients(r, q, qp, p, u)
+            dy(1) = y(2)
+            call rm_outer_rhs(p, u, y(1), y(2), dy(2))
+            ! s_B accumulates on the axis leg only, which starts near r = 0.
+            dy(3) = (r/result%r1)**3*(1/q**2 - 1)/result%r1
+        end subroutine
+    end subroutine
+
+    subroutine bussac_critical(bussac, beta, status)
+        type(bussac_t), intent(in) :: bussac
+        real(dp), intent(out) :: beta
+        integer, intent(out) :: status
+        type(fortnum_status_t) :: stat
+        call root_brent(energy, 0.0_dp, 5.0_dp, beta, stat, xtol=1e-13_dp)
+        status = stat%code
+    contains
+        pure real(dp) function energy(x) result(value)
+            real(dp), intent(in) :: x
+            call rm_bussac_energy(bussac%sb, bussac%b, bussac%c, x, value)
+        end function
+    end subroutine
+
+    ! Axis shift Delta(0) and max |dDelta/dr| of the large-aspect-ratio formula
+    ! (Wesson Eq. 3.6.7) from p(r) and B_theta(r) on a grid with x(1) = 0 and
+    ! x(n) = a, trapezoidal integrals, Delta(a) = 0.
+    subroutine shafranov_formula(x, p, btheta, major, shift, slope_max)
+        real(dp), intent(in) :: x(:), p(:), btheta(:), major
+        real(dp), intent(out) :: shift, slope_max
+        real(dp) :: slope(size(x)), mean, magnetic, beta, li
+        integer :: i
+        mean = 0; magnetic = 0; slope = 0
+        do i = 2, size(x)
+            mean = mean + (x(i) - x(i - 1))*(p(i)*x(i) + p(i - 1)*x(i - 1))
+            magnetic = magnetic + (x(i) - x(i - 1)) &
+                *(btheta(i)**2*x(i) + btheta(i - 1)**2*x(i - 1))/2
+            beta = 2*(mean/x(i)**2 - p(i))/btheta(i)**2
+            li = 2*magnetic/(x(i)**2*btheta(i)**2)
+            call rm_shafranov_slope(x(i), major, beta, li, slope(i))
+        end do
+        shift = 0
+        do i = 2, size(x)
+            shift = shift - (x(i) - x(i - 1))*(slope(i) + slope(i - 1))/2
+        end do
+        slope_max = maxval(abs(slope))
     end subroutine
 end module rm_mhd_oracles

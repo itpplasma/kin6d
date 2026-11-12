@@ -11,13 +11,20 @@ quasi-interchange come from the coupling of m = 1 to m = 2 through the
 toroidal metric and the Shafranov shift. In single-helicity reduced MHD of the
 cylinder case, flux pumping ends near `S = 1.3e6` at magnetic Prandtl number
 10. JOREK runs of this torus at `R0/a = 10`, branched from pumped states at
-`S = 1e6` to `S = 3.2e6` and `1e7`, have relaxed so far at `beta_p1 = 0.005`
-and 0.23; they are not finished. The setup below is that of these JOREK runs,
+`S = 1e6` to `S = 3.2e6` and `1e7`, show repeated relaxations of `q0` (to 0.95-0.98)
+instead of flux pumping at `beta_p1 = 0.005` and 0.23, up to `1e5 tau_A` after the
+branch; they are not finished. The setup below is that of these JOREK runs,
 so that their numbers can be compared.
 
 The page also collects the analytic limits that a toroidal evolution has to
-meet before its pressure scans are trusted. The reference values were
-evaluated independently of MILCA. None of them is a registered test yet.
+meet before its pressure scans are trusted. The Bussac, Shafranov,
+geodesic-acoustic and Suydam reference values are computed by the test-side
+references of [linear-mhd-oracles.md](linear-mhd-oracles.md)
+(`test/support/rm_mhd_oracles.f90`, leaves in `gen/gen_rm_oracles.f90`) and
+checked against an independent evaluation in the tests `rm_oracle_bussac`,
+`rm_oracle_shafranov` and `rm_oracle_torus_closed`. The Grad-Shafranov column
+of the Shafranov table comes from that independent evaluation only. The
+proposed checks on an evolution are not registered yet.
 
 ## Geometry, units and symmetry
 
@@ -36,7 +43,8 @@ voltage drives the current through the rotation harmonic form
 
 The profile recipe is that of the cylinder case (`vrmhd_cylinder_profiles`):
 uniform perpendicular conductivity, heat source
-`Q0 (1 - tanh((psi_N - 0.3)/0.1))/2`, Ohmic current `j ~ T^(3/2)`, edge
+`Q0 (1 - tanh((psi_N - 0.3)/0.1))/2` with `psi_N` the normalised poloidal flux and
+`Q0` fixed by the recipe, Ohmic current `j ~ T^(3/2)`, edge
 temperature `0.05` of the central-to-edge difference and `q0 = 0.9`. As a
 function of the minor radius of that cylinder state, `q(a) = 3.352`, `q = 1` at
 `r1 = 0.264` with shear `s1 = r1 q'(r1) = 0.216`, and `q = 2` at `r2 = 0.729`.
@@ -240,8 +248,8 @@ check brackets it. Proposed check, translation symmetry with Fourier harmonics
 in `z`: weak shear `r q'/q = 0.1` at a single resonant surface `q_s = 1.5`,
 `r_s = 0.5`, for `m/n = 3k/2k`, `k = 1` to 4. At `D_S = 0.15` no harmonic grows
 faster than `1e-5 per tau_A` over `1e4 tau_A` (a growth there is first checked
-against Newcomb's criterion), and at `D_S = 1` the harmonics grow. Then
-`|p'| = 0.01 D_S` at `r_s`, a beta near 1 %.
+against Newcomb's criterion), and at `D_S = 1` the harmonics grow. These values
+give `|p'| = 0.01 D_S` at `r_s`, a beta near 1 %.
 
 ## JOREK baseline
 
@@ -251,8 +259,8 @@ harmonics `n = 0, 1`, 60 radial and 48 poloidal elements and a step of
 `1.4e4` core-seconds per `1000 tau_A`. At `R0/a = 10` with `n = 0..2` and a step
 of `40 tau_A` it takes about `3.5e3` core-seconds per `1000 tau_A` on the same
 24 cores. Steps of 20 and `40 tau_A` keep the saturated `R0/a = 10` state of
-JOREK unchanged to four digits in `q0` over `5e4 tau_A`. RM-B9 repeats these
-runs on the node used for MILCA.
+JOREK unchanged to four digits in `q0` over `5e4 tau_A`. RM-B9 compares with
+JOREK on the same node as the MILCA run.
 
 The step matters here. On a polar grid about the geometric centre, an explicit
 step for the ideal terms at `R0/a = 3`, `beta_p = 1` was measured at
