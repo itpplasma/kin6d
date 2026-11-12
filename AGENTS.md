@@ -49,9 +49,10 @@ docs/first-example.md before changing it or claiming broader evidence.
 
 ## Source provenance (strict)
 
-MILCA is written only from public knowledge. Nobody, human or agent, may
-contribute code, tests, generators, documentation or reviews to MILCA while
-using non-public code or having it in their working context.
+MILCA is written from public knowledge and from our own code. Nobody, human
+or agent, may contribute code, tests, generators, documentation or reviews to
+MILCA while using non-public code of others or having it in their working
+context.
 
 - **Allowed:** published papers, theses, books, public reports and
   documentation, including publications that describe closed codes, and code
@@ -59,6 +60,10 @@ using non-public code or having it in their working context.
   recorded. Permissively licensed code (MIT, BSD, Apache 2.0) may be studied
   and reused with its licence notice. GPL and LGPL code may be studied, but
   no code, translation or close paraphrase is taken from it.
+- **Our own repositories**, public or private, may be read and reused, GLISS
+  included, as long as the code in them is written by us and is neither a
+  fork nor a copy of someone else's non-public code. Such a fork or copy
+  inside our repositories counts as non-public code.
 - **Non-public code** is every other implementation, in any form: source,
   binary, decompilation, excerpt, or a description of its implementation
   that is not itself a publication. The list is not exhaustive:
@@ -69,7 +74,8 @@ using non-public code or having it in their working context.
     HCM_package (HELENA, MISHKA, CSCAS); any copy of such a code is
     non-public unless that copy carries a licence;
   - code shared privately by collaborators, including excerpts in mail or chat;
-  - our own private repositories, GLISS included.
+  - forks or copies of such code kept in our own repositories, for example a
+    modified HCM_package.
   Code becomes allowed only when it is published under an open-source licence,
   and from that version on.
 - **No contamination:** do not open, search, list, run or summarise non-public
@@ -81,7 +87,7 @@ using non-public code or having it in their working context.
   do not submit that session's output; Chris decides about material that is
   already merged.
 - **Declaration:** every pull request states in one line that no non-public
-  code was used or in context. Reviewers check that line and that the
+  code of others was used or in context. Reviewers check that line and that the
   sources list of the capability names no non-public code.
 - **Comparisons** with closed or non-public codes use published results and
   published input data only, never runs of those codes.
