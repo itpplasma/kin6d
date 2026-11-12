@@ -88,7 +88,8 @@ jobs:
     needs: [d8_map, bem3d, islands_vacuum, equilibrium, d8_psi, cpu_precision]
     if: failure()
     runs-on: [self-hosted, itp-build]
-    timeout-minutes: 600
+    # The bisection budget (NIGHTLY_BISECT_MINUTES) plus time to report.
+    timeout-minutes: 120
     permissions:
       actions: read
       contents: read
@@ -102,6 +103,7 @@ jobs:
       - name: Bisect and file or update the nightly-failure issue
         env:
           GH_TOKEN: ${{ github.token }}
+          NIGHTLY_BISECT_MINUTES: "90"
         run: python3 ci/nightly_triage.py failure
 
   close:
