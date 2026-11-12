@@ -68,7 +68,11 @@ is `0.234 beta_p` for this profile. The central beta `beta_0 = 2 p(0)/B0^2` is
 In the torus the profiles are flux functions of the axisymmetric state:
 `p(psi_N)` and `FF'(psi_N)` of the cylinder state, with `F = R B_phi`, define a
 fixed-boundary Grad-Shafranov problem whose solution is the initial `n = 0`
-state. Its `q0` is reported, not rescaled to 0.9.
+state (`vrmhd_torus_law` and `vrmhd_torus_equilibrium`). Its `q0` is reported,
+not rescaled to 0.9: on cubic elements of edge 0.05 it is 0.900 at
+`R0/a = 3`, `beta_p = 0.02`, 0.850 at `beta_p = 1` and 0.731 at `beta_p = 3`,
+and 0.895 at `R0/a = 10`, `beta_p = 1`, within 0.2 % of the values at edge 0.1.
+The pressure lowers `q0` at fixed `p(psi_N)` and `FF'(psi_N)`.
 
 ## Closures and sources
 
@@ -118,9 +122,12 @@ Grad-Shafranov solve with the same `p(psi_N)` and `FF'(psi_N)`:
 At `R0/a = 3`, `beta_p = 3` the shifted circles of the formula intersect
 (`|dDelta/dr| > 1`), so only the Grad-Shafranov value applies. Even at
 `beta_p = 0.02` the shift is not small, because `l_i(a)/2` drives it.
-Proposed check: the `n = 0` state has its axis at the formula value within
-3 % where `max |dDelta/dr| <= 0.3`, and at the Grad-Shafranov value within
-1 % elsewhere.
+The test `vrmhd_torus_shafranov` checks the axis of the `n = 0` state against
+the formula within 3 % where `max |dDelta/dr| <= 0.3`, and against the
+Grad-Shafranov column within 1 % elsewhere, at `R0/a = 3` (`beta_p = 0.02`, 1,
+3) and `R0/a = 10` (`beta_p = 1`), on cubic elements of edge 0.2. On edge 0.05
+the shifts are 0.0755, 0.1567, 0.2892 and 0.0475, within 0.25 % of the
+finite-difference column; at edge 0.2 they differ by at most 3e-4.
 
 ## Steady Ohmic state
 

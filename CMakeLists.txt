@@ -96,7 +96,7 @@ target_sources(milca_mhd PRIVATE src/generated/milca_vrmhd_leaves.f90
     src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90 src/mhd/vrmhd_fourier.f90
     src/mhd/vrmhd_fourier_nonlinear.f90
     src/generated/milca_vrmhd_cylinder_leaves.f90 src/mhd/vrmhd_cylinder.f90
-    src/mhd/vrmhd_steady.f90)
+    src/mhd/vrmhd_steady.f90 src/mhd/vrmhd_torus.f90)
 add_library(milca_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
 target_link_libraries(milca_vrmhd_wall_test PUBLIC milca_mhd)
 add_library(milca_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
@@ -2471,6 +2471,11 @@ foreach(case waves rates outer newcomb convergence saturation table bussac
     set_tests_properties(rm_oracle_${case} PROPERTIES TIMEOUT 60
         LABELS rm-oracle ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_executable(test_vrmhd_torus test/test_vrmhd_torus.f90)
+target_link_libraries(test_vrmhd_torus PRIVATE milca_rm_oracles milca_mhd)
+add_test(NAME vrmhd_torus_shafranov COMMAND test_vrmhd_torus shafranov)
+set_tests_properties(vrmhd_torus_shafranov PROPERTIES LABELS rm-b8 PROCESSORS 8
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(response_strip_cylinder_layer PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(response_strip_ladder app/response_strip_ladder.f90)
