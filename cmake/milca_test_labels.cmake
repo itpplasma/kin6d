@@ -847,12 +847,6 @@ if(TARGET gen_ideal_seed_3d)
         TARGETS gen_ideal_seed_3d)
 endif()
 
-milca_test_labels(ideal_mhd_coordinate_analytic_limits fast CLASSES mhd
-    TARGETS test_ideal_mhd_coordinates)
-if(TARGET gen_ideal_mhd_coordinates)
-    milca_test_labels(ideal_mhd_coordinates_exact_regeneration fast CLASSES mhd
-        TARGETS gen_ideal_mhd_coordinates)
-endif()
 
 milca_test_labels(island_closure_declaration fast CLASSES mhd TARGETS test_island_closure)
 milca_test_labels(island_closure_report fast CLASSES mhd TARGETS test_island_closure)

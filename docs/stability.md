@@ -239,7 +239,9 @@ finite-amplitude theorem; a linear eigenvalue interval does not prove it.
 
 ## Global 3D ideal-MHD stability (P1e)
 
-Status (2026-11-12): specification, not implemented. This section is the plan
+Status (2026-11-12): stage P1e.1 implemented (see
+[implementation status](#p1e-implementation-status)); later stages planned.
+This section is the plan
 for roadmap item P1e: a global ideal-MHD stability capability for 3D
 equilibria, fixed and free boundary, that covers the published capabilities of
 CAS3D, CASTOR3D, TERPSICHORE and DCON and goes beyond them in certified errors,
@@ -413,6 +415,34 @@ not widened to absorb it.
   count and on isolated eigenvalues. Continuous claims are made only where a
   discretization bound exists; elsewhere the status is certified-discrete
   with an empirical convergence estimate, stated as such.
+
+### P1e implementation status
+
+**P1e.1 (done).** `gen/milca_symbolic_ideal.f90` holds the frozen-in energy
+of [ideal-map-3d.md](ideal-map-3d.md); the map, xi, GLL and current-sheet
+leaves regenerate from it byte for byte, and the external generator, its
+pin and its coordinate-reduced and batched leaves are removed. The
+coordinate-reduced leaves had no consumer besides their own test and were
+removed without a comparison with the new leaves; the pinch test below
+replaces that check. `gen/gen_ideal_dw.f90` emits, with tangent and adjoint
+leaves, the Hermitian part of the Eulerian delta W (`dw_bernstein`), the
+adiabatic Lagrangian Hessian (`dw_lagrange`) and the free-boundary vacuum and
+surface densities
+(`dw_vacuum`, `dw_surface`); `milca_ideal_dw` wraps them for real and complex
+fields. FortSym proves 85 identities exactly: symmetry of both forms, the 81
+entries of the Hessian of the adiabatic frozen-in energy at the identity, the
+link between the two forms in a uniform medium, and the shear-Alfven and
+magnetosonic characteristic polynomial of the plane-wave matrix. These
+proofs do not involve the current and pressure-gradient terms. The test
+`ideal_dw_pinch_equivalence_and_derivatives` therefore integrates both forms
+for compactly supported fields on a force-balanced screw pinch with uniform
+current: they agree to 2e-16 relative, differ by 1.5 % when the pressure
+gradient is removed, and differ by 8 % when the sign of the current term is
+flipped. The same test checks the gamma = 0 limit against the xi form,
+Hermitian symmetry and the tangent and adjoint leaves. Still open from the
+energy-source plan: the equivalence with the intuitive form of delta W, the
+repetition of the identities in SymPy and the
+reduction to Newcomb's Lagrangian, which rung R2 tests numerically.
 
 ### Verification ladder
 

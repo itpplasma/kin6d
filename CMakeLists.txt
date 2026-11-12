@@ -1292,16 +1292,8 @@ if(MILCA_FORTSYM_BUILD)
     endif()
     configure_file(gen/milca_fortsym_revision.inc.in
         ${CMAKE_BINARY_DIR}/gen_include/milca_fortsym_revision.inc @ONLY)
-    file(STRINGS "${CMAKE_SOURCE_DIR}/gen/ideal-mhd-revision.txt"
-        MILCA_IDEAL_MHD_REVISION)
-    FetchContent_Declare(milca_shared_mhd
-        URL "https://github.com/itpplasma/GLISS/archive/${MILCA_IDEAL_MHD_REVISION}.tar.gz"
-        SOURCE_SUBDIR gen/codegen_sources_only)
-    FetchContent_MakeAvailable(milca_shared_mhd)
-    set(shared_mhd_gen "${milca_shared_mhd_SOURCE_DIR}/gen/ideal_mhd")
     add_library(milca_gen_support STATIC gen/milca_gen_support.f90
-        gen/milca_symbolic_physics.f90 gen/milca_symbolic_ideal.f90
-        ${shared_mhd_gen}/ideal_mhd_symbolic.f90)
+        gen/milca_symbolic_physics.f90 gen/milca_symbolic_ideal.f90)
     target_include_directories(milca_gen_support PUBLIC
         ${MILCA_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
     target_link_libraries(milca_gen_support PUBLIC
@@ -1541,25 +1533,6 @@ if(MILCA_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_island_regeneration.cmake)
     milca_test_labels(island_leaf_regeneration fast CLASSES equilibrium
         TARGETS gen_islands)
-    add_executable(gen_ideal_mhd_batches ${shared_mhd_gen}/gen_ideal_mhd_batches.f90)
-    target_link_libraries(gen_ideal_mhd_batches PRIVATE milca_gen_support)
-    add_test(NAME ideal_mhd_batch_exact_regeneration COMMAND ${CMAKE_COMMAND}
-        -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_batches>
-        -DREVISION=${MILCA_FORTSYM_REVISION}
-        -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated
-        -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-batch-regeneration
-        -P ${shared_mhd_gen}/check_batches.cmake)
-    milca_test_labels(ideal_mhd_batch_exact_regeneration fast CLASSES mhd
-        TARGETS gen_ideal_mhd_batches)
-    add_executable(gen_ideal_mhd_coordinates
-        ${shared_mhd_gen}/gen_ideal_mhd_coordinates.f90)
-    target_link_libraries(gen_ideal_mhd_coordinates PRIVATE milca_gen_support)
-    add_test(NAME ideal_mhd_coordinates_exact_regeneration COMMAND ${CMAKE_COMMAND}
-        -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_coordinates>
-        -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated/ideal_mhd_energy_generated.f90
-        -DREVISION=${MILCA_FORTSYM_REVISION}
-        -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-coordinate-regeneration
-        -P ${CMAKE_SOURCE_DIR}/cmake/milca_check_mhd_coordinates.cmake)
     add_test(NAME ideal_xi_exact_identity_and_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_xi>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/milca_ideal_xi_leaves.f90
@@ -2129,15 +2102,11 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
     TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
-target_sources(milca_mhd PRIVATE src/generated/ideal_mhd_energy_generated.f90
-    src/mhd/ideal_xi.F90
+target_sources(milca_mhd PRIVATE src/mhd/ideal_xi.F90
     src/generated/milca_ideal_xi_leaves.f90)
 # Generated derivatives retain the primal ABI for constant partials.
 set_source_files_properties(src/generated/milca_ideal_xi_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-add_executable(test_ideal_mhd_coordinates test/test_ideal_mhd_coordinates.f90)
-target_link_libraries(test_ideal_mhd_coordinates PRIVATE milca_mhd)
-add_test(NAME ideal_mhd_coordinate_analytic_limits COMMAND test_ideal_mhd_coordinates)
 add_executable(test_ideal_xi test/test_ideal_xi.f90)
 target_link_libraries(test_ideal_xi PRIVATE milca_mhd)
 add_test(NAME ideal_xi_hessian_and_analytic_limits COMMAND test_ideal_xi)
@@ -3075,6 +3044,7 @@ if(MILCA_BUILD_CUDA_PRECISION_BENCHMARK)
     add_subdirectory(benchmarks/equilibrium-gpu)
 endif()
 include(cmake/milca_s0.cmake)
+include(cmake/milca_ideal_stability.cmake)
 include(cmake/milca_mhd_batches.cmake)
 include(cmake/milca_e21.cmake)
 include(cmake/milca_separatrix.cmake)

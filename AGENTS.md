@@ -88,12 +88,6 @@ using non-public code or having it in their working context.
 - **Record the sources:** every new physics capability lists, in its
   specification under `docs/`, the papers and open-source repositories (with
   commit and licence) used for its derivation, implementation or validation.
-- **Existing exception, to be removed:** the ideal-MHD energy leaves in
-  `src/generated/ideal_mhd_*` come from a generator pinned from GLISS
-  (`gen/ideal-mhd-revision.txt`). The generated files and the pin file may be
-  read and the files rebuilt from the pin, but nobody opens GLISS for MILCA
-  work and nobody extends that dependency or the generated code. A
-  MILCA-owned derivation written under this section replaces it.
 
 ## Verification-first workflow and review
 
