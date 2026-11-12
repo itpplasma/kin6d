@@ -220,7 +220,7 @@ Reports retain **candidate / bound unavailable**.
 
 Outstanding scope: general core-state displacement spaces and gauge
 complements, vacuum/surface assembly, coupled-poloidal toroidal spectra,
-toroidal GLISS/DCON comparison and continuous spectral certification.
+toroidal DCON comparison and continuous spectral certification.
 FortSparse's complex CSC matvec allocates thread scratch above its parallel
 threshold; a reusable-workspace action is needed before claiming an
 allocation-free spectral path. OpenMP directives alone imply no scaling result.

@@ -96,44 +96,23 @@ claim. The existing strip-current response operator is not yet identified
 with this displacement operator. Rigorous spectral and state bounds remain
 unavailable until their stability and discretization premises are checked.
 
-## Shared coordinate and kinetic leaves
+## Frozen-in energy and batched form
 
-[V] The consumer package `gen/ideal_mhd` of
-[GLISS](https://github.com/itpplasma/GLISS)
-owns the frozen-in energy and its straight-field-coordinate reduction.
-MILCA pins that package in `gen/ideal-mhd-revision.txt`; optional codegen downloads
-its archive without credentials, which works only while GLISS is publicly
-readable, or takes a GLISS checkout from `FETCHCONTENT_SOURCE_DIR_MILCA_SHARED_MHD`. Its coordinate driver emits `src/generated/ideal_mhd_energy_generated.f90`, also consumed byte for
-byte by [GLISS](https://github.com/itpplasma/GLISS). Ordinary builds need no CAS.
-The coordinate input ordering, SI conversion and signed-chart assumptions are
-retained in the generator. Two-component output is twice delta-W times mu0;
-three-component output includes the SI gamma-p divergence term. The kinetic
-leaf is half rho times the physical perpendicular displacement norm and the
-absolute volume Jacobian. Its displacement Hessian is the mass matrix.
-
-[V] The generator proves all coordinate curl projections, linear coefficient
-reconstruction, accepted simplifications and the kinetic norm. An additional
-exact identity equates the Cartesian frozen-energy Hessian with the reduced
-coordinate energy for a uniform unit-field slab and transverse xi(z). Native
-oracles compare both runtime paths in this limit and check the mass and
-JVP/VJP pairing on both signed-chart branches. The existing 82 KS3 identities
-and public interfaces are preserved.
-
-[V] These are two specializations with different pointwise contracts. General
-material-Hessian and force-balance-reduced integrands differ by integration by
-parts, equilibrium residual and boundary terms. The slab identity does not
-prove their global equality for arbitrary equilibria. Vacuum/surface terms and
-the full lifted-basis M5 identity retain the limitations stated above.
+[V] `gen/milca_symbolic_ideal.f90` defines the frozen-in energy density
+\(w(F)=|Fb|^2/(2\mu_0 J)-pJ\), \(J=\sigma\det F\), from
+[ideal-map-3d.md](ideal-map-3d.md). The map, xi, GLL and current-sheet
+generators use it; their checked-in leaves are reproduced byte for byte.
+The adiabatic extension and the Eulerian delta-W form used for global
+stability are in `gen/gen_ideal_dw.f90`
+([stability.md](stability.md#global-3d-ideal-mhd-stability-p1e)).
 
 Regenerate with the pinned FortSym build and run
-`ctest --test-dir build -R 'ideal_(xi|mhd)' --output-on-failure`.
+`ctest --test-dir build -R 'ideal_(xi|dw|mhd)' --output-on-failure`.
 
-The shared `xi_bilinear_batch(n,inputs,outputs)` interface has FP64, FP32 and
-FP32-input/FP64-output overloads. Its SoA input columns are B(3), p, mu,
-A(3,3), C(3,3) (column-major), then 23 tangent entries and one cotangent.
-The 25 output columns are value, JVP and VJP(23). The ordinary scalar API is
-retained. Shared CPU and CUDA products are checked in; optional regeneration
-uses the exact GLISS source pin in `gen/ideal-mhd-revision.txt`.
+`xi_bilinear_batch(n,inputs,outputs)` has FP64, FP32 and
+FP32-input/FP64-output overloads over the generated elemental leaves. Its SoA
+input columns are B(3), p, mu, A(3,3), C(3,3) (column-major), then 23 tangent
+entries and one cotangent. The 25 output columns are value, JVP and VJP(23).
 
 The optional `ideal_mhd_batch_mixed_refinement` test uses FortNum's stage policy,
 precision storage and defect correction on a manufactured transverse Alfvén

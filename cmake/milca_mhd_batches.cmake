@@ -1,4 +1,3 @@
-target_sources(milca_mhd PRIVATE src/generated/ideal_mhd_batches.f90)
 add_executable(test_ideal_mhd_batch_ks3 test/test_ideal_mhd_batch_ks3.f90)
 target_link_libraries(test_ideal_mhd_batch_ks3 PRIVATE milca_mhd)
 add_test(NAME ideal_mhd_batch_ks3_oracles COMMAND test_ideal_mhd_batch_ks3)
