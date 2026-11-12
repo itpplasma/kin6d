@@ -62,6 +62,20 @@ Hamada charts give the same internal-kink eigenvalue to 2.6e-5.
   balance of the Solov'ev chart was off by 6 %; it converges as h^3.5 and is
   2e-4 on 641 x 801.
 
+### Inconsistent input data
+
+- **Under-resolved equilibrium current.** The circular-torus states of
+  [vrmhd-torus.md](../vrmhd-torus.md), sampled from cubic Grad-Shafranov
+  elements of size 0.05 onto a flux grid, gave unstable n = 1 eigenvalues in
+  the low-beta control, whose number grew under refinement and differed
+  between PEST and Hamada charts. The chart's current, from second
+  derivatives of the sampled flux, violated force balance by up to 1.3 at
+  mid-radius and 147 near the axis relative to grad p. On elements of size
+  0.0125 the residual is 0.013 at mid-radius and the control is stable. A
+  stability result now reports the force residual of its chart; an unstable
+  count that grows under refinement and differs between charts is a sign of
+  the input, not of physics.
+
 ### Wrong limit or reference in a check
 
 - **Symbolic proofs blind to the current term.** The exact identities of
