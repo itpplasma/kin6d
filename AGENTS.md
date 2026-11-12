@@ -89,8 +89,13 @@ context.
 - **Declaration:** every pull request states in one line that no non-public
   code of others was used or in context. Reviewers check that line and that the
   sources list of the capability names no non-public code.
-- **Comparisons** with closed or non-public codes use published results and
-  published input data only, never runs of those codes.
+- **Comparisons** with closed or non-public codes in this repository, its
+  docs and tests use published results and published input data only,
+  never runs of those codes. Private project repositories (for example
+  flux_pumping) may compare MILCA results with runs of such codes and
+  hold non-public input data; their material does not enter this
+  repository, and their copies of others' non-public code (for example
+  `sources/faepcr35` there) stay out of every MILCA session.
 - **Record the sources:** every new physics capability lists, in its
   specification under `docs/`, the papers and open-source repositories (with
   commit and licence) used for its derivation, implementation or validation.
