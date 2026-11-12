@@ -33,7 +33,7 @@ milca_test_labels(nonnested_exterior_frozen_sphere_oracle fast CLASSES mhd
 milca_test_labels(nonnested_exterior_3d_vacuum_pilot slow CLASSES mhd
     TARGETS test_nonnested_exterior)
 foreach(k 2 3)
-    foreach(case fixed floating voltage exterior)
+    foreach(case fixed floating voltage exterior period mapped)
         milca_test_labels(nonnested_actions_${case}_p${k} fast CLASSES mhd
             TARGETS test_nonnested_actions)
     endforeach()
@@ -596,6 +596,10 @@ milca_test_labels(nonnested_island_d3_ladder_p2 slow CLASSES mhd
     TARGETS test_nonnested_island)
 milca_test_labels(nonnested_coupled_landreman_family1_p2 slow CLASSES mhd
     TARGETS test_nonnested_landreman)
+milca_test_labels(nonnested_coupled_landreman_period2_p2 slow CLASSES mhd
+    TARGETS test_nonnested_landreman)
+milca_test_labels(nonnested_coupled_landreman_mapped_p2 slow CLASSES mhd
+    TARGETS test_nonnested_landreman)
 milca_test_labels(nonnested_mapped_identity_regression fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 milca_test_labels(nonnested_mapped_ellipse_h_ladder slow CLASSES mhd
@@ -604,6 +608,12 @@ milca_test_labels(nonnested_mapped_ellipse_mode_ladder fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 milca_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
     TARGETS test_nonnested_mapped)
+milca_test_labels(nonnested_mapped_period fast CLASSES mhd
+    TARGETS test_nonnested_mapped)
+milca_test_labels(coil_box_vacuum_synthetic fast CLASSES apps mhd
+    TARGETS coil_box_vacuum)
+milca_test_labels(coil_box_equilibrium_synthetic slow CLASSES apps mhd
+    TARGETS coil_box_equilibrium)
 foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
     milca_test_labels(nonnested_mapped_${mapped_case} fast CLASSES mhd
         TARGETS test_nonnested_mapped)
