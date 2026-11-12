@@ -85,7 +85,7 @@ module milca_nonnested_coupled
         real(dp) :: voltage = 0 ! full-torus loop voltage when drive = V
         real(dp) :: chi_par = 1, chi_perp = 1, g_par = 1, g_perp = 1
         real(dp) :: current = 0 ! net toroidal current, phi-mean int J_phi dR dZ
-        integer :: nphi = 0     ! phi points; 0 selects 4 N + 1
+        integer :: nphi = 0 ! phi points; 0 selects 4 N + 1
         procedure(meridian_weight_i), pointer, nopass :: source => null()
         procedure(meridian_weight_i), pointer, nopass :: g_par_shape => null()
         ! Phi-dependent alternatives; at most one of each pair is associated.
@@ -102,15 +102,16 @@ module milca_nonnested_coupled
     ! Global index of local entry j of block b of a space is offset +
     ! b*(per-mode size) + j. na, nv are whole-space sizes (all blocks).
     type :: nc_layout_t
-        integer :: modes = 0, nb = 1, na1 = 0, n0 = 0, nb2 = 0
+        ! Block n holds toroidal mode n*period; phi samples span one period.
+        integer :: modes = 0, nb = 1, na1 = 0, n0 = 0, nb2 = 0, period = 1
         integer :: na = 0, nv = 0, n = 0
         integer :: ia = 0, il = 0, ip = 0, iphi = 0, iv = 0
     end type
 
     type :: nc_report_t
         integer :: newton_steps = 0
-        real(dp) :: residual(5) = 0     ! blockwise backward errors at exit
-        real(dp) :: history(0:40) = -1  ! max blockwise backward error per step
+        real(dp) :: residual(5) = 0 ! blockwise backward errors at exit
+        real(dp) :: history(0:40) = -1 ! max blockwise backward error per step
         real(dp) :: voltage = 0, multiplier = 0, divergence = 0
         integer :: stages = 0, total_steps = 0 ! nc_continue only
         character(160) :: message = ''
@@ -181,6 +182,7 @@ contains
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t) :: lay
         lay%modes = ubound(field%b, 2); lay%nb = 2*lay%modes + 1
+        lay%period = field%period
         lay%na1 = field%fs%sp(1)%ndof; lay%n0 = field%fs%n0
         lay%nb2 = field%fs%sp(2)%ndof
         lay%na = lay%na1*lay%nb; lay%nv = lay%n0*lay%nb
@@ -298,8 +300,9 @@ contains
         end do
         ! Exact constant forms avoid mode-pair quadrature storage. Both the
         ! assembled reference and the action retain the same FEEC operators.
+        if (field%period < 1) return
         call meridian_fourier_identity_forms(field%fs, modes, &
-            ops%c, ops%s, ops%mg, status)
+            ops%c, ops%s, ops%mg, status, field%period)
         if (status /= 0) return
         status = 1
         call csc_transpose(ops%mg, ops%mgt, st)
@@ -719,10 +722,10 @@ contains
             call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
             if (status /= 0) return
             do j = 1, nphi
-                phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                phi = 2*acos(-1.0_dp)*(j - 1)/(nphi*lay%period)
                 call nc_source_data(problem, xq, phi, src, flux, drive, status)
                 if (status /= 0) return
-                call trig(lay%modes, phi, tr, dtr)
+                call trig(lay%modes, phi, tr, dtr, lay%period)
                 do bk = 1, lay%nb
                     load((bk - 1)*n0 + 1:bk*n0) = load((bk - 1)*n0 + 1:bk*n0) &
                         + wq/nphi*(tr(bk)*(val*src + grad(1, :)*flux(1) &
@@ -819,16 +822,19 @@ contains
         nr = (field%fs%sp(1)%nloc + 2*field%fs%nl0)*lay%nb + 1
     end function
 
-    pure subroutine trig(modes, phi, tr, dtr)
-        ! tr = 1, cos phi, sin phi, cos 2 phi, ...; dtr = d tr / d phi.
+    pure subroutine trig(modes, phi, tr, dtr, period)
+        ! tr = 1, cos P phi, sin P phi, cos 2 P phi, ...; dtr = d tr / d phi.
         integer, intent(in) :: modes
         real(dp), intent(in) :: phi
         real(dp), intent(out) :: tr(:), dtr(:)
-        integer :: n
+        integer, intent(in), optional :: period
+        integer :: n, per
+        per = 1
+        if (present(period)) per = period
         tr(1) = 1; dtr(1) = 0
         do n = 1, modes
-            tr(2*n) = cos(n*phi); tr(2*n + 1) = sin(n*phi)
-            dtr(2*n) = -n*tr(2*n + 1); dtr(2*n + 1) = n*tr(2*n)
+            tr(2*n) = cos(n*per*phi); tr(2*n + 1) = sin(n*per*phi)
+            dtr(2*n) = -n*per*tr(2*n + 1); dtr(2*n + 1) = n*per*tr(2*n)
         end do
     end subroutine
 
@@ -892,8 +898,8 @@ contains
             ephi = x(lay%iv)/(two_pi*rr)
             w = wq/nphi
             do j = 1, nphi
-                phi = two_pi*(j - 1)/nphi
-                call trig(lay%modes, phi, tr, dtr)
+                phi = two_pi*(j - 1)/(nphi*lay%period)
+                call trig(lay%modes, phi, tr, dtr, lay%period)
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
                 call point_data(problem, xq, phi, bq, src, gpar, &
@@ -1240,7 +1246,7 @@ contains
     end subroutine
 
     subroutine nc_factor_reduced(reduced, solver, status)
-!$      use omp_lib, only: omp_get_max_threads
+        !$      use omp_lib, only: omp_get_max_threads
         ! General sparse LU (the Jacobian is not symmetric).
         type(csc_t), intent(in) :: reduced
         type(sparse_solver_t), intent(inout) :: solver
@@ -1264,7 +1270,7 @@ contains
                 solver%options%structural_matching = .false.
             end if
             solver%options%pivot_tolerance = 0.1_dp
-!$          solver%options%nthreads = omp_get_max_threads()
+            !$          solver%options%nthreads = omp_get_max_threads()
         else
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
@@ -1489,7 +1495,7 @@ contains
             w(7:9, :) = w(7:9, :) - wa
             w(8, :) = w(8, :) + weight(lay%iv)/xq(1)
             do j = 1, nphi
-                phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                phi = 2*acos(-1.0_dp)*(j - 1)/(nphi*lay%period)
                 call point_data(problem, xq, phi, u(:3, j), src, gpar, &
                     source_flux, drive, status)
                 if (status /= 0) return
@@ -1515,10 +1521,10 @@ contains
             end do
             dpmean = 0; dfmean = 0
             do n = 1, lay%modes
-                dpmean(2*n) = -n*gm(5, 2*n + 1)
-                dpmean(2*n + 1) = n*gm(5, 2*n)
-                dfmean(2*n) = -n*gm(8, 2*n + 1)
-                dfmean(2*n + 1) = n*gm(8, 2*n)
+                dpmean(2*n) = -n*lay%period*gm(5, 2*n + 1)
+                dpmean(2*n + 1) = n*lay%period*gm(5, 2*n)
+                dfmean(2*n) = -n*lay%period*gm(8, 2*n + 1)
+                dfmean(2*n + 1) = n*lay%period*gm(8, 2*n)
             end do
             do bk = 1, lay%nb
                 rb((bk - 1)*n2 + 1:bk*n2) = rb((bk - 1)*n2 + 1:bk*n2) &
@@ -1616,11 +1622,11 @@ contains
         end do
         call synthesize(pg(1, :), values(4, :), plan, work)
         call synthesize(matmul(val, pl), values(5, :), plan, work, .true.)
-        values(5, :) = values(5, :)/xq(1)
+        values(5, :) = lay%period*values(5, :)/xq(1)
         call synthesize(pg(2, :), values(6, :), plan, work)
         call synthesize(fg(1, :), values(7, :), plan, work)
         call synthesize(matmul(val, fl), values(8, :), plan, work, .true.)
-        values(8, :) = values(8, :)/xq(1)
+        values(8, :) = lay%period*values(8, :)/xq(1)
         call synthesize(fg(2, :), values(9, :), plan, work)
         values(10, :) = x(lay%iv)/(2*acos(-1.0_dp)*xq(1))
     end subroutine
@@ -1705,7 +1711,7 @@ contains
             if (status /= 0) return
             rr = xq(1); u(2, :) = u(2, :) + field%f_vac/rr
             do j = 1, nphi
-                phi = twopi*(j - 1)/nphi
+                phi = twopi*(j - 1)/(nphi*lay%period)
                 call point_data(problem, xq, phi, u(:3, j), src, gpar, &
                     source_flux, drive, status)
                 if (status /= 0) return

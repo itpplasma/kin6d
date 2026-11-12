@@ -42,10 +42,11 @@ module milca_equilibrium_nonnested
         type(meridian_point_basis_t) :: pb
         complex(dp), allocatable :: b(:, :) ! V2, modes 0:N
         ! Block n holds toroidal mode n*period (honoured by nn_point,
-        ! nn_divergence, nc_store and the frozen-current solve only).
+        ! nn_sample, nn_divergence, the coupled NN2 solve and the
+        ! frozen-current solve).
         integer :: period = 1
-        real(dp), allocatable :: psi(:)     ! N=0 pressure primitive, internal
-        real(dp), allocatable :: p(:)       ! NN2 transported p, V0 Fourier blocks
+        real(dp), allocatable :: psi(:) ! N=0 pressure primitive, internal
+        real(dp), allocatable :: p(:) ! NN2 transported p, V0 Fourier blocks
         real(dp) :: f_vac = 0, pprime = 0, psi_bound = 0, mu0 = 1
         real(dp) :: centre(2) = 0, radial_scale = 1
         integer :: linear_solver = NN_SOLVER_DIRECT
@@ -417,7 +418,7 @@ contains
                 v0, status)
             if (status /= 0) return
             value(EQ_P) = nn_fourier_value(field%p, field%fs%n0, &
-                field%fs%sp(0)%dof(:, t), v0(1, :), point(3))
+                field%fs%sp(0)%dof(:, t), v0(1, :), field%period*point(3))
         end if
         if (ubound(field%b, 2) == 0) then
             call meridian_point_basis(field%fs, field%pb, 0, t, xi, eta, x, &

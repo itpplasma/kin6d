@@ -154,7 +154,7 @@ contains
                             load(a, c, n) = load(a, c, n) + wq &
                                 *(grad(1, a)*average(c, 1, n) &
                                 + grad(2, a)*average(c, 3, n) &
-                                - cmplx(0.0_dp, real(n, dp), dp)/x(1) &
+                                - cmplx(0.0_dp, real(n*field%period, dp), dp)/x(1) &
                                 *v0(1, a)*average(c, 2, n))
                         end do
                         load(a, 1, n) = load(a, 1, n) &
