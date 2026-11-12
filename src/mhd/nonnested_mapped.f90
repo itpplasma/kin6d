@@ -33,8 +33,10 @@ module milca_nonnested_mapped
 
     type :: nn_map_t
         ! Displacement of (R, Z): Lagrange V0 times real Fourier blocks
-        ! b = 0, 2n - 1 (cos n phi), 2n (sin n phi), as the N1 map unknowns.
+        ! b = 0, 2n - 1 (cos n P phi), 2n (sin n P phi), as the N1 map
+        ! unknowns, with the field period P of the free_b_field_t it maps.
         integer :: modes = 0
+        integer :: period = 1
         real(dp), allocatable :: d(:, :, :) ! (n0, 2, 0:2*modes)
         ! Alternative full Cartesian H(R,Z,phi); owned, fixed geometry.
         ! The two representations are exclusive through their constructors.
@@ -70,29 +72,35 @@ module milca_nonnested_mapped
         end subroutine
     end interface
 contains
-    subroutine nn_map_build(fs, modes, nphi, fun, map, status)
+    subroutine nn_map_build(fs, modes, nphi, fun, map, status, period)
         ! Nodal interpolation in the plane, trigonometric interpolation on
-        ! nphi uniform planes (exact for degree < nphi/2).
+        ! nphi uniform planes of one period 2 pi / P (exact for degree <
+        ! nphi/2 in P phi); fun must be 2 pi / P periodic in phi.
         type(meridian_feec_t), intent(in) :: fs
         integer, intent(in) :: modes, nphi
         procedure(nn_map_function_i) :: fun
         type(nn_map_t), intent(out) :: map
         integer, intent(out) :: status
+        integer, intent(in), optional :: period
         real(dp), allocatable :: nodes(:, :)
         real(dp) :: y(2), phi, tr(0:2*modes)
-        integer :: i, j
+        integer :: i, j, per
         status = 1
+        per = 1
+        if (present(period)) per = period
+        if (per < 1) return
         if (modes < 0 .or. nphi < 2*modes + 1) return
         call meridian_lagrange_nodes(fs, nodes)
         map%modes = modes
+        map%period = per
         allocate (map%d(fs%n0, 2, 0:2*modes))
         map%d = 0
         !$omp parallel do default(shared) private(i, j, y, phi, tr) schedule(static)
         do i = 1, fs%n0
             do j = 1, nphi
-                phi = 2*pi*(j - 1)/nphi
+                phi = 2*pi*(j - 1)/(nphi*per)
                 call fun(nodes(:, i), phi, y)
-                call trig(modes, phi, tr)
+                call trig(modes, per*phi, tr)
                 tr(1:) = 2*tr(1:)
                 map%d(i, 1, :) = map%d(i, 1, :) + (y(1) - nodes(1, i))*tr/nphi
                 map%d(i, 2, :) = map%d(i, 2, :) + (y(2) - nodes(2, i))*tr/nphi
@@ -174,11 +182,11 @@ contains
         ! This legacy entry has cylindrical physical outputs. Full charts use
         ! nn_map_point, whose Cartesian contract does not reinterpret them.
         if (allocated(map%chart) .or. .not. allocated(map%d)) return
-        call trig(map%modes, phi, tr)
+        call trig(map%modes, map%period*phi, tr)
         dtr = 0
         do n = 1, map%modes
-            dtr(2*n - 1) = -n*tr(2*n)
-            dtr(2*n) = n*tr(2*n - 1)
+            dtr(2*n - 1) = -n*map%period*tr(2*n)
+            dtr(2*n) = n*map%period*tr(2*n - 1)
         end do
         u = 0; up = 0
         g = reshape([1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], [2, 2])
@@ -246,13 +254,13 @@ contains
                 if (field%fs%cyl_r0 > 0) radius = field%fs%cyl_r0
                 vol = vol + w/radius**2
                 do j = 1, nphi
-                    pts(:, j) = [x, 2*pi*(j - 1)/nphi]
+                    pts(:, j) = [x, 2*pi*(j - 1)/(nphi*field%period)]
                 end do
                 call metric%tensor(t, pts, kt, status)
                 if (status /= 0) return
                 h = [0.0_dp, 1/radius, 0.0_dp]
                 do j = 1, nphi
-                    call trig(modes, pts(3, j), tr)
+                    call trig(modes, field%period*pts(3, j), tr)
                     kh = matmul(kt(:, :, j), h)
                     hk = hk + (w/nphi)*dot_product(h, kh)
                     do b = 0, nb - 1
@@ -306,6 +314,7 @@ contains
         integer :: modes, nb, n1, n0, nn, nl, t, b, n, failure, st
         status = 1
         if (.not. cartesian .and. allocated(map%chart)) return
+        if (.not. same_period(field, map)) return
         modes = ubound(field%b, 2)
         if (nphi < 2*modes + 1) return
         nb = 2*modes + 1; n1 = field%fs%sp(1)%ndof; n0 = field%fs%n0
@@ -349,13 +358,15 @@ contains
         end do
         call nn_factor_free(factor)
         if (st /= 0) return
-        call meridian_fourier_gradient(field%fs, modes, grad, st)
+        call meridian_fourier_gradient(field%fs, modes, grad, st, field%period)
         if (st /= 0) return
         allocate (lambda(nb*n0))
         lambda = 0
         do n = 1, modes
-            lambda((2*n - 1)*n0 + 1:2*n*n0) = -data(2*n*n1 + nn + 1:(2*n + 1)*n1)/n
-            lambda(2*n*n0 + 1:(2*n + 1)*n0) = data((2*n - 1)*n1 + nn + 1:2*n*n1)/n
+            lambda((2*n - 1)*n0 + 1:2*n*n0) = &
+                -data(2*n*n1 + nn + 1:(2*n + 1)*n1)/(n*field%period)
+            lambda(2*n*n0 + 1:(2*n + 1)*n0) = &
+                data((2*n - 1)*n1 + nn + 1:2*n*n1)/(n*field%period)
         end do
         data = data - csc_matvec(grad, lambda)
         do b = 1, nb - 1
@@ -381,7 +392,7 @@ contains
                     phi(:, i) = phi(:, i)*field%fs%sp(1)%sgn(i, t)
                 end do
                 do j = 1, nphi
-                    angle = 2*pi*(j - 1)/nphi
+                    angle = 2*pi*(j - 1)/(nphi*field%period)
                     if (cartesian) then
                         call nn_map_point(map, field%fs%sp(0)%dof(:, t), val, dval, &
                                           x, angle, position, p1, p2, jac, status)
@@ -399,7 +410,7 @@ contains
                     status = 1
                     if (.not. all(ieee_is_finite(ahat))) return
                     ahat(3) = ahat(3) + field%f_vac*log(x(1))
-                    call trig(modes, angle, tr)
+                    call trig(modes, field%period*angle, tr)
                     do bb = 0, nb - 1
                         local(bb*nl + 1:(bb + 1)*nl) = local(bb*nl + 1:(bb + 1)*nl) &
                             + (w/nphi)*tr(bb)*matmul(ahat, phi)
@@ -438,11 +449,13 @@ contains
         nb = 2*modes + 1; n1 = field%fs%sp(1)%ndof; n2 = field%fs%sp(2)%ndof
         nn = field%fs%nn
         if (size(data) /= nb*n1) return
+        if (.not. same_period(field, map)) return
         metric%fs => field%fs; metric%map => map
         mean = metric; mean%kind = METRIC_MEAN; mean%nphi_mean = nphi
-        call meridian_fourier_curl_curl(field%fs, modes, nphi, metric, s, st)
+        call meridian_fourier_curl_curl(field%fs, modes, nphi, metric, s, st, &
+            field%period)
         if (st /= 0) return
-        call meridian_fourier_curl(field%fs, modes, c, st)
+        call meridian_fourier_curl(field%fs, modes, c, st, field%period)
         if (st /= 0) return
         call nn_harmonic_forms(field, metric, nphi, g, energy_h, volume, st)
         if (st /= 0) return
@@ -460,7 +473,8 @@ contains
         x = merge(data, 0.0_dp, fixed)
         r = rhs - csc_matvec(s, x)
         where (fixed) r = 0
-        call meridian_fourier_curl_curl(field%fs, modes, nphi, mean, sm, st)
+        call meridian_fourier_curl_curl(field%fs, modes, nphi, mean, sm, st, &
+            field%period)
         if (st /= 0) return
         call gauge_regularised(sm, p, st)
         if (st /= 0) return
@@ -604,6 +618,7 @@ contains
         status = 1
         if (nphi < 1) return
         if (.not. cartesian .and. allocated(map%chart)) return
+        if (.not. same_period(field, map)) return
         failure = 0
         !$omp parallel do default(shared) schedule(dynamic, 4) &
         !$omp& private(t, q, j, n, i, st, x, w, w0, phi, val, dval, y, df, jac) &
@@ -621,7 +636,7 @@ contains
                     phi(:, i) = phi(:, i)*field%fs%sp(2)%sgn(i, t)
                 end do
                 do j = 1, nphi
-                    angle = 2*pi*(j - 0.5_dp)/nphi
+                    angle = 2*pi*(j - 0.5_dp)/(nphi*field%period)
                     if (cartesian) then
                         call nn_map_point(map, field%fs%sp(0)%dof(:, t), val, dval, &
                                           x, angle, position, p1, p2, jac, st)
@@ -639,7 +654,7 @@ contains
                     do n = 0, ubound(field%b, 2)
                         bn = matmul(phi, field%b(field%fs%sp(2)%dof(:, t), n))
                         bhat = bhat + merge(1, 2, n == 0) &
-                            *real(bn*exp(cmplx(0.0_dp, n*angle, dp)), dp)
+                            *real(bn*exp(cmplx(0.0_dp, n*field%period*angle, dp)), dp)
                     end do
                     if (cartesian) then
                         bh = matmul(p2, bhat)
@@ -705,7 +720,7 @@ contains
                     nm = self%nphi_mean
                     kmean(:, :, q) = 0
                     do j = 1, nm
-                        if (.not. pulled(q, 2*pi*(j - 1)/nm, kj)) return
+                        if (.not. pulled(q, 2*pi*(j - 1)/(nm*self%map%period), kj)) return
                         kmean(:, :, q) = kmean(:, :, q) + kj/nm
                     end do
                     have_mean(q) = .true.
@@ -736,6 +751,15 @@ contains
             end if
         end function
     end subroutine
+
+    pure logical function same_period(field, map)
+        ! A phi-dependent displacement map must share the field period; a
+        ! full chart or a phi-independent map serves every period.
+        type(free_b_field_t), intent(in) :: field
+        type(nn_map_t), intent(in) :: map
+        same_period = allocated(map%chart) .or. map%modes == 0 .or. &
+            map%period == field%period
+    end function
 
     pure subroutine trig(modes, phi, tr)
         ! tr = 1, cos phi, sin phi, cos 2 phi, ... (upstream block order).
