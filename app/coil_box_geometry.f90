@@ -17,6 +17,7 @@ module coil_box_geometry
     public :: wall_read, wall_point, wall_centroid, star_quality, ref_polar, ref_centre
     public :: box_map, box_potential, box_field, set_map_planes, box_coordinates
     public :: coils, weights, nfp
+    public :: box_source, axis_rc, axis_zs, source_peak, source_width
 
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: nsample = 1024
@@ -26,6 +27,11 @@ module coil_box_geometry
     real(dp), allocatable :: weights(:)
     real(dp) :: cref(2)
     real(dp), allocatable :: plane_phi(:), plane_c(:, :), plane_a(:, :, :)
+    ! Heating source of the finite-pressure box: a Gaussian of width w about
+    ! the axis R = sum rc cos(n P phi), Z = sum zs sin(n P phi), in W/m^3
+    ! per unit chi_perp (the steady p equation is -div(K grad p) = S).
+    real(dp) :: axis_rc(0:16) = 0, axis_zs(0:16) = 0, source_peak = 0, &
+        source_width = 0.1_dp
     real(dp), parameter :: ramp0 = 0.1_dp, ramp1 = 0.6_dp
 
 contains
@@ -232,6 +238,17 @@ contains
         do k = 1, 64
             r(k) = norm2(wall_point(2*pi*(k - 1)/64, 0.0_dp, .true.) - cref)
         end do
+    end function
+
+    function box_source(x, phi) result(s)
+        real(dp), intent(in) :: x(2), phi
+        real(dp) :: s, ax(2)
+        integer :: n
+        ax = 0
+        do n = 0, 16
+            ax = ax + [axis_rc(n)*cos(n*nfp*phi), axis_zs(n)*sin(n*nfp*phi)]
+        end do
+        s = source_peak*exp(-sum((x - ax)**2)/source_width**2)
     end function
 
     subroutine box_potential(x, a)
