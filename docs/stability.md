@@ -504,7 +504,9 @@ which therefore sets the equilibrium error of EQDSK input. Still open in
 P1e.3: published PEST cases and DCON on the same input (rung R3), Boozer-file
 input, and the sparse complex LDL^H of FortSparse, which takes 95 s for an
 11k-row banded matrix with 4.7M nonzeros and limits the harmonic range of
-the tests.
+the tests. Its real symmetric embedding [[Re, -Im], [Im, Re]] factors in
+20 s with the real front-based LDL^T and twice the inertia; dense-front
+complex factorization in FortSparse is part of P1e.10.
 
 ### Verification ladder
 
