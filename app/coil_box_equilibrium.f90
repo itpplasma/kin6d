@@ -13,7 +13,7 @@ program coil_box_equilibrium
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use milca_nonnested_mapped, only: nn_map_t, nn_mapped_cartesian_data, nn_map_point
     use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
-        nc_layout, nc_continue
+        nc_layout, nc_continue, nc_solve
     use fortfem_meridian_feec_n, only: meridian_qgrad
     implicit none
     character(len=512) :: coils_file = '', wall_file = '', arg
@@ -30,16 +30,21 @@ program coil_box_equilibrium
     real(dp) :: decades = 1, newton_tolerance = 1.0e-10_dp
     ! A test gate on <beta>; the default accepts any value.
     real(dp) :: beta_range(2) = [-huge(1.0_dp), huge(1.0_dp)]
+    ! Continuation in the source: the anisotropy continuation runs at
+    ! source_peak/source_steps, then each step adds that amount and is
+    ! solved by Newton from the previous state at the target anisotropy.
+    integer :: source_steps = 1
     namelist /plasma/ axis_rc, axis_zs, source_peak, source_width, chi_perp, &
-        chi_ratio, g_par, g_ratio, decades, newton_tolerance, beta_range
+        chi_ratio, g_par, g_ratio, decades, newton_tolerance, beta_range, &
+        source_steps
     type(free_b_field_t), target :: field
     type(nn_map_t), target :: map
     type(nc_problem_t) :: problem
     type(nc_layout_t) :: lay
     type(nc_report_t) :: report
     real(dp), allocatable :: data(:), x(:)
-    real(dp) :: pmax, pmean, b2mean, volume
-    integer :: unit, st, c0, c1, rate
+    real(dp) :: pmax, pmean, b2mean, volume, peak
+    integer :: unit, st, c0, c1, rate, step
 
     call get_command_argument(1, arg)
     open (newunit=unit, file=trim(arg), status='old', action='read')
@@ -63,12 +68,25 @@ program coil_box_equilibrium
     problem%nphi = nphi
     problem%source_3d => box_source
     problem%map => map
+    if (source_steps < 1) error stop 'source_steps'
+    peak = source_peak
+    source_peak = peak/source_steps
     call nc_continue(field, problem, x, report, st, tol=newton_tolerance, &
         decades=decades)
-    write (*, '(a,i0,a,i0,a,i0,a,es9.2,a,a)') 'Newton stages ', report%stages, &
-        ' steps ', report%total_steps, ' status ', st, ' divergence ', &
-        report%divergence, ' ', trim(report%message)
+    write (*, '(a,i0,a,i0,a,i0,a,es9.2,a,a)') 'source step 1 Newton stages ', &
+        report%stages, ' steps ', report%total_steps, ' status ', st, &
+        ' divergence ', report%divergence, ' ', trim(report%message)
+    write (*, '(a,*(es9.1))') 'last stage backward errors ', &
+        report%history(:report%newton_steps)
     if (st /= 0) error stop 'coupled solve'
+    do step = 2, source_steps
+        source_peak = peak*step/source_steps
+        call nc_solve(field, problem, x, report, st, tol=newton_tolerance)
+        write (*, '(a,i0,a,i0,a,i0,a,es9.2)') 'source step ', step, &
+            ' Newton steps ', report%newton_steps, ' status ', st, &
+            ' divergence ', report%divergence
+        if (st /= 0) error stop 'coupled solve (source step)'
+    end do
     call moments(field, map, nphi, pmax, pmean, b2mean, volume)
     call system_clock(c1)
     write (*, '(a,es11.3,a,es11.3,a,es11.3,a,es11.3,a,es11.3,a,f9.1)') &

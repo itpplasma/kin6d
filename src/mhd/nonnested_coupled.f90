@@ -531,6 +531,7 @@ contains
         integer, allocatable :: rep(:)
         real(dp) :: target, merit, merit_trial, alpha, w(5)
         integer :: it, steps, st, ls
+        character(160) :: why
         logical :: factored
         status = 1
         factored = .false.
@@ -570,6 +571,7 @@ contains
             end if
         end if
         w = huge(1.0_dp)
+        why = ''
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
             if (st /= 0) exit
@@ -584,7 +586,7 @@ contains
             report%newton_steps = it
             if (maxval(w) <= target) exit
             if (it == steps) exit
-            call newton_step(jac, mask, rep, -r, solver, factored, dx, st)
+            call newton_step(jac, mask, rep, -r, solver, factored, dx, st, why)
             if (st /= 0) exit
             ! The line search scales by |J|(|x| + |dx|): a block that is zero
             ! in x (p or Phi of a vacuum seed) is scaled by its step.
@@ -604,7 +606,10 @@ contains
                 alpha = alpha/2
             end do
             if (ls > 12) then
-                if (st == 0) st = 1
+                if (st == 0) then
+                    st = 1
+                    why = 'No residual decrease in 12 line-search halvings'
+                end if
                 exit
             end if
             x = trial
@@ -621,6 +626,7 @@ contains
                     'Nonfinite source/field or nonpositive conductivity shape'
             case default
                 report%message = 'NN2 assembly or nonlinear solve failed'
+                if (len_trim(why) > 0) report%message = why
             end select
             return
         end if
@@ -1237,7 +1243,7 @@ contains
         end do
     end subroutine
 
-    subroutine newton_step(a, fixed, rep, rhs, solver, factored, x, status)
+    subroutine newton_step(a, fixed, rep, rhs, solver, factored, x, status, message)
         ! Newton increment from the reduced system: fixed dofs have zero
         ! increment, tied dofs share the increment of their representative
         ! (rows summed, columns summed). The sparse LU of an earlier Jacobian
@@ -1254,6 +1260,8 @@ contains
         logical, intent(inout) :: factored
         real(dp), allocatable, intent(out) :: x(:)
         integer, intent(out) :: status
+        ! The sparse backend's reason when the factor or solve fails.
+        character(*), intent(inout) :: message
         real(dp), parameter :: gmres_tol = 1.0e-10_dp
         integer, parameter :: gmres_max = 20
         type(csc_t) :: reduced
@@ -1281,12 +1289,15 @@ contains
         end if
         if (factored) call sparse_destroy(solver)
         factored = .false.
-        call nc_factor_reduced(reduced, solver, status)
+        call nc_factor_reduced(reduced, solver, status, message)
         if (status /= 0) return
         status = 1
         factored = .true.
         call sparse_solve(solver, b, y, st)
-        if (.not. status_ok(st)) return
+        if (.not. status_ok(st)) then
+            message = 'Sparse solve: '//trim(st%msg)
+            return
+        end if
         x = y(rep)
         if (.not. all(ieee_is_finite(x))) return
         status = 0
@@ -1340,12 +1351,13 @@ contains
         status = 0
     end subroutine
 
-    subroutine nc_factor_reduced(reduced, solver, status)
+    subroutine nc_factor_reduced(reduced, solver, status, message)
         !$      use omp_lib, only: omp_get_max_threads
         ! General sparse LU (the Jacobian is not symmetric).
         type(csc_t), intent(in) :: reduced
         type(sparse_solver_t), intent(inout) :: solver
         integer, intent(out) :: status
+        character(*), intent(inout), optional :: message
         type(fortsparse_status_t) :: st
         status = 1
         if (gs_direct_available()) then
@@ -1370,7 +1382,10 @@ contains
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
         call sparse_factor(solver, reduced, st)
-        if (.not. status_ok(st)) return
+        if (.not. status_ok(st)) then
+            if (present(message)) message = 'Sparse LU: '//trim(st%msg)
+            return
+        end if
         status = 0
     end subroutine
     subroutine nc_tangent_factor(field, problem, x, tangent, status)
