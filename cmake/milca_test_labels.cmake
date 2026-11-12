@@ -1009,6 +1009,7 @@ endforeach()
 milca_test_labels(vrmhd_cylinder_profiles fast CLASSES mhd TARGETS test_vrmhd_cylinder)
 milca_test_labels(vrmhd_cylinder_stationary slow CLASSES mhd TARGETS test_vrmhd_cylinder)
 milca_test_labels(vrmhd_cylinder_linear slow CLASSES mhd TARGETS test_vrmhd_cylinder)
+milca_test_labels(vrmhd_torus_shafranov fast CLASSES mhd TARGETS test_vrmhd_torus)
 milca_test_labels(vrmhd_island_induction_mixed fast CLASSES mhd
     TARGETS test_vrmhd_island)
 milca_test_labels(vrmhd_island_regeneration fast CLASSES mhd
