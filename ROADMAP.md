@@ -28,7 +28,13 @@ features or raw runtime alone. Keep the group's human effort on physics.
 | **P1a** | **NTV/neoclassical physics:** converge AUG 30835 and ITER TC24 observables with explicit model/convention match, resolution, error and cost; focus on unresolved resonant-ion discrepancies. Finish only the currently exercised collision/source work, not blanket feature parity: the energy-coupled kernel with finite orbit width on the hp orbit-class mesh (stacked branches `ntv/a01` to `ntv/a05`) and the torque density in real space. | [#233](https://github.com/itpplasma/milca/issues/233), [#197](https://github.com/itpplasma/milca/issues/197), [#198](https://github.com/itpplasma/milca/issues/198), [#369](https://github.com/itpplasma/milca/issues/369) |
 | **P1b** | **3D equilibrium and exterior:** the coil-driven BEM exterior agrees with independent Biot–Savart and virtual-casing references (#350, #352), and the coil-driven box solves in vacuum and at finite pressure with closed-form coil vector potentials (#385, #390, #391); next is a finite-pressure case started from a displaced seed, which tests the Newton solve beyond the linear vacuum problem. Preserve NN/island and Beltrami convergence gates. Avoid advancing derived applications on an unvalidated field. | [#350](https://github.com/itpplasma/milca/pull/350), [#352](https://github.com/itpplasma/milca/pull/352), [#391](https://github.com/itpplasma/milca/pull/391) |
 | **P1c** | **Drift-wave turbulence for the resonant-layer response:** spectra, correlation scales and transport coefficients at one rational surface ([drift-turbulence.md](docs/drift-turbulence.md)). The linear fluid roots (stage L), Hasegawa-Wakatani turbulence with its saturated-flux benchmark (stage HW) and the homogeneous two-dimensional step of the drift-Alfven model (stage DA) are in; next is stage DA beyond the homogeneous periodic box. | [#371](https://github.com/itpplasma/milca/pull/371), [#379](https://github.com/itpplasma/milca/pull/379), [#383](https://github.com/itpplasma/milca/pull/383) |
-| **P1e** | **Global 3D ideal-MHD stability:** a fixed- and free-boundary stability capability for 3D equilibria that matches or exceeds the published capabilities of CAS3D, CASTOR3D, TERPSICHORE and DCON (unstable global modes, marginal points, stable spectra, wall and vacuum response), with certified errors, derivatives with respect to equilibrium and design parameters, and cost per observable at accepted accuracy as the figure of merit. Built under the procedure below. | — |
+| **P1e** | **Global 3D ideal-MHD stability:** a fixed- and free-boundary stability capability for 3D equilibria that matches or exceeds the published capabilities of CAS3D, CASTOR3D, TERPSICHORE and DCON (unstable global modes, marginal points, stable spectra, wall and vacuum response), with certified errors, derivatives with respect to equilibrium and design parameters, and cost per observable at accepted accuracy as the figure of merit. Built under the procedure below. | [specification](docs/stability.md#global-3d-ideal-mhd-stability-p1e) |
+
+P1a to P1c are **existing active campaigns**, not a proposal to restart them. Each
+campaign closes a specific observable-level verification gate before adding
+adjacent scope. Document unresolved discrepancies explicitly (e.g. the AUG
+resonant-ion per-surface differences in
+[drift-kinetic lessons](docs/lessons/drift-kinetic-transport.md)).
 
 ### P1e procedure
 
@@ -55,12 +61,6 @@ features or raw runtime alone. Keep the group's human effort on physics.
    library.
 6. **Sources.** Each capability lists the publications and open-source
    repositories (commit and licence) it was built and validated from.
-
-These are **existing active campaigns**, not a proposal to restart them. Each
-campaign closes a specific observable-level verification gate before adding
-adjacent scope. Document unresolved discrepancies explicitly (e.g. the AUG
-resonant-ion per-surface differences in
-[drift-kinetic lessons](docs/lessons/drift-kinetic-transport.md)).
 
 ## Next work (start small, after a P0 gate is stable)
 
