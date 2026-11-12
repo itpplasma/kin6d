@@ -37,6 +37,7 @@ program gen_ideal_dw
     call writer%emit('dw_bernstein', bnames, ['value'], [bern], ad=.true.)
     call writer%emit('dw_lagrange', lnames, ['value'], [lag], ad=.true.)
     call emit_boundary()
+    call emit_screw_pinch()
     call writer%line('end module milca_ideal_dw_leaves')
     call writer%close()
     print '(a,i0,a)', 'PASS: ', checks, ' exact delta-W identities (no probes)'
@@ -257,6 +258,47 @@ contains
         call writer%emit('dw_vacuum', vn, ['value'], [vac], ad=.true.)
         call writer%emit('dw_surface', sn, ['value'], [srf], ad=.true.)
     end subroutine emit_boundary
+
+    subroutine emit_screw_pinch()
+        ! Screw pinch B = Btheta(r) e_theta + Bz(r) e_z at theta = 0 in the
+        ! (e_r, e_theta, e_z) frame: d_theta e_theta = -e_r gives g(1,2).
+        type(expr_t) :: r, bt, btp, bz, bzp, out(12)
+        character(8) :: outn(12)
+        integer :: k
+        r = sym('r'); bt = sym('bt'); btp = sym('btp')
+        bz = sym('bz'); bzp = sym('bzp')
+        out = 0*r
+        out(2) = bt; out(3) = bz
+        out(5) = btp; out(6) = bzp
+        out(7) = -bt/r
+        outn(1:3) = bnames(1:3)
+        do k = 1, 9
+            outn(3 + k) = bnames(3 + k)
+        end do
+        call writer%emit('dw_screw_pinch_field', [character(8) :: 'r', 'bt', &
+            'btp', 'bz', 'bzp'], outn, out)
+        call emit_density_jets(r)
+    end subroutine emit_screw_pinch
+
+    subroutine emit_density_jets(r)
+        ! Physical components and radial derivatives from the contravariant
+        ! densities of the cylinder, sqrt(g) xi^i = (r xi_r, xi_theta, r xi_z):
+        ! r div xi = X' + i (m T + kz Z), so the pair (S_p, S_(p-1)) is exact.
+        type(expr_t), intent(in) :: r
+        type(expr_t) :: u(6), out(6)
+        character(8) :: un(6), on(6)
+        integer :: k
+        un = [character(8) :: 'xd', 'xdp', 'td', 'tdp', 'zd', 'zdp']
+        on = [character(8) :: 'xr', 'xrp', 'xt', 'xtp', 'xz', 'xzp']
+        do k = 1, 6
+            u(k) = sym(trim(un(k)))
+        end do
+        out(1) = u(1)/r; out(2) = u(2)/r - u(1)/r**2
+        out(3) = u(3); out(4) = u(4)
+        out(5) = u(5)/r; out(6) = u(6)/r - u(5)/r**2
+        call writer%emit('dw_cylinder_density_jets', [character(8) :: 'r', un], &
+            on, out)
+    end subroutine emit_density_jets
 
     subroutine prove(expression)
         type(expr_t), intent(in) :: expression

@@ -239,7 +239,7 @@ finite-amplitude theorem; a linear eigenvalue interval does not prove it.
 
 ## Global 3D ideal-MHD stability (P1e)
 
-Status (2026-11-12): stage P1e.1 implemented (see
+Status (2026-11-12): stages P1e.1 and P1e.2 implemented (see
 [implementation status](#p1e-implementation-status)); later stages planned.
 This section is the plan
 for roadmap item P1e: a global ideal-MHD stability capability for 3D
@@ -443,6 +443,27 @@ Hermitian symmetry and the tangent and adjoint leaves. Still open from the
 energy-source plan: the equivalence with the intuitive form of delta W, the
 repetition of the identities in SymPy and the
 reduction to Newcomb's Lagrangian, which rung R2 tests numerically.
+
+**P1e.2 (done).** `milca_ideal_cylinder` assembles the stiffness (Eulerian
+form) and mass of a periodic screw pinch for one pair exp(i(m theta +
+kz z)). The unknowns are the contravariant densities X = r xi_r in the
+B-spline space S_p (FortFEM `evaluate_bspline_basis`) and T = xi_theta,
+Z = r xi_z in its derivative space S_(p-1); interior knots of multiplicity p
+make this the hybrid pair, continuous X and discontinuous T and Z. X vanishes
+on the axis and wall, Z on the axis, T on the axis unless |m| = 1. The
+physical components come from a generated leaf. Results
+(`ideal_cylinder_*`):
+
+| Rung | Case | Result |
+|---|---|---|
+| R1 | uniform cylinder, m = 2, p = 3, 24 cells | fast and slow roots within 7e-8 (O4); no eigenvalue in the exact gaps (O5); Alfven point exact |
+| R2 | fixed-wall m = 1 kink of [s0-spectrum.md](s0-spectrum.md), gamma = 0 | omega^2 within 1.3e-10 of the independent oracle at p = 3, 32 cells, error falling about as h^(2p); one eigenvalue below -1e-4 by sparse LDL^H inertia (O1); shift-invert Lanczos agrees |
+| R2 | analytic limit Btheta = r, Bz -> 0, kz = -40, -80, -160 | extrapolated omega^2 = -3 within 1.1e-6 (O2) |
+
+Compression (gamma = 5/3) raises the kink eigenvalue to -0.149, as it must.
+The perpendicular kinetic norm is not offered yet: it leaves the parallel
+displacement without inertia, which needs the field-aligned components of
+P1e.4. Newcomb and Suydam (O7) belong to P1e.7.
 
 ### Verification ladder
 

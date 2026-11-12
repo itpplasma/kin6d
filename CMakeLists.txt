@@ -358,7 +358,9 @@ add_library(milca_spatial ${MILCA_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90
-    ${fortfem_SOURCE_DIR}/src/estimators/bem_residual_energy.f90)
+    ${fortfem_SOURCE_DIR}/src/estimators/bem_residual_energy.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_nurbs_geometry_products.f90
+    ${fortfem_SOURCE_DIR}/src/elements/bspline_feec.f90)
 target_link_libraries(milca_spatial PUBLIC milca_ode milca_intervals milca_field)
 # Field layer: what a client needs to evaluate a MILCA field at physical points
 # (charts, triangle bases, free-boundary shell kernels). FortNum only.

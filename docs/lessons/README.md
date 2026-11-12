@@ -9,6 +9,7 @@ appears.
 | Page | Physics area | Campaign |
 |---|---|---|
 | [Drift-kinetic transport](drift-kinetic-transport.md) | NTV torque, axisymmetric transport matrix, finite orbit width | agreement with NEO-2-QL, NEO-RT and POTATO on ITER TC24 and ASDEX Upgrade 30835, November 2026 |
+| [Global ideal-MHD stability](ideal-mhd-stability.md) | delta W, hybrid radial spaces, spectra | P1e, from November 2026 |
 
 ## Page structure
 
