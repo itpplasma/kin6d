@@ -34,9 +34,12 @@ program coil_box_equilibrium
     ! source_peak/source_steps, then each step adds that amount and is
     ! solved by Newton from the previous state at the target anisotropy.
     integer :: source_steps = 1
+    ! Net toroidal plasma current (A), held by the loop voltage; its profile
+    ! follows the parallel conductivity (Ohmic), not a bootstrap closure.
+    real(dp) :: plasma_current = 0
     namelist /plasma/ axis_rc, axis_zs, source_peak, source_width, chi_perp, &
         chi_ratio, g_par, g_ratio, decades, newton_tolerance, beta_range, &
-        source_steps
+        source_steps, plasma_current
     type(free_b_field_t), target :: field
     type(nn_map_t), target :: map
     type(nc_problem_t) :: problem
@@ -64,7 +67,7 @@ program coil_box_equilibrium
     x(lay%ia + 1:lay%ia + lay%na) = data
     problem%chi_perp = chi_perp; problem%chi_par = chi_ratio*chi_perp
     problem%g_par = g_par; problem%g_perp = g_par/g_ratio
-    problem%current = 0
+    problem%current = plasma_current
     problem%nphi = nphi
     problem%source_3d => box_source
     problem%map => map
