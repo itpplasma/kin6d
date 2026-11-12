@@ -375,6 +375,82 @@ radial fluxes of a nearly symmetric 3D surface. It costs 1.6 s against 624 s
 for model 3 with the l <= 1 preconditioner on the helical surface (same
 speed grid and Legendre resolution, loaded 28-core node).
 
+### K1 at low collisionality: pitch fitted to every local maximum
+
+Status: design, two variants to be built and compared (2026-11-09).
+
+The Legendre-Fourier solvers resolve the trapped-passing layers of width
+~sqrt(nu) by brute force. On the DIII-D helical core (s = 0.06, 31 x 17
+points) D31 at nu = 1e-5 still changes by 4 % between 120 and 240 Legendre
+polynomials. The orbit-class elements of `dk_hp` resolve the layer of an
+axisymmetric or exactly quasi-symmetric surface cheaply: on the
+quasi-helical part of the Landreman-Paul QH surface (s = 0.5, breaking
+1.2e-4 of B) the bootstrap coefficient converges to 1e-8 in p from
+nu* = 1e-2 to 1e-6 in about 1 s per point and lies 0.15 % below rabe's
+omnigenous terms. Below nu* ~ 1e-5, however, rabe's non-omnigenous terms
+(Lambda_A/sqrt(nu*), Lambda_B/nu*) dominate: 0.937 against 0.994 at
+nu* = 1e-5. They come from the symmetry breaking, so a symmetric reduction
+is no answer there.
+
+A mesh fitted to the zeta-averaged field and coupled across zeta
+collocation slices (prototype, not merged) agrees with the Legendre solver
+to 1e-5 down to nu = 1e-3 but fails at nu <= 1e-4 (0.35 % in D11 at 1e-4,
+15 % in D31 at 1e-5): b_max of the slices spreads by 1.5 %, more than the
+layer width. The layers lie at lambda = 1/b_max of the local maxima along
+each field line, so the pitch grid has to follow every local maximum.
+
+Without a radial electric field the monoenergetic equation has no
+derivative across field lines: lines couple only through their continuation
+after a field period. Two discretisations follow NEO-2's principle (pitch
+levels eta = 1/b at every local maximum, refined towards them) with
+continuous orbit-class elements between the levels and one sparse
+factorisation instead of NEO-2's ripple joining and fixed-point iteration
+of the integral collision part:
+
+- A, long field line: one line traced over many turns, its maxima as row
+  levels and turning points, closed periodically; cost grows with the line
+  length needed to cover the surface (NEO-2: 1714 propagators at s = 0.03
+  of the DIII-D core).
+- B, one period with a twist-shift: field-line coordinates (alpha, phi) over
+  one period, each line segment cut at its own maximum (trapped orbits do
+  not cross the cut) with its own fitted rows; at the period end alpha maps
+  to alpha - 2 pi iota/N, and the passing distribution is carried across by
+  spectral interpolation in alpha. Cost is set by the alpha resolution, not
+  by a line length, which matters near rational iota.
+
+Variant B in detail. Each line alpha_j of an alpha grid carries the
+orbit-class mesh of one field period of its own b(s), cut at its highest
+maximum, so that only passing orbits reach the segment ends. In variant A
+the end of the period is identified with the start of the same line; in B
+the end node at pitch xi on line alpha_j is the point (alpha_j + 2 pi
+iota/N, xi) of the start edge of the following line, which lies between
+grid lines: its value is interpolated, spectrally in alpha over the grid
+lines and through the element basis along the start edges. With P the map
+from the remaining unknowns to all nodes, the system is P^T A P: P
+reproduces constants, so the density null space and particle conservation
+are kept, and P^T S P is skew when S is, so Onsager symmetry is exact as on
+one closed line. Since the cut is at each line's own maximum, the segments
+of different lines start at different s; the interpolation evaluates the
+neighbouring lines at the start points they share with the incoming line
+on the surface, which is a point location on those lines' meshes.
+Open point: one period after line alpha's maximum the line continues as
+line alpha + 2 pi iota/N at the same zeta, which is in general not that
+line's maximum. Segments from cut to cut then end at different maximum
+values, or a higher maximum lies inside, and the trapped region does not
+close at the seam. Where the maxima form a smooth ridge across lines
+(nearly symmetric surfaces: helical cores, quasi-helical fields) the cut
+can follow the ridge and only passing and barely trapped orbits cross;
+in general the well tree needs open wells at the seam.
+
+Both share an element mesh on a line segment with several maxima: nested
+trapped regions with one turning-point closure per maximum, the
+generalisation of the single X point of `dk_hp`. Decision gates, accuracy
+and core-minutes for A, B and NEO-2-PAR on each:
+- full Landreman-Paul QH field, nu* = 1e-4 to 1e-6, against rabe including
+  its 1/nu* regime;
+- DIII-D helical core, nu <= 1e-4, against the converged Legendre solver
+  where it converges and NEO-2-PAR.
+
 ### K2: global steady distributions and quasineutrality
 
 Retain v_d.grad(psi) partial_psi f on the unknown over a radial domain, where
