@@ -2679,7 +2679,7 @@ set_tests_properties(nonnested_exterior_3d_vacuum_pilot PROPERTIES TIMEOUT 600
 add_executable(test_nonnested_actions test/test_nonnested_actions.f90)
 target_link_libraries(test_nonnested_actions PRIVATE milca_nn_solovev_test)
 foreach(k 2 3)
-    foreach(case fixed floating voltage exterior)
+    foreach(case fixed floating voltage exterior period)
         add_test(NAME nonnested_actions_${case}_p${k}
             COMMAND test_nonnested_actions ${case} ${k})
         set_tests_properties(nonnested_actions_${case}_p${k} PROPERTIES

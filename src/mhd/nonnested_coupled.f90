@@ -1738,8 +1738,10 @@ contains
             end do
             dc = 0; df = 0
             do n = 1, lay%modes
-                dc(2*n) = -n*cm(2, 2*n + 1); dc(2*n + 1) = n*cm(2, 2*n)
-                df(2*n) = -n*fm(2, 2*n + 1); df(2*n + 1) = n*fm(2, 2*n)
+                dc(2*n) = -n*lay%period*cm(2, 2*n + 1)
+                dc(2*n + 1) = n*lay%period*cm(2, 2*n)
+                df(2*n) = -n*lay%period*fm(2, 2*n + 1)
+                df(2*n + 1) = n*lay%period*fm(2, 2*n)
             end do
             do bk = 1, lay%nb
                 rl((bk - 1)*n1 + 1:bk*n1) = rl((bk - 1)*n1 + 1:bk*n1) &
