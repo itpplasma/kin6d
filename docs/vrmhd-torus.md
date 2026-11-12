@@ -213,18 +213,17 @@ The ideal rate exceeds the resistive m = 1 rate
 `(s1/(r1 R0))^(2/3) eta(r1)^(1/3)` (Ara et al., Ann. Phys. 112, 443, 1978) in
 the target range only at high `beta_p` and small `R0/a`. Elsewhere the sign of
 `delta W_T` shows in the resistive growth: tearing-like scaling `S^(-3/5)` below
-the threshold and resistive-kink scaling `S^(-1/3)` above it. Proposed checks:
+the threshold and resistive-kink scaling `S^(-1/3)` above it.
 
-- threshold from linear runs at `R0/a = 10` with an `S` scan: the `beta_p1` at
-  which the `S -> infinity` limit of `gamma` departs from zero, equivalently
-  where the scaling changes, at `beta_p1,crit` within 0.03 for the parabolic
-  case `r1 = 0.3` and for the Ohmic profile;
-- scaling, independent of the prefactor: `gamma R0^3/r1^2` constant within 10 %
-  between `R0/a = 5` and 10 at fixed `beta_p1`, and
-  `gamma(0.35)/gamma(0.30) = 1.04`, `gamma(0.40)/gamma(0.30) = 1.06` within 10 %
-  in the parabolic family at `beta_p1 = 0.6`;
-- plateau at `R0/a = 3`: the growth rate is independent of `S` between `1e8`
-  and `1e9` within 5 %.
+The ideal threshold, rate and scaling of this case belong to the ideal
+stability stages of [stability.md](stability.md#global-3d-ideal-mhd-stability-p1e):
+the internal-kink spectrum on the Grad-Shafranov states of this case (stage
+P1e.3, rung R3) and the marginal `beta_p` from a pressure scan (P1e.8), compared
+with the large-aspect-ratio values above. Linear resistive runs are not used
+to locate the threshold. Proposed check on the evolution: in linear runs at
+`R0/a = 3` and `beta_p = 3`, the growth rate of the `n = 1` harmonic approaches
+the ideal rate of P1e.3 as `S` rises from `1e6` to `1e8`, and below the
+threshold it follows the resistive scaling.
 
 ## Geodesic acoustic mode
 
@@ -281,7 +280,8 @@ about 22 per `tau_A`.
 - The factor 2 in the Bussac growth rate. If Bussac's `2 pi^2 R0` prefactor
   belongs to the complex-amplitude convention, the rates above are twice too
   large. The layer analysis of Rosenbluth, Dagazian and Rutherford, Phys.
-  Fluids 16, 1894 (1973) should settle it. Until then the absolute rates are
-  not a check.
+  Fluids 16, 1894 (1973) should settle it, and the ideal eigenvalue of P1e.3 at
+  `R0/a = 10` checks it independently. Until then the absolute rates are not a
+  check.
 - The geodesic-acoustic frequency is taken in the form in which Winsor et al.
   are commonly quoted, not from the paper itself.
