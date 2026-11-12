@@ -21,6 +21,15 @@ contains
         value = -1 + 0*x(1)
     end function
 
+    subroutine warp(x, phi, y)
+        ! Rotating ellipse about (6.2, 0): a fixed phi-dependent domain map.
+        real(dp), intent(in) :: x(2), phi
+        real(dp), intent(out) :: y(2)
+        real(dp) :: q(2, 2), d(2)
+        q = reshape([cos(phi), sin(phi), -sin(phi), cos(phi)], [2, 2])
+        d = matmul(transpose(q), x - [6.2_dp, 0.0_dp])
+        y = [6.2_dp, 0.0_dp] + matmul(q, [1.15_dp*d(1), 0.87_dp*d(2)])
+    end subroutine
     function conductivity(x, phi) result(value)
         real(dp), intent(in) :: x(2), phi
         real(dp) :: value
@@ -33,7 +42,8 @@ program test_nonnested_actions
     ! These forced/incompatible data do not claim to be an equilibrium.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, exact
-    use nn_action_data, only: zero_source, bad_source, negative_shape, conductivity
+    use nn_action_data, only: zero_source, bad_source, negative_shape, conductivity, warp
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_build
     use milca_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, fortsparse_status_t, &
@@ -49,6 +59,7 @@ program test_nonnested_actions
     type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
     type(nc_layout_t) :: lay
+    type(nn_map_t), target :: map
     type(csc_t) :: jac, transposed
     type(fortsparse_status_t) :: sparse_status
     real(dp), allocatable :: nodes(:, :), x(:), direction(:), weight(:)
@@ -96,6 +107,12 @@ program test_nonnested_actions
     problem%nphi = 8
     select case (trim(mode))
     case ('fixed', 'period')
+    case ('mapped')
+        ! Reference 2-forms on a rotating ellipse: every block of the
+        ! residual, Jacobian, JVP and VJP passes through the Piola maps.
+        call nn_map_build(field%fs, 2, 8, warp, map, status)
+        call require(status == 0, 'map')
+        problem%map => map
     case ('exterior')
         call attach_exterior()
     case ('floating')
