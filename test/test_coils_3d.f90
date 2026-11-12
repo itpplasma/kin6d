@@ -1,5 +1,6 @@
 program test_coils_3d
-    !! K-C1 oracles: segment Biot-Savart against quadrature, polygon ring against
+    !! K-C1 oracles: segment Biot-Savart field and vector potential against
+    !! quadrature, curl A = B, polygon ring against
     !! the on-axis ring formula, div/curl of the field, toroidal selection rules,
     !! Fourier synthesis against the direct 3D field and thread invariance.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -12,6 +13,8 @@ program test_coils_3d
     call test_segment_quadrature()
     call test_ring_on_axis()
     call test_div_curl()
+    call test_segment_potential()
+    call test_curl_a()
     call test_selection_and_synthesis()
     if (failures > 0) then
         print '(a,i0,a)', 'test_coils_3d: ', failures, ' failure(s)'
@@ -112,6 +115,56 @@ contains
         ! inscribed N-gon: error is O(N^-2)
         call check('polygon ring N^-2 convergence (4 - e1/e2 deviation)', &
                    abs(e1/e2 - 4), 0.05_dp)
+    end subroutine
+
+    subroutine test_segment_potential()
+        real(dp) :: x(64), w(64), a(3), l(3), p(3), av(3), aq(3), err, scale
+        integer :: i, trial
+        call gauss_legendre(64, x, w)
+        err = 0
+        scale = 0
+        do trial = 1, 5
+            a = [1.0_dp, -0.4_dp, 0.2_dp*trial]
+            l = [0.3_dp, 0.8_dp, -0.5_dp + 0.1_dp*trial]
+            p = [0.2_dp*trial, 0.9_dp, 1.5_dp - 0.3_dp*trial]
+            aq = 0
+            do i = 1, 64
+                aq = aq + w(i)/2*l/norm2(p - (a + l*(x(i) + 1)/2))
+            end do
+            aq = aq*coil_mu0/(4*pi)
+            av = segment_a(a, l, p)
+            err = max(err, norm2(av - aq))
+            scale = max(scale, norm2(aq))
+        end do
+        call check('segment A vs 64-pt Gauss quadrature (relative)', err/scale, &
+                   1.0e-13_dp)
+    end subroutine
+
+    subroutine test_curl_a()
+        ! The closed-form A and B are independent formulas; curl A = B links them.
+        type(coil_set_t) :: set
+        real(dp) :: w(9), p(3), h, g(3, 3), ap(3), am(3), ap2(3), am2(3), b(3), curla(3)
+        real(dp), parameter :: e(3, 3) = reshape([1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 3])
+        integer :: i, trial
+        real(dp) :: err
+        call tilted_coil_set(set, 9)
+        w = 1.0e4_dp
+        h = 2.5e-4_dp
+        err = 0
+        do trial = 1, 4
+            p = [6.1_dp + 0.4_dp*trial, 1.7_dp - 0.5_dp*trial, 0.8_dp + 0.3_dp*trial]
+            do i = 1, 3
+                call coil_set_a_cart(set, w, p + h*e(:, i), ap)
+                call coil_set_a_cart(set, w, p - h*e(:, i), am)
+                call coil_set_a_cart(set, w, p + 2*h*e(:, i), ap2)
+                call coil_set_a_cart(set, w, p - 2*h*e(:, i), am2)
+                g(:, i) = (8*(ap - am) - (ap2 - am2))/(12*h) ! fourth order
+            end do
+            curla = [g(3, 2) - g(2, 3), g(1, 3) - g(3, 1), g(2, 1) - g(1, 2)]
+            call coil_set_b_cart(set, w, p, b)
+            err = max(err, norm2(curla - b)/norm2(b))
+        end do
+        call check('|curl A - B| / |B|', err, 1.0e-10_dp)
     end subroutine
 
     subroutine tilted_coil_set(set, ncopy)

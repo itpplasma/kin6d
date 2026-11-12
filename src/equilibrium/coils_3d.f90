@@ -1,6 +1,6 @@
 module milca_coils_3d
     !! K-C1: closed 3D polyline coils, closed-form straight-segment Biot-Savart
-    !! field, and projection of the field onto toroidal Fourier modes in the
+    !! field and vector potential, and projection of the field onto toroidal Fourier modes in the
     !! meridional plane.
     !!
     !! Conventions. Lengths in m, currents in A, field in T. Coil points are
@@ -36,6 +36,7 @@ module milca_coils_3d
     public :: coil_set_from_polylines, coil_set_read, coil_set_rotated_copy
     public :: coil_read_currents
     public :: coil_set_b_cart, coil_set_modes, coil_synthesis, segment_b
+    public :: coil_set_a_cart, segment_a
 
 contains
 
@@ -65,6 +66,27 @@ contains
             return
         end if
         b = coil_mu0/(4*pi)*c/c2*(dot_product(lh, r1)/n1 - dot_product(lh, r2)/n2)
+    end function
+
+    pure function segment_a(a, l, p) result(av)
+        !! Vector potential in T m per ampere of the segment a -> a + l at p
+        !! (Coulomb gauge of the closed loop): A = mu0/(4 pi) lh
+        !! ln((|r1| + |r2| + L)/(|r1| + |r2| - L)), curl A of a closed polyline
+        !! is the sum of segment_b.
+        real(dp), intent(in) :: a(3), l(3), p(3)
+        real(dp) :: av(3)
+        real(dp) :: r1(3), n1, n2, len, s
+
+        r1 = p - a
+        len = norm2(l)
+        n1 = norm2(r1)
+        n2 = norm2(r1 - l)
+        s = n1 + n2
+        if (s - len <= 1.0e-12_dp*len) then
+            av = 0 ! on the segment: singular
+            return
+        end if
+        av = coil_mu0/(4*pi)*l/len*log((s + len)/(s - len))
     end function
 
     subroutine coil_set_from_polylines(set, npts, pts, names, status)
@@ -224,6 +246,21 @@ contains
             if (abs(weights(k)) <= 0.0_dp) cycle
             do s = set%first(k), set%first(k + 1) - 1
                 b = b + weights(k)*segment_b(set%a(:, s), set%l(:, s), p)
+            end do
+        end do
+    end subroutine
+
+    subroutine coil_set_a_cart(set, weights, p, av)
+        !! Direct 3D vector potential (T m) of the weighted coils (A) at p (m).
+        type(coil_set_t), intent(in) :: set
+        real(dp), intent(in) :: weights(:), p(3)
+        real(dp), intent(out) :: av(3)
+        integer :: k, s
+        av = 0
+        do k = 1, set%ncoil
+            if (abs(weights(k)) <= 0.0_dp) cycle
+            do s = set%first(k), set%first(k + 1) - 1
+                av = av + weights(k)*segment_a(set%a(:, s), set%l(:, s), p)
             end do
         end do
     end subroutine
