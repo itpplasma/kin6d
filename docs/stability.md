@@ -483,8 +483,28 @@ proof of these two identities did not finish in 9 minutes and is replaced by
 this check). On a straight-cylinder chart the m = 1 kink agrees with the
 independent oracle to 1.3e-10, also with m = 0, 1, 2 coupled, and the uniform
 cylinder with m = 1, 2, 3 gives the union of the single-harmonic spectra to
-2e-11. Toroidal equilibria (EQDSK with PEST angles, Boozer files) and rung R3
-follow.
+2e-11.
+
+Toroidal input: `milca_ideal_flux_tokamak` turns a poloidal-flux grid
+(G-EQDSK) into a chart, with rho = sqrt(psin/psin_wall), the PEST or Hamada
+straight-field-line angle of `milca_vacuum_surfaces`, or the geometric angle
+with lambda = theta_PEST - theta. R, Z, the toroidal shift and lambda are
+Fourier series whose coefficients, divided by rho^k with the parity of m
+(k <= 2), are fitted by quintic B-splines in s = rho^2. On an exact Solov'ev
+equilibrium (`ideal_flux_tokamak_*`, elongation 1.5, q from 0.89 to 1.15,
+fixed wall at psin = 0.8) all three charts reproduce the analytic field to
+4e-7 and force balance to 3e-3 (straight charts 5e-4); the chart jets agree
+with central differences to 2e-9. The fixed-boundary m = 1 internal kink
+converges, with m = -10..28 and 32 cells, to omega^2 = -1.30328e-3 in PEST
+and -1.30331e-3 in Hamada coordinates (2.6e-5 apart; the geometric chart
+gives -1.294e-3 with the same harmonics, its basis converging more slowly);
+the gate uses m = -8..18 and 16 cells, where the two straight charts agree to
+9e-4. Force balance converges as h^3.5 in the spacing of the flux grid,
+which therefore sets the equilibrium error of EQDSK input. Still open in
+P1e.3: published PEST cases and DCON on the same input (rung R3), Boozer-file
+input, and the sparse complex LDL^H of FortSparse, which takes 95 s for an
+11k-row banded matrix with 4.7M nonzeros and limits the harmonic range of
+the tests.
 
 ### Verification ladder
 

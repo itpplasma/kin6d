@@ -6,7 +6,8 @@ program test_ideal_flux
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortsparse, only: csc_z_t, fortsparse_status_t, FORTSPARSE_OK
     use milca_ideal_flux, only: flux_space_t, flux_space_init, flux_assemble, &
-        flux_point_t, flux_equilibrium
+        flux_point_t
+    use ideal_flux_charts, only: cylinder_t
     use milca_ideal_flux_leaves, only: flux_jets_array
     implicit none
     interface
@@ -27,8 +28,7 @@ program test_ideal_flux
         phi_edge = 1.3_dp, iota0 = 0.4_dp, iota2 = 0.3_dp
     ! Cylinder chart (S2.1-3 of docs/s0-spectrum.md): a = 2, R0 = 2.5, n = -1.
     real(dp), parameter :: kink_reference = -0.1949752661_dp
-    real(dp) :: cyl_a, cyl_r0
-    integer :: cyl_case
+    type(cylinder_t) :: cyl
     character(32) :: mode
     mode = 'all'
     if (command_argument_count() > 0) call get_command_argument(1, mode)
@@ -171,7 +171,7 @@ contains
 
     subroutine cylinder_kink()
         real(dp), allocatable :: lam(:)
-        cyl_a = 2; cyl_r0 = 2.5_dp; cyl_case = 1
+        cyl = cylinder_t(a=2.0_dp, r0=2.5_dp, profile=1)
         call spectrum([1], [-1], 32, 3, 8, 0.0_dp, lam)
         print '(a,es20.11,es10.2)', 'kink, m = 1     ', lam(1), &
             abs(lam(1)/kink_reference - 1)
@@ -187,7 +187,7 @@ contains
         ! is the union of the single-harmonic spectra.
         real(dp), allocatable :: lam(:), single(:), union(:)
         integer :: m, k
-        cyl_a = 1; cyl_r0 = 1; cyl_case = 2
+        cyl = cylinder_t(a=1.0_dp, r0=1.0_dp, profile=2)
         allocate(union(0))
         do m = 1, 3
             call spectrum([m], [1], 12, 3, 8, 5.0_dp/3, single)
@@ -204,36 +204,6 @@ contains
             maxval(abs(lam - union)/max(1.0_dp, abs(union)))
     end subroutine uniform_harmonics
 
-    subroutine cylinder(rho, theta, zeta, point)
-        real(dp), intent(in) :: rho, theta, zeta
-        type(flux_point_t), intent(out) :: point
-        real(dp) :: r, bz, bzp, p, pp, c, s
-        r = cyl_a*rho; c = cos(theta); s = sin(theta)
-        if (cyl_case == 1) then
-            bz = sqrt(0.25_dp + r*r); bzp = r/bz
-            p = 1.5_dp*(cyl_a**2 - r*r); pp = -3*r
-        else
-            bz = 1; bzp = 0; p = 0.3_dp; pp = 0
-        end if
-        point%xu(:, 1) = [cyl_a*c, cyl_a*s, 0.0_dp]
-        point%xu(:, 2) = [-r*s, r*c, 0.0_dp]
-        point%xu(:, 3) = [0.0_dp, 0.0_dp, cyl_r0]
-        point%xuu = 0
-        point%xuu(:, 1, 2) = [-cyl_a*s, cyl_a*c, 0.0_dp]
-        point%xuu(:, 2, 1) = point%xuu(:, 1, 2)
-        point%xuu(:, 2, 2) = [-r*c, -r*s, 0.0_dp]
-        ! psi' = a r Bz, iota = R0 Btheta/(r Bz) in rho; zeta = z/R0.
-        point%psi1 = cyl_a*r*bz
-        point%psi2 = cyl_a**2*(bz + r*bzp)
-        if (cyl_case == 1) then
-            point%iota = cyl_r0/bz
-            point%iota1 = -cyl_a*cyl_r0*bzp/bz**2
-        else
-            point%iota = 0; point%iota1 = 0
-        end if
-        point%lam = 0
-        point%p = p; point%pp = cyl_a*pp; point%density = 1
-    end subroutine cylinder
 
     subroutine spectrum(m, n, ne, deg, ntheta, gam, lam)
         integer, intent(in) :: m(:), n(:), ne, deg, ntheta
@@ -248,7 +218,7 @@ contains
         edges = [(real(j, dp)/ne, j = 0, ne)]
         call flux_space_init(space, edges, deg, m, n, 1, ntheta, 1, ok)
         if (ok /= 0) error stop 'space'
-        call flux_assemble(space, cylinder, gam, 1.0_dp, stiffness, mass, status)
+        call flux_assemble(space, cyl, gam, 1.0_dp, stiffness, mass, status)
         if (status%code /= FORTSPARSE_OK) error stop 'assembly'
         allocate(ka(space%ndof, space%ndof), ma(space%ndof, space%ndof))
         ka = 0; ma = 0

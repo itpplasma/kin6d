@@ -7,8 +7,8 @@ program gen_ideal_flux
     ! the contravariant densities D^u = sqrt(g) xi^u and their coordinate
     ! derivatives to (xi, A), A(i,j) = d_j xi_i. Also the coefficient matrix
     ! of the Eulerian delta-W form in (xi, A).
-    use fortsym_expr, only: expr_t, sym, operator(+), operator(-), operator(*), &
-        operator(/), operator(**)
+    use fortsym_expr, only: expr_t, sym, sin, cos, operator(+), operator(-), &
+        operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
     use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
@@ -114,6 +114,7 @@ program gen_ideal_flux
     end do
     call writer%emit('flux_jets', inames, onames, outs)
     call emit_form_matrix()
+    call emit_toroidal_chart()
     call emit_wrappers()
     call writer%line('end module milca_ideal_flux_leaves')
     call writer%close()
@@ -214,6 +215,69 @@ contains
         call writer%emit('flux_form_matrix', [character(8) :: names(1:15), &
             names(16), names(17), names(18)], cn, cm)
     end subroutine emit_form_matrix
+
+    subroutine emit_toroidal_chart()
+        ! x = R (cos phi, sin phi, 0) + Z e_z with R, Z, phi functions of
+        ! (rho, theta, zeta); outputs in the argument order of flux_jets.
+        type(expr_t) :: rr(0:3, 0:3), zz(0:3, 0:3), ff(0:3, 0:3), e(3), ep(3)
+        type(expr_t) :: o(27), ez(3)
+        character(8) :: an(29), on(27)
+        integer :: uu, vv, c
+        at = 0
+        call jets('r', rr, .true., an, at)
+        call jets('z', zz, .false., an, at)
+        call jets('f', ff, .true., an, at)
+        e = [cos(ff(0, 0)), sin(ff(0, 0)), 0*ff(0, 0)]
+        ep = [-sin(ff(0, 0)), cos(ff(0, 0)), 0*ff(0, 0)]
+        ez = [0*ff(0, 0), 0*ff(0, 0), 1 + 0*ff(0, 0)]
+        c = 0
+        do uu = 1, 3
+            do i = 1, 3
+                c = c + 1
+                o(c) = rr(uu, 0)*e(i) + rr(0, 0)*ff(uu, 0)*ep(i) + zz(uu, 0)*ez(i)
+                write(on(c), '(a,i1,i1)') 'x', i, uu
+            end do
+        end do
+        do vv = 1, 3
+            do uu = 1, vv
+                do i = 1, 3
+                    c = c + 1
+                    o(c) = (rr(uu, vv) - rr(0, 0)*ff(uu, 0)*ff(vv, 0))*e(i) &
+                        + (rr(uu, 0)*ff(vv, 0) + rr(vv, 0)*ff(uu, 0) &
+                        + rr(0, 0)*ff(uu, vv))*ep(i) + zz(uu, vv)*ez(i)
+                    write(on(c), '(a,i1,i1,i1)') 'y', i, uu, vv
+                end do
+            end do
+        end do
+        call writer%emit('flux_toroidal_chart', an(1:at), on, o)
+    end subroutine emit_toroidal_chart
+
+    subroutine jets(prefix, x, with_value, an, at)
+        ! x(u,0) = d_u, x(u,v) = d_u d_v (symmetric), x(0,0) the value.
+        character(*), intent(in) :: prefix
+        type(expr_t), intent(out) :: x(0:3, 0:3)
+        logical, intent(in) :: with_value
+        character(8), intent(inout) :: an(:)
+        integer, intent(inout) :: at
+        character(8) :: name
+        integer :: a1, a2
+        x(0, 0) = 0*psi1
+        if (with_value) then
+            at = at + 1; an(at) = prefix; x(0, 0) = sym(prefix)
+        end if
+        do a1 = 1, 3
+            write(name, '(a,i1)') prefix, a1
+            at = at + 1; an(at) = name; x(a1, 0) = sym(trim(name))
+            x(0, a1) = x(a1, 0)
+        end do
+        do a2 = 1, 3
+            do a1 = 1, a2
+                write(name, '(a,i1,i1)') prefix, a1, a2
+                at = at + 1; an(at) = name
+                x(a1, a2) = sym(trim(name)); x(a2, a1) = x(a1, a2)
+            end do
+        end do
+    end subroutine jets
 
     subroutine emit_wrappers()
         ! Array interfaces over the scalar leaves, in their argument order.
