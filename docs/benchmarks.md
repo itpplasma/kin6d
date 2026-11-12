@@ -17,6 +17,30 @@ The audience is physicists
 and implementers selecting the next independently verifiable capability.
 The atlas defines its mathematics before the solver defines its tests.
 
+## Cross-method and external-code evidence (current priority)
+
+First pilot: [MILCA continuum vs independent GORILLA_APPLETS Monte Carlo
+collision solver](https://github.com/itpplasma/milca/issues/366).
+Use an analytic OU/Lorentz case before spatial transport and device inputs.
+The comparator is an independent scientific product, not a library to be
+rewritten with MILCA kernels. Full linearized multispecies Landau and a
+test-particle stochastic SDE must not be declared equivalent by default.
+
+Each runnable comparison needs only: **model intersection** (equation,
+assumptions, measures, boundaries, conventions), **observable**, **pinned
+inputs/revisions**, **analytic/structural oracle**, **independent methods**,
+**resolution/sample/error budget**, and **observed result status** (pass,
+fail, unresolved or inapplicable). Track common source equations/generated
+expressions: two implementations of the same mistake are not independent
+physics verification. Preserve separate discretization error, stochastic
+uncertainty, physical-model mismatch and certification claims.
+
+Keep running cases in the existing atlas and CTest/fo workflows. As
+disagreements arise, attach a reduced counterexample and a permanent
+failing-before/passing-after check; do not replace an oracle with the
+production code's new output. Expensive cross-method/downstream checks
+belong to a resource-bounded continuous queue, not every edit.
+
 ## Acceptance contract
 
 Every applicable mathematical reduction with an analytic or semi-analytic

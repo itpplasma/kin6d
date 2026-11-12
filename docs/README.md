@@ -10,7 +10,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
 - [Scope and design principles](scope.md)
 - [Graph of plasma models](model-graph.md): every model, its reductions and status
 - [DESIGN.md](../DESIGN.md): canonical architecture
-- [ROADMAP.md](../ROADMAP.md): staged delivery plan
+- [ROADMAP.md](../ROADMAP.md): active priorities and verification rules
 - [Software engineering policy](software-engineering.md),
   [tooling and development workflow](tooling.md),
   [figure style](figure-style.md), [literature policy](literature-policy.md)

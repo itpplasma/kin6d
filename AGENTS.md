@@ -2,6 +2,10 @@
 
 ## Read before changing the project
 
+ROADMAP.md is the sole **active priority list**: do not implement the capability
+catalogue or archived milestones merely because they are documented. Fix active
+P0 verification defects before expanding nearby physics scope.
+
 Read README.md, DESIGN.md and ROADMAP.md first. Then read the specification
 that owns the proposed change. In particular:
 
@@ -42,6 +46,30 @@ that owns the proposed change. In particular:
 
 The first prescribed-field 1X1V slice already runs. Read
 docs/first-example.md before changing it or claiming broader evidence.
+
+## Verification-first workflow and review
+
+- Prefer tests that can falsify a physical claim: independent analytic limits,
+  invariants, alternative derivations, different discretizations, stochastic
+  versus continuum methods, and separately maintained codes. Same FortSym
+  DAG or copied kernels do not count as independent oracles.
+- Work within a precisely matched model, observable, boundary, convention and
+  error budget; distinguish deterministic bounds, empirical errors, MC
+  confidence intervals and model discrepancies. Record unresolved results.
+- On failure, minimize a reproducer, classify the cause, attach independent
+  evidence and add a regression test. For paper formulas, inspect assumptions,
+  errata and separately derived alternatives; never trust CAS agreement alone.
+- An agent can propose and integrate low-risk, behavior-preserving changes
+  after applicable gates; do not require human review merely for large diffs
+  or AI authorship. Independently audit samples of automated changes.
+- Physics/assumption changes, high-impact unexplained output changes and
+  reference-oracle/acceptance updates need independent scientific evidence and
+  escalation when unresolved. Never change an implementation and its only
+  expected-output oracle in one automatically approved step.
+- For external comparators, preserve independent implementations; offer small
+  upstream PRs with reproducers, and respect the maintainers' review policy.
+- Do not treat background tests or cached passes as completed verification
+  unless their provenance, input closure and current status are accounted for.
 
 ## Non-negotiable scientific principles
 
