@@ -1143,8 +1143,10 @@ foreach(check reference onsager collisionless banana pfirsch_schlueter estimate
     add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
     milca_test_labels(dk_hp_${check} fast CLASSES continuum TARGETS test_dk_hp)
 endforeach()
-# Minutes each: nine speed nodes of fine meshes and the Legendre reference.
-foreach(check energy_test_particle energy_two_mesh energy_iterations)
+# Minutes each: nine speed nodes of fine meshes and the Legendre reference;
+# energy_full and collision_identities with two species.
+foreach(check energy_test_particle energy_two_mesh energy_iterations energy_full
+        collision_identities)
     add_test(NAME dk_hp_${check} COMMAND test_dk_hp ${check})
     milca_test_labels(dk_hp_${check} slow CLASSES continuum TARGETS test_dk_hp)
 endforeach()

@@ -19,9 +19,17 @@
 !!   K(a, b, j) = tz_a/(2 sqrt(pi) J_0) sum_k d4_k Re(load4_ak . h_ak),
 !! q with d6_k, as ntv_energy_coefficients.
 !!
-!! Collision models: Lorentz (pitch-angle scattering only) and test particle
-!! (with energy scattering). Pitch-angle scattering is lumped at the speed
-!! nodes; energy scattering conserves density up to the dropped x = 0 node.
+!! Collision models: Lorentz (pitch-angle scattering only), test particle
+!! (with energy scattering) and full linearised operator, which adds to
+!! node (a, k)
+!!   - sum_p P_{p<-k}^T sum_l D^l_p sum_b sum_k' F_ab^{l,(p)}(k, k') G^l_bk' h_bk',
+!! l = 0..l_field: G^l_bk' the pitch moments (2 l + 1)/2 int P_l(xi) h dxi of
+!! node (b, k') on theta lines common to all meshes, D^l_p their load
+!! int measure P_l(xi) phi_i dxi on the mesh and measure of grid node p, and
+!! F^(p) the field-particle rows with phi_p inside the speed integral
+!! (field_w). Pitch-angle scattering is lumped at the speed nodes; energy
+!! scattering and the field part conserve density up to the dropped x = 0
+!! node.
 !!
 !! The coupled system is solved by GMRES, right-preconditioned by a coarse
 !! Galerkin correction (per node the pitch-theta functions P_l(xi) cos/sin(m
@@ -29,8 +37,10 @@
 !! Chebyshev polynomials of the stream function on the counter-passing,
 !! trapped and co-passing classes) followed by three symmetric block
 !! Gauss-Seidel passes over the speed nodes with the factors of the diagonal
-!! blocks A_ak - sum_p E_a^(p)(k, k) P_{p<-k}^T M_p P_{p<-k}. GMRES minimises the residual weighted by the speed
-!! mass v_a d3_k.
+!! blocks A_ak - sum_p E_a^(p)(k, k) P_{p<-k}^T M_p P_{p<-k}. The field
+!! part enters the coarse matrix only: in the sweeps it tripled their cost
+!! and saved few iterations. GMRES minimises the residual weighted by the
+!! speed mass v_a d3_k.
 module milca_dk_hp_energy
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortnum_krylov, only: complex_gmres_operator, KRYLOV_OK
@@ -39,10 +49,11 @@ module milca_dk_hp_energy
         fortsparse_status_t, status_ok, sparse_factor_stats, sparse_factor_stats_t
     use milca_dk_hp, only: hp_geometry_t, hp_operator_t, hp_mesh_t, hp_terms_t, hp_ntv_terms, &
         hp_node_matrix, hp_mass, hp_transfer, hp_ntv_factor_t, hp_ntv_factor, hp_ntv_solve, &
-        hp_ntv_free, HP_OK, HP_BAD_INPUT, HP_SINGULAR, HP_NO_CONVERGENCE
+        hp_ntv_free, hp_lines_t, hp_lines, hp_line_ops, HP_OK, HP_BAD_INPUT, HP_SINGULAR, &
+        HP_NO_CONVERGENCE
     use milca_dk_ntv, only: ntv_collision_rows, NTV_OK
     use milca_dk_collop, only: collop_species_t, collop_grid_t, COLLOP_LORENTZ, &
-        COLLOP_TEST_PARTICLE
+        COLLOP_TEST_PARTICLE, COLLOP_FULL
     implicit none
     private
     public :: hp_energy_system_t, hp_energy_node_t, hp_energy_setup, hp_energy_collide, &
@@ -60,12 +71,16 @@ module milca_dk_hp_energy
     ! Symmetric Gauss-Seidel passes per application: energy scattering
     ! couples the speed nodes stiffly when collisional.
     integer, parameter :: n_sgs = 3
+    ! Highest Legendre degree of the field part unless l_field is given.
+    integer, parameter :: default_l_field = 3
 
     !> One speed node: its terms on its mesh, the node matrix a, the place of
     !> its unknowns (off + 1 .. off + n) in the coupled vector, its factor and
-    !> coarse functions z (orthonormal columns) from coarse column c_off + 1.
+    !> coarse functions z (orthonormal columns) from coarse column c_off + 1;
+    !> with the field part its line moments g(l) and loads d(l).
     type :: hp_energy_node_t
         type(hp_terms_t) :: terms
+        type(csc_t), allocatable :: g(:), d(:)
         type(csc_z_t) :: a
         integer :: off = 0, n = 0, mesh = 0, fac = 0, c_off = 0
         real(dp) :: nu = 0, v = 0
@@ -79,16 +94,18 @@ module milca_dk_hp_energy
     end type
 
     type :: hp_energy_system_t
-        integer :: ns = 0, nx = 0, n = 0, model = 0, n_dof = 0, n_coarse = 0, n_factors = 0
+        integer :: ns = 0, nx = 0, n = 0, model = 0, n_dof = 0, n_coarse = 0, n_factors = 0, &
+            l_field = 0, n_t = 0
         ! factor_peak: the most factor bytes held at once during setup.
         integer(int64) :: factor_bytes = 0, factor_peak = 0
         type(hp_energy_node_t), allocatable :: node(:, :)
         type(transfer_t), allocatable :: tr(:, :, :)
         type(hp_ntv_factor_t), allocatable :: fac(:)
         ! x of the grid nodes 1..n; per species vt, tz; per node d3, d4, d6
-        ! and nu(k, a); energy_w(p, k, k', a) as from ntv_collision_rows.
+        ! and nu(k, a); energy_w(p, k, k', a) and field_w(p, k, k', a, b, l)
+        ! as from ntv_collision_rows.
         real(dp), allocatable :: x(:), vt(:), tz(:), d3(:), d4(:), d6(:), nu(:, :), &
-            energy(:, :, :), energy_w(:, :, :, :)
+            energy(:, :, :), energy_w(:, :, :, :), field_w(:, :, :, :, :, :)
         complex(dp), allocatable :: coarse(:, :)
         integer, allocatable :: piv(:)
     end type
@@ -103,9 +120,11 @@ contains
     !> set and no factor kept. The decision is taken from one factor per
     !> mesh, before the other factors exist. Limitation: there is no
     !> fallback for a smaller budget: factors shared by neighbouring speed
-    !> nodes as block preconditioner left GMRES unconverged.
+    !> nodes as block preconditioner left GMRES unconverged. l_field (default
+    !> 3, at least 1 so that density and momentum return) is the highest
+    !> Legendre degree of the field part of the full operator.
     subroutine hp_energy_setup(geom, ops, meshes, mid, grid, species, lnlambda, model, &
-            memory_budget, sys, status)
+            memory_budget, sys, status, l_field)
         class(hp_geometry_t), intent(in) :: geom(:, :)
         type(hp_operator_t), intent(in) :: ops(:, :)
         type(hp_mesh_t), intent(in) :: meshes(:)
@@ -116,14 +135,20 @@ contains
         integer(int64), intent(in) :: memory_budget
         type(hp_energy_system_t), intent(out) :: sys
         integer, intent(out) :: status
-        real(dp), allocatable :: rows(:, :, :, :, :), ratio(:, :), lorentz(:)
+        integer, intent(in), optional :: l_field
+        real(dp), allocatable :: rows(:, :, :, :, :), ratio(:, :), lorentz(:), &
+            full(:, :, :, :, :), r1(:, :), r2(:), r3(:), r4(:), r5(:), r6(:)
         real(dp) :: scale
+        type(hp_lines_t) :: lines
         integer :: ns, nx, a, k, l, p, j, st, off
 
         status = HP_BAD_INPUT
         ns = size(species)
         nx = grid%n - 1
-        if (model /= COLLOP_LORENTZ .and. model /= COLLOP_TEST_PARTICLE) return
+        if (all(model /= [COLLOP_LORENTZ, COLLOP_TEST_PARTICLE, COLLOP_FULL])) return
+        sys%l_field = default_l_field
+        if (present(l_field)) sys%l_field = l_field
+        if (sys%l_field < 1) return
         if (ns < 1 .or. nx < 1) return
         if (any(shape(geom) /= [nx, ns]) .or. any(shape(ops) /= [nx, ns]) .or. &
             any(shape(mid) /= [nx, ns])) return
@@ -133,10 +158,17 @@ contains
         sys%nx = nx
         sys%n = grid%n
         sys%model = model
-        call ntv_collision_rows(species, lnlambda, grid, model, 3, rows, ratio, sys%d3, &
-            sys%d4, sys%d6, sys%vt, sys%tz, st, energy=sys%energy, nu=sys%nu, &
-            energy_w=sys%energy_w)
+        ! The rows of the test-particle part: with the field part their
+        ! l-dependence would not be the Lorentz part alone.
+        call ntv_collision_rows(species, lnlambda, grid, min(model, COLLOP_TEST_PARTICLE), 3, &
+            rows, ratio, sys%d3, sys%d4, sys%d6, sys%vt, sys%tz, st, energy=sys%energy, &
+            nu=sys%nu, energy_w=sys%energy_w)
         if (st /= NTV_OK) return
+        if (model == COLLOP_FULL) then
+            call ntv_collision_rows(species, lnlambda, grid, model, sys%l_field + 1, full, &
+                r1, r2, r3, r4, r5, r6, st, field_w=sys%field_w)
+            if (st /= NTV_OK) return
+        end if
         ! Pitch-angle scattering enters the node matrices pointwise as nu C;
         ! that needs the l-dependence of the rows to be exactly the lumped
         ! Lorentz part -l (l + 1)/2 nu.
@@ -180,7 +212,8 @@ contains
             do k = 1, nx
                 do p = 1, grid%n
                     if (all(sys%energy_w(p, k, :, a) == 0) .and. &
-                        all(sys%energy_w(p, :, k, a) == 0)) cycle
+                        all(sys%energy_w(p, :, k, a) == 0) .and. .not. field_from(sys, p, k, a)) &
+                        cycle
                     j = max(p - 1, 1)
                     if (mid(j, a) == mid(k, a)) cycle
                     sys%tr(p, k, a)%identity = .false.
@@ -191,6 +224,20 @@ contains
                 end do
             end do
         end do
+
+        ! Pitch moments of every node and their loads on the theta lines
+        ! common to all meshes.
+        if (model == COLLOP_FULL) then
+            call hp_lines(meshes, lines)
+            sys%n_t = size(lines%theta)
+            do a = 1, ns
+                do k = 1, nx
+                    call hp_line_ops(geom(k, a), meshes(mid(k, a)), ops(k, a), lines, &
+                        sys%l_field, sys%node(k, a)%g, sys%node(k, a)%d, status)
+                    if (status /= HP_OK) return
+                end do
+            end do
+        end if
 
         call node_factors(sys, memory_budget, status)
         if (status /= HP_OK) return
@@ -517,11 +564,196 @@ contains
             deallocate (h)
         end do
         !$omp end parallel do
+        call coarse_field(sys)
         status = HP_SINGULAR
         call zgetrf(nc, nc, sys%coarse, nc, sys%piv, info)
         if (info /= 0) return
         status = HP_OK
     end subroutine coarse_matrix
+
+    !> Field part of the coarse matrix, -sum_p sum_l F_ab^{l,(p)}(k, j)
+    !> (Z_ak^T P_{p<-k}^T D^l_p)(G^l_bj Z_bj) for row node (k, a) and column
+    !> node (j, b), from the products with the line moments: the coarse
+    !> functions never leave their mesh.
+    subroutine coarse_field(sys)
+        type(hp_energy_system_t), intent(inout) :: sys
+        type :: lines_t
+            real(dp), allocatable :: v(:, :, :)
+        end type
+        type(lines_t), allocatable :: gz(:, :)
+        real(dp), allocatable :: zd(:, :, :, :), s(:, :), pz(:, :), blk(:, :)
+        integer, allocatable :: ps(:)
+        real(dp) :: w
+        integer :: i, a, k, b, j, p, l, q, pk, nck, ncj
+
+        if (sys%model /= COLLOP_FULL) return
+        allocate (gz(sys%nx, sys%ns))
+        !$omp parallel do default(shared) schedule(dynamic) private(i, a, k, l)
+        do i = 1, sys%nx*sys%ns
+            k = mod(i - 1, sys%nx) + 1
+            a = (i - 1)/sys%nx + 1
+            associate (nd => sys%node(k, a))
+                allocate (gz(k, a)%v(sys%n_t, size(nd%z, 2), 0:sys%l_field))
+                do l = 0, sys%l_field
+                    gz(k, a)%v(:, :, l) = sparse_times(nd%g(l), nd%z, .false.)
+                end do
+            end associate
+        end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) schedule(dynamic) &
+        !$omp private(i, a, k, b, j, p, l, q, pk, nck, ncj, w, ps, zd, s, pz, blk)
+        do i = 1, sys%nx*sys%ns
+            k = mod(i - 1, sys%nx) + 1
+            a = (i - 1)/sys%nx + 1
+            ps = pack([(p, p=1, sys%n)], [(field_from(sys, p, k, a), p=1, sys%n)])
+            associate (nk => sys%node(k, a))
+                nck = size(nk%z, 2)
+                allocate (zd(sys%n_t, nck, 0:sys%l_field, size(ps)), s(sys%n_t, nck))
+                do q = 1, size(ps)
+                    pk = max(ps(q) - 1, 1)
+                    if (sys%tr(ps(q), k, a)%identity) then
+                        pz = nk%z
+                    else
+                        pz = sparse_times(sys%tr(ps(q), k, a)%t, nk%z, .false.)
+                    end if
+                    do l = 0, sys%l_field
+                        zd(:, :, l, q) = sparse_times(sys%node(pk, a)%d(l), pz, .true.)
+                    end do
+                end do
+                do b = 1, sys%ns
+                    do j = 1, sys%nx
+                        associate (nj => sys%node(j, b))
+                            ncj = size(nj%z, 2)
+                            allocate (blk(nck, ncj))
+                            blk = 0
+                            do l = 0, sys%l_field
+                                s = 0
+                                do q = 1, size(ps)
+                                    w = sys%field_w(ps(q), k, j, a, b, l)
+                                    if (w /= 0) s = s + w*zd(:, :, l, q)
+                                end do
+                                blk = blk + matmul(transpose(s), gz(j, b)%v(:, :, l))
+                            end do
+                            sys%coarse(nk%c_off + 1:nk%c_off + nck, nj%c_off + 1:nj%c_off &
+                                + ncj) = sys%coarse(nk%c_off + 1:nk%c_off + nck, &
+                                nj%c_off + 1:nj%c_off + ncj) - blk
+                            deallocate (blk)
+                        end associate
+                    end do
+                end do
+                deallocate (zd, s)
+            end associate
+        end do
+        !$omp end parallel do
+    end subroutine coarse_field
+
+    !> A x, or A^T x with transpose, for a real sparse A and dense x.
+    function sparse_times(m, x, transpose) result(y)
+        type(csc_t), intent(in) :: m
+        real(dp), intent(in) :: x(:, :)
+        logical, intent(in) :: transpose
+        real(dp), allocatable :: y(:, :)
+        integer :: j, i
+        if (transpose) then
+            allocate (y(m%ncol, size(x, 2)))
+            y = 0
+            do j = 1, m%ncol
+                do i = m%col_ptr(j), m%col_ptr(j + 1) - 1
+                    y(j, :) = y(j, :) + m%val(i)*x(m%row_idx(i), :)
+                end do
+            end do
+        else
+            allocate (y(m%nrow, size(x, 2)))
+            y = 0
+            do j = 1, m%ncol
+                do i = m%col_ptr(j), m%col_ptr(j + 1) - 1
+                    y(m%row_idx(i), :) = y(m%row_idx(i), :) + m%val(i)*x(j, :)
+                end do
+            end do
+        end if
+    end function sparse_times
+
+    !> Line moments gm(:, l, k, a) = G^l_ak h_ak of the coupled vector h.
+    subroutine field_moments(sys, h, gm)
+        type(hp_energy_system_t), intent(in) :: sys
+        complex(dp), intent(in) :: h(:)
+        complex(dp), allocatable, intent(out) :: gm(:, :, :, :)
+        integer :: a, k
+        allocate (gm(sys%n_t, 0:sys%l_field, sys%nx, sys%ns))
+        do a = 1, sys%ns
+            do k = 1, sys%nx
+                associate (nd => sys%node(k, a))
+                    call node_moments(sys, k, a, h(nd%off + 1:nd%off + nd%n), gm(:, :, k, a))
+                end associate
+            end do
+        end do
+    end subroutine field_moments
+
+    !> g(:, l) = G^l x for x on the mesh of node (k, a).
+    subroutine node_moments(sys, k, a, x, g)
+        type(hp_energy_system_t), intent(in) :: sys
+        integer, intent(in) :: k, a
+        complex(dp), intent(in) :: x(:)
+        complex(dp), intent(out) :: g(:, 0:)
+        integer :: l
+        do l = 0, sys%l_field
+            g(:, l) = csc_r_apply(sys%node(k, a)%g(l), x)
+        end do
+    end subroutine node_moments
+
+    !> y += sign sum_p P_{p<-k}^T sum_l D^l_p sum_b sum_k' F_ab^{l,(p)}(k, k')
+    !> gm(:, l, k', b), gm the line moments of the coupled vector.
+    subroutine field_row(sys, a, k, gm, y, sign)
+        type(hp_energy_system_t), intent(in) :: sys
+        integer, intent(in) :: a, k
+        complex(dp), intent(in) :: gm(:, 0:, :, :)
+        complex(dp), intent(inout) :: y(:)
+        real(dp), intent(in) :: sign
+        complex(dp), allocatable :: t(:), s(:)
+        real(dp) :: w
+        integer :: p, pk, l, b, j
+
+        allocate (s(sys%n_t))
+        do p = 1, sys%n
+            if (.not. field_from(sys, p, k, a)) cycle
+            pk = max(p - 1, 1)
+            allocate (t(sys%node(pk, a)%n))
+            t = 0
+            do l = 0, sys%l_field
+                s = 0
+                do b = 1, sys%ns
+                    do j = 1, sys%nx
+                        w = sys%field_w(p, k, j, a, b, l)
+                        if (w /= 0) s = s + w*gm(:, l, j, b)
+                    end do
+                end do
+                t = t + csc_r_apply(sys%node(pk, a)%d(l), s)
+            end do
+            y = y + sign*moved(sys%tr(p, k, a), t, .true.)
+            deallocate (t)
+        end do
+    end subroutine field_row
+
+    pure function csc_r_apply(a, x) result(y)
+        type(csc_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:)
+        complex(dp) :: y(a%nrow)
+        integer :: j, i
+        y = 0
+        do j = 1, a%ncol
+            do i = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                y(a%row_idx(i)) = y(a%row_idx(i)) + a%val(i)*x(j)
+            end do
+        end do
+    end function csc_r_apply
+
+    !> Whether grid node p measures the field part of row node (k, a).
+    logical function field_from(sys, p, k, a)
+        type(hp_energy_system_t), intent(in) :: sys
+        integer, intent(in) :: p, k, a
+        field_from = .false.
+        if (sys%model == COLLOP_FULL) field_from = any(sys%field_w(p, k, :, a, :, :) /= 0)
+    end function field_from
 
     logical function coupled(sys, k, j, a)
         type(hp_energy_system_t), intent(in) :: sys
@@ -531,13 +763,15 @@ contains
     end function coupled
 
     !> y = (N h) of node (k, a), h the coupled vector; with only, the part
-    !> of the unknowns of node (only, a) alone.
-    subroutine row_apply(sys, a, k, h, y, only)
+    !> of the unknowns of node (only, a) alone; the field part only with the
+    !> line moments gm of h.
+    subroutine row_apply(sys, a, k, h, y, only, gm)
         type(hp_energy_system_t), intent(in) :: sys
         integer, intent(in) :: a, k
         complex(dp), intent(in) :: h(:)
         complex(dp), intent(out) :: y(:)
         integer, intent(in), optional :: only
+        complex(dp), intent(in), optional :: gm(:, 0:, :, :)
         y = 0
         associate (nd => sys%node(k, a))
             if (present(only)) then
@@ -547,6 +781,7 @@ contains
             end if
         end associate
         call energy_row(sys, a, k, h, y, -1.0_dp, only)
+        if (present(gm)) call field_row(sys, a, k, gm, y, -1.0_dp)
     end subroutine row_apply
 
     !> y += sign sum_p sum_k' E_a^(p)(k, k') P_{p<-k}^T M_p P_{p<-k'} h_ak'.
@@ -652,14 +887,17 @@ contains
     end function element_apply
 
     !> The collision operator in the weak form of the node equations, y_ak =
-    !> -nu_ak C_ak h_ak + sum_p sum_k' E_a^(p)(k, k') P^T M_p P h_ak' (the
-    !> negative of its part of the coupled operator), h and y coupled vectors.
+    !> -nu_ak C_ak h_ak + sum_p sum_k' E_a^(p)(k, k') P^T M_p P h_ak' and the
+    !> field part (the negative of its part of the coupled operator), h and
+    !> y coupled vectors.
     subroutine hp_energy_collide(sys, h, y)
         type(hp_energy_system_t), intent(in) :: sys
         complex(dp), intent(in) :: h(:)
         complex(dp), intent(out) :: y(:)
+        complex(dp), allocatable :: gm(:, :, :, :)
         integer :: i, a, k
 
+        if (sys%model == COLLOP_FULL) call field_moments(sys, h, gm)
         !$omp parallel do default(shared) schedule(dynamic) private(i, a, k)
         do i = 1, sys%nx*sys%ns
             k = mod(i - 1, sys%nx) + 1
@@ -668,6 +906,8 @@ contains
                 y(nd%off + 1:nd%off + nd%n) = -nd%nu*element_apply(nd%terms%loc, &
                     nd%terms%c, h(nd%off + 1:nd%off + nd%n))
                 call energy_row(sys, a, k, h, y(nd%off + 1:nd%off + nd%n), 1.0_dp)
+                if (allocated(gm)) call field_row(sys, a, k, gm, y(nd%off + 1:nd%off &
+                    + nd%n), 1.0_dp)
             end associate
         end do
         !$omp end parallel do
@@ -677,14 +917,20 @@ contains
         type(hp_energy_system_t), intent(in) :: sys
         complex(dp), intent(in) :: h(:)
         complex(dp), intent(out) :: y(:)
+        complex(dp), allocatable :: gm(:, :, :, :)
         integer :: i, a, k
 
+        if (sys%model == COLLOP_FULL) call field_moments(sys, h, gm)
         !$omp parallel do default(shared) schedule(dynamic) private(i, a, k)
         do i = 1, sys%nx*sys%ns
             k = mod(i - 1, sys%nx) + 1
             a = (i - 1)/sys%nx + 1
             associate (nd => sys%node(k, a))
-                call row_apply(sys, a, k, h, y(nd%off + 1:nd%off + nd%n))
+                if (allocated(gm)) then
+                    call row_apply(sys, a, k, h, y(nd%off + 1:nd%off + nd%n), gm=gm)
+                else
+                    call row_apply(sys, a, k, h, y(nd%off + 1:nd%off + nd%n))
+                end if
             end associate
         end do
         !$omp end parallel do
