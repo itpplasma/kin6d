@@ -1,0 +1,7 @@
+! Synthetic two-period coil box (make_case.py). The 16 coils put the field
+! ripple at mode 8 of the period, so modes = 8 is the first resolving case.
+&box
+ coils_file = 'coils.box', wall_file = 'wall.txt', extcur = 1.0e5,
+ period = 2, nring = 8, ncore = 8, nthmax = 256, order = 2, modes = 8, map_modes = 2,
+ max_error = 4.0e-3
+/

@@ -2222,6 +2222,13 @@ add_executable(coil_modes app/coil_modes.f90)
 target_link_libraries(coil_modes PRIVATE milca)
 add_executable(gs_vacuum_3d app/gs_vacuum_3d.f90)
 target_link_libraries(gs_vacuum_3d PRIVATE milca)
+add_executable(coil_box_vacuum app/coil_box_geometry.f90 app/coil_box_vacuum.f90)
+target_link_libraries(coil_box_vacuum PRIVATE milca)
+# Coil-driven vacuum in a mapped box against direct Biot-Savart (synthetic).
+add_test(NAME coil_box_vacuum_synthetic COMMAND coil_box_vacuum case.nml
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/data/coil_box)
+set_tests_properties(coil_box_vacuum_synthetic PROPERTIES TIMEOUT 600 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 # L4 (first stage): per-n FEEC complex, toroidal-mode BEM and their magnetic
 # coupling from FortFEM; flux-aligned meshes and the per-n Ampere operator
