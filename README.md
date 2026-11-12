@@ -3,9 +3,9 @@
 <a href="https://cloud.tugraz.at/index.php/s/cMDgzfagwJnEyiq/download?path=%2F&amp;files=milca.png"><img src="https://cloud.tugraz.at/index.php/s/cMDgzfagwJnEyiq/download?path=%2F&amp;files=milca_small.png" alt="MILCA" width="420"></a>
 
 MILCA is a Fortran research code for plasma equilibrium, stability and kinetic
-models. Current work centres on axisymmetric and three-dimensional
-magnetohydrodynamic (MHD) equilibria, with small kinetic, classical-particle
-and quantum reference problems alongside them.
+models. Current work prioritizes drift-kinetic and neoclassical transport, plus
+axisymmetric and three-dimensional MHD equilibria and stability. Classical-
+particle and quantum reference problems remain independent verification cases.
 
 <a href="https://fortran-lang.org/"><img src="https://raw.githubusercontent.com/fortran-lang/assets/cc6fafc67918ea2daef46b965dcec67ed19ef585/powered_by_fortran/wide/powered_by_Fortran_wide.svg" alt="Powered by Fortran" width="240"></a>
 
@@ -15,6 +15,10 @@ error-bound status. Numerical kernels and their derivatives are generated with
 [FortSym](https://github.com/lazy-fortran/fortsym); generated sources are
 included, so ordinary builds do not require FortSym. Supported error bounds
 use interval arithmetic from [FortNum](https://github.com/lazy-fortran/fortnum).
+
+Current priorities, the independent-code strategy and review policy are in
+[ROADMAP.md](ROADMAP.md); [the benchmark atlas](docs/benchmarks.md) records
+what each mathematical or cross-code comparison actually verifies.
 
 ## Build
 

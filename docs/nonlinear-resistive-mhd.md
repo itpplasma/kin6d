@@ -11,7 +11,7 @@ closed helical coframe ([section contract](vrmhd-section.md)). Not yet
 implemented: the RM-B5 island rates, the RM-B8 JOREK and RM-B10 slow-manifold
 gates, the 3D boundary solves and time evolution, and the field-split
 preconditioner (RM4). This document owns the
-nonlinear visco-resistive part of [R12](../ROADMAP.md#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
+nonlinear visco-resistive part of [R12](https://github.com/itpplasma/milca/blob/94caec95e474bd23640278c5e03b50204943f369/ROADMAP.md#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
 item 12; Hall/XMHD stays with R12. Scope: tokamak and stellarator core MHD on
 resistive time scales.
 
@@ -191,7 +191,7 @@ forcing, pseudo-transient and pseudo-arclength continuation (FortFEM),
 continuation in chi_par/chi_perp, S and drive. Driven steady states such as
 flux pumping, saturated islands and the response to resonant perturbations are
 computed directly instead of over 1e5-1e6 tau_A of evolution. Their stability
-is checked by the [S0 consumer](../ROADMAP.md#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3).
+is checked by the [S0 consumer](https://github.com/itpplasma/milca/blob/94caec95e474bd23640278c5e03b50204943f369/ROADMAP.md#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3).
 Oscillating states need shooting or harmonic balance; that is a later step.
 
 Time evolution: BDF2 first (the scheme of the JOREK comparisons), then IMEX and

@@ -29,7 +29,7 @@ Spectra are delivered in the frame without mean \(E\times B\) flow. The
 consumer applies the Doppler shift \(\omega+k_yV_E\).
 
 This is the "prescribed electromagnetic turbulence cross-spectrum" that
-[TR0](../ROADMAP.md#tr0--macro-transport-core-and-cheap-integrated-modelling-cross-cutting-starts-before-r6)
+[TR0](https://github.com/itpplasma/milca/blob/94caec95e474bd23640278c5e03b50204943f369/ROADMAP.md#tr0--macro-transport-core-and-cheap-integrated-modelling-cross-cutting-starts-before-r6)
 asks for before a live provider, and it uses the closure contract of
 [transport-multiscale.md](transport-multiscale.md).
 
@@ -42,7 +42,7 @@ asks for before a live provider, and it uses the closure contract of
 | DA | electromagnetic drift-Alfvén, isothermal electrons, gyrofluid ions | sheared slab, \(k_\parallel=k_yx/L_s\) | first model with electron inertia, \(A_\parallel\) and magnetic shear |
 | K | kinetic local dispersion (gyrokinetic ions, drift-kinetic electrons) | one wave vector | quasilinear provider where no collisional fluid closure holds |
 
-The order follows [S0](../ROADMAP.md#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3):
+The order follows [S0](https://github.com/itpplasma/milca/blob/94caec95e474bd23640278c5e03b50204943f369/ROADMAP.md#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3):
 the linear spectrum precedes the nonlinear run.
 
 ## Regime statement
