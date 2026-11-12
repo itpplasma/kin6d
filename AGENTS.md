@@ -47,6 +47,54 @@ that owns the proposed change. In particular:
 The first prescribed-field 1X1V slice already runs. Read
 docs/first-example.md before changing it or claiming broader evidence.
 
+## Source provenance (strict)
+
+MILCA is written only from public knowledge. Nobody, human or agent, may
+contribute code, tests, generators, documentation or reviews to MILCA while
+using non-public code or having it in their working context.
+
+- **Allowed:** published papers, theses, books, public reports and
+  documentation, including publications that describe closed codes, and code
+  under an OSI-approved open-source licence whose repository and commit are
+  recorded. Permissively licensed code (MIT, BSD, Apache 2.0) may be studied
+  and reused with its licence notice. GPL and LGPL code may be studied, but
+  no code, translation or close paraphrase is taken from it.
+- **Non-public code** is every other implementation, in any form: source,
+  binary, decompilation, excerpt, or a description of its implementation
+  that is not itself a publication. The list is not exhaustive:
+  - closed-source codes, for example CAS3D and CASTOR3D;
+  - codes obtained under an access agreement, such as the ITER git mirrors
+    (CASTOR, MISHKA, MARS-F, XTOR, STARWALL);
+  - code that is publicly visible without an open-source licence, such as
+    HCM_package (HELENA, MISHKA, CSCAS); any copy of such a code is
+    non-public unless that copy carries a licence;
+  - code shared privately by collaborators, including excerpts in mail or chat;
+  - our own private repositories, GLISS included.
+  Code becomes allowed only when it is published under an open-source licence,
+  and from that version on.
+- **No contamination:** do not open, search, list, run or summarise non-public
+  code during MILCA work. An agent session that has non-public code in its
+  context does not write, design or review MILCA material; a fresh session
+  does. A person who has worked with the implementation of a non-public code
+  does not write or review MILCA code for the same physics. If non-public
+  material enters a session, stop, say so in the pull request or issue, and
+  do not submit that session's output; Chris decides about material that is
+  already merged.
+- **Declaration:** every pull request states in one line that no non-public
+  code was used or in context. Reviewers check that line and that the
+  sources list of the capability names no non-public code.
+- **Comparisons** with closed or non-public codes use published results and
+  published input data only, never runs of those codes.
+- **Record the sources:** every new physics capability lists, in its
+  specification under `docs/`, the papers and open-source repositories (with
+  commit and licence) used for its derivation, implementation or validation.
+- **Existing exception, to be removed:** the ideal-MHD energy leaves in
+  `src/generated/ideal_mhd_*` come from a generator pinned from GLISS
+  (`gen/ideal-mhd-revision.txt`). The generated files and the pin file may be
+  read and the files rebuilt from the pin, but nobody opens GLISS for MILCA
+  work and nobody extends that dependency or the generated code. A
+  MILCA-owned derivation written under this section replaces it.
+
 ## Verification-first workflow and review
 
 - Prefer tests that can falsify a physical claim: independent analytic limits,
@@ -353,10 +401,8 @@ optimization. Planned scope is not implemented functionality.
   to multiple consumers. Physical-model residuals, equilibrium parameter
   adjoints, validated stationary solves and model-error bounds remain MILCA
   responsibilities.
-- Other codes are inspected for MILCA work only when they are open source.
-  Code under MIT, BSD or Apache licences may be studied freely. GPL code may
-  be studied, but no line of it is copied. Closed-source codes are not
-  inspected directly.
+- Other codes are inspected for MILCA work only under "Source provenance
+  (strict)" above.
 - Preserve unrelated edits. One controller owns integration/promotion.
 - Never touch protected faepop* or faepcr* hosts without an explicit user
   request naming the host.
