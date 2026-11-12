@@ -57,6 +57,7 @@ contains
         pencil%mass_factor%backend_id = FORTSPARSE_BACKEND_NATIVE
         pencil%shift_factor%backend_id = FORTSPARSE_BACKEND_NATIVE
         pencil%mass_factor%options%symmetry = FORTSPARSE_SYM_SPD
+        pencil%mass_factor%options%ldlt_supernodal = .true.
         call sparse_factor(pencil%mass_factor,mass,status)
         report%sparse_status = status%code
         report%message = status%msg
@@ -65,6 +66,8 @@ contains
         shifted%val = stiffness%val-shift*mass%val
         if (abs(aimag(shift)) <= 0) then
             pencil%shift_factor%options%symmetry = FORTSPARSE_SYM_HERMITIAN
+            ! Supernodal LDL^T of the real embedding: dense harmonic blocks.
+            pencil%shift_factor%options%ldlt_supernodal = .true.
         else
             pencil%shift_factor%options%symmetry = FORTSPARSE_SYM_GENERAL
             pencil%shift_factor%options%lu_method = FORTSPARSE_LU_SUPERNODAL
