@@ -327,8 +327,9 @@ option(MILCA_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experim
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
 # Steklov form #144, exact FEEC tables, split stretched BEM fans #145,
 # second-kind Nedelec edges #148, exact moment gradients #149 and the
-# boundary trace projection #152 and the toroidal period #154).
-set(MILCA_FORTFEM_REVISION "cb7dfd809221a85cd33fcfffc87c5069a66d885f")
+# boundary trace projection #152, the toroidal period #154 and its tensor
+# forms #160).
+set(MILCA_FORTFEM_REVISION "102d9bc89cac253c71ebaba649ecc07084bf7b1d")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${MILCA_FORTFEM_REVISION})
@@ -2924,9 +2925,11 @@ add_test(NAME nonnested_mapped_ellipse_mode_ladder
     COMMAND test_nonnested_mapped modes 2 1 3)
 add_test(NAME nonnested_mapped_zero_forcing_residual
     COMMAND test_nonnested_mapped zero_forcing)
+add_test(NAME nonnested_mapped_period
+    COMMAND test_nonnested_mapped period)
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
-    nonnested_mapped_zero_forcing_residual
+    nonnested_mapped_zero_forcing_residual nonnested_mapped_period
     PROPERTIES TIMEOUT 900 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
     add_test(NAME nonnested_mapped_${mapped_case}

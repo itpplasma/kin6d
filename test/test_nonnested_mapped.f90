@@ -204,6 +204,20 @@ contains
             b(2) = b(2) - coef(m)*m*(x(1)/r0)**(m - 1)*sin(m*x(3))
         end do
     end subroutine
+
+    ! The m = 2 term alone: a field with two periods, like the ellipse.
+    subroutine potential2(x, a)
+        real(dp), intent(in) :: x(3)
+        real(dp), intent(out) :: a(3)
+        a = [0.0_dp, bv*x(1)/2, -ftor*log(x(1)) + coef(2)*r0*(x(1)/r0)**2*sin(2*x(3))]
+    end subroutine
+
+    subroutine exact_field2(x, b)
+        real(dp), intent(in) :: x(3)
+        real(dp), intent(out) :: b(3)
+        b = [2*coef(2)*(x(1)/r0)*cos(2*x(3)), ftor/x(1) - 2*coef(2)*(x(1)/r0)*sin(2*x(3)), &
+            bv]
+    end subroutine
 end module nn_mapped_fixture
 
 program test_nonnested_mapped
@@ -273,9 +287,11 @@ program test_nonnested_mapped
         end if
     case ('zero_forcing')
         call zero_forcing_residual()
+    case ('period')
+        call period_case()
     case default
         error stop 'usage: identity | hladder | modes | point_oracles | cartesian_* | &
-            &zero_forcing'
+            &zero_forcing | period'
     end select
 contains
     subroutine small(label, value, gate)
@@ -841,6 +857,47 @@ contains
             ' div=', report%divergence, ' s=', real(c1 - c0, dp)/rate
         if (report%divergence > 1.0e-12_dp) error stop 'mapped divergence identity'
         if (report%residual > 1.0e-9_dp) error stop 'mapped residual'
+    end subroutine
+
+    subroutine period_case()
+        ! Two field periods (pi-periodic ellipse and field): the period-2
+        ! solve with modes 0, 2, 4 and the full-turn solve with modes 0..4
+        ! represent the same discrete subspace for this data, so they must
+        ! give the same field; both must approximate the closed-form field.
+        integer, parameter :: nr = 4, modes = 2, nphi = 4*modes + 4
+        type(free_b_field_t), target :: fp, ff
+        type(nn_map_t), target :: mp, mf
+        type(nn_mapped_report_t) :: rp, rf
+        real(dp), allocatable :: data(:)
+        real(dp) :: ep, ef, dev, ehp, ehf, ee
+        integer :: st
+        call make_field(nr, modes, fp)
+        fp%period = 2
+        call nn_map_build(fp%fs, 1, 4, ellipse_map, mp, st, period=2)
+        if (st /= 0) error stop 'period map'
+        call nn_mapped_data(fp, mp, nphi, potential2, data, st)
+        if (st /= 0) error stop 'period data'
+        call nn_mapped_solve(fp, mp, nphi, data, 1.0e-14_dp, rp, st)
+        if (st /= 0) error stop 'period solve'
+        call nn_mapped_error(fp, mp, 2*nphi + 1, exact_field2, ep, dev, ehp, ee, st)
+        if (st /= 0) error stop 'period error'
+        call make_field(nr, 2*modes, ff)
+        call nn_map_build(ff%fs, 2, 8, ellipse_map, mf, st)
+        if (st /= 0) error stop 'full map'
+        call nn_mapped_data(ff, mf, 2*nphi, potential2, data, st)
+        if (st /= 0) error stop 'full data'
+        call nn_mapped_solve(ff, mf, 2*nphi, data, 1.0e-14_dp, rf, st)
+        if (st /= 0) error stop 'full solve'
+        call nn_mapped_error(ff, mf, 4*nphi + 2, exact_field2, ef, dev, ehf, ee, st)
+        if (st /= 0) error stop 'full error'
+        write (*, '(a,2es12.4,a,2es12.4,a,2i6)') 'period field error P=2/full=', &
+            ep/dev, ef/dev, ' energy=', ehp, ehf, ' ndof=', rp%ndof, rf%ndof
+        if (abs(ep - ef) > 1.0e-8_dp*ef) error stop 'period and full-turn fields differ'
+        if (abs(ehp - ehf) > 1.0e-10_dp*ehf) error stop 'period and full-turn energies differ'
+        if (ep/dev > 0.05_dp) error stop 'period field error'
+        if (rp%divergence > 1.0e-12_dp) error stop 'period divergence identity'
+        call nn_mapped_data(fp, mf, nphi, potential2, data, st)
+        if (st == 0) error stop 'map and field periods must agree'
     end subroutine
 
     subroutine zero_forcing_residual()
