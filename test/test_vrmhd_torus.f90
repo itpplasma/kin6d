@@ -47,7 +47,7 @@ contains
     ! circles stay well apart (max |dDelta/dr| <= 0.3), and elsewhere against
     ! the polar finite-difference Grad-Shafranov solve of docs/vrmhd-torus.md.
     ! The unstructured mesh is not up-down symmetric; its axis height is a
-    ! discretisation error of about 1e-4 at edge = 0.2.
+    ! discretisation error below 1e-4 at edge = 0.1.
     subroutine shafranov()
         type(vrmhd_cylinder_case_t) :: c
         type(vrmhd_cylinder_profile_t) :: prof

@@ -125,9 +125,9 @@ At `R0/a = 3`, `beta_p = 3` the shifted circles of the formula intersect
 The test `vrmhd_torus_shafranov` checks the axis of the `n = 0` state against
 the formula within 3 % where `max |dDelta/dr| <= 0.3`, and against the
 Grad-Shafranov column within 1 % elsewhere, at `R0/a = 3` (`beta_p = 0.02`, 1,
-3) and `R0/a = 10` (`beta_p = 1`), on cubic elements of edge 0.2. On edge 0.05
+3) and `R0/a = 10` (`beta_p = 1`), on cubic elements of edge 0.1. On edge 0.05
 the shifts are 0.0755, 0.1567, 0.2892 and 0.0475, within 0.25 % of the
-finite-difference column; at edge 0.2 they differ by at most 3e-4.
+finite-difference column and within 2e-5 of the values at edge 0.1.
 
 ## Steady Ohmic state
 
