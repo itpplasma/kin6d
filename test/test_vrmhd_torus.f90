@@ -29,7 +29,8 @@ program test_vrmhd_torus
     real(dp) :: edge = 0.1_dp, beta_poloidal = 1.0e-6_dp, dtau = 10
     !> 1 holds the initial poloidal current by a source, 0 lets it evolve.
     integer :: poloidal_source = 1
-    real(dp) :: t_end = 1.0e4_dp, dt_out = 1.0e3_dp
+    real(dp) :: t_end = 1.0e4_dp, dt_out = 1.0e3_dp, rtol = 1.0e-4_dp, atol = 1.0e-12_dp
+    integer :: max_steps = 100000
     integer :: knots = 129, degree = 1, k, e, failures = 0
     call get_command_argument(1, gate)
     do k = 2, command_argument_count()
@@ -45,6 +46,9 @@ program test_vrmhd_torus
         case ('poloidal_source'); read (arg(e + 1:), *) poloidal_source
         case ('t_end'); read (arg(e + 1:), *) t_end
         case ('dt_out'); read (arg(e + 1:), *) dt_out
+        case ('rtol'); read (arg(e + 1:), *) rtol
+        case ('atol'); read (arg(e + 1:), *) atol
+        case ('max_steps'); read (arg(e + 1:), *) max_steps
         case default; error stop 'unknown argument'
         end select
     end do
@@ -222,7 +226,7 @@ contains
         call vrmhd_evolve_consistent(problem, 0.0_dp, y, derivative, status)
         call check(status == 0, 'consistent start')
         options%adaptive = .true.; options%initial_step = 1
-        options%rtol = 1.0e-4_dp; options%atol = 1.0e-12_dp
+        options%rtol = rtol; options%atol = atol; options%max_steps = max_steps
         options%max_step = dt_out
         call bdf_init(state, 0.0_dp, y, options, st, derivative=derivative)
         call check(st%code == FORTNUM_OK, 'BDF start')
@@ -234,6 +238,11 @@ contains
             if (state%t >= t_end) exit
             t_next = min(t_next + dt_out, t_end)
             call bdf_integrate_to(problem, state, t_next, options, report, st)
+            print '(a,i0,a,i0,a,i0,a,i0,a,i0,a,es10.2,a,es10.2)', 'steps ', &
+                report%accepted, ' rejected error ', report%rejected_error, &
+                ' newton ', report%rejected_newton, ' newton its ', &
+                report%newton_iterations, ' krylov ', report%krylov_iterations, &
+                ' t ', state%t, ' next step ', state%next_step
             call check(st%code == FORTNUM_OK, 'BDF step')
             if (st%code /= FORTNUM_OK) return
         end do
