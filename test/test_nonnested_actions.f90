@@ -68,6 +68,8 @@ program test_nonnested_actions
     call require(status == 0, 'mesh')
     call nn_build(mesh, degree, 2, [r0, 0.0_dp], minor, ftor, 1.0_dp, field, status)
     call require(status == 0, 'FEEC field')
+    ! Period 3: block n is mode 3 n in every action.
+    if (trim(mode) == 'period') field%period = 3
     call meridian_lagrange_nodes(field%fs, nodes)
     lay = nc_layout(field)
     allocate (x(lay%n), direction(lay%n), weight(lay%n))
@@ -93,7 +95,7 @@ program test_nonnested_actions
     ! An even FFT grid also checks that no odd-grid convention is assumed.
     problem%nphi = 8
     select case (trim(mode))
-    case ('fixed')
+    case ('fixed', 'period')
     case ('exterior')
         call attach_exterior()
     case ('floating')
