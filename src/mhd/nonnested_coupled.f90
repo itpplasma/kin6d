@@ -44,7 +44,10 @@ module milca_nonnested_coupled
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad, &
         meridian_weight_i
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl, &
-        meridian_fourier_identity_forms
+        meridian_fourier_identity_forms, meridian_fourier_curl_curl, &
+        meridian_fourier_gradient_coupling
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_point, map_metric_t, &
+        nn_harmonic_forms
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, csc_matmul, &
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
@@ -97,6 +100,11 @@ module milca_nonnested_coupled
         ! nonzero net plasma current requires a separate harmonic response.
         type(csc_t) :: exterior
         real(dp), allocatable :: coil_drive(:)
+        ! Optional fixed phi-preserving map of the reference domain onto the
+        ! physical one (milca_nonnested_mapped). Fields are then reference
+        ! 2-forms; currents, fluxes and data are physical at the mapped
+        ! point. The map must outlive the problem and share the field period.
+        type(nn_map_t), pointer :: map => null()
     end type
 
     ! Global index of local entry j of block b of a space is offset +
@@ -121,6 +129,9 @@ module milca_nonnested_coupled
     type :: nc_ops_t
         type(csc_t) :: c, s, mg, mgt
         integer :: nphi = 1
+        ! Mapped domain: <curl dA, K2 F_vac/R e_phi> on the A rows. It
+        ! vanishes for the identity map, whose harmonic is curl free.
+        real(dp), allocatable :: harmonic(:)
     end type
 
     ! Equation-level linearisation of a converged state: the exact Jacobian
@@ -169,6 +180,9 @@ contains
             message = 'Declare exactly one pressure source hook (zero source is explicit)'
             if (associated(problem%source) .eqv. associated(problem%source_3d)) return
         end if
+        message = 'A mapped domain excludes frozen fits, floating conductors and the exterior'
+        if (associated(problem%map) .and. (allocated(problem%fitted) .or. &
+            allocated(problem%floating) .or. allocated(problem%coil_drive))) return
         message = 'Declare at most one parallel conductivity shape hook'
         if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
             return
@@ -262,11 +276,15 @@ contains
     end subroutine
 
     subroutine operators(field, problem, ops, status)
-        type(free_b_field_t), intent(in) :: field
+        type(free_b_field_t), intent(in), target :: field
         type(nc_problem_t), intent(in) :: problem
         type(nc_ops_t), intent(out) :: ops
         integer, intent(out) :: status
         type(fortsparse_status_t) :: st
+        type(map_metric_t) :: k1, k2
+        type(csc_t) :: ct
+        real(dp), allocatable :: g(:)
+        real(dp) :: energy, volume
         integer :: t, nln, modes
         character(160) :: message
         call nc_validate(problem, status, message)
@@ -301,8 +319,31 @@ contains
         ! Exact constant forms avoid mode-pair quadrature storage. Both the
         ! assembled reference and the action retain the same FEEC operators.
         if (field%period < 1) return
-        call meridian_fourier_identity_forms(field%fs, modes, &
-            ops%c, ops%s, ops%mg, status, field%period)
+        if (associated(problem%map)) then
+            ! Physical forms <curl dA . B> and <dA . grad lambda> pulled back:
+            ! K2 = J P2^T P2 and K1 = J P1^T P1 of the map.
+            if (problem%map%modes > 0 .and. problem%map%period /= field%period) return
+            k1%fs => field%fs; k1%map => problem%map; k1%space = 1
+            k2%fs => field%fs; k2%map => problem%map; k2%space = 2
+            call meridian_fourier_curl(field%fs, modes, ops%c, status, field%period)
+            if (status /= 0) return
+            call meridian_fourier_curl_curl(field%fs, modes, ops%nphi, k2, ops%s, &
+                status, field%period)
+            if (status /= 0) return
+            call meridian_fourier_gradient_coupling(field%fs, modes, ops%nphi, k1, &
+                ops%mg, status, field%period)
+            if (status /= 0) return
+            call nn_harmonic_forms(field, k2, ops%nphi, g, energy, volume, status)
+            if (status /= 0) return
+            status = 1
+            call csc_transpose(ops%c, ct, st)
+            if (.not. status_ok(st)) return
+            ops%harmonic = field%f_vac*csc_matvec(ct, g)
+            status = 0
+        else
+            call meridian_fourier_identity_forms(field%fs, modes, &
+                ops%c, ops%s, ops%mg, status, field%period)
+        end if
         if (status /= 0) return
         status = 1
         call csc_transpose(ops%mg, ops%mgt, st)
@@ -346,6 +387,8 @@ contains
         r(lay%ia + 1:lay%ia + lay%na) = &
             csc_matvec(ops%s, x(lay%ia + 1:lay%ia + lay%na))/field%mu0 &
             + csc_matvec(ops%mg, x(lay%il + 1:lay%il + lay%nv))
+        if (allocated(ops%harmonic)) r(lay%ia + 1:lay%ia + lay%na) = &
+            r(lay%ia + 1:lay%ia + lay%na) + ops%harmonic/field%mu0
         r(lay%il + 1:lay%il + lay%nv) = &
             csc_matvec(ops%mgt, x(lay%ia + 1:lay%ia + lay%na))
         nt = field%fs%mm%topology%n_triangles
@@ -716,6 +759,7 @@ contains
         integer, intent(out) :: status
         real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
         real(dp) :: tr(lay%nb), dtr(lay%nb), phi, src, flux(3), drive
+        real(dp) :: pb(3, 3), pq(3, 3), jw, xp(2)
         integer :: q, j, bk, n0
         load = 0; n0 = field%fs%nl0
         do q = 1, field%fs%nq
@@ -723,8 +767,12 @@ contains
             if (status /= 0) return
             do j = 1, nphi
                 phi = 2*acos(-1.0_dp)*(j - 1)/(nphi*lay%period)
-                call nc_source_data(problem, xq, phi, src, flux, drive, status)
+                call point_frame(field, problem, t, val, grad, xq, phi, pb, pq, jw, &
+                    xp, status)
                 if (status /= 0) return
+                call nc_source_data(problem, xp, phi, src, flux, drive, status)
+                if (status /= 0) return
+                src = jw*src
                 call trig(lay%modes, phi, tr, dtr, lay%period)
                 do bk = 1, lay%nb
                     load((bk - 1)*n0 + 1:bk*n0) = load((bk - 1)*n0 + 1:bk*n0) &
@@ -816,6 +864,39 @@ contains
         status = 0
     end subroutine
 
+    subroutine point_frame(field, problem, t, val, grad, xq, phi, pb, pg, jw, xp, &
+                           status)
+        ! Reference -> physical cylindrical (R, phi, Z) components at one
+        ! quadrature point: B = pb b_ref (2-form), grad = pg grad_ref
+        ! (1-form), volume factor jw and the physical (R, Z). Identity
+        ! without a map. A physical vector q pairs with a reference test
+        ! gradient through jw pg^T q.
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        integer, intent(in) :: t
+        real(dp), intent(in) :: val(:), grad(:, :), xq(2), phi
+        real(dp), intent(out) :: pb(3, 3), pg(3, 3), jw, xp(2)
+        integer, intent(out) :: status
+        real(dp) :: pos(3), p1(3, 3), p2(3, 3), q(3, 3), c, s
+        integer :: i
+        pb = 0; pg = 0
+        do i = 1, 3
+            pb(i, i) = 1; pg(i, i) = 1
+        end do
+        jw = 1; xp = xq; status = 0
+        if (.not. associated(problem%map)) return
+        call nn_map_point(problem%map, field%fs%sp(0)%dof(:, t), val, grad, xq, phi, &
+            pos, p1, p2, jw, status)
+        if (status /= 0) return
+        status = ISLAND_BAD_DATA
+        if (.not. (jw > 0)) return
+        c = cos(phi); s = sin(phi)
+        q = reshape([c, -s, 0.0_dp, s, c, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], [3, 3])
+        pb = matmul(q, p2); pg = matmul(q, p1)
+        xp = [hypot(pos(1), pos(2)), pos(3)]
+        status = 0
+    end subroutine
+
     pure integer function local_rows(field, lay) result(nr)
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t), intent(in) :: lay
@@ -862,6 +943,7 @@ contains
         real(dp) :: bq(3), gp(3), gf(3), ephi, gpar, src, cj(3), fq(3)
         real(dp) :: dj(3, 10), dq(3, 6), e(12), two_pi
         real(dp) :: source_flux(3), drive, jdrive(3), ddrive(3)
+        real(dp) :: pb(3, 3), pq(3, 3), jw, xp(2), cjt(3), fqt(3)
         real(dp), allocatable :: bop(:, :), dop(:, :), w1(:, :), jc(:, :), qc(:, :)
         integer :: q, j, k, bk, n1, n0, n2, nb, ra, rp, rf, rv, cb, cp, cf
         status = 1
@@ -895,14 +977,18 @@ contains
             bm = matmul(v2, bl)
             pv = matmul(val, pl); pg = matmul(grad, pl)
             fv = matmul(val, fl); fg = matmul(grad, fl)
-            ephi = x(lay%iv)/(two_pi*rr)
             w = wq/nphi
             do j = 1, nphi
                 phi = two_pi*(j - 1)/(nphi*lay%period)
                 call trig(lay%modes, phi, tr, dtr, lay%period)
+                call point_frame(field, problem, t, val, grad, xq, phi, pb, pq, jw, &
+                    xp, status)
+                if (status /= 0) return
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
-                call point_data(problem, xq, phi, bq, src, gpar, &
+                bq = matmul(pb, bq)
+                ephi = x(lay%iv)/(two_pi*xp(1))
+                call point_data(problem, xp, phi, bq, src, gpar, &
                     source_flux, drive, status)
                 if (status /= 0) return
                 status = 1
@@ -910,6 +996,7 @@ contains
                     dot_product(pg(2, :), tr)]
                 gf = [dot_product(fg(1, :), tr), dot_product(fv, dtr)/rr, &
                     dot_product(fg(2, :), tr)]
+                gp = matmul(pq, gp); gf = matmul(pq, gf)
                 call coupled_current(bq(1), bq(2), bq(3), gp(1), gp(2), gp(3), &
                     gf(1), gf(2), gf(3), ephi, gpar, problem%g_perp, cj(1), &
                     cj(2), cj(3))
@@ -921,19 +1008,24 @@ contains
                     cj = cj + jdrive
                     fq = fq - source_flux
                 end if
+                ! Physical J and q against reference tests: jw pg^T.
+                cjt = jw*matmul(transpose(pq), cj)
+                fqt = jw*matmul(transpose(pq), fq)
                 do bk = 1, nb
                     rl(ra + (bk - 1)*n1 + 1:ra + bk*n1) = &
-                        rl(ra + (bk - 1)*n1 + 1:ra + bk*n1) - w*tr(bk)*matmul(cj, v1)
+                        rl(ra + (bk - 1)*n1 + 1:ra + bk*n1) - w*tr(bk)*matmul(cjt, v1)
                     rl(rp + (bk - 1)*n0 + 1:rp + bk*n0) = &
                         rl(rp + (bk - 1)*n0 + 1:rp + bk*n0) + w*(tr(bk) &
-                        *(grad(1, :)*fq(1) + grad(2, :)*fq(3) - val*src) &
-                        + dtr(bk)*val*fq(2)/rr)
+                        *(grad(1, :)*fqt(1) + grad(2, :)*fqt(3) - jw*val*src) &
+                        + dtr(bk)*val*fqt(2)/rr)
                     rl(rf + (bk - 1)*n0 + 1:rf + bk*n0) = &
                         rl(rf + (bk - 1)*n0 + 1:rf + bk*n0) + w*(tr(bk) &
-                        *(grad(1, :)*cj(1) + grad(2, :)*cj(3)) &
-                        + dtr(bk)*val*cj(2)/rr)
+                        *(grad(1, :)*cjt(1) + grad(2, :)*cjt(3)) &
+                        + dtr(bk)*val*cjt(2)/rr)
                 end do
-                rl(rv) = rl(rv) + w*cj(2)/rr
+                ! Toroidal current through the physical section: the in-plane
+                ! area factor is jw rr/R_phys.
+                rl(rv) = rl(rv) + w*jw*cj(2)/xp(1)
                 if (.not. want) cycle
                 ! Unit tangents: B (3), grad p (3), grad Phi (3), ephi.
                 do k = 1, 10
@@ -967,18 +1059,21 @@ contains
                     dop(2, (bk - 1)*n0 + 1:bk*n0) = dtr(bk)*val/rr
                     dop(3, (bk - 1)*n0 + 1:bk*n0) = tr(bk)*grad(2, :)
                 end do
+                bop = matmul(pb, bop)
                 jc(:, :cb) = matmul(dj(:, 1:3), bop)
-                jc(:, cb + 1:cb + n0*nb) = matmul(dj(:, 4:6), dop)
-                jc(:, cb + n0*nb + 1:cb + 2*n0*nb) = matmul(dj(:, 7:9), dop)
-                jc(:, cb + 2*n0*nb + 1) = dj(:, 10)/(two_pi*rr)
+                jc(:, cb + 1:cb + n0*nb) = matmul(dj(:, 4:6), matmul(pq, dop))
+                jc(:, cb + n0*nb + 1:cb + 2*n0*nb) = matmul(dj(:, 7:9), matmul(pq, dop))
+                jc(:, cb + 2*n0*nb + 1) = dj(:, 10)/(two_pi*xp(1))
                 qc = 0
                 qc(:, :cb) = matmul(dq(:, 1:3), bop)
-                qc(:, cb + 1:cb + n0*nb) = matmul(dq(:, 4:6), dop)
+                qc(:, cb + 1:cb + n0*nb) = matmul(dq(:, 4:6), matmul(pq, dop))
+                w1 = jw*matmul(pq, w1)
+                dop = jw*matmul(pq, dop)
                 call add_block(ra + 1, ra + n1*nb, -w*transpose(w1), jc)
                 call add_block(rp + 1, rp + n0*nb, w*transpose(dop), qc)
                 call add_block(rf + 1, rf + n0*nb, w*transpose(dop), jc)
-                jb(rv, :) = jb(rv, :) + w*jc(2, :cb)/rr
-                jd(rv, :) = jd(rv, :) + w*jc(2, cb + 1:)/rr
+                jb(rv, :) = jb(rv, :) + w*jw*jc(2, :cb)/xp(1)
+                jd(rv, :) = jd(rv, :) + w*jw*jc(2, cb + 1:)/xp(1)
             end do
         end do
         status = 0
@@ -1472,6 +1567,7 @@ contains
         real(dp) :: al(field%fs%sp(1)%nloc, lay%nb), dummy(2), phi, gpar, src
         real(dp) :: dpmean(lay%nb), dfmean(lay%nb)
         real(dp) :: source_flux(3), drive, adj_drive(4)
+        real(dp) :: pb(3, 3), pq(3, 3), jw, xp(2), wj(3), wq3(3)
         integer :: q, j, k, bk, n, n0, n2
         n0 = field%fs%nl0
         n2 = field%fs%sp(2)%nloc
@@ -1493,10 +1589,19 @@ contains
             end do
             u(2, :) = u(2, :) + field%f_vac/xq(1)
             w(7:9, :) = w(7:9, :) - wa
-            w(8, :) = w(8, :) + weight(lay%iv)/xq(1)
             do j = 1, nphi
                 phi = 2*acos(-1.0_dp)*(j - 1)/(nphi*lay%period)
-                call point_data(problem, xq, phi, u(:3, j), src, gpar, &
+                call point_frame(field, problem, t, val, grad, xq, phi, pb, pq, jw, &
+                    xp, status)
+                if (status /= 0) return
+                u(1:3, j) = matmul(pb, u(1:3, j)); u(4:6, j) = matmul(pq, u(4:6, j))
+                u(7:9, j) = matmul(pq, u(7:9, j)); u(10, j) = u(10, j)*xq(1)/xp(1)
+                ! Physical weights of J (Ampere, Phi and loop rows) and q.
+                wj = jw*matmul(pq, w(7:9, j))
+                wj(2) = wj(2) + jw*weight(lay%iv)/xp(1)
+                w(7:9, j) = wj
+                wq3 = jw*matmul(pq, w(4:6, j)); w(4:6, j) = wq3
+                call point_data(problem, xp, phi, u(:3, j), src, gpar, &
                     source_flux, drive, status)
                 if (status /= 0) return
                 call coupled_current_vjp(u(1, j), u(2, j), u(3, j), u(4, j), &
@@ -1515,6 +1620,10 @@ contains
                     w(4, j), w(5, j), w(6, j), gq(1), gq(2), gq(3), &
                     gq(4), gq(5), gq(6), gq(7), gq(8))
                 gu(:6, j) = gu(:6, j) + gq(:6)
+                gu(1:3, j) = matmul(transpose(pb), gu(1:3, j))
+                gu(4:6, j) = matmul(transpose(pq), gu(4:6, j))
+                gu(7:9, j) = matmul(transpose(pq), gu(7:9, j))
+                gu(10, j) = gu(10, j)*xq(1)/xp(1)
             end do
             do k = 1, 9
                 call project(gu(k, :), gm(k, :), plan, work)
@@ -1696,8 +1805,9 @@ contains
         real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
         real(dp) :: u(10, nphi), du(10, nphi), cj(3, nphi), fq(3, nphi)
         real(dp) :: cm(3, lay%nb), fm(3, lay%nb), dc(lay%nb), df(lay%nb)
-        real(dp) :: rr, phi, gpar, twopi, src
+        real(dp) :: rr, phi, gpar, twopi, src, loop
         real(dp) :: source_flux(3), drive, ddrive(3)
+        real(dp) :: pb(3, 3), pq(3, 3), jw, xp(2)
         integer :: q, j, k, bk, n1, n0, rp, rf, n
         n1 = field%fs%sp(1)%nloc; n0 = field%fs%nl0
         rp = n1*lay%nb; rf = rp + n0*lay%nb
@@ -1710,9 +1820,14 @@ contains
                               v1, v2, val, grad, plan, work, status)
             if (status /= 0) return
             rr = xq(1); u(2, :) = u(2, :) + field%f_vac/rr
+            loop = 0
             do j = 1, nphi
                 phi = twopi*(j - 1)/(nphi*lay%period)
-                call point_data(problem, xq, phi, u(:3, j), src, gpar, &
+                call point_frame(field, problem, t, val, grad, xq, phi, pb, pq, jw, &
+                    xp, status)
+                if (status /= 0) return
+                call to_physical(u(:, j)); call to_physical(du(:, j))
+                call point_data(problem, xp, phi, u(:3, j), src, gpar, &
                     source_flux, drive, status)
                 if (status /= 0) return
                 call coupled_current_jvp(u(1, j), u(2, j), u(3, j), u(4, j), u(5, j), &
@@ -1731,6 +1846,9 @@ contains
                     u(6, j), problem%chi_par, problem%chi_perp, du(1, j), du(2, j), &
                     du(3, j), du(4, j), du(5, j), du(6, j), 0.0_dp, 0.0_dp, &
                     fq(1, j), fq(2, j), fq(3, j))
+                loop = loop + jw*cj(2, j)/(xp(1)*nphi)
+                cj(:, j) = jw*matmul(transpose(pq), cj(:, j))
+                fq(:, j) = jw*matmul(transpose(pq), fq(:, j))
             end do
             do k = 1, 3
                 call project(cj(k, :), cm(k, :), plan, work)
@@ -1755,9 +1873,16 @@ contains
                     + wq*(grad(1, :)*cm(1, bk) + grad(2, :)*cm(3, bk) &
                           + val*dc(bk)/rr)
             end do
-            rl(size(rl)) = rl(size(rl)) + wq*cm(2, 1)/rr
+            rl(size(rl)) = rl(size(rl)) + wq*loop
         end do
         status = 0
+    contains
+        subroutine to_physical(v)
+            ! (B, grad p, grad Phi, ephi) at this point, reference -> physical.
+            real(dp), intent(inout) :: v(10)
+            v(1:3) = matmul(pb, v(1:3)); v(4:6) = matmul(pq, v(4:6))
+            v(7:9) = matmul(pq, v(7:9)); v(10) = v(10)*rr/xp(1)
+        end subroutine
     end subroutine
 
 end module milca_nonnested_coupled

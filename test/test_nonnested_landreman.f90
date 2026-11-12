@@ -28,6 +28,7 @@ module nn_landreman_case
     ! Field period of the solve; the state is pi-periodic (x, y -> -x, -y),
     ! so period 2 retains exactly its even modes.
     integer :: period = 1
+    real(dp) :: ellipse_a = 1.1_dp, ellipse_b = 0.9_dp, spin = 1
 contains
     subroutine closed_bj(x, b, j)
         complex(dp), intent(in) :: x(3)
@@ -169,6 +170,36 @@ contains
         real(dp), intent(out) :: x(2)
         x = [rc + rw*u*cos(theta), rw*u*sin(theta)]
     end subroutine
+
+    subroutine ellipse(x, phi, y)
+        ! Physical domain of the mapped case: the disk stretched to a
+        ! rotating ellipse (axes 1.1 rw, 0.9 rw), pi-periodic like the state.
+        real(dp), intent(in) :: x(2), phi
+        real(dp), intent(out) :: y(2)
+        real(dp) :: q(2, 2), d(2)
+        q = reshape([cos(spin*phi), sin(spin*phi), -sin(spin*phi), cos(spin*phi)], [2, 2])
+        d = matmul(transpose(q), x - [rc, 0.0_dp])
+        y = [rc, 0.0_dp] + matmul(q, [ellipse_a*d(1), ellipse_b*d(2)])
+    end subroutine
+
+    subroutine exact_b_cart(x, b)
+        real(dp), intent(in) :: x(3)
+        real(dp), intent(out) :: b(3)
+        complex(dp) :: bc(3), jc(3)
+        call closed_bj(cmplx(x, 0.0_dp, dp), bc, jc)
+        b = real(bc)
+    end subroutine
+
+    subroutine potential_cart(x, a)
+        ! Exact Cartesian vector potential (the NN1 potential plus the
+        ! F_vac Z/R e_R that it subtracts).
+        real(dp), intent(in) :: x(3)
+        real(dp), intent(out) :: a(3)
+        real(dp) :: r, ph, av(3)
+        r = hypot(x(1), x(2)); ph = atan2(x(2), x(1))
+        av = potential([r, x(3)], ph) + [fvac*x(3)/r, 0.0_dp, 0.0_dp]
+        a = [cos(ph)*av(1) - sin(ph)*av(2), sin(ph)*av(1) + cos(ph)*av(2), av(3)]
+    end subroutine
 end module
 
 program test_nonnested_landreman
@@ -189,12 +220,16 @@ program test_nonnested_landreman
     use milca_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use milca_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
         nc_layout, nc_residual, nc_jacobian, nc_solve, nc_fixed, nc_continue, nc_store
+    use milca_nonnested_mapped, only: nn_map_t, nn_map_build, nn_map_point, &
+        nn_mapped_cartesian_data, nn_mapped_cartesian_error
+    use milca_equilibrium_nonnested, only: nn_fourier_value
+    use fortfem_meridian_feec_n, only: meridian_qgrad
     implicit none
     type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
     type(nc_layout_t) :: lay
     real(dp), allocatable :: nodes(:, :), x(:)
-    integer :: k, modes, nlev, lev, nr0
+    integer :: k, modes, nlev, lev, nr0, mapped = 0
     real(dp) :: ratio, v_exact, current, decades
     real(dp), allocatable :: eb(:), ep(:), ed(:), ev(:)
     real(dp) :: rate(4)
@@ -224,10 +259,37 @@ program test_nonnested_landreman
         call get_command_argument(7, arg)
         read (arg, *) period
     end if
+    ! Optional argument 8: 1 solves on the rotating ellipse (mapped domain).
+    if (command_argument_count() >= 8) then
+        call get_command_argument(8, arg)
+        read (arg, *) mapped
+    end if
+    ! Optional argument 9: the stretch of the ellipse axes (default 0.1).
+    if (command_argument_count() >= 9) then
+        call get_command_argument(9, arg)
+        read (arg, *) ellipse_a
+        if (ellipse_a < 0) spin = 0
+        ellipse_a = abs(ellipse_a)
+        ellipse_b = 1 - ellipse_a
+        ellipse_a = 1 + ellipse_a
+    end if
     if (k < 2 .or. k > 4 .or. ratio < 1 .or. nlev < 2 .or. decades <= 0 .or. &
         nr0 < 2 .or. period < 1 .or. period > 2) &
         error stop 'arguments'
     allocate (eb(nlev), ep(nlev), ed(nlev), ev(nlev))
+    if (mapped == 1) then
+        do lev = 1, nlev
+            call run_mapped(nr0*2**(lev - 1), eb(lev), ep(lev), ev(lev))
+        end do
+        rate(:3) = log([eb(nlev - 1)/eb(nlev), ep(nlev - 1)/ep(nlev), &
+            ev(nlev - 1)/ev(nlev)])/log(2.0_dp)
+        print '(a,3f9.3)', 'mapped finest orders B/p/V ', rate(:3)
+        if (rate(1) < k - 0.3_dp) error stop 'mapped field order'
+        if (rate(2) < k + 0.6_dp) error stop 'mapped pressure order'
+        if (rate(3) < k - 0.5_dp) error stop 'mapped loop voltage order'
+        print '(a)', 'PASS: NN2 coupled Landreman family 1 on a mapped domain'
+        stop
+    end if
     do lev = 1, nlev
         call run(nr0*2**(lev - 1), lev == 1, eb(lev), ep(lev), ev(lev), ed(lev))
     end do
@@ -245,6 +307,106 @@ program test_nonnested_landreman
     if (rate(4) < k - 0.5_dp) error stop 'loop voltage order'
     print '(a)', 'PASS: NN2 coupled Landreman family 1'
 contains
+    subroutine run_mapped(nr, efield, epres, evolt)
+        ! The exact state on the rotating ellipse: wall data (A trace, p_b)
+        ! and the net current from the exact state on the physical domain,
+        ! errors against the exact state at the mapped quadrature points.
+        integer, intent(in) :: nr
+        real(dp), intent(out) :: efield, epres, evolt
+        type(flux_mesh_t) :: fm
+        type(nc_report_t) :: report
+        type(nn_map_t), target :: map
+        real(dp), allocatable :: rings(:), data(:)
+        real(dp) :: xq(2), wq, val(64), grad(2, 64), pos(3), p1(3, 3), p2(3, 3), jw
+        real(dp) :: xp(2), ph, bf(3), jf(3), pf, y(2), eh, ee, err, ph_num, ph_den
+        integer :: i, j, t, q, st, bk, nl
+        allocate (rings(nr))
+        rings = [(real(i, dp)/nr, i=1, nr)]
+        call flux_mesh_build(rings, 8, 1024, k, mapping, fm, st)
+        if (st /= 0) error stop 'mesh'
+        call nn_build(fm, k, modes, [rc, 0.0_dp], rw, fvac, 1.0_dp, field, st)
+        if (st /= 0) error stop 'build'
+        field%period = period
+        call nn_map_build(field%fs, 2/period, 8, ellipse, map, st, period=period)
+        if (st /= 0) error stop 'map'
+        call meridian_lagrange_nodes(field%fs, nodes)
+        lay = nc_layout(field)
+        nl = field%fs%nl0
+        current = 0
+        do t = 1, field%fs%mm%topology%n_triangles
+            do q = 1, field%fs%nq
+                call meridian_qgrad(field%fs, t, q, xq, wq, val(:nl), grad(:, :nl), st)
+                if (st /= 0) error stop 'quadrature'
+                do j = 0, nfine - 1
+                    ph = 2*acos(-1.0_dp)*j/(nfine*period)
+                    call nn_map_point(map, field%fs%sp(0)%dof(:, t), val(:nl), &
+                        grad(:, :nl), xq, ph, pos, p1, p2, jw, st)
+                    if (st /= 0) error stop 'map point'
+                    xp = [hypot(pos(1), pos(2)), pos(3)]
+                    call closed(xp, ph, bf, jf, pf)
+                    current = current + wq*jw*jf(2)/(xp(1)*nfine)
+                end do
+            end do
+        end do
+        chi_perp = 1
+        problem%chi_perp = chi_perp; problem%chi_par = ratio*chi_perp
+        problem%g_par = 1; problem%g_perp = 1/ratio
+        problem%source_3d => source3; problem%g_par_shape_3d => g_shape3
+        problem%current = current
+        problem%map => map
+        v_exact = 2*acos(-1.0_dp)*wref/problem%g_par
+        allocate (x(lay%n))
+        x = 0
+        call nn_mapped_cartesian_data(field, map, 4*modes + 4, potential_cart, data, st)
+        if (st /= 0) error stop 'mapped wall data'
+        x(lay%ia + 1:lay%ia + lay%na) = data
+        do i = 1, lay%n0
+            do bk = 1, lay%nb
+                pf = 0
+                do j = 0, nfine - 1
+                    ph = 2*acos(-1.0_dp)*j/nfine
+                    call ellipse(nodes(:, i), ph, y)
+                    call closed(y, ph, bf, jf, ph_num)
+                    pf = pf + mode_weight(bk, ph)*ph_num/nfine
+                end do
+                x(lay%ip + (bk - 1)*lay%n0 + i) = pf
+            end do
+        end do
+        call nc_continue(field, problem, x, report, st, tol=1.0e-11_dp, &
+            decades=decades)
+        print '(a,i0,a,i0,a,i0,a,i0,a,i0,a,*(es9.1))', 'mapped P', k, ' N=', modes, &
+            ' nr=', nr, ' unknowns ', lay%n, ' Newton ', report%total_steps, &
+            ' last stage ', report%history(:report%newton_steps)
+        if (st /= 0) error stop 'mapped coupled Newton'
+        if (report%divergence > 1.0e-11_dp) error stop 'mapped closed 2-form'
+        call nn_mapped_cartesian_error(field, map, 4*modes + 7, exact_b_cart, err, &
+            eh, ee, st)
+        if (st /= 0) error stop 'mapped field error'
+        efield = err/sqrt(2*ee)
+        ph_num = 0; ph_den = 0
+        do t = 1, field%fs%mm%topology%n_triangles
+            do q = 1, field%fs%nq
+                call meridian_qgrad(field%fs, t, q, xq, wq, val(:nl), grad(:, :nl), st)
+                do j = 0, 4*modes + 6
+                    ph = 2*acos(-1.0_dp)*(j + 0.5_dp)/((4*modes + 7)*period)
+                    call nn_map_point(map, field%fs%sp(0)%dof(:, t), val(:nl), &
+                        grad(:, :nl), xq, ph, pos, p1, p2, jw, st)
+                    xp = [hypot(pos(1), pos(2)), pos(3)]
+                    call closed(xp, ph, bf, jf, pf)
+                    eh = nn_fourier_value(field%p, field%fs%n0, &
+                        field%fs%sp(0)%dof(:, t), val(:nl), period*ph)
+                    ph_num = ph_num + wq*jw*(eh - pf)**2
+                    ph_den = ph_den + wq*jw*pf**2
+                end do
+            end do
+        end do
+        epres = sqrt(ph_num/ph_den)
+        evolt = abs(report%voltage - v_exact)/abs(v_exact)
+        print '(a,i0,a,i0,a,3es11.3)', 'mapped P', k, ' nr=', nr, ' B/p/V ', &
+            efield, epres, evolt
+        deallocate (x)
+    end subroutine
+
     subroutine run(nr, check_jacobian, efield, epres, evolt, ed3)
         integer, intent(in) :: nr
         logical, intent(in) :: check_jacobian

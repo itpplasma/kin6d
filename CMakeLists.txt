@@ -2679,7 +2679,7 @@ set_tests_properties(nonnested_exterior_3d_vacuum_pilot PROPERTIES TIMEOUT 600
 add_executable(test_nonnested_actions test/test_nonnested_actions.f90)
 target_link_libraries(test_nonnested_actions PRIVATE milca_nn_solovev_test)
 foreach(k 2 3)
-    foreach(case fixed floating voltage exterior period)
+    foreach(case fixed floating voltage exterior period mapped)
         add_test(NAME nonnested_actions_${case}_p${k}
             COMMAND test_nonnested_actions ${case} ${k})
         set_tests_properties(nonnested_actions_${case}_p${k} PROPERTIES
@@ -2769,6 +2769,12 @@ add_test(NAME nonnested_coupled_landreman_family1_p2
 # The same state with field period 2: block n is mode 2 n, modes 0 and 2.
 add_test(NAME nonnested_coupled_landreman_period2_p2
     COMMAND test_nonnested_landreman 2 1 3 1 1 4 2)
+# The exact state on a rotating ellipse (mapped domain): errors against the
+# untruncated state at the mapped points, so N = 4 resolves the rotation.
+add_test(NAME nonnested_coupled_landreman_mapped_p2
+    COMMAND test_nonnested_landreman 2 1 3 4 1 4 2 1)
+set_tests_properties(nonnested_coupled_landreman_mapped_p2 PROPERTIES
+    TIMEOUT 3600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(nonnested_coupled_landreman_family1_p2
     nonnested_coupled_landreman_period2_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
