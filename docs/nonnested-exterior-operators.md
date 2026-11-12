@@ -8,11 +8,14 @@ plasma boundary, or G8. The full free-boundary work remains draft until G8
 passes on a qualified dependency revision.
 
 `nn_attach_exterior` retains the existing swept-meridian interface and coil
-construction using [FortFEM](https://github.com/lazy-fortran/fortfem). It is
-compiled but not qualified: on the synthetic coil-driven vacuum pilot of #47
-it meets the Jacobian, weak-interface and seed-return gates, but its field
-differs from direct Biot-Savart by 5.1e-3 relative at every tested resolution
-(1-3 rings, 8-32 toroidal planes, 1-6 toroidal modes), against a 1e-3 gate.
+construction using [FortFEM](https://github.com/lazy-fortran/fortfem). The
+coil-driven vacuum pilot `nonnested_exterior_3d_vacuum_pilot` checks it against
+direct Biot-Savart at 24 interior points. With one ring, the relative field
+error is 5.1e-3, 2.0e-3, 4.2e-4 and 2.6e-4 for 1, 3, 6 and 10 toroidal modes
+(8, 16, 24 and 40 BEM planes): the remote test coil has 4.3e-3 of its field in
+n = 2-6. The pilot runs at 6 modes. Its Jacobian, weak-interface and
+seed-return gates hold at every resolution. G8 additionally needs a
+virtual-casing comparison and a geometrically displaced seed.
 `nn_attach_exterior_operators` factors only its frozen algebra. Its caller
 supplies a qualified positive symmetric exterior energy matrix S, the full
 physical normal-moment map T, the coil normal moments g, and the interior
