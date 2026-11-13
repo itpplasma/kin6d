@@ -567,8 +567,10 @@ is 0.15 % off the free-boundary cylinder oracle at R/a = 160, and the shift
 from gamma = 0 to 5/3 is 8.4 % off the oracle's. Fixed boundary: on a
 flux-aligned ring mesh the Solov'ev internal kink of P1e.3 is
 omega^2 = -1.30323e-3, 5e-5 off the oracle, with one unstable mode
-(gate 1e-4 met). Still open: the cylinder kink of rung R2 on this lane, 3D
-map states, and the comparison with GLISS on the same states.
+(gate 1e-4 met), and the fixed-wall screw-pinch kink of rung R2, bent to
+R0 = 640, is 0.6 % (gamma = 0) and 0.4 % (gamma = 5/3) off the cylinder
+oracle, converging as (a/R0)^2. Still open: 3D map states and the
+comparison with GLISS on the same states.
 
 ### Verification ladder
 

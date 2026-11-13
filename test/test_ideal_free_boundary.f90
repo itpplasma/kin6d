@@ -10,6 +10,11 @@ module ideal_fb_test_field
     contains
         procedure :: evaluate => screw_evaluate
     end type
+    type, extends(ideal_frozen_t), public :: pinch_field_t
+        real(dp) :: major = 80
+    contains
+        procedure :: evaluate => pinch_evaluate
+    end type
     type, extends(ideal_frozen_t), public :: solovev_field_t
     contains
         procedure :: evaluate => solovev_evaluate
@@ -32,6 +37,21 @@ contains
         chi_gradient = field%major*[x, y]
         b3 = 10*field%pitch*field%major/point(1)
         pressure = 1 - x*x - y*y
+    end subroutine
+
+    subroutine pinch_evaluate(field, point, chi, chi_gradient, b3, pressure)
+        ! The screw pinch of the fixed-wall kink oracle (test_ideal_cylinder,
+        ! docs/s0-spectrum.md, mu0 = 1) bent to the major radius: Btheta = r,
+        ! Bz = sqrt(1/4 + r^2), p = 3/2 (4 - r^2), wall at r = 2.
+        class(pinch_field_t), intent(in) :: field
+        real(dp), intent(in) :: point(2)
+        real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        real(dp) :: x, y
+        x = point(1) - field%major; y = point(2)
+        chi = field%major*(x*x + y*y)/2
+        chi_gradient = field%major*[x, y]
+        b3 = field%major*sqrt(0.25_dp + x*x + y*y)/point(1)
+        pressure = 1.5_dp*(4 - x*x - y*y)
     end subroutine
 
     subroutine solovev_evaluate(field, point, chi, chi_gradient, b3, pressure)
@@ -141,7 +161,8 @@ program test_ideal_free_boundary
         s0_solve, s0_destroy
     use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, FORTSPARSE_OK
-    use ideal_fb_test_field, only: simple_field_t, screw_field_t, solovev_field_t
+    use ideal_fb_test_field, only: simple_field_t, screw_field_t, solovev_field_t, &
+        pinch_field_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
     ! Gamma_c ellipse, PF filaments (R, Z, A) and the inner current filament.
@@ -185,6 +206,8 @@ program test_ideal_free_boundary
         call physical_kink()
     case ('fixed_kink')
         call fixed_kink()
+    case ('fixed_pinch')
+        call fixed_pinch()
     case ('hypotheses')
         call hypothesis_checks()
     case ('curvature')
@@ -622,6 +645,55 @@ contains
         end do
         if (err > 2.5e-3_dp) error stop 'fixed kink eigenvalue'
     end subroutine fixed_kink
+
+    subroutine fixed_pinch()
+        ! Fixed-wall m = 1 kink of the screw pinch (rung R2 of
+        ! docs/stability.md) on the map lane: kz = -0.4 as the toroidal
+        ! harmonic nfp = 0.4 R0 of a torus with major radius R0. The cylinder
+        ! oracle (milca_ideal_cylinder, ideal_cylinder_kink) gives omega^2 =
+        ! -0.1949752661 at gamma = 0 and -0.1486421297 at gamma = 5/3. The
+        ! bent pinch is not a toroidal equilibrium; its eigenvalues approach
+        ! the cylinder as (a/R0)^2.
+        type(ideal_fb_t) :: fb
+        type(gs_state_t) :: mesh
+        type(cylindrical_chart_t) :: chart
+        type(pinch_field_t) :: field
+        real(dp), parameter :: exact(2) = [-0.1949752661_dp, -0.1486421297_dp]
+        real(dp), parameter :: majors(2) = [320.0_dp, 640.0_dp]
+        real(dp), parameter :: limit(2) = [1.0e-2_dp, 5.0e-3_dp]
+        real(dp) :: radii(12), lambda, err(2, 2)
+        integer :: level, st, below, k, ig
+        radii = [(real(k, dp)/12, k = 1, 12)]
+        do level = 1, 2
+            kink_major = majors(level); field%major = kink_major
+            call nested_ring_mesh(pinch_surface, radii, 32, 3, mesh, st)
+            if (st /= 0) error stop 'fixed pinch mesh'
+            call ideal_fb_init_fixed(fb, mesh, chart, field, nint(0.4_dp*kink_major), &
+                1, st, mu0=1.0_dp)
+            if (st /= IDEAL_FB_OK) error stop 'fixed pinch init'
+            fb%mass_density = 1
+            do ig = 1, 2
+                fb%adiabatic_index = merge(0.0_dp, 5.0_dp/3, ig == 1)
+                call ideal_fb_fixed_mode(fb, 3, 1.3_dp*exact(ig), lambda, below, st)
+                if (st /= IDEAL_FB_OK) error stop 'fixed pinch eigenpair'
+                err(ig, level) = abs(lambda/exact(ig) - 1)
+                print '(a,f6.1,a,f5.2,a,es16.8,a,es9.2,a,i3)', 'fixed pinch R0=', &
+                    kink_major, ' gamma', fb%adiabatic_index, ' omega^2', lambda, &
+                    ' rel', err(ig, level), ' below 1.3 of the oracle:', below
+                if (below /= 0) error stop 'fixed pinch: mode below the kink'
+            end do
+        end do
+        do ig = 1, 2
+            if (err(ig, 2) > err(ig, 1)/3) error stop 'fixed pinch aspect convergence'
+            if (err(ig, 2) > limit(ig)) error stop 'fixed pinch eigenvalue'
+        end do
+    end subroutine fixed_pinch
+
+    subroutine pinch_surface(rho, theta, point)
+        real(dp), intent(in) :: rho, theta
+        real(dp), intent(out) :: point(2)
+        point = [kink_major + 2*rho*cos(2*pi*theta), 2*rho*sin(2*pi*theta)]
+    end subroutine pinch_surface
 
     subroutine solovev_surface(rho, theta, point)
         ! psi = 2.4 rho^2 on the ray at angle 2 pi theta from the axis (3, 0),

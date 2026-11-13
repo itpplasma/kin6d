@@ -778,6 +778,27 @@ the count, the decrease of the error and 2.5e-3; the last two levels (second
 argument 4; 9 GB, 5 min on 16 threads) reach the 1e-4 of stage S1. The
 values approach the oracle from above, as a Ritz value must.
 
+`ideal_fb_fixed_pinch` is the fixed-wall m = 1 kink of the screw pinch of
+rung R2 (Btheta = r, Bz = sqrt(1/4 + r^2), p = 3/2 (4 - r^2), wall at
+a = 2, kz = -0.4) as the toroidal harmonic nfp = 0.4 R0 of a torus with
+major radius R0, on 12 uniform rings with 32 poloidal cells. The cylinder
+oracle `milca_ideal_cylinder` gives omega^2 = -0.1949752661 at gamma = 0 and
+-0.1486421297 at gamma = 5/3, so compression changes this eigenvalue by
+24 %, against 0.12 % for the external kink above.
+
+| R0 | omega^2, gamma = 0 | off | omega^2, gamma = 5/3 | off |
+|---|---|---|---|---|
+| 320 | -0.199864 | 2.5e-2 | -0.151105 | 1.7e-2 |
+| 640 | -0.196139 | 6.0e-3 | -0.149188 | 3.7e-3 |
+
+The bent pinch is not a toroidal equilibrium, and its distance from the
+cylinder falls as (a/R0)^2 (by 4.2 and 4.5 per doubling). The shift from
+gamma = 0 to 5/3 at R0 = 640 is 0.046951 against 0.046333 for the cylinder
+(1.3 % off), which checks the size of the adiabatic term and not only its
+presence. The test gates the factor 3 per doubling, 1 % at gamma = 0 and
+0.5 % at gamma = 5/3 for R0 = 640, and that no eigenvalue lies below 1.3
+times the oracle.
+
 Limits. Sparse matrices and the factor interface use default integers, so a
 mode matrix is limited to 2^31 - 1 stored entries (about 10^7 unknowns
 here); FortFEM stops with a message at that point. The slip is linear per
