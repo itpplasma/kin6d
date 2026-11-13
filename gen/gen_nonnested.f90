@@ -1,10 +1,10 @@
 program gen_nonnested
-    use fortsym_expr, only: expr_t, sym, log, sqrt, pi_expr, operator(+), &
+    use fortsym_expr, only: expr_t, sym, num, sqrt, pi_expr, operator(+), &
         operator(-), operator(*), operator(/), operator(**)
     use milca_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(leaf_writer_t) :: w
-    type(expr_t) :: r1, r2, len, r, br, bz, bp, b0, psi, pp, n
+    type(expr_t) :: r, br, bz, bp, b0, psi, pp, n
     type(expr_t) :: velocity(2), gauge(2)
     type(expr_t) :: bphi, cpar, cperp, q, d, conductivity(6)
     type(expr_t) :: gpr, gpp, gpz, gfr, gfp, gfz, ephi, gpar, gperp
@@ -12,11 +12,14 @@ program gen_nonnested
     type(expr_t) :: krr, krz, kzz, f0, fr, fz, data(6), lower, width, height
     type(expr_t) :: rmin, chil, par2, force2, volume, length_scale, pressure_scale
     type(expr_t) :: drive, lambda_target, jr, jp, jz
+    type(expr_t) :: dm(3, 3), cof(3, 3), jac, metric(13), gm(2, 2), up(2), x1, y1
+    type(expr_t) :: df(3, 3)
+    character(3) :: dnames(9), dfnames(9)
+    integer :: i, j
     gpr = sym('gpr'); gpp = sym('gpp'); gpz = sym('gpz')
     gfr = sym('gfr'); gfp = sym('gfp'); gfz = sym('gfz')
     ephi = sym('ephi'); gpar = sym('gpar')
     gperp = sym('gperp')
-    r1 = sym('r1'); r2 = sym('r2'); len = sym('len')
     r = sym('r'); br = sym('br')
     bz = sym('bz'); bp = sym('bp'); b0 = sym('b0')
     psi = sym('psi'); pp = sym('pp')
@@ -30,10 +33,6 @@ program gen_nonnested
     call w%line('module milca_nonnested_leaves')
     call w%line('implicit none')
     call w%line('contains')
-    ! Integral of 1/distance along a finite straight segment; coefficient
-    ! multiplies mu0 I/(4 pi) times the oriented unit segment vector.
-    call w%emit('segment_potential', ['r1 ', 'r2 ', 'len'], ['value'], &
-        [log((r1 + r2 + len)/(r1 + r2 - len))], ad=.true.)
     call w%emit('axisymmetric_pressure', ['psi', 'pp '], ['p'], [pp*psi], &
         ad=.true.)
     velocity = [r*br/(b0 + bp), r*bz/(b0 + bp)]
@@ -129,6 +128,79 @@ program gen_nonnested
     call w%emit('transport_error_friedrichs', ['lower ', 'width ', 'height'], &
         ['cf'], [1/(pi_expr()*sqrt(lower*(1/width**2 + 1/height**2)))], &
         ad=.true.)
+    ! NN1 mapped Hodge tensors from the Piola maps of D, whose columns are
+    ! the images of the orthonormal reference (R, phi, Z) frame vectors:
+    ! P1 = D^-T = C/jac with cofactor columns c1 = d2 x d3, c2 = d3 x d1,
+    ! c3 = d1 x d2, P2 = D/jac, jac = det D = d1.c1, so
+    ! K1 = jac P1^T P1 = C^T C/jac and K2 = jac P2^T P2 = D^T D/jac
+    ! (upper triangles 11, 12, 13, 22, 23, 33).
+    do j = 1, 3
+        do i = 1, 3
+            dnames(3*(i - 1) + j) = 'd'//achar(48 + i)//achar(48 + j)
+            dm(i, j) = sym(dnames(3*(i - 1) + j))
+        end do
+    end do
+    cof(:, 1) = cross(dm(:, 2), dm(:, 3))
+    cof(:, 2) = cross(dm(:, 3), dm(:, 1))
+    cof(:, 3) = cross(dm(:, 1), dm(:, 2))
+    jac = dot(dm(:, 1), cof(:, 1))
+    metric(1) = jac
+    metric(2:7) = upper(cof)
+    metric(8:13) = upper(dm)
+    do i = 2, 13
+        metric(i) = metric(i)/jac
+    end do
+    call w%emit('piola_metric', dnames, ['jac', 'a11', 'a12', 'a13', 'a22', &
+        'a23', 'a33', 'b11', 'b12', 'b13', 'b22', 'b23', 'b33'], metric, &
+        ad=.true.)
+    ! NN1 phi-preserving displacement map y = x + u(x, phi) of the meridian
+    ! plane, in orthonormal cylindrical frames: rows physical (R, phi, Z),
+    ! columns reference (R, phi, Z). With the coordinate Jacobian G (gij =
+    ! d y_i/d x_j, identity included) and up = du/dphi,
+    ! df = diag(1, y_R, 1) dy/dq diag(1, 1/x_R, 1).
+    gm(1, 1) = sym('g11'); gm(1, 2) = sym('g12')
+    gm(2, 1) = sym('g21'); gm(2, 2) = sym('g22')
+    up(1) = sym('up1'); up(2) = sym('up2')
+    x1 = sym('x1'); y1 = sym('y1')
+    df(1, :) = [gm(1, 1), up(1)/x1, gm(1, 2)]
+    df(2, :) = [num(0), y1/x1, num(0)]
+    df(3, :) = [gm(2, 1), up(2)/x1, gm(2, 2)]
+    do j = 1, 3
+        do i = 1, 3
+            dfnames(3*(i - 1) + j) = 'f'//achar(48 + i)//achar(48 + j)
+        end do
+    end do
+    call w%emit('meridian_map_jacobian', ['g11', 'g12', 'g21', 'g22', 'up1', &
+        'up2', 'x1 ', 'y1 '], [dfnames, 'jac'], &
+        [df(1, :), df(2, :), df(3, :), det(df)], ad=.true.)
     call w%line('end module milca_nonnested_leaves')
     call w%close()
+contains
+    function cross(a, b) result(c)
+        type(expr_t), intent(in) :: a(3), b(3)
+        type(expr_t) :: c(3)
+        c(1) = a(2)*b(3) - a(3)*b(2)
+        c(2) = a(3)*b(1) - a(1)*b(3)
+        c(3) = a(1)*b(2) - a(2)*b(1)
+    end function
+
+    function dot(a, b) result(c)
+        type(expr_t), intent(in) :: a(3), b(3)
+        type(expr_t) :: c
+        c = a(1)*b(1) + a(2)*b(2) + a(3)*b(3)
+    end function
+
+    function upper(a) result(g)
+        ! Upper triangle of the Gram matrix A^T A of the columns of a.
+        type(expr_t), intent(in) :: a(3, 3)
+        type(expr_t) :: g(6)
+        g = [dot(a(:, 1), a(:, 1)), dot(a(:, 1), a(:, 2)), dot(a(:, 1), a(:, 3)), &
+            dot(a(:, 2), a(:, 2)), dot(a(:, 2), a(:, 3)), dot(a(:, 3), a(:, 3))]
+    end function
+
+    function det(a) result(d)
+        type(expr_t), intent(in) :: a(3, 3)
+        type(expr_t) :: d
+        d = dot(a(:, 1), cross(a(:, 2), a(:, 3)))
+    end function
 end program gen_nonnested

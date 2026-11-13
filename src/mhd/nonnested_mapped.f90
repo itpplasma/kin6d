@@ -13,6 +13,7 @@ module milca_nonnested_mapped
         meridian_fourier_curl_curl, meridian_fourier_curl, meridian_fourier_gradient
     use fortfem_tetra_piola_maps, only: map_tetra_nedelec_covariant
     use fortnum_linalg, only: det3
+    use milca_nonnested_leaves, only: piola_metric, meridian_map_jacobian
     use milca_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_from_triplet, &
         fortsparse_status_t, status_ok
@@ -129,11 +130,35 @@ contains
         real(dp), intent(in) :: val(:), grad(:, :), x(2), phi
         real(dp), intent(out) :: position(3), p1(3, 3), p2(3, 3), jac
         integer, intent(out) :: status
+        real(dp) :: d(3, 3), identity(3, 3)
+        integer :: i
+        p1 = 0; p2 = 0; jac = 0
+        call map_frame(map, dofs, val, grad, x, phi, position, d, status)
+        if (status /= 0) return
+        status = 1
+        jac = det3(d)
+        if (.not. ieee_is_finite(jac)) return
+        identity = 0
+        do i = 1, 3
+            identity(i, i) = 1
+        end do
+        call map_tetra_nedelec_covariant(d, identity, identity, p1, p2, status)
+        if (status /= 0) return
+        if (.not. all(ieee_is_finite(p1)) .or. .not. all(ieee_is_finite(p2))) status = 1
+    end subroutine
+
+    pure subroutine map_frame(map, dofs, val, grad, x, phi, position, d, status)
+        ! Physical Cartesian point and D, the images of the orthonormal
+        ! reference (R, phi, Z) frame vectors, for nn_map_point and the metric.
+        type(nn_map_t), intent(in) :: map
+        integer, intent(in) :: dofs(:)
+        real(dp), intent(in) :: val(:), grad(:, :), x(2), phi
+        real(dp), intent(out) :: position(3), d(3, 3)
+        integer, intent(out) :: status
         type(cylindrical_chart_t) :: cylinder
         real(dp) :: j(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
-        real(dp) :: d(3, 3), identity(3, 3), frame(3, 3), y(2), df(3, 3)
-        integer :: i
-        position = 0; p1 = 0; p2 = 0; jac = 0; status = 1
+        real(dp) :: frame(3, 3), y(2), df(3, 3), jac
+        position = 0; d = 0; status = 1
         if (.not. all(ieee_is_finite(x)) .or. .not. ieee_is_finite(phi)) return
         if (x(1) <= 0) return
         if (allocated(map%chart)) then
@@ -156,15 +181,7 @@ contains
         end if
         if (.not. all(ieee_is_finite(position))) return
         if (.not. all(ieee_is_finite(d))) return
-        jac = det3(d)
-        if (.not. ieee_is_finite(jac)) return
-        identity = 0
-        do i = 1, 3
-            identity(i, i) = 1
-        end do
-        call map_tetra_nedelec_covariant(d, identity, identity, p1, p2, status)
-        if (status /= 0) return
-        if (.not. all(ieee_is_finite(p1)) .or. .not. all(ieee_is_finite(p2))) status = 1
+        status = 0
     end subroutine
 
     pure subroutine nn_map_jet(map, dofs, val, grad, x, phi, y, df, jac)
@@ -198,11 +215,9 @@ contains
             up = up + val(i)*matmul(map%d(dofs(i), :, :), dtr)
         end do
         y = x + u
-        df = 0
-        df(1, :) = [g(1, 1), up(1)/x(1), g(1, 2)]
-        df(2, 2) = y(1)/x(1)
-        df(3, :) = [g(2, 1), up(2)/x(1), g(2, 2)]
-        jac = df(2, 2)*(g(1, 1)*g(2, 2) - g(1, 2)*g(2, 1))
+        call meridian_map_jacobian(g(1, 1), g(1, 2), g(2, 1), g(2, 2), up(1), &
+            up(2), x(1), y(1), df(1, 1), df(1, 2), df(1, 3), df(2, 1), &
+            df(2, 2), df(2, 3), df(3, 1), df(3, 2), df(3, 3), jac)
     end subroutine
 
     subroutine nn_harmonic_forms(field, metric, nphi, g, energy, volume, status)
@@ -733,22 +748,29 @@ contains
         status = 0
     contains
         logical function pulled(q, angle, kk) result(ok)
+            ! Orientation gate as in the Piola maps of nn_map_point.
             integer, intent(in) :: q
             real(dp), intent(in) :: angle
             real(dp), intent(out) :: kk(3, 3)
-            real(dp) :: position(3), p1(3, 3), p2(3, 3), jac
+            real(dp) :: position(3), d(3, 3), jac, a(6), b(6), m(6)
             integer :: st
-            call nn_map_point(self%map, self%fs%sp(0)%dof(:, t), val(:, q), &
-                              dval(:, :, q), xq(:, q), angle, &
-                              position, p1, p2, jac, st)
-            ok = st == 0
+            call map_frame(self%map, self%fs%sp(0)%dof(:, t), val(:, q), &
+                           dval(:, :, q), xq(:, q), angle, position, d, st)
             kk = 0
-            if (.not. ok) return
-            if (self%space == 1) then
-                kk = jac*matmul(transpose(p1), p1)
-            else
-                kk = jac*matmul(transpose(p2), p2)
-            end if
+            ok = .false.
+            if (st /= 0) return
+            jac = det3(d)
+            if (.not. (jac > 64*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(d)))**3)) &
+                return
+            call piola_metric(d(1, 1), d(1, 2), d(1, 3), d(2, 1), d(2, 2), &
+                d(2, 3), d(3, 1), d(3, 2), d(3, 3), jac, a(1), a(2), a(3), &
+                a(4), a(5), a(6), b(1), b(2), b(3), b(4), b(5), b(6))
+            m = b
+            if (self%space == 1) m = a
+            if (.not. all(ieee_is_finite(m))) return
+            kk = reshape([m(1), m(2), m(3), m(2), m(4), m(5), m(3), m(5), m(6)], &
+                [3, 3])
+            ok = .true.
         end function
     end subroutine
 

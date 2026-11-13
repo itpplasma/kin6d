@@ -17,6 +17,7 @@ module milca_coils_3d
     !! The DFT aliases n -> n + k Nphi; the error is exp(-Nphi d / R) with d
     !! the distance to the nearest coil.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use milca_island_leaves, only: segment_geometry, segment_field, segment_potential
     implicit none
     private
 
@@ -40,32 +41,22 @@ module milca_coils_3d
 
 contains
 
-    pure function cross(u, v) result(w)
-        real(dp), intent(in) :: u(3), v(3)
-        real(dp) :: w(3)
-        w = [u(2)*v(3) - u(3)*v(2), u(3)*v(1) - u(1)*v(3), u(1)*v(2) - u(2)*v(1)]
-    end function
-
     pure function segment_b(a, l, p) result(b)
         !! Field in T per ampere of the straight segment a -> a + l at p:
-        !! B = mu0/(4 pi) (lh x r1)/|lh x r1|^2 (lh.r1/|r1| - lh.r2/|r2|).
+        !! B = mu0/(4 pi) (l x r1)/|l x r1|^2 (l.r1/|r1| - l.r2/|r2|).
         real(dp), intent(in) :: a(3), l(3), p(3)
         real(dp) :: b(3)
-        real(dp) :: r1(3), r2(3), lh(3), c(3), c2, n1, n2, len
+        real(dp) :: r1(3), c(3), c2, len2, n1, n2, t1, t2
 
         r1 = p - a
-        r2 = r1 - l
-        len = norm2(l)
-        lh = l/len
-        c = cross(lh, r1)
-        c2 = dot_product(c, c)
-        n1 = norm2(r1)
-        n2 = norm2(r2)
-        if (c2 <= 1.0e-24_dp*len*len .or. n1 <= 0.0_dp .or. n2 <= 0.0_dp) then
+        call segment_geometry(r1(1), r1(2), r1(3), l(1), l(2), l(3), &
+            c(1), c(2), c(3), c2, len2, n1, n2, t1, t2)
+        if (c2 <= 1.0e-24_dp*len2*len2 .or. n1 <= 0.0_dp .or. n2 <= 0.0_dp) then
             b = 0     ! on the supporting line: field of the segment is zero or singular
             return
         end if
-        b = coil_mu0/(4*pi)*c/c2*(dot_product(lh, r1)/n1 - dot_product(lh, r2)/n2)
+        call segment_field(c(1), c(2), c(3), c2, n1, n2, t1, t2, b(1), b(2), b(3))
+        b = coil_mu0/(4*pi)*b
     end function
 
     pure function segment_a(a, l, p) result(av)
@@ -75,18 +66,18 @@ contains
         !! is the sum of segment_b.
         real(dp), intent(in) :: a(3), l(3), p(3)
         real(dp) :: av(3)
-        real(dp) :: r1(3), n1, n2, len, s
+        real(dp) :: r1(3), n1, n2, len, f
 
         r1 = p - a
         len = norm2(l)
         n1 = norm2(r1)
         n2 = norm2(r1 - l)
-        s = n1 + n2
-        if (s - len <= 1.0e-12_dp*len) then
+        if (n1 + n2 - len <= 1.0e-12_dp*len) then
             av = 0 ! on the segment: singular
             return
         end if
-        av = coil_mu0/(4*pi)*l/len*log((s + len)/(s - len))
+        call segment_potential(n1, n2, len, f)
+        av = coil_mu0/(4*pi)*l/len*f
     end function
 
     subroutine coil_set_from_polylines(set, npts, pts, names, status)

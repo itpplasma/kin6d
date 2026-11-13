@@ -5,12 +5,17 @@ program test_coils_3d
     !! Fourier synthesis against the direct 3D field and thread invariance.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_coils_3d
+    use, intrinsic :: ieee_exceptions, only: ieee_set_flag, ieee_get_flag, &
+        ieee_invalid, ieee_divide_by_zero
 !$  use omp_lib
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     integer :: failures = 0
 
     call test_segment_quadrature()
+    call test_segment_reference()
+    call test_square_centre()
+    call test_segment_domain()
     call test_ring_on_axis()
     call test_div_curl()
     call test_segment_potential()
@@ -78,6 +83,69 @@ contains
             scale = max(scale, norm2(bq))
         end do
        call check('segment vs 64-pt Gauss quadrature (relative)', err/scale, 1.0e-13_dp)
+    end subroutine
+
+    subroutine test_segment_reference()
+        ! Generated segment field against the unit-vector form
+        ! B = mu0/(4 pi) (lh x r1)/|lh x r1|^2 (lh.r1/|r1| - lh.r2/|r2|),
+        ! from near the supporting line to far away, and zero on the line.
+        ! Both forms lose eps |r1|/d to cancellation in lh x r1 at distance
+        ! d from the line and eps kappa, kappa = (|t1| + |t2|)/|t1 - t2|, in
+        ! t1 - t2 = lh.r1/|r1| - lh.r2/|r2| far away; the error is measured
+        ! in units of their sum.
+        real(dp) :: a(3), l(3), p(3), b(3), r1(3), r2(3), lh(3), c(3), bref(3)
+        real(dp) :: err, t1, t2
+        integer :: trial
+        err = 0
+        do trial = 1, 200
+            a = [sin(1.1_dp*trial), cos(2.3_dp*trial), sin(0.7_dp*trial)]
+            l = [0.3_dp + 0.2_dp*cos(trial*1.7_dp), 0.8_dp*sin(trial*0.3_dp), &
+                -0.5_dp + 0.1_dp*cos(trial*0.9_dp)]
+            p = a + 0.5_dp*l + 10.0_dp**(-4 + 6*mod(trial, 7)/6.0_dp) &
+                *[cos(3.1_dp*trial), sin(3.1_dp*trial), cos(0.4_dp*trial)]
+            r1 = p - a; r2 = r1 - l
+            lh = l/norm2(l)
+            c = cross3(lh, r1)
+            t1 = dot_product(lh, r1)/norm2(r1); t2 = dot_product(lh, r2)/norm2(r2)
+            bref = coil_mu0/(4*pi)*c/dot_product(c, c)*(t1 - t2)
+            b = segment_b(a, l, p)
+            err = max(err, norm2(b - bref)/norm2(bref)/(epsilon(1.0_dp)* &
+                (norm2(r1)/norm2(c) + (abs(t1) + abs(t2))/abs(t1 - t2))))
+        end do
+        call check('segment vs unit-vector form, 200 points (conditioning units)', &
+                   err, 16.0_dp)
+        b = segment_b(a, l, a + 2.5_dp*l)
+        call check('segment field on the supporting line', norm2(b), 0.0_dp)
+    end subroutine
+
+    subroutine test_segment_domain()
+        real(dp) :: b(3)
+        logical :: raised(2)
+        integer :: point
+        do point = 0, 2
+            call ieee_set_flag([ieee_invalid, ieee_divide_by_zero], .false.)
+            b = segment_b([0.0_dp, 0.0_dp, 0.0_dp], [1.0_dp, 0.0_dp, 0.0_dp], &
+                [real(point, dp), 0.0_dp, 0.0_dp])
+            call ieee_get_flag([ieee_invalid, ieee_divide_by_zero], raised)
+            if (any(raised)) error stop 'segment domain guard evaluated singular field'
+            call check('segment domain guard', norm2(b), 0.0_dp)
+        end do
+    end subroutine
+
+    subroutine test_square_centre()
+        ! Square loop of side s at its centre: B = 2 sqrt(2) mu0 I/(pi s).
+        type(coil_set_t) :: set
+        real(dp), parameter :: s = 0.7_dp
+        real(dp) :: pts(3, 4), b(3), exact
+        integer :: st
+        pts = reshape([s/2, -s/2, 0.3_dp, s/2, s/2, 0.3_dp, -s/2, s/2, 0.3_dp, &
+            -s/2, -s/2, 0.3_dp], [3, 4])
+        call coil_set_from_polylines(set, [4], pts, status=st)
+        if (st /= 0) error stop 'square'
+        call coil_set_b_cart(set, [1.0_dp], [0.0_dp, 0.0_dp, 0.3_dp], b)
+        exact = 2*sqrt(2.0_dp)*coil_mu0/(pi*s)
+        call check('square loop centre field (relative)', &
+                   norm2(b - [0.0_dp, 0.0_dp, exact])/exact, 1.0e-14_dp)
     end subroutine
 
     pure function cross3(u, v) result(w)
