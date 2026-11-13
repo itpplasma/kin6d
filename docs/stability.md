@@ -239,7 +239,7 @@ finite-amplitude theorem; a linear eigenvalue interval does not prove it.
 
 ## Global 3D ideal-MHD stability (P1e)
 
-Status (2026-11-12): stages P1e.1 and P1e.2 implemented (see
+Status (2026-11-12): stages P1e.1 and P1e.2 implemented, P1e.3 in progress (see
 [implementation status](#p1e-implementation-status)); later stages planned.
 This section is the plan
 for roadmap item P1e: a global ideal-MHD stability capability for 3D
@@ -464,6 +464,49 @@ Compression (gamma = 5/3) raises the kink eigenvalue to -0.149, as it must.
 The perpendicular kinetic norm is not offered yet: it leaves the parallel
 displacement without inertia, which needs the field-aligned components of
 P1e.4. Newcomb and Suydam (O7) belong to P1e.7.
+
+**P1e.3 (in progress): general flux-coordinate space.** `milca_ideal_flux`
+takes any nested chart x(rho, theta, zeta) with its first and second
+derivatives, the toroidal flux per radian psi(rho), iota(rho), the jets of a
+stream function lambda (B = grad psi x grad(theta + lambda) + iota grad zeta x
+grad psi, so that VMEC, Boozer and PEST coordinates all fit) and p(rho). The
+unknowns are the contravariant densities D^u = sqrt(g) xi^u of one mode
+family on the hybrid radial pair; `gen/gen_ideal_flux.f90` emits B, grad B,
+grad p and the linear map from density jets to (xi, grad xi), and the
+coefficient matrix C of the Eulerian form, so that the stiffness integrand is
+J^H T^T C T J. Harmonics couple through the angular Fourier coefficients of
+T^T C T on a uniform angle grid. Checks (`ideal_flux_*`): on a
+non-axisymmetric chart with lambda, B agrees with an independent dual-basis
+formula to 1e-13, grad B and grad xi with central differences to 1e-7, and
+div B = 0 and sqrt(g) div xi = d_u D^u hold to rounding (the general symbolic
+proof of these two identities did not finish in 9 minutes and is replaced by
+this check). On a straight-cylinder chart the m = 1 kink agrees with the
+independent oracle to 1.3e-10, also with m = 0, 1, 2 coupled, and the uniform
+cylinder with m = 1, 2, 3 gives the union of the single-harmonic spectra to
+2e-11.
+
+Toroidal input: `milca_ideal_flux_tokamak` turns a poloidal-flux grid
+(G-EQDSK) into a chart, with rho = sqrt(psin/psin_wall), the PEST or Hamada
+straight-field-line angle of `milca_vacuum_surfaces`, or the geometric angle
+with lambda = theta_PEST - theta. R, Z, the toroidal shift and lambda are
+Fourier series whose coefficients, divided by rho^k with the parity of m
+(k <= 2), are fitted by quintic B-splines in s = rho^2. On an exact Solov'ev
+equilibrium (`ideal_flux_tokamak_*`, elongation 1.5, q from 0.89 to 1.15,
+fixed wall at psin = 0.8) all three charts reproduce the analytic field to
+4e-7 and force balance to 3e-3 (straight charts 5e-4); the chart jets agree
+with central differences to 2e-9. The fixed-boundary m = 1 internal kink
+converges, with m = -10..28 and 32 cells, to omega^2 = -1.30328e-3 in PEST
+and -1.30331e-3 in Hamada coordinates (2.6e-5 apart; the geometric chart
+gives -1.294e-3 with the same harmonics, its basis converging more slowly);
+the gate uses m = -8..18 and 16 cells, where the two straight charts agree to
+9e-4. Force balance converges as h^3.5 in the spacing of the flux grid,
+which therefore sets the equilibrium error of EQDSK input. Still open in
+P1e.3: published PEST cases and DCON on the same input (rung R3), Boozer-file
+input, and the sparse complex LDL^H of FortSparse, which takes 95 s for an
+11k-row banded matrix with 4.7M nonzeros and limits the harmonic range of
+the tests. Its real symmetric embedding [[Re, -Im], [Im, Re]] factors in
+20 s with the real front-based LDL^T and twice the inertia; dense-front
+complex factorization in FortSparse is part of P1e.10.
 
 ### Verification ladder
 

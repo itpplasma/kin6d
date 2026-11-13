@@ -14,11 +14,22 @@ omega^2 -> -3.
 
 Outcome: in the periodic cylinder the hybrid space reproduces the exact
 uniform spectrum to 1e-7 without spectral pollution, and the fixed-wall m = 1
-kink of the independent oracle to 1.3e-10.
+kink of the independent oracle to 1.3e-10. On a Solov'ev torus the PEST and
+Hamada charts give the same internal-kink eigenvalue to 2.6e-5.
 
 ## Causes
 
 ### Implementation and toolchain defects
+
+- **Axis scaling of Fourier coefficients.** Dividing harmonic m of R and Z
+  by rho^m before the radial fit amplified rounding noise by up to rho^-32
+  and destroyed the chart beyond m = 10; in the geometric angle about an
+  elliptic axis the odd harmonics vanish only like rho, so the chart left
+  its flux surfaces by 10 %. The divisor rho^k with k = min(m, 2 - mod(m, 2))
+  keeps the parity and is valid in every regular angle (`ideal_flux_tokamak_field`).
+- **Banded numbering.** Numbering the unknowns harmonic by harmonic gave a
+  bandwidth of the matrix size, and the factorization of a 1712-row problem
+  did not finish in minutes; radial-major numbering makes it banded.
 
 - **Spectral pollution from physical components.** With the physical
   components (xi_r, xi_theta, xi_z) as unknowns, the uniform cylinder
@@ -35,6 +46,21 @@ kink of the independent oracle to 1.3e-10.
   -0.195 in the hybrid space. The Eulerian form needs only div xi and
   tangential derivatives and is the one assembled there; the Lagrangian form
   remains an independent check for H1 fields (`ideal_dw_pinch_equivalence_and_derivatives`).
+
+### Resolution of MILCA
+
+- **One-sided harmonic window.** With iota < 0 the resonant harmonics of
+  n = 1 are positive m. Windows m = -2..16 (PEST) and m = -8..2 (Hamada)
+  showed a stable spectrum, m = -2..8 (Hamada) an internal kink, and only the
+  wide window m = -10..28 brought both charts to the same unstable
+  omega^2 = -1.3033e-3. Truncation is Ritz-monotone: a missing sideband can
+  turn an unstable equilibrium stable. Found by comparing two charts; the
+  invariance gate `ideal_flux_tokamak_invariance` uses a window with
+  sidebands on both sides.
+- **Flux-grid spacing.** The current of an EQDSK-type input comes from the
+  second derivatives of the interpolated flux. On a 161 x 201 grid the force
+  balance of the Solov'ev chart was off by 6 %; it converges as h^3.5 and is
+  2e-4 on 641 x 801.
 
 ### Wrong limit or reference in a check
 
