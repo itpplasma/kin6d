@@ -160,7 +160,7 @@ program test_nonnested_transport
     !   manufactured: 3D helical torus field, weak manufactured load, chi ratio
     !     1 and 1e4, P2/P3 mesh ladders; L2 error and observed order.
     !   sovinec k: Sovinec et al. (2004) perpendicular-pollution test on the
-    !     periodic-cylinder chart, chi_par/chi_perp = 1, 1e3, 1e6, 1e9, P_k
+    !     periodic-cylinder chart, chi_par/chi_perp = 1, 1e3, ..., 1e12, P_k
     !     mesh ladder; error |T(0,0) - 1| of the exact T = psi.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_transport_fixture
@@ -301,7 +301,7 @@ contains
     subroutine run_sovinec(order, ok)
         integer, intent(in) :: order
         logical, intent(out) :: ok
-        integer, parameter :: nlev = 5, nratio = 4
+        integer, parameter :: nlev = 5, nratio = 5
         type(meridian_feec_t) :: fs
         type(sovinec_field_t), target :: field
         type(nt_conductivity_t) :: cond
@@ -331,10 +331,10 @@ contains
                 end if
                 err(lev, ir) = abs(p(centre(1)) - 1)
                 worst = max(worst, report%residual)
-                print '(a, i0, a, es8.1, a, i3, a, i7, a, es10.3, a, es9.2)', &
+                print '(a, i0, a, es8.1, a, i3, a, i7, a, es10.3, a, es9.2, a, i0)', &
                     'sovinec P', order, ' ratio', ratio, ' nr', 4*2**(lev - 1), &
                     ' ndof', report%ndof, ' |T(0,0)-1|', err(lev, ir), ' res', &
-                    report%residual
+                    report%residual, ' refinements ', report%refinements
             end do
             deallocate (bc)
         end do
@@ -351,5 +351,10 @@ contains
         ok = ok .and. minval(err(:, 1)) < 1.0e-7_dp .and. worst <= 1.0e-13_dp
         if (order == 2) ok = ok .and. minval(err(:, 3)) < 1.0e-1_dp
         if (order >= 3) ok = ok .and. minval(err(:, 4)) < 1.0e-2_dp
+        ! Rounding of the assembled parallel term once left a floor near
+        ! 2e-5 at 1e9 (growing with nr and the ratio); with the factored
+        ! refinement residual P4 keeps converging to 1e12.
+        if (order >= 4) ok = ok .and. err(nlev, 4) < 1.0e-6_dp .and. &
+            err(nlev, 4) < err(nlev - 1, 4)/8 .and. minval(err(:, 5)) < 1.0e-3_dp
     end subroutine
 end program

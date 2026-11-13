@@ -17,11 +17,13 @@ module milca_nonnested_transport
     use fortfem_meridian_feec_n, only: meridian_feec_t
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t, &
         meridian_fourier_source_t, meridian_fourier_diffusion, &
-        meridian_fourier_load
+        meridian_fourier_load, meridian_fourier_anisotropic_t, &
+        meridian_fourier_anisotropic_apply
     use fortsparse, only: csc_t, csc_matvec
     use milca_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_VALUES
-    use milca_equilibrium_nonnested, only: nn_linear_solve
+    use milca_equilibrium_nonnested, only: nn_factor_t, nn_factor, &
+        nn_factor_solve_real, nn_factor_free
     use milca_nonnested_leaves, only: anisotropic_conductivity
     use milca_nonnested_error, only: nn_error_t, nt_axisymmetric_error
     implicit none
@@ -30,11 +32,12 @@ module milca_nonnested_transport
 
     ! Conductivity of a given field. The field must outlive the solve and be
     ! safe for concurrent sampling (element loops are OpenMP parallel).
-    type, extends(meridian_fourier_tensor_t) :: nt_conductivity_t
+    type, extends(meridian_fourier_anisotropic_t) :: nt_conductivity_t
         class(equilibrium_field_t), pointer :: field => null()
         real(dp) :: chi_par = 1, chi_perp = 1
     contains
         procedure :: tensor => nt_tensor
+        procedure :: direction => nt_direction
     end type
 
     type :: nt_report_t
@@ -73,6 +76,29 @@ contains
         status = 0
     end subroutine
 
+    subroutine nt_direction(self, t, x, b, k_par, k_perp, status)
+        class(nt_conductivity_t), intent(in) :: self
+        integer, intent(in) :: t
+        real(dp), intent(in) :: x(:, :)
+        real(dp), intent(out) :: b(:, :), k_par(:), k_perp(:)
+        integer, intent(out) :: status
+        real(dp) :: values(EQ_VALUES, size(x, 2)), bb
+        integer :: statuses(size(x, 2)), p
+        status = 1
+        b = 0; k_par = self%chi_par; k_perp = self%chi_perp
+        if (t < 1 .or. .not. associated(self%field)) return
+        call self%field%sample(x, values, statuses)
+        if (any(statuses /= 0)) return
+        do p = 1, size(x, 2)
+            b(:, p) = [values(EQ_BR, p), values(EQ_BPHI, p), values(EQ_BZ, p)]
+            if (.not. all(ieee_is_finite(b(:, p)))) return
+            bb = norm2(b(:, p))
+            if (bb <= sqrt(tiny(1.0_dp))) return
+            b(:, p) = b(:, p)/bb
+        end do
+        status = 0
+    end subroutine
+
     subroutine nt_solve(fs, modes, nphi, conductivity, source, boundary, p, &
                         report, status, estimate_error)
         ! Dirichlet data are the boundary entries of boundary(:) in the
@@ -91,8 +117,11 @@ contains
         logical, intent(in), optional :: estimate_error
         type(csc_t) :: a, aabs
         real(dp), allocatable :: rhs(:), r(:)
-        complex(dp), allocatable :: delta(:)
+        real(dp), allocatable :: dr(:), ap(:)
         logical, allocatable :: mask(:)
+        type(nn_factor_t) :: factor
+        integer, parameter :: max_refine = 30
+        real(dp) :: step, last
         integer :: st, nb, b, ndof, it
         status = 1
         if (conductivity%chi_perp <= 0) return
@@ -107,33 +136,53 @@ contains
         if (st /= 0) return
         call meridian_fourier_load(fs, modes, nphi, source, rhs, st)
         if (st /= 0) return
-        allocate (mask(ndof), delta(ndof))
+        allocate (mask(ndof), dr(ndof))
         do b = 0, nb - 1
             mask(b*fs%n0 + 1:(b + 1)*fs%n0) = fs%sp(0)%bnd
         end do
         p = merge(boundary, 0.0_dp, mask)
         r = rhs - csc_matvec(a, p)
         where (mask) r = 0
-        call nn_linear_solve(a, mask, cmplx(r, 0.0_dp, dp), delta, st)
+        call nn_factor(a, mask, factor, st)
         if (st /= 0) return
-        p = p + real(delta, dp)
-        ! Large chi_par/chi_perp makes the system ill conditioned. The
-        ! reported residual is the normwise backward error
-        ! |r| / (| |A| |p| | + |rhs|), whose rounding floor does not grow
-        ! with the ratio; up to two refinement steps restore it.
+        call nn_factor_solve_real(factor, r, dr, st)
+        if (st /= 0) then
+            call nn_factor_free(factor); return
+        end if
+        p = p + dr
+        ! At large chi_par/chi_perp, rounding of the assembled entries (size
+        ! eps chi_par, unstructured) moves p by about the ratio times eps
+        ! times the perpendicular condition, whatever the solver. The
+        ! refinement residual is therefore the factored matrix-free form,
+        ! whose rounding stays in the range of the parallel operator; the
+        ! assembled factor only preconditions.
         aabs = a
         aabs%val = abs(aabs%val)
-        do it = 0, 2
-            r = rhs - csc_matvec(a, p)
-            where (mask) r = 0
-            report%residual = norm2(r)/max(tiny(1.0_dp), &
-                norm2(csc_matvec(aabs, abs(p))) + norm2(rhs))
+        last = huge(1.0_dp)
+        do it = 1, max_refine
+            call meridian_fourier_anisotropic_apply(fs, modes, nphi, &
+                conductivity, p, ap, st)
+            if (st == 0) then
+                r = rhs - ap
+                where (mask) r = 0
+                call nn_factor_solve_real(factor, r, dr, st)
+            end if
+            if (st /= 0) then
+                call nn_factor_free(factor); return
+            end if
+            step = maxval(abs(dr))/max(tiny(1.0_dp), maxval(abs(p)))
+            ! A growing correction means the factor no longer contracts.
+            if (step >= last) exit
+            p = p + dr
             report%refinements = it
-            if (report%residual <= 1.0e-14_dp .or. it == 2) exit
-            call nn_linear_solve(a, mask, cmplx(r, 0.0_dp, dp), delta, st)
-            if (st /= 0) return
-            p = p + real(delta, dp)
+            if (step <= 4*epsilon(1.0_dp) .or. step >= last/2) exit
+            last = step
         end do
+        call nn_factor_free(factor)
+        r = rhs - csc_matvec(a, p)
+        where (mask) r = 0
+        report%residual = norm2(r)/max(tiny(1.0_dp), &
+            norm2(csc_matvec(aabs, abs(p))) + norm2(rhs))
         report%chi_ratio = conductivity%chi_par/conductivity%chi_perp
         report%ndof = ndof; report%modes = modes; report%nphi = nphi
         if (.not. all(ieee_is_finite(p))) return
