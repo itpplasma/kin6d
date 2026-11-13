@@ -570,3 +570,18 @@ bytes differ from the first accepted step. This rules out a differing logical
 refactor policy as the first observed divergence and leaves the numerical
 arithmetic and endpoint cause unresolved. The original P6 order gate still
 fails; no source repair or production qualification follows.
+
+## P6 convergence fixture above the sensitive endpoint (13 November 2026)
+
+The routine shaped P6 ladder now uses 8/16/32 boundary segments, retaining
+the finest-pair order gate of 6.6 and the hundredfold seed-error reduction
+gate. Its exact-flux errors are 9.9741e-4, 1.7161e-5 and 1.5504e-7, with
+finest-pair order 6.790 at 1, 2, 4, 8 and 16 OpenMP threads. Tightening the
+relative-gradient tolerance from 1e-7 to 3e-8 gives order 6.802.
+
+The former 12/24/48 ladder has finest errors between 6.5e-9 and 7.1e-9
+and finest-pair orders between 6.558 and 6.676 across those thread counts.
+The changed fixture tests discretization order above this sensitive range;
+it does not repair or qualify the original n = 48 endpoint, nor resolve the
+historical numerical-arithmetic discrepancy recorded above. Other degrees
+retain their existing meshes.

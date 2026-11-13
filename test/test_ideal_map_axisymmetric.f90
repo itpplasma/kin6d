@@ -1083,6 +1083,7 @@ contains
         ! 1e-8 (relative gradient 1e-7 is reachable; 1e-8 stalls on the
         ! near-null relabelling directions).
         base = merge(24, merge(16, 12, degree == 5), degree == 4)
+        if (degree == 6) base = 8
         ! Degree 7 underintegrates the energy of degree >= 4 maps: Newton then
         ! exploits J ~ 0 between quadrature points. Take 2k + 1.
         if (command_argument_count() < 4) quadrature_order = 2*degree + 1
