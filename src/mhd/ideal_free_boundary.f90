@@ -69,7 +69,7 @@ module milca_ideal_free_boundary
     use milca_sort_keys, only: sort_key_order
     use milca_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
-        csr_assemble_blocks
+        csr_assemble_blocks, csr_find_entry
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
         gs_bem_operators_t, gs_bem_curve_from_nodes
     use fortfem_toroidal_mode_boundary_operators_2d, only: tm_bem_assemble, &
@@ -96,6 +96,7 @@ module milca_ideal_free_boundary
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
     public :: ideal_fb_mode_stability, ideal_fb_mode_energies, ideal_fb_stability_t
     public :: ideal_fb_mode_inertia, ideal_fb_mode_lanczos
+    public :: ideal_fb_init_fixed, ideal_fb_fixed_mode
     public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
@@ -171,6 +172,9 @@ module milca_ideal_free_boundary
         ! gam p (div xi)^2 about the solved state, the parallel displacement
         ! beta B it needs as a third plasma unknown, and the full inertia.
         real(dp) :: adiabatic_index = 0
+        ! Fixed wall (ideal_fb_init_fixed): curvature vector dt/ds of the wall
+        ! at its nodes, zero elsewhere.
+        real(dp), allocatable :: wall_curvature(:, :)
         ! Shell: ns nodes, ncell cells, local connectivity, reference nodes,
         ! node role (1 Gamma_p, 2 interior, 3 Gamma_c), Gamma_p node -> plasma
         ! node, and the global mesh numbering of both parts.
@@ -3451,6 +3455,8 @@ contains
         mass = 0
         if (compressible) then
             call plasma_compressible(fb, kk, mm)
+            ! The triplet count is a sum of two default-integer sizes.
+            if (int(size(val), i64) + size(kk%val) > huge(nnz)) return
             nnz = size(val) + size(kk%val)
             allocate (cr(nnz), cc(nnz), cv(nnz))
             nnz = 0
@@ -3959,7 +3965,7 @@ contains
         integer, intent(out) :: counts(3, size(shifts)), status
         integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
         real(dp), allocatable :: v(:), mass(:), av(:), shifted(:), mvals(:)
-        integer :: np, n, j, i, p, base(3), full(3), st
+        integer :: np, n, j, base(3), full(3), st
         counts = -1
         call mode_matrix(fb, m, rp, ci, v, mass, map, np, status, mvals)
         if (status /= IDEAL_FB_OK) return
@@ -3980,52 +3986,543 @@ contains
             counts(:, j) = full
         end do
         status = IDEAL_FB_OK
-    contains
-        subroutine count_factor(rows, cols, values, inertia, result)
-            integer, intent(in) :: rows(:), cols(:)
-            real(dp), intent(in) :: values(:)
-            integer, intent(out) :: inertia(3), result
-            type(sparse_solver_t) :: solver
-            type(fortsparse_status_t) :: sst
-            real(dp), allocatable :: scale(:), scaled(:)
-            integer :: nr, i, p, reliability
-            integer(int64) :: signs(3)
-            result = IDEAL_FB_SOLVE_FAILED; inertia = -1
-            nr = size(rows) - 1
-            allocate (scale(nr), scaled(size(values)))
-            ! Positive diagonal congruence controls mixed physical units;
-            ! it cannot change inertia. A zero row is a rejected singularity.
-            do i = 1, nr
-                scale(i) = maxval(abs(values(rows(i):rows(i + 1) - 1)))
+    end subroutine
+
+    subroutine count_factor(rows, cols, values, inertia, result)
+        integer, intent(in) :: rows(:), cols(:)
+        real(dp), intent(in) :: values(:)
+        integer, intent(out) :: inertia(3), result
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        real(dp), allocatable :: scale(:), scaled(:)
+        integer :: nr, i, p, reliability
+        integer(int64) :: signs(3)
+        result = IDEAL_FB_SOLVE_FAILED; inertia = -1
+        nr = size(rows) - 1
+        allocate (scale(nr), scaled(size(values)))
+        ! Positive diagonal congruence controls mixed physical units;
+        ! it cannot change inertia. A zero row is a rejected singularity.
+        do i = 1, nr
+            scale(i) = maxval(abs(values(rows(i):rows(i + 1) - 1)))
+        end do
+        if (any(scale <= 0)) return
+        scale = 1/sqrt(scale)
+        !$omp parallel do default(shared) private(i,p) schedule(static)
+        do i = 1, nr
+            do p = rows(i), rows(i + 1) - 1
+                scaled(p) = values(p)*(scale(i)*scale(cols(p)))
             end do
-            if (any(scale <= 0)) return
-            scale = 1/sqrt(scale)
-            !$omp parallel do default(shared) private(i,p) schedule(static)
-            do i = 1, nr
-                do p = rows(i), rows(i + 1) - 1
-                    scaled(p) = values(p)*(scale(i)*scale(cols(p)))
+        end do
+        !$omp end parallel do
+        solver%backend_id = FORTSPARSE_BACKEND_NATIVE
+        solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+        solver%options%ordering = FORTSPARSE_ORDER_AMD
+        solver%options%ldlt_blocked = .true.
+        call sparse_factor(solver, nr, nr, size(values), rows, cols, scaled, sst)
+        if (status_ok(sst)) then
+            call sparse_inertia(solver, signs(1), signs(2), signs(3), &
+                reliability, sst)
+            if (status_ok(sst)) then
+                if (reliability == FORTSPARSE_INERTIA_RELIABLE) then
+                    inertia = int(signs)
+                    result = IDEAL_FB_OK
+                end if
+            end if
+        end if
+        if (.not. status_ok(sst)) print '(a,a)', 'mode inertia: ', sst%msg
+        call sparse_destroy(solver)
+    end subroutine
+
+    subroutine ideal_fb_init_fixed(fb, mesh, chart, field, nfp, ntor, status, mu0, &
+            nphi, quadrature_order)
+        ! Plasma alone inside a fixed wall, the boundary of mesh: no shell, no
+        ! vacuum, no exterior. Only ideal_fb_fixed_mode accepts such a state.
+        type(ideal_fb_t), intent(out) :: fb
+        type(gs_state_t), intent(in) :: mesh
+        class(ideal_chart_t), intent(in) :: chart
+        class(ideal_frozen_t), intent(in) :: field
+        integer, intent(in) :: nfp, ntor
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: mu0
+        integer, intent(in), optional :: nphi, quadrature_order
+        real(dp) :: tangent(2), plus(2), minus(2), chi, b3, pressure, step, slope
+        integer :: st, a
+        status = IDEAL_FB_BAD_INPUT
+        fb%nloc = size(mesh%triangles, 1)
+        if (fb%nloc /= 6 .and. fb%nloc /= 10) return
+        fb%order = merge(2, 3, fb%nloc == 6)
+        fb%nfp = nfp; fb%ntor = ntor; fb%nmode = 2*ntor + 1
+        status = IDEAL_FB_MAP_FAILED
+        call ideal_map_init(fb%plasma, mesh, chart, nfp, ntor, st, nphi, &
+            quadrature_order, mu0)
+        if (st /= IDEAL_MAP_OK) return
+        call ideal_map_freeze(fb%plasma, field, st)
+        if (st /= IDEAL_MAP_OK) return
+        fb%mu0 = fb%plasma%mu0
+        fb%np = 2*fb%nmode*fb%plasma%nodes
+        fb%n = fb%np
+        ! On the level curve of chi through a wall node, with unit tangent t
+        ! and normal d = grad chi/|grad chi|: dt/ds = -(t.H t/|grad chi|) d,
+        ! H the Hessian of chi (central difference of the gradient along t).
+        allocate (fb%wall_curvature(2, fb%plasma%nodes))
+        fb%wall_curvature = 0
+        step = 1.0e-5_dp*sqrt(sum((maxval(fb%plasma%reference, dim=2) &
+            - minval(fb%plasma%reference, dim=2))**2))
+        do a = 1, fb%plasma%nodes
+            if (.not. fb%plasma%boundary(a)) cycle
+            tangent = [-fb%plasma%direction(2, a), fb%plasma%direction(1, a)]
+            call field%evaluate(fb%plasma%reference(:, a) + step*tangent, chi, plus, &
+                b3, pressure)
+            call field%evaluate(fb%plasma%reference(:, a) - step*tangent, chi, &
+                minus, b3, pressure)
+            slope = dot_product(tangent, plus - minus)/(2*step)
+            call field%evaluate(fb%plasma%reference(:, a), chi, plus, b3, pressure)
+            if (.not. norm2(plus) > 0) return
+            fb%wall_curvature(:, a) = -slope/norm2(plus)*fb%plasma%direction(:, a)
+        end do
+        status = IDEAL_FB_OK
+    end subroutine ideal_fb_init_fixed
+
+    subroutine ideal_fb_fixed_mode(fb, m, shift, lambda, below, status)
+        ! Fixed-boundary spectrum of toroidal harmonic m/2 with the physical
+        ! inertia (fb%mass_density > 0): the eigenvalue omega^2 nearest shift
+        ! and the number of eigenvalues below shift (LDL^T inertia). The wall
+        ! must be a flux surface. There the displacement loses its component
+        ! along grad chi and keeps the one along the wall, because the
+        ! position gauge maps a toroidal slip onto a poloidal one. The slip is
+        ! tangent to the discrete wall everywhere: on a wall edge X(s) it is
+        ! tau(s) X_s with tau linear in s, one unknown u per wall vertex and
+        ! phase (u the slip length there). A slip that only held at the nodes
+        ! would let the discrete wall bulge between them, against which the
+        ! plasma pressure has no restoring force. A point that slides by u
+        ! stays on the wall only with the second-order shift u^2/2 dt/ds, on
+        ! which the wall force (the energy gradient g) does work: this adds
+        ! g.dt/ds to the stiffness of u, with the factor 1/2 of the mean
+        ! square of a cosine or sine mode. With fb%adiabatic_index > 0 the
+        ! parallel displacement is free on the wall.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: m
+        real(dp), intent(in) :: shift
+        real(dp), intent(out) :: lambda
+        integer, intent(out) :: below, status
+        type(csr_matrix_t) :: pattern
+        integer, allocatable :: target(:, :), vertex(:), parallel(:, :)
+        real(dp), allocatable :: weight(:, :), mv(:), shifted(:), start(:), &
+            vectors(:, :), z(:), gradient(:), slip(:, :), scale(:)
+        integer(int64) :: signs(3)
+        integer :: reliability
+        real(dp) :: values(1), residuals(1), energy, work
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        type(eigen_options_t) :: options
+        type(eigen_stats_t) :: stats
+        integer :: first, last, a, c, phase, n, i, k, st, info, nph
+        logical :: compressible
+        lambda = ieee_value(0.0_dp, ieee_quiet_nan); below = -1
+        status = IDEAL_FB_BAD_INPUT
+        if (fb%ns /= 0 .or. fb%mass_density <= 0) return
+        if (.not. allocated(fb%wall_curvature)) return
+        if (m < 1 .or. m > fb%nmode .or. .not. ieee_is_finite(shift)) return
+        if (fb%nmode > 1) then
+            if (maxval(abs(fb%plasma%x(:, 2:, :))) > 1.0e-10_dp) return
+        end if
+        compressible = fb%adiabatic_index > 0
+        first = 1; last = 1
+        if (m > 1) then
+            first = 2*(m/2); last = first + 1
+        end if
+        nph = last - first + 1
+        call wall_slip(fb, vertex, slip, st)
+        if (st /= 0) return
+        ! Position unknown -> up to two mode unknowns with weights: itself in
+        ! the interior, the slips of the two vertices of its edge on the wall.
+        allocate (target(2, fb%np), weight(2, fb%np))
+        target = 0; weight = 0; n = 0
+        do a = 1, fb%plasma%nodes
+            if (fb%plasma%boundary(a)) cycle
+            do phase = first, last
+                do c = 1, 2
+                    n = n + 1
+                    target(1, pidx(fb, c, phase, a)) = n
+                    weight(1, pidx(fb, c, phase, a)) = 1
+                end do
+            end do
+        end do
+        do a = 1, fb%plasma%nodes
+            if (.not. fb%plasma%boundary(a)) cycle
+            do phase = first, last
+                do k = 1, 2
+                    if (vertex(2*(a - 1) + k) == 0) cycle
+                    do c = 1, 2
+                        ! Wall vertex v carries unknown n + phase + nph (v - 1).
+                        target(k, pidx(fb, c, phase, a)) = n + phase - first + 1 &
+                            + nph*(vertex(2*(a - 1) + k) - 1)
+                        weight(k, pidx(fb, c, phase, a)) = slip(c + 2*(k - 1), a)
+                    end do
+                end do
+            end do
+        end do
+        n = n + nph*maxval(vertex)
+        if (compressible) then
+            ! The parallel displacement of every node follows.
+            allocate (parallel(first:last, fb%plasma%nodes))
+            do a = 1, fb%plasma%nodes
+                do phase = first, last
+                    n = n + 1; parallel(phase, a) = n
+                end do
+            end do
+        end if
+        allocate (gradient(fb%plasma%ndof))
+        call ideal_map_energy(fb%plasma, fb%plasma%x, energy, st, gradient)
+        if (st /= IDEAL_MAP_OK) then
+            status = IDEAL_FB_FOLDED
+            return
+        end if
+        call assemble()
+        do a = 1, fb%plasma%nodes
+            if (.not. fb%plasma%boundary(a)) cycle
+            ! Slip length squared |sum_k slip_k u_k|^2 times g.dt/ds.
+            work = fb%wall_curvature(1, a)*gradient(ideal_map_dof(fb%plasma, 1, 1, a)) &
+                + fb%wall_curvature(2, a)*gradient(ideal_map_dof(fb%plasma, 2, 1, a))
+            if (m > 1) work = work/2
+            do phase = first, last
+                do k = 1, 2
+                    do i = 1, 2
+                        if (target(k, pidx(fb, 1, phase, a)) == 0) cycle
+                        if (target(i, pidx(fb, 1, phase, a)) == 0) cycle
+                        c = csr_find_entry(pattern, target(k, pidx(fb, 1, phase, a)), &
+                            target(i, pidx(fb, 1, phase, a)))
+                        if (c == 0) return
+                        pattern%val(c) = pattern%val(c) + work*dot_product( &
+                            slip(2*k - 1:2*k, a), slip(2*i - 1:2*i, a))
+                    end do
+                end do
+            end do
+        end do
+        ! The element sums carry rounding asymmetry.
+        do i = 1, n
+            do k = pattern%rowptr(i), pattern%rowptr(i + 1) - 1
+                c = pattern%colidx(k)
+                if (c <= i) cycle
+                a = csr_find_entry(pattern, c, i)
+                if (a == 0) return
+                pattern%val(k) = (pattern%val(k) + pattern%val(a))/2
+                pattern%val(a) = pattern%val(k)
+                mv(k) = (mv(k) + mv(a))/2; mv(a) = mv(k)
+            end do
+        end do
+        ! One scaled LDL^T of K - shift M gives the inertia and the solves; the
+        ! positive diagonal congruence controls the mixed units.
+        allocate (scale(n), shifted(size(mv)))
+        !$omp parallel do default(shared) private(i) schedule(static)
+        do i = 1, n
+            shifted(pattern%rowptr(i):pattern%rowptr(i + 1) - 1) = &
+                pattern%val(pattern%rowptr(i):pattern%rowptr(i + 1) - 1) &
+                - shift*mv(pattern%rowptr(i):pattern%rowptr(i + 1) - 1)
+            scale(i) = maxval(abs(shifted(pattern%rowptr(i):pattern%rowptr(i + 1) - 1)))
+        end do
+        !$omp end parallel do
+        if (any(scale <= 0)) return
+        scale = 1/sqrt(scale)
+        !$omp parallel do default(shared) private(i, k) schedule(static)
+        do i = 1, n
+            do k = pattern%rowptr(i), pattern%rowptr(i + 1) - 1
+                shifted(k) = shifted(k)*(scale(i)*scale(pattern%colidx(k)))
+            end do
+        end do
+        !$omp end parallel do
+        status = IDEAL_FB_SOLVE_FAILED
+        solver%backend_id = FORTSPARSE_BACKEND_NATIVE
+        solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+        solver%options%ordering = FORTSPARSE_ORDER_AMD
+        solver%options%ldlt_supernodal = .true.
+        call sparse_factor(solver, n, n, size(shifted), pattern%rowptr, &
+            pattern%colidx, shifted, sst)
+        if (status_ok(sst)) call sparse_inertia(solver, signs(1), signs(2), &
+            signs(3), reliability, sst)
+        if (.not. status_ok(sst)) then
+            print '(a,a)', 'fixed mode: ', sst%msg
+            call sparse_destroy(solver)
+            return
+        end if
+        if (reliability /= FORTSPARSE_INERTIA_RELIABLE) then
+            call sparse_destroy(solver)
+            return
+        end if
+        below = int(signs(1))
+        allocate (start(n), vectors(n, 1), z(n))
+        do i = 1, n
+            start(i) = 1 + 0.1_dp*sin(1.7_dp*i)
+        end do
+        options%max_basis = min(32, n)
+        options%retain = min(16, n - 1)
+        options%max_restarts = 25
+        options%which = EIGEN_NEAREST
+        options%mass_scale = mass_norm1(pattern%rowptr, pattern%colidx, mv, n)
+        call lanczos(apply_stiffness, start, values, vectors, residuals, &
+            1.0e-10_dp, options, info, stats, mass=apply_mass, &
+            solve_shift=solve_shift, sigma=shift)
+        call sparse_destroy(solver)
+        status = IDEAL_FB_NOT_CONVERGED
+        if (info /= EIGEN_OK) return
+        lambda = values(1)
+        status = IDEAL_FB_OK
+    contains
+        subroutine assemble()
+            ! Element blocks of the selected phases, transformed to the mode
+            ! unknowns and added straight into the sparse matrices: stiffness
+            ! in pattern%val, mass in mv. No list of duplicates is kept, so
+            ! memory is that of the two matrices.
+            integer, allocatable :: conn(:, :), unknown(:, :), list(:)
+            real(dp), allocatable :: basis(:, :), kb(:, :), mb(:, :), wt(:, :)
+            real(dp) :: hv(12, 12), hm(12, 12), ha(16, 16), hi(16, 16), wq, dphi
+            integer :: nc, nl, e, g, j, q, t, l, lc, kr, kc, at, var(4, 3), node, &
+                ph, comp, count
+            nc = merge(3, 2, compressible)
+            nl = nc*nph*fb%nloc
+            do comp = 1, 2
+                var(:, comp) = [(comp + 3*t, t = 0, 3)]
+            end do
+            var(:, 3) = [13, 14, 15, 16]
+            dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
+            ! Unknowns of a cell, padded by repetition; unknown(k, l): index
+            ! into that list of target k of local dof l = comp + nc (q - 1),
+            ! q = phase + nph (node - 1).
+            allocate (conn(nl, fb%plasma%cells))
+            !$omp parallel default(shared) private(e, l, q, node, ph, comp, kr, at, &
+            !$omp     count, list)
+            allocate (list(nl))
+            !$omp do schedule(static)
+            do e = 1, fb%plasma%cells
+                count = 0
+                do node = 1, fb%nloc
+                    do ph = first, last
+                        do comp = 1, nc
+                            do kr = 1, 2
+                                at = cell_target(e, node, ph, comp, kr)
+                                if (at == 0) cycle
+                                if (any(list(:count) == at)) cycle
+                                count = count + 1; list(count) = at
+                            end do
+                        end do
+                    end do
+                end do
+                list(count + 1:) = list(count)
+                conn(:, e) = list
+            end do
+            !$omp end do
+            deallocate (list)
+            !$omp end parallel
+            call csr_build_pattern(n, conn, .false., pattern)
+            allocate (mv(size(pattern%val)))
+            pattern%val = 0; mv = 0
+            !$omp parallel default(shared) private(e, g, j, hv, hm, ha, hi, wq, basis, &
+            !$omp     kb, mb, wt, unknown, l, lc, kr, kc, at, q, node, ph, comp)
+            allocate (basis(4, nph*fb%nloc), kb(nl, nl), mb(nl, nl), wt(2, nl), &
+                unknown(2, nl))
+            !$omp do schedule(dynamic, 16)
+            do e = 1, fb%plasma%cells
+                kb = 0; mb = 0
+                do j = 1, fb%plasma%nphi
+                    do g = 1, fb%plasma%nq
+                        wq = fb%plasma%weight(g)*dphi
+                        do node = 1, fb%nloc
+                            do ph = first, last
+                                q = ph - first + 1 + nph*(node - 1)
+                                basis(1, q) = fb%plasma%shape(node, g) &
+                                    *fb%plasma%trig(ph, j)
+                                basis(2, q) = fb%plasma%dshape(1, node, g) &
+                                    *fb%plasma%trig(ph, j)
+                                basis(3, q) = fb%plasma%dshape(2, node, g) &
+                                    *fb%plasma%trig(ph, j)
+                                basis(4, q) = fb%plasma%shape(node, g) &
+                                    *fb%plasma%dtrig(ph, j)
+                            end do
+                        end do
+                        call plasma_point_hessian(fb%plasma, e, g, j, hv)
+                        if (compressible) then
+                            call plasma_point_compressible(fb%plasma, e, g, j, &
+                                fb%adiabatic_index, fb%mass_density, ha, hi)
+                            ha(1:12, 1:12) = ha(1:12, 1:12) + hv
+                            call add_point_hessian(ha, var, basis, wq, kb)
+                            call add_point_hessian(hi, var, basis, wq, mb)
+                        else
+                            call plasma_point_mass(fb%plasma, e, g, j, &
+                                fb%mass_density, hm)
+                            call add_point_hessian(hv, var(:, 1:2), basis, wq, kb)
+                            call add_point_hessian(hm, var(:, 1:2), basis, wq, mb)
+                        end if
+                    end do
+                end do
+                do node = 1, fb%nloc
+                    do ph = first, last
+                        do comp = 1, nc
+                            l = comp + nc*(ph - first + nph*(node - 1))
+                            do kr = 1, 2
+                                unknown(kr, l) = cell_target(e, node, ph, comp, kr)
+                                wt(kr, l) = cell_weight(e, node, ph, comp, kr)
+                            end do
+                        end do
+                    end do
+                end do
+                do lc = 1, nl
+                    do kc = 1, 2
+                        if (unknown(kc, lc) == 0) cycle
+                        do l = 1, nl
+                            do kr = 1, 2
+                                if (unknown(kr, l) == 0) cycle
+                                at = csr_find_entry(pattern, unknown(kr, l), &
+                                    unknown(kc, lc))
+                                !$omp atomic
+                                pattern%val(at) = pattern%val(at) &
+                                    + wt(kr, l)*wt(kc, lc)*kb(l, lc)
+                                !$omp atomic
+                                mv(at) = mv(at) + wt(kr, l)*wt(kc, lc)*mb(l, lc)
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+            !$omp end do
+            deallocate (basis, kb, mb, wt, unknown)
+            !$omp end parallel
+        end subroutine assemble
+        pure integer function cell_target(e, node, ph, comp, k) result(at)
+            integer, intent(in) :: e, node, ph, comp, k
+            at = 0
+            if (comp == 3) then
+                if (k == 1) at = parallel(ph, fb%plasma%conn(node, e))
+            else
+                at = target(k, pidx(fb, comp, ph, fb%plasma%conn(node, e)))
+            end if
+        end function
+        pure real(dp) function cell_weight(e, node, ph, comp, k) result(w)
+            integer, intent(in) :: e, node, ph, comp, k
+            w = 1
+            if (comp < 3) w = weight(k, pidx(fb, comp, ph, fb%plasma%conn(node, e)))
+        end function
+        subroutine apply_stiffness(x, y)
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            call multiply(pattern%val, x, y)
+        end subroutine
+        subroutine apply_mass(x, y)
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            call multiply(mv, x, y)
+        end subroutine
+        subroutine multiply(av, x, y)
+            real(dp), intent(in) :: av(:), x(:)
+            real(dp), intent(out) :: y(:)
+            integer :: r, q
+            !$omp parallel do default(shared) private(r, q) schedule(static)
+            do r = 1, n
+                y(r) = 0
+                do q = pattern%rowptr(r), pattern%rowptr(r + 1) - 1
+                    y(r) = y(r) + av(q)*x(pattern%colidx(q))
                 end do
             end do
             !$omp end parallel do
-            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
-            solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
-            solver%options%ordering = FORTSPARSE_ORDER_AMD
-            solver%options%ldlt_blocked = .true.
-            call sparse_factor(solver, nr, nr, size(values), rows, cols, scaled, sst)
-            if (status_ok(sst)) then
-                call sparse_inertia(solver, signs(1), signs(2), signs(3), &
-                    reliability, sst)
-                if (status_ok(sst)) then
-                    if (reliability == FORTSPARSE_INERTIA_RELIABLE) then
-                        inertia = int(signs)
-                        result = IDEAL_FB_OK
-                    end if
-                end if
-            end if
-            if (.not. status_ok(sst)) print '(a,a)', 'mode inertia: ', sst%msg
-            call sparse_destroy(solver)
         end subroutine
-    end subroutine
+        subroutine solve_shift(x, y, info)
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            integer, intent(out) :: info
+            type(fortsparse_status_t) :: fst
+            call sparse_solve(solver, scale*x, y, fst)
+            y = scale*y
+            info = 1
+            if (status_ok(fst)) info = 0
+        end subroutine
+    end subroutine ideal_fb_fixed_mode
+
+    subroutine wall_slip(fb, vertex, slip, status)
+        ! Slip space of the fixed wall. vertex(2 (a - 1) + k), k = 1, 2: the
+        ! wall-vertex numbers (1..nv) whose slips move wall node a (the node
+        ! itself for a vertex, the two ends of its edge otherwise; 0: none).
+        ! slip(2 (k - 1) + 1:2 k, a): displacement of node a per unit slip
+        ! length of that vertex. On an edge X(s), s in [0, 1], the field is
+        ! tau(s) X_s(s), tau linear with tau = +-u/|X_s| at the ends (sign
+        ! from the wall tangent t = (-d_2, d_1)); at a vertex it is u t.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, allocatable, intent(out) :: vertex(:)
+        real(dp), allocatable, intent(out) :: slip(:, :)
+        integer, intent(out) :: status
+        integer, allocatable :: number(:)
+        real(dp) :: x(2, 4), xs(2, 4), dl(4, 4), t0(2), t1(2), c0, c1, s
+        integer :: order, e, k, i, j, nodes(4), nv, a
+        status = 1
+        order = fb%order
+        allocate (vertex(2*fb%plasma%nodes), slip(4, fb%plasma%nodes), &
+            number(fb%plasma%nodes))
+        vertex = 0; slip = 0; number = 0; nv = 0
+        ! Derivatives of the equispaced Lagrange basis at its nodes.
+        call lagrange_derivatives(order, dl(:order + 1, :order + 1))
+        do e = 1, fb%plasma%cells
+            do k = 1, 3
+                nodes(1) = fb%plasma%conn(k, e)
+                nodes(order + 1) = fb%plasma%conn(mod(k, 3) + 1, e)
+                do i = 1, order - 1
+                    nodes(1 + i) = fb%plasma%conn(3 + (k - 1)*(order - 1) + i, e)
+                end do
+                if (.not. all(fb%plasma%boundary(nodes(:order + 1)))) cycle
+                do i = 1, order + 1, order
+                    if (number(nodes(i)) == 0) then
+                        nv = nv + 1; number(nodes(i)) = nv
+                    end if
+                end do
+                x(:, :order + 1) = fb%plasma%reference(:, nodes(:order + 1))
+                xs(:, :order + 1) = matmul(x(:, :order + 1), dl(:order + 1, :order + 1))
+                t0 = [-fb%plasma%direction(2, nodes(1)), &
+                    fb%plasma%direction(1, nodes(1))]
+                t1 = [-fb%plasma%direction(2, nodes(order + 1)), &
+                    fb%plasma%direction(1, nodes(order + 1))]
+                c0 = sign(1.0_dp, dot_product(t0, xs(:, 1)))/norm2(xs(:, 1))
+                c1 = sign(1.0_dp, dot_product(t1, xs(:, order + 1))) &
+                    /norm2(xs(:, order + 1))
+                do i = 1, order - 1
+                    a = nodes(1 + i); s = real(i, dp)/order
+                    vertex(2*(a - 1) + 1) = number(nodes(1))
+                    vertex(2*(a - 1) + 2) = number(nodes(order + 1))
+                    slip(1:2, a) = (1 - s)*c0*xs(:, 1 + i)
+                    slip(3:4, a) = s*c1*xs(:, 1 + i)
+                end do
+                do i = 1, order + 1, order
+                    a = nodes(i)
+                    vertex(2*(a - 1) + 1) = number(a)
+                    slip(1:2, a) = [-fb%plasma%direction(2, a), &
+                        fb%plasma%direction(1, a)]
+                end do
+            end do
+        end do
+        if (nv < 3) return
+        do j = 1, fb%plasma%nodes
+            if (fb%plasma%boundary(j) .and. vertex(2*(j - 1) + 1) == 0) return
+        end do
+        status = 0
+    end subroutine wall_slip
+
+    pure subroutine lagrange_derivatives(order, d)
+        ! d(j, i) = L_j'(s_i) for the nodes s_i = (i - 1)/order.
+        integer, intent(in) :: order
+        real(dp), intent(out) :: d(:, :)
+        real(dp) :: term
+        integer :: i, j, k, l
+        do i = 1, order + 1
+            do j = 1, order + 1
+                d(j, i) = 0
+                do k = 1, order + 1
+                    if (k == j) cycle
+                    term = real(order, dp)/(j - k)
+                    do l = 1, order + 1
+                        if (l == j .or. l == k) cycle
+                        term = term*real(i - l, dp)/(j - l)
+                    end do
+                    d(j, i) = d(j, i) + term
+                end do
+            end do
+        end do
+    end subroutine lagrange_derivatives
 
     subroutine ideal_fb_mode_lanczos(fb, m, lambda, report, status, shift)
         ! Opt-in near-shift Schur eigenpair. FortNum #103 checks the original

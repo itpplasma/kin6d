@@ -10,6 +10,10 @@ module ideal_fb_test_field
     contains
         procedure :: evaluate => screw_evaluate
     end type
+    type, extends(ideal_frozen_t), public :: solovev_field_t
+    contains
+        procedure :: evaluate => solovev_evaluate
+    end type
     type, extends(ideal_frozen_t), public :: simple_field_t
         logical :: solovev = .false.
     contains
@@ -28,6 +32,23 @@ contains
         chi_gradient = field%major*[x, y]
         b3 = 10*field%pitch*field%major/point(1)
         pressure = 1 - x*x - y*y
+    end subroutine
+
+    subroutine solovev_evaluate(field, point, chi, chi_gradient, b3, pressure)
+        ! The Solov'ev equilibrium of the flux-coordinate oracle
+        ! (test_ideal_flux_tokamak, mu0 = 1): psi = (R^2 - 9)^2/8
+        ! + R^2 Z^2/(2 kappa^2), kappa = 1.5, p = (1 + 1/kappa^2)(3 - psi),
+        ! F = 16.
+        class(solovev_field_t), intent(in) :: field
+        real(dp), intent(in) :: point(2)
+        real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        real(dp), parameter :: k2 = 2.25_dp
+        real(dp) :: r, z
+        r = point(1); z = point(2)
+        chi = (r*r - 9)**2/8 + r*r*z*z/(2*k2)
+        chi_gradient = [r*(r*r - 9)/2 + r*z*z/k2, r*r*z/k2]
+        b3 = 16/r
+        pressure = (1 + 1/k2)*(3 - chi)
     end subroutine
 
     subroutine simple_evaluate(field, point, chi, chi_gradient, b3, pressure)
@@ -93,6 +114,8 @@ program test_ideal_free_boundary
     use milca_equilibrium_chart, only: cylindrical_chart_t
     use milca_ideal_map, only: ideal_frozen_t
     use milca_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use milca_ideal_free_boundary, only: ideal_fb_init_fixed, ideal_fb_fixed_mode
+    use milca_nested_ring_mesh, only: nested_ring_mesh
     use milca_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, ideal_fb_shell_locate, &
@@ -118,7 +141,7 @@ program test_ideal_free_boundary
         s0_solve, s0_destroy
     use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, FORTSPARSE_OK
-    use ideal_fb_test_field, only: simple_field_t, screw_field_t
+    use ideal_fb_test_field, only: simple_field_t, screw_field_t, solovev_field_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
     ! Gamma_c ellipse, PF filaments (R, Z, A) and the inner current filament.
@@ -160,6 +183,8 @@ program test_ideal_free_boundary
         call kink_checks(.true.)
     case ('kink_mass')
         call physical_kink()
+    case ('fixed_kink')
+        call fixed_kink()
     case ('hypotheses')
         call hypothesis_checks()
     case ('curvature')
@@ -542,6 +567,81 @@ contains
         end do
         if (shift_previous > 0.1_dp) error stop 'compressible kink shift'
     end subroutine physical_kink
+
+    subroutine fixed_kink()
+        ! Fixed-boundary n = 1 internal kink of the Solov'ev equilibrium of
+        ! the flux-coordinate oracle (wall at psi = 2.4, rho = mu0 = 1,
+        ! gamma = 5/3): one unstable mode with omega^2 = -1.3033e-3 there
+        ! (docs/stability.md), here its two real phases. Ring meshes packed
+        ! at q = 1 (rho = 0.6): smallest and largest radial spacing in rho
+        ! and the number of poloidal cells per level. The registered test
+        ! runs two levels; the second argument extends the ladder to four.
+        type(ideal_fb_t) :: fb
+        type(gs_state_t) :: mesh
+        type(cylindrical_chart_t) :: chart
+        type(solovev_field_t) :: field
+        real(dp), parameter :: exact = -1.3033e-3_dp
+        real(dp), parameter :: hmin(4) = [0.02_dp, 0.01_dp, 0.005_dp, 0.005_dp], &
+            hmax(4) = [0.06_dp, 0.04_dp, 0.015_dp, 0.015_dp]
+        integer, parameter :: ntheta(4) = [64, 96, 128, 192]
+        real(dp) :: radii(400), lambda, unused, h, r, err, previous
+        integer :: level, st, below, unstable, nr
+        previous = huge(1.0_dp)
+        do level = 1, min(max(degree, 2), 4)
+            nr = 0
+            h = hmin(level); r = 0.6_dp
+            do while (r > 1.5_dp*h)
+                nr = nr + 1; radii(nr) = r
+                h = min(hmax(level), 1.25_dp*h); r = r - h
+            end do
+            radii(:nr) = radii(nr:1:-1)
+            h = hmin(level); r = 0.6_dp + h
+            do while (r < 1 - 0.75_dp*h)
+                nr = nr + 1; radii(nr) = r
+                h = min(hmax(level), 1.25_dp*h); r = r + h
+            end do
+            nr = nr + 1; radii(nr) = 1
+            call nested_ring_mesh(solovev_surface, radii(:nr), ntheta(level), 3, &
+                mesh, st)
+            if (st /= 0) error stop 'fixed kink mesh'
+            call ideal_fb_init_fixed(fb, mesh, chart, field, 1, 1, st, mu0=1.0_dp)
+            if (st /= IDEAL_FB_OK) error stop 'fixed kink init'
+            fb%mass_density = 1; fb%adiabatic_index = 5.0_dp/3
+            call ideal_fb_fixed_mode(fb, 3, 2*exact, lambda, below, st)
+            if (st /= IDEAL_FB_OK) error stop 'fixed kink eigenpair'
+            call ideal_fb_fixed_mode(fb, 3, 0.1_dp*exact, unused, unstable, st)
+            if (st /= IDEAL_FB_OK) error stop 'fixed kink count'
+            err = abs(lambda/exact - 1)
+            print '(a,i7,a,es16.8,a,es9.2,a,2i3)', 'fixed kink nodes', &
+                fb%plasma%nodes, ' omega^2', lambda, ' rel', err, &
+                ' below 2 and 0.1 of the oracle:', below, unstable
+            if (below /= 0) error stop 'fixed kink: mode below the internal kink'
+            if (unstable /= 2) error stop 'fixed kink: unstable count'
+            if (err >= previous) error stop 'fixed kink convergence'
+            previous = err
+        end do
+        if (err > 2.5e-3_dp) error stop 'fixed kink eigenvalue'
+    end subroutine fixed_kink
+
+    subroutine solovev_surface(rho, theta, point)
+        ! psi = 2.4 rho^2 on the ray at angle 2 pi theta from the axis (3, 0),
+        ! bisected.
+        real(dp), intent(in) :: rho, theta
+        real(dp), intent(out) :: point(2)
+        real(dp) :: lo, hi, mid, r, z
+        integer :: it
+        lo = 0; hi = 2
+        do it = 1, 60
+            mid = (lo + hi)/2
+            r = 3 + mid*cos(2*pi*theta); z = mid*sin(2*pi*theta)
+            if ((r*r - 9)**2/8 + r*r*z*z/4.5_dp < 2.4_dp*rho**2) then
+                lo = mid
+            else
+                hi = mid
+            end if
+        end do
+        point = [3 + lo*cos(2*pi*theta), lo*sin(2*pi*theta)]
+    end subroutine solovev_surface
 
     subroutine rigid_spectrum(energy,physical_mass,lambda)
         real(dp), intent(in) :: energy,physical_mass
