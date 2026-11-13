@@ -7,7 +7,7 @@ program gen_islands
     type(expr_t) :: a, b, c, d, x, y, z, lx, ly, lz, r3
     type(expr_t) :: m, n, phi
     type(expr_t) :: r, q0, qc, q, y1, y2, jp
-    type(expr_t) :: r1, r2, len, cx, cy, cz, c2, n1, n2, f
+    type(expr_t) :: r1, r2, len, cx, cy, cz, c2, n1, n2, f, t1, t2
     a = sym('a'); b = sym('b')
     c = sym('c'); d = sym('d')
     x = sym('x'); y = sym('y'); z = sym('z')
@@ -27,19 +27,24 @@ program gen_islands
     call w%emit('biot_savart_integrand', ['x ', 'y ', 'z ', 'lx', 'ly', 'lz'], &
                 ['bx', 'by', 'bz'], &
                 [(ly*z - lz*y)/r3, (lz*x - lx*z)/r3, (lx*y - ly*x)/r3], ad=.true.)
-    ! Straight segment a -> a + l at r1 = p - a, r2 = r1 - l, per unit
-    ! mu0 I/(4 pi): B = c/|c|^2 (l.r1/|r1| - l.r2/|r2|), c = l x r1, the
-    ! integral of the integrand above along the segment. cross2, len2 and
-    ! dist = |r1| |r2| let the caller reject points on the supporting line.
+    ! Keep the domain check ahead of divisions by the line distance or the
+    ! endpoint distances; the geometric leaf itself is regular there.
     cx = ly*z - lz*y; cy = lz*x - lx*z; cz = lx*y - ly*x
     c2 = cx*cx + cy*cy + cz*cz
     n1 = sqrt(x*x + y*y + z*z)
     n2 = sqrt((x - lx)**2 + (y - ly)**2 + (z - lz)**2)
-    f = ((lx*x + ly*y + lz*z)/n1 &
-        - (lx*(x - lx) + ly*(y - ly) + lz*(z - lz))/n2)/c2
-    call w%emit('segment_field', ['x ', 'y ', 'z ', 'lx', 'ly', 'lz'], &
-                ['bx    ', 'by    ', 'bz    ', 'cross2', 'len2  ', 'dist  '], &
-                [f*cx, f*cy, f*cz, c2, lx*lx + ly*ly + lz*lz, n1*n2], ad=.true.)
+    t1 = lx*x + ly*y + lz*z
+    t2 = lx*(x - lx) + ly*(y - ly) + lz*(z - lz)
+    call w%emit('segment_geometry', ['x ', 'y ', 'z ', 'lx', 'ly', 'lz'], &
+        ['cx    ', 'cy    ', 'cz    ', 'cross2', 'len2  ', 'n1    ', 'n2    ', &
+         'dot1  ', 'dot2  '], &
+        [cx, cy, cz, c2, lx*lx + ly*ly + lz*lz, n1, n2, t1, t2], ad=.true.)
+    cx = sym('cx'); cy = sym('cy'); cz = sym('cz'); c2 = sym('cross2')
+    n1 = sym('n1'); n2 = sym('n2'); t1 = sym('dot1'); t2 = sym('dot2')
+    f = (t1/n1 - t2/n2)/c2
+    call w%emit('segment_field', &
+        ['cx    ', 'cy    ', 'cz    ', 'cross2', 'n1    ', 'n2    ', 'dot1  ', 'dot2  '], &
+        ['bx', 'by', 'bz'], [f*cx, f*cy, f*cz], ad=.true.)
     ! Integral of 1/distance along a finite straight segment; coefficient
     ! multiplies mu0 I/(4 pi) times the oriented unit segment vector.
     r1 = sym('r1'); r2 = sym('r2'); len = sym('len')

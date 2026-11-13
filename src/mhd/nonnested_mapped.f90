@@ -759,11 +759,12 @@ contains
             kk = 0
             ok = .false.
             if (st /= 0) return
+            jac = det3(d)
+            if (.not. (jac > 64*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(d)))**3)) &
+                return
             call piola_metric(d(1, 1), d(1, 2), d(1, 3), d(2, 1), d(2, 2), &
                 d(2, 3), d(3, 1), d(3, 2), d(3, 3), jac, a(1), a(2), a(3), &
                 a(4), a(5), a(6), b(1), b(2), b(3), b(4), b(5), b(6))
-            if (.not. (jac > 64*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(d)))**3)) &
-                return
             m = b
             if (self%space == 1) m = a
             if (.not. all(ieee_is_finite(m))) return

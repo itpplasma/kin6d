@@ -234,6 +234,8 @@ program test_nonnested_mapped
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t, nn_map_set_chart, &
         nn_map_point, map_metric_t, nn_mapped_cartesian_data, &
         nn_mapped_cartesian_error, nn_vector_field_i
+    use, intrinsic :: ieee_exceptions, only: ieee_set_flag, ieee_get_flag, &
+        ieee_invalid, ieee_divide_by_zero
     implicit none
     character(32) :: mode, arg, env
     integer, allocatable :: list(:)
@@ -348,7 +350,7 @@ contains
         real(dp), parameter :: steps(3) = [1.0e-4_dp, 5.0e-5_dp, 2.5e-5_dp]
         type(map_metric_t) :: metric
         type(analytic_chart_t) :: bad
-        type(nn_map_t) :: badmap
+        type(nn_map_t), target :: badmap
         real(dp) :: x(2), val(field%fs%nl0), grad(2, field%fs%nl0), w
         real(dp) :: pos(3), want(3), d(3, 3), p1(3, 3), p2(3, 3), jac, jref
         real(dp) :: cof(3, 3), expected1(3, 3), expected2(3, 3), points(3, 4)
@@ -356,6 +358,7 @@ contains
         real(dp) :: plus(3), minus(3), dummy1(3, 3), dummy2(3, 3), jd, xp(2), angle
         real(dp) :: fd(3, 3), errors(3), h, rotated(3), turn
         integer :: st, j, space, l, c
+        logical :: raised(2)
         call meridian_qgrad(field%fs, 1, 1, x, w, val, grad, st)
         if (st /= 0) error stop 'point oracle quadrature'
         do j = 1, size(angles)
@@ -444,6 +447,14 @@ contains
             call nn_map_point(badmap, field%fs%sp(0)%dof(:, 1), val, grad, x, &
                 angles(1), pos, p1, p2, jac, st)
             if (st == 0) error stop 'negative orientation accepted as abs(detD)'
+            bad%orientation = 0
+            call nn_map_set_chart(bad, badmap)
+            metric%map => badmap
+            call ieee_set_flag([ieee_invalid, ieee_divide_by_zero], .false.)
+            call metric%tensor(1, points, k, st)
+            call ieee_get_flag([ieee_invalid, ieee_divide_by_zero], raised)
+            if (st == 0) error stop 'singular metric accepted'
+            if (any(raised)) error stop 'metric guard evaluated singular Piola tensor'
             bad%orientation = 1; bad%invalid_position = .true.
             call nn_map_set_chart(bad, badmap)
             call nn_map_point(badmap, field%fs%sp(0)%dof(:, 1), val, grad, x, &

@@ -5,6 +5,8 @@ program test_coils_3d
     !! Fourier synthesis against the direct 3D field and thread invariance.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use milca_coils_3d
+    use, intrinsic :: ieee_exceptions, only: ieee_set_flag, ieee_get_flag, &
+        ieee_invalid, ieee_divide_by_zero
 !$  use omp_lib
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -13,6 +15,7 @@ program test_coils_3d
     call test_segment_quadrature()
     call test_segment_reference()
     call test_square_centre()
+    call test_segment_domain()
     call test_ring_on_axis()
     call test_div_curl()
     call test_segment_potential()
@@ -113,6 +116,20 @@ contains
                    err, 16.0_dp)
         b = segment_b(a, l, a + 2.5_dp*l)
         call check('segment field on the supporting line', norm2(b), 0.0_dp)
+    end subroutine
+
+    subroutine test_segment_domain()
+        real(dp) :: b(3)
+        logical :: raised(2)
+        integer :: point
+        do point = 0, 2
+            call ieee_set_flag([ieee_invalid, ieee_divide_by_zero], .false.)
+            b = segment_b([0.0_dp, 0.0_dp, 0.0_dp], [1.0_dp, 0.0_dp, 0.0_dp], &
+                [real(point, dp), 0.0_dp, 0.0_dp])
+            call ieee_get_flag([ieee_invalid, ieee_divide_by_zero], raised)
+            if (any(raised)) error stop 'segment domain guard evaluated singular field'
+            call check('segment domain guard', norm2(b), 0.0_dp)
+        end do
     end subroutine
 
     subroutine test_square_centre()

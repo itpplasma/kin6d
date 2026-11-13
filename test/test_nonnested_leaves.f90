@@ -3,9 +3,11 @@ program test_nonnested_leaves
     use milca_equilibrium_core_leaves, only: maxwell_stress_delta, &
         maxwell_stress_delta_jvp, maxwell_stress_delta_vjp, stress_residual_density
     use milca_island_leaves, only: segment_potential, segment_potential_jvp, &
-        segment_potential_vjp
+        segment_potential_vjp, segment_geometry, segment_geometry_jvp, &
+        segment_geometry_vjp, segment_field, segment_field_jvp, segment_field_vjp
     use milca_nonnested_leaves, only: piola_metric, piola_metric_jvp, &
-        piola_metric_vjp, meridian_map_jacobian, fieldline_velocity, fieldline_velocity_jvp, &
+        piola_metric_vjp, meridian_map_jacobian, meridian_map_jacobian_jvp, &
+        meridian_map_jacobian_vjp, fieldline_velocity, fieldline_velocity_jvp, &
         fieldline_velocity_vjp, coupled_current, coupled_current_jvp, &
         coupled_current_vjp, anisotropic_flux, island_defect_density, &
         island_defect_density_jvp, island_defect_density_vjp, island_defect_norm, &
@@ -196,7 +198,101 @@ program test_nonnested_leaves
         abs(fj(10) - det3(df)))
     if (err > 1.0e-14_dp) error stop 'meridian map Jacobian'
     print '(a)', 'PASS: NN1 Piola metric and meridian map Jacobian leaves'
+    call check_new_derivatives()
 contains
+    subroutine check_new_derivatives()
+        real(dp) :: v(10), dv(10), w(10), plus(10), minus(10), tangent(10), adjoint(10)
+        real(dp), parameter :: step = 1.0e-5_dp
+        integer :: kind, j
+        do kind = 1, 3
+            v = 0
+            select case (kind)
+            case (1)
+                v(:6) = [0.4_dp, 0.2_dp, 0.7_dp, 0.3_dp, -0.4_dp, 0.2_dp]
+            case (2)
+                v(:8) = [0.3_dp, -0.2_dp, 0.5_dp, 0.38_dp, 0.8_dp, 1.2_dp, &
+                    0.7_dp, -0.2_dp]
+            case (3)
+                v(:8) = [1.1_dp, 0.2_dp, -0.15_dp, 0.95_dp, 0.3_dp, -0.4_dp, &
+                    2.0_dp, 2.2_dp]
+            end select
+            dv = [(cos(0.7_dp*j), j=1, 10)]
+            w = [(sin(1.3_dp*j), j=1, 10)]
+            call new_leaf(kind, v + step*dv, plus)
+            call new_leaf(kind, v - step*dv, minus)
+            call new_leaf_jvp(kind, v, dv, tangent)
+            if (maxval(abs((plus - minus)/(2*step) - tangent)) > &
+                1.0e-8_dp*max(1.0_dp, maxval(abs(tangent)))) &
+                error stop 'new geometry/field JVP'
+            call new_leaf_vjp(kind, v, w, adjoint)
+            if (abs(dot_product(w, tangent) - dot_product(adjoint, dv)) > &
+                1.0e-12_dp*max(1.0_dp, abs(dot_product(w, tangent)))) &
+                error stop 'new geometry/field VJP'
+        end do
+        print '(a)', 'PASS: segment geometry, field and meridian JVP/VJP'
+    end subroutine
+
+    subroutine new_leaf(kind, x, y)
+        integer, intent(in) :: kind
+        real(dp), intent(in) :: x(10)
+        real(dp), intent(out) :: y(10)
+        y = 0
+        select case (kind)
+        case (1)
+            call segment_geometry(x(1), x(2), x(3), x(4), x(5), x(6), y(1), y(2),  &
+                y(3), y(4), y(5), y(6), y(7), y(8), y(9))
+        case (2)
+            call segment_field(x(1), x(2), x(3), x(4), x(5), x(6), x(7), x(8), y(1),  &
+                y(2), y(3))
+        case (3)
+            call meridian_map_jacobian(x(1), x(2), x(3), x(4), x(5), x(6), x(7),  &
+                x(8), y(1), y(2), y(3), y(4), y(5), y(6), y(7), y(8), y(9), y(10))
+        end select
+    end subroutine
+
+    subroutine new_leaf_jvp(kind, x, dx, y)
+        integer, intent(in) :: kind
+        real(dp), intent(in) :: x(10)
+        real(dp), intent(in) :: dx(10)
+        real(dp), intent(out) :: y(10)
+        y = 0
+        select case (kind)
+        case (1)
+            call segment_geometry_jvp(x(1), x(2), x(3), x(4), x(5), x(6), dx(1),  &
+                dx(2), dx(3), dx(4), dx(5), dx(6), y(1), y(2), y(3), y(4), y(5),  &
+                y(6), y(7), y(8), y(9))
+        case (2)
+            call segment_field_jvp(x(1), x(2), x(3), x(4), x(5), x(6), x(7), x(8),  &
+                dx(1), dx(2), dx(3), dx(4), dx(5), dx(6), dx(7), dx(8), y(1), y(2),  &
+                y(3))
+        case (3)
+            call meridian_map_jacobian_jvp(x(1), x(2), x(3), x(4), x(5), x(6), x(7),  &
+                x(8), dx(1), dx(2), dx(3), dx(4), dx(5), dx(6), dx(7), dx(8), y(1),  &
+                y(2), y(3), y(4), y(5), y(6), y(7), y(8), y(9), y(10))
+        end select
+    end subroutine
+
+    subroutine new_leaf_vjp(kind, x, dx, y)
+        integer, intent(in) :: kind
+        real(dp), intent(in) :: x(10)
+        real(dp), intent(in) :: dx(10)
+        real(dp), intent(out) :: y(10)
+        y = 0
+        select case (kind)
+        case (1)
+            call segment_geometry_vjp(x(1), x(2), x(3), x(4), x(5), x(6), dx(1),  &
+                dx(2), dx(3), dx(4), dx(5), dx(6), dx(7), dx(8), dx(9), y(1), y(2),  &
+                y(3), y(4), y(5), y(6))
+        case (2)
+            call segment_field_vjp(x(1), x(2), x(3), x(4), x(5), x(6), x(7), x(8),  &
+                dx(1), dx(2), dx(3), y(1), y(2), y(3), y(4), y(5), y(6), y(7), y(8))
+        case (3)
+            call meridian_map_jacobian_vjp(x(1), x(2), x(3), x(4), x(5), x(6), x(7),  &
+                x(8), dx(1), dx(2), dx(3), dx(4), dx(5), dx(6), dx(7), dx(8), dx(9),  &
+                dx(10), y(1), y(2), y(3), y(4), y(5), y(6), y(7), y(8))
+        end select
+    end subroutine
+
     subroutine metric(d, y)
         real(dp), intent(in) :: d(3, 3)
         real(dp), intent(out) :: y(13)
