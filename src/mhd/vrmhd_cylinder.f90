@@ -17,7 +17,7 @@ module milca_vrmhd_cylinder
     private
     real(dp), parameter :: pi = acos(-1.0_dp)
 
-    !> Case of the JOREK cylinder recipe; units a = B0 = mu0 = rho = 1, time in
+    !> Straight-cylinder case of docs/vrmhd-cylinder.md; units a = B0 = mu0 = rho = 1, time in
     !> Alfven times. chi_perpendicular is the toy-model diffusivity of
     !> d_t T = chi lap T; the section's internal energy 3 n T/2 rescales it.
     type, public :: vrmhd_cylinder_case_t
@@ -28,7 +28,7 @@ module milca_vrmhd_cylinder
         !> S_j(0) in units of the source-free axis current; total current fixed.
         real(dp) :: source_amplitude = 0, source_width = 0.1_dp
         real(dp) :: ohmic_fraction = 0
-        !> Isotropic particle diffusivity; JOREK's D_perp of these runs.
+        !> Isotropic particle diffusivity.
         real(dp) :: density_diffusion = 1.0e-6_dp
         integer :: grid = 20001
     end type
@@ -297,7 +297,7 @@ contains
     end function
 
     subroutine vrmhd_cylinder_parameters(c, prof, p)
-        !! Closures of the JOREK cylinder runs: eta ~ Te^(-3/2) with
+        !! Closures of the cylinder case: eta ~ Te^(-3/2) with
         !! eta(T(0)) = 1/S, constant viscosity Pm/S and constant conductivities.
         type(vrmhd_cylinder_case_t), intent(in) :: c
         type(vrmhd_cylinder_profile_t), intent(in) :: prof
