@@ -116,8 +116,8 @@ conforming P_k (k >= 3) on unaligned triangles with spectral phi.
 (pp. 374-375) found p >= 3 adequate up to 1e9 and bilinear elements
 inadequate at 1e6. [Günter et al. 2005](https://doi.org/10.1016/j.jcp.2005.03.021)
 reach anisotropy-independent error with a symmetric finite-difference
-scheme on the same test. The fallback, if the ideal-limit sequence hits
-the conditioning floor reported below, is an asymptotic-preserving
+scheme on the same test. The fallback, if refinement stops converging
+(below, near 1e12 at P4 nr = 64), is an asymptotic-preserving
 reformulation ([Degond, Deluzet, Negulescu 2010]
 (https://doi.org/10.1137/090754200)). The Günter, Lackner, Tichmann 2007
 finite-element paper (doi:10.1016/j.jcp.2007.07.016) is not yet read and
@@ -175,9 +175,8 @@ has q_x = 0 identically; the identity then gives q_y = 0. Thus the parallel
 Gram operator is positive definite on the conforming, zero-trace polynomial
 space. At fixed mesh/order `(L + (chi_par-1) G) p_h = f` therefore gives
 p_h -> 0 as chi_par -> infinity, whereas the exact Sovinec solution is psi.
-This proves fixed-mesh pollution for this discretization. It does not diagnose
-the separately observed P4 conditioning floor or prove correctness of every
-assembly path. A field-aware coarse correction or different localisation is
+This proves fixed-mesh pollution for this discretization. It does not
+prove correctness of every assembly path. A field-aware coarse correction or different localisation is
 still required for the campaign's uniform-efficiency and cost targets.
 
 ## Verification gates
@@ -218,7 +217,7 @@ still required for the campaign's uniform-efficiency and cost targets.
    exceed the measured critical width.
 5. Ideal-limit sequence (next). Use ratios 1e3..1e9 (and g likewise) at
    fixed mesh ladders, extrapolate the island observables with reported
-   rates, and stop before the conditioning floor.
+   rates, and stop where the refinement below stops converging.
 
 ## Comparability
 
@@ -244,27 +243,44 @@ variations and is not an NN2 reference.
   phi-dependent tensor to 8.7e-15.
 - MILCA `milca_nonnested_transport`: `nt_conductivity_t` samples any
   `equilibrium_field_t`, including the NN1 free-B state, and `nt_solve`
-  runs the Dirichlet solve through `nn_linear_solve`. The reported residual
-  is the normwise backward error |r|/(||A||p|| + |rhs|), with up to two
-  refinement steps. The generated leaf adds `anisotropic_conductivity` with
-  JVP/VJP. CTest entries are `nonnested_transport_manufactured_3d` and
+  factors the assembled operator once and refines with the residual of
+  FortFEM's `meridian_fourier_anisotropic_apply`, which evaluates the
+  flux as chi_perp grad p + (chi_par - chi_perp)(b.grad p) b at each
+  quadrature point. Refinement stops when the correction falls to 4 eps or
+  stops halving (at most 30 steps); a correction larger than the previous
+  one is discarded, since the factor then no longer contracts. The reported residual is the normwise
+  backward error |r|/(||A||p|| + |rhs|) of the assembled operator. The
+  generated leaf adds `anisotropic_conductivity` with JVP/VJP. CTest entries are `nonnested_transport_manufactured_3d` and
   `nonnested_transport_sovinec_chi_ratio_p{2,3,4}`.
 
-Local evidence (gfortran -O3, 4 threads) gives the best |T(0,0) - 1| over
-the ladder nr = 4..64:
+Local evidence (gfortran, 4-8 threads) gives the best |T(0,0) - 1| over
+the ladder nr = 4..64 (P5 is not in CTest; 90 s, 3.7 GB):
 
-| ratio | P2 | P3 | P4 |
-|---:|---:|---:|---:|
-| 1 | 9.3e-9 | 1.3e-9 | 2.1e-12 |
-| 1e3 | 1.4e-5 | 3.7e-8 | 3.2e-10 |
-| 1e6 | 1.8e-2 | 1.1e-5 | 5.5e-8 |
-| 1e9 | 9.4e-1 | 1.6e-3 | 4.5e-5 |
+| ratio | P2 | P3 | P4 | P5 |
+|---:|---:|---:|---:|---:|
+| 1 | 9.3e-9 | 1.3e-9 | 6.0e-14 | 1.2e-14 |
+| 1e3 | 1.4e-5 | 3.7e-8 | 2.6e-12 | 2.4e-14 |
+| 1e6 | 1.8e-2 | 1.1e-5 | 2.0e-11 | 3.5e-12 |
+| 1e9 | 9.4e-1 | 1.6e-3 | 4.6e-7 | 1.0e-9 |
+| 1e12 | 1.0 | 1.4e-1 | 7.6e-5 | 4.3e-8 |
 
-P2 at 1e9 is fully polluted, as Sovinec reports for low order. The P4
-ladder shows a conditioning floor: at 1e9 the error rises from 4.5e-5
-(nr = 32) to 1.5e-4 (nr = 64), although the backward error stays at 8e-17.
-The forward error is then bounded by cond x eps. The ideal-limit sequence
-must stay above that floor or switch to the AP fallback.
+P2 at 1e9 is fully polluted, as Sovinec reports for low order. P4 and P5
+converge at observed orders 4 to 6 at every ratio. Before the factored
+residual, P4 stopped at a floor: at 1e9 the error rose from 2.1e-5
+(nr = 32) to 4.4e-5 (nr = 64), and at 1e12 it was 0.24, at a backward
+error of 6e-17. Refinement with a residual accumulated in real128 from
+the same assembled matrix did not move it. The floor was the data: a
+relative perturbation of eps in every assembled entry moved p by 2.2e-5
+and 1.5e-5 at nr = 32 and 64 (ratio 1e9), the size of the floor. An
+entry of chi_par G rounds by eps chi_par in a direction that need not lie
+in the range of G, so it reaches the near-kernel of the parallel operator
+and is amplified by about the ratio. The factored flux rounds b.grad p
+instead, an error in the range of the parallel operator, which A^-1 maps
+back to O(eps). The assembled factor still preconditions; refinement
+needs 2 steps at ratio 1, 6 at 1e9 and 19 at 1e12 (P4, nr = 64), so its
+contraction approaches 1 near 1e12 at this mesh. The coupled NN2
+residual already forms b.grad p first (`anisotropic_flux`), so Newton
+was never subject to this floor.
 
 Manufactured 3D (N = 2, nphi = 8): the observed orders are 2.73/3.64 (P2)
 and 3.02/3.30 (P3) at ratios 1/1e4, and errors are within 2.4 x the

@@ -328,8 +328,8 @@ option(MILCA_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experim
 # Steklov form #144, exact FEEC tables, split stretched BEM fans #145,
 # second-kind Nedelec edges #148, exact moment gradients #149 and the
 # boundary trace projection #152, the toroidal period #154 and its tensor
-# forms #160).
-set(MILCA_FORTFEM_REVISION "102d9bc89cac253c71ebaba649ecc07084bf7b1d")
+# forms #160, factored anisotropic apply).
+set(MILCA_FORTFEM_REVISION "33587d7306c785f16d836e35bef589f0a2354533")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${MILCA_FORTFEM_REVISION})
