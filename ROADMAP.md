@@ -1,6 +1,6 @@
 # MILCA roadmap — active work first
 
-Status: 2026-11-12. **This is the only active priority list.** Issues not listed here are
+Status: 2026-11-13. **This is the only active priority list.** Issues not listed here are
 backlog, not instructions to implement. Physics specifications and long-range
 scope remain in [DESIGN.md](DESIGN.md), [the capability catalogue](docs/capability-catalogue.md),
 [the model graph](docs/model-graph.md), and the
@@ -29,8 +29,9 @@ features or raw runtime alone. Keep the group's human effort on physics.
 | **P1b** | **3D equilibrium and exterior:** the coil-driven BEM exterior agrees with independent Biot–Savart and virtual-casing references (#350, #352), and the coil-driven box solves in vacuum and at finite pressure with closed-form coil vector potentials (#385, #390, #391); next is a finite-pressure case started from a displaced seed, which tests the Newton solve beyond the linear vacuum problem. Preserve NN/island and Beltrami convergence gates. Avoid advancing derived applications on an unvalidated field. | [#350](https://github.com/itpplasma/milca/pull/350), [#352](https://github.com/itpplasma/milca/pull/352), [#391](https://github.com/itpplasma/milca/pull/391) |
 | **P1c** | **Drift-wave turbulence for the resonant-layer response:** spectra, correlation scales and transport coefficients at one rational surface ([drift-turbulence.md](docs/drift-turbulence.md)). The linear fluid roots (stage L), Hasegawa-Wakatani turbulence with its saturated-flux benchmark (stage HW) and the homogeneous two-dimensional step of the drift-Alfven model (stage DA) are in; next is stage DA beyond the homogeneous periodic box. | [#371](https://github.com/itpplasma/milca/pull/371), [#379](https://github.com/itpplasma/milca/pull/379), [#383](https://github.com/itpplasma/milca/pull/383) |
 | **P1e** | **Global 3D ideal-MHD stability:** a fixed- and free-boundary stability capability for 3D equilibria that matches or exceeds the published capabilities of CAS3D, CASTOR3D, TERPSICHORE and DCON (unstable global modes, marginal points, stable spectra, wall and vacuum response), with certified errors, derivatives with respect to equilibrium and design parameters, and cost per observable at accepted accuracy as the figure of merit. Built under the procedure below. | [specification](docs/stability.md#global-3d-ideal-mhd-stability-p1e) |
+| **P1f** | **Visco-resistive MHD on the resistive time scale:** how the q profile of a driven tokamak core evolves and which stationary states it reaches, on the ladder of symmetry reductions of the one visco-resistive residual. Each rung is run as time evolution, Newton steady state and spectrum, and checked against its parent and a published reference. Order: the source-free axisymmetric torus (L2, gate RM-B11: uniform loop voltage, steady state with flows, the low-Hartmann-number flow of Bates and Montgomery 1998); the loop-voltage ledger of the helical cylinder (L1, RM-B13); the surface-averaged background (L0, RM-B12); the torus with n = 0, 1 (L4). The few-harmonic rung L3 and the mean-field closure LM wait for L4. Resistive spectra are the Jacobian eigenproblem of P1e. | [model ladder](docs/nonlinear-resistive-mhd.md#model-ladder-on-the-resistive-time-scale), [torus case](docs/vrmhd-torus.md#steady-ohmic-state) |
 
-P1a to P1c are **existing active campaigns**, not a proposal to restart them. Each
+P1a to P1c and P1f are **existing active campaigns**, not a proposal to restart them. Each
 campaign closes a specific observable-level verification gate before adding
 adjacent scope. Document unresolved discrepancies explicitly (e.g. the AUG
 resonant-ion per-surface differences in
