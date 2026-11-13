@@ -176,7 +176,7 @@ program test_ideal_free_boundary
     logical :: windows_on = .false.
     character(16) :: mode, argument
     integer :: degree
-    real(dp) :: kink_major = 20
+    real(dp) :: kink_major = 20, kink_wall = 2
     mode = 'derivatives'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
@@ -206,6 +206,8 @@ program test_ideal_free_boundary
         call physical_kink()
     case ('fixed_kink')
         call fixed_kink()
+    case ('kink_wall')
+        call wall_kink()
     case ('fixed_pinch')
         call fixed_pinch()
     case ('hypotheses')
@@ -319,7 +321,7 @@ contains
     subroutine kink_curve(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
-        point = [kink_major + 2*cos(2*pi*t), 2*sin(2*pi*t)]
+        point = [kink_major + kink_wall*cos(2*pi*t), kink_wall*sin(2*pi*t)]
     end subroutine
 
     subroutine kink_sampler(r, z, k, bc, bs)
@@ -590,6 +592,50 @@ contains
         end do
         if (shift_previous > 0.1_dp) error stop 'compressible kink shift'
     end subroutine physical_kink
+
+    subroutine wall_kink()
+        ! DIAG conducting wall at Gamma_c: no exterior operator for n = 1.
+        type(ideal_fb_t) :: fb
+        type(gs_state_t) :: mesh
+        type(cylindrical_chart_t) :: chart
+        type(screw_field_t) :: field
+        type(ideal_fb_stability_t) :: report
+        real(dp), allocatable :: chain(:, :), contour(:, :)
+        real(dp), parameter :: walls(3) = [3.0_dp, 1.6_dp, 1.3_dp], rho = 1.3_dp
+        real(dp) :: lambda
+        integer :: iw, j, st, counts(3, 2), nc
+        kink_major = 160
+        do iw = 1, 3
+            kink_wall = walls(iw)
+            field%major = kink_major; field%pitch = 0.5_dp
+            nc = 16*degree
+            if (allocated(contour)) deallocate (contour, chain)
+            allocate (contour(2, nc), chain(2, nc))
+            do j = 1, nc
+                call kink_curve(real(j - 1, dp)/nc, contour(:, j))
+                chain(:, j) = [kink_major + cos(2*pi*(j - 1)/nc), &
+                    sin(2*pi*(j - 1)/nc)]
+            end do
+            call initialize_gs(mesh, contour, 0.12_dp/degree**2, st, 3, &
+                curve=kink_curve, interior_chain=chain)
+            if (st /= 0) error stop 'wall mesh'
+            call ideal_fb_init(fb, mesh, chain, chart, field, nint(kink_major/10), &
+                1, 5*kink_major, 2*pi, st, mu0=1.0_dp)
+            if (st /= IDEAL_FB_OK) error stop 'wall init'
+            call ideal_fb_set_drive(fb, kink_sampler, st)
+            if (st /= IDEAL_FB_OK) error stop 'wall drive'
+            call ideal_fb_solve_vacuum(fb, st)
+            if (st /= IDEAL_FB_OK) error stop 'wall vacuum'
+            fb%mass_density = rho
+            fb%s_trace(:, :, 1) = 0
+            call ideal_fb_mode_inertia(fb, 3, [-0.01_dp, -1.0e-4_dp], counts, st)
+            print *, 'wall', kink_wall, ' inertia st', st, ' below -0.01, -1e-4:', counts(1, :)
+            call ideal_fb_mode_lanczos(fb, 3, lambda, report, st, shift=-0.3_dp)
+            print '(a,f5.2,a,es16.8,a,es16.8,i3)', 'wall at', kink_wall, ' omega^2', &
+                lambda, ' times rho', lambda*rho, st
+        end do
+        kink_wall = 2
+    end subroutine wall_kink
 
     subroutine fixed_kink()
         ! Fixed-boundary n = 1 internal kink of the Solov'ev equilibrium of
