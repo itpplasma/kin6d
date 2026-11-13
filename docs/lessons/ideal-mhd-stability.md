@@ -47,7 +47,39 @@ Hamada charts give the same internal-kink eigenvalue to 2.6e-5.
   tangential derivatives and is the one assembled there; the Lagrangian form
   remains an independent check for H1 fields (`ideal_dw_pinch_equivalence_and_derivatives`).
 
+- **Node-wise slip on a curved wall.** In the position gauge of the map
+  lane a fixed wall keeps the displacement component along the wall. Letting
+  each wall node slide along its own tangent gave 26 to 40 eigenvalues below
+  -10 on the Solov'ev internal-kink case (oracle: one mode at -1.3e-3), more
+  on finer meshes. Two causes. A point that slides along a curved wall stays
+  on it only with a second-order normal shift, on which the wall force does
+  work; without this curvature term the stiffness of the slip is wrong at
+  order one. With the term, 2 to 8 spurious modes near -1e-2 remained
+  whenever the radial spacing at the wall was finer than the poloidal one:
+  between the nodes the interpolated slip is not tangent, the discrete wall
+  bulges, and nothing restores a plasma that expands. The slip is now
+  tau(s) X_s on each wall edge X(s) with linear tau, which is tangent to the
+  discrete wall everywhere; all spurious modes are gone and the eigenvalue
+  approaches the oracle from above. Clamping the wall also removes them but
+  leaves the eigenvalue 5 to 17 % above the oracle on meshes where the
+  tangent slip is 1 to 7 % above it.
+- **Toroidal displacement as third unknown.** Adding the toroidal
+  displacement with the frozen-in Hessian on all three components for the
+  adiabatic term gave an eigenvalue 7 % below the gamma = 0 value in the
+  limit gamma -> 0. A parallel displacement beta B, on which the frozen-in
+  Hessian does not act, returns the gamma = 0 value to 5e-10. [H] The cause
+  of the first result was not established.
+
 ### Resolution of MILCA
+
+- **Unstructured mesh for a near-marginal internal kink.** On quality
+  triangulations of the Solov'ev case the fixed-boundary kink converges at
+  second order only (7.7 % off the oracle at 41 000 cubic nodes; isotropic
+  packing at q = 1 gives 1 % at 79 000). A flux-aligned ring mesh, whose
+  radial spacing is independent of the poloidal one, gives 0.46 % at 11 000
+  nodes and 5e-5 at 120 000. The radial spacing away from q = 1 mattered
+  more than the packing at q = 1: halving the largest spacing reduced the
+  error by 3.6, halving the smallest by 1.4.
 
 - **One-sided harmonic window.** With iota < 0 the resonant harmonics of
   n = 1 are positive m. Windows m = -2..16 (PEST) and m = -8..2 (Hamada)
@@ -86,6 +118,9 @@ Hamada charts give the same internal-kink eigenvalue to 2.6e-5.
   balance (1.5 %).
 
 ## Rules
+
+- A slip condition on a curved wall is imposed on the whole discrete wall,
+  not at its nodes, and carries the curvature term of the wall force.
 
 - Discretize the displacement through its contravariant densities, so that
   the divergence is exact in the tangential space.

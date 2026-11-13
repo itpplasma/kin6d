@@ -558,15 +558,17 @@ unstable to stable between b/a = 1.43 and 1.40 around the analytic marginal
 wall sqrt(2) (O3). The toroidal vacuum (boundary elements) and W_P, W_V, W_T
 follow.
 
-**S1 (in progress): map-lane spectra.** The free-boundary map lane has the
-physical perpendicular inertia and, for gamma > 0, the adiabatic term about
-the solved state with a parallel displacement as third unknown
-([ideal-free-boundary.md](ideal-free-boundary.md#physical-inertia)). On the
-embedded uniform-current cylinder the n = 1 eigenvalue is 0.15 % off the
-free-boundary cylinder oracle at R/a = 160, and the shift from gamma = 0 to
-5/3 is 8.4 % off the oracle's. Still open: the fixed-boundary spectrum of the
-lane (gauge-reduced nested Hessian per toroidal mode), on which the Solov'ev
-internal-kink gate and the comparison with GLISS depend.
+**S1 (in progress): map-lane spectra.** The map lane has the physical
+inertia and, for gamma > 0, the adiabatic term about the solved state with a
+parallel displacement as third unknown, with a free boundary and with a
+fixed wall ([ideal-free-boundary.md](ideal-free-boundary.md#physical-inertia)).
+Free boundary: on the embedded uniform-current cylinder the n = 1 eigenvalue
+is 0.15 % off the free-boundary cylinder oracle at R/a = 160, and the shift
+from gamma = 0 to 5/3 is 8.4 % off the oracle's. Fixed boundary: on a
+flux-aligned ring mesh the Solov'ev internal kink of P1e.3 is
+omega^2 = -1.30323e-3, 5e-5 off the oracle, with one unstable mode
+(gate 1e-4 met). Still open: the cylinder kink of rung R2 on this lane, 3D
+map states, and the comparison with GLISS on the same states.
 
 ### Verification ladder
 

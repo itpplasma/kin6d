@@ -21,6 +21,7 @@ add_test(NAME ideal_dw_pinch_equivalence_and_derivatives COMMAND test_ideal_dw)
 set_tests_properties(ideal_dw_pinch_equivalence_and_derivatives PROPERTIES
     TIMEOUT 30 LABELS "mhd;stability;fast")
 target_sources(milca_mhd PRIVATE src/mhd/ideal_cylinder.f90)
+target_sources(milca_mhd PRIVATE src/mhd/nested_ring_mesh.f90)
 add_executable(test_ideal_cylinder test/test_ideal_cylinder.f90)
 target_link_libraries(test_ideal_cylinder PRIVATE milca_mhd)
 foreach(case uniform kink limit free)

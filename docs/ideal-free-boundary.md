@@ -719,8 +719,70 @@ three-unknown problem returns the gamma = 0 eigenvalue to 5e-10. The mode is
 nearly incompressible, so this case tests the formulation but only weakly the
 size of the adiabatic term; the Solov'ev internal kink of
 [stability.md](stability.md) (-1.3033e-3 at gamma = 5/3) is the stronger
-check and needs the fixed-boundary spectrum of this lane, which does not
-exist yet.
+check; it is in the next section.
+
+## Fixed-boundary spectrum
+
+`ideal_fb_init_fixed` sets up the plasma alone inside a fixed wall, the
+boundary of the mesh, and `ideal_fb_fixed_mode` returns, for one toroidal
+harmonic, the eigenvalue omega^2 nearest a shift and the number of
+eigenvalues below it (inertia of one supernodal LDL^T of K - shift M, which
+also serves the shift-invert Lanczos). The blocks are those of the mode
+spectra above: position-gauge Hessian, adiabatic term, parallel unknown and
+physical inertia. Element blocks are added straight into the sparse
+matrices, so the memory is that of the matrices and their factor.
+
+The wall must be a flux surface. The position gauge removes the toroidal
+displacement by adding a multiple of B, which turns a toroidal slip on the
+wall into a poloidal one; the wall condition is therefore xi.grad chi = 0
+with a free slip along the wall, and the parallel unknown stays free.
+
+- The slip is tangent to the discrete wall everywhere: on a wall edge X(s),
+  s in [0, 1], it is tau(s) X_s with tau linear in s, a cubic field for cubic
+  elements. The unknowns are the slip lengths u at the wall vertices.
+- A point that slides by u stays on the wall only with the second-order
+  shift u^2/2 dt/ds (t the unit tangent). The wall force, the energy
+  gradient g at the wall node, does work on it, which adds g.dt/ds to the
+  stiffness of u (half of it for a cosine or sine mode). On a level curve of
+  chi, dt/ds = -(t.H t/|grad chi|) grad chi/|grad chi| with H the Hessian of
+  chi, taken from a central difference of the frozen gradient.
+
+Both points are required; the failures without them are in
+[lessons/ideal-mhd-stability.md](lessons/ideal-mhd-stability.md).
+
+`milca_nested_ring_mesh` builds the reference mesh: rings of curved P2 or P3
+triangles between consecutive surfaces rho_k, all nodes on the image of a
+regular (rho, theta) lattice, and a fan at the axis. The radial spacing is
+independent of the poloidal one, which the minimum-angle refinement of the
+unstructured mesher does not allow.
+
+`ideal_fb_fixed_kink` (label `slow`) is the n = 1 internal kink of the
+Solov'ev equilibrium of the flux-coordinate oracle
+([stability.md](stability.md): elongation 1.5, q from 0.89 to 1.15, wall at
+psi_N = 0.8, rho = mu0 = 1, gamma = 5/3, omega^2 = -1.30328e-3 in PEST and
+-1.30331e-3 in Hamada coordinates). Rings are packed at q = 1 with the
+spacing growing by 1.25 per ring between h_min and h_max (in
+rho = sqrt(psi_N/0.8)):
+
+| h_min | h_max | poloidal cells | nodes | omega^2 | off -1.3033e-3 |
+|---|---|---|---|---|---|
+| 0.02 | 0.06 | 64 | 11 329 | -1.29736e-3 | 4.6e-3 |
+| 0.01 | 0.04 | 96 | 24 769 | -1.30141e-3 | 1.5e-3 |
+| 0.005 | 0.015 | 128 | 80 257 | -1.30314e-3 | 1.3e-4 |
+| 0.005 | 0.015 | 192 | 120 385 | -1.30323e-3 | 5.3e-5 |
+
+On every level no eigenvalue lies below twice the oracle value and exactly
+two lie below a tenth of it, the two real phases of the one unstable mode.
+The registered test runs the first two levels (37 s on 8 threads) and gates
+the count, the decrease of the error and 2.5e-3; the last two levels (second
+argument 4; 9 GB, 5 min on 16 threads) reach the 1e-4 of stage S1. The
+values approach the oracle from above, as a Ritz value must.
+
+Limits. Sparse matrices and the factor interface use default integers, so a
+mode matrix is limited to 2^31 - 1 stored entries (about 10^7 unknowns
+here); FortFEM stops with a message at that point. The slip is linear per
+wall edge, so its part of the error is second order in the poloidal spacing
+at the wall.
 
 ## Registered single curved-pair diagnostic (25 October 2026)
 

@@ -567,6 +567,10 @@ add_test(NAME ideal_fb_physical_kink COMMAND test_ideal_free_boundary kink_mass)
 set_tests_properties(ideal_fb_physical_kink PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1" PROCESSORS 8 TIMEOUT 300
     LABELS "mhd;stability;slow")
+add_test(NAME ideal_fb_fixed_kink COMMAND test_ideal_free_boundary fixed_kink)
+set_tests_properties(ideal_fb_fixed_kink PROPERTIES ENVIRONMENT
+    "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1" PROCESSORS 8 TIMEOUT 300
+    LABELS "mhd;stability;slow")
 add_test(NAME ideal_fb_external_kink COMMAND test_ideal_free_boundary kink)
 set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
