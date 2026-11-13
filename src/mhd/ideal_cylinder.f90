@@ -9,6 +9,7 @@ module milca_ideal_cylinder
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre_ab
+    use fortnum_special_bessel, only: bessel_kn, bessel_in
     use milca_real_identity, only: same_real_value
     use fortfem_bspline_feec, only: evaluate_bspline_basis
     use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, &
@@ -25,6 +26,10 @@ module milca_ideal_cylinder
     type :: cylinder_space_t
         integer :: degree = 0, m = 0, nr = 0, ndof = 0
         real(dp) :: kz = 0
+        !> Free plasma boundary at the last edge; vacuum out to a conducting
+        !> wall at radius wall (<= 0: no wall).
+        logical :: free = .false.
+        real(dp) :: wall = 0
         real(dp), allocatable :: knots(:), edges(:)
         !> dof of each S_p basis (0: constrained); S_(p-1) dofs follow.
         integer, allocatable :: radial_dof(:), theta_dof(:), axial_dof(:)
@@ -38,14 +43,18 @@ module milca_ideal_cylinder
         end subroutine cylinder_equilibrium
     end interface
 contains
-    subroutine cylinder_space_init(space, edges, degree, m, kz, status)
-        ! edges(0:n): 0 = axis < ... < wall. X vanishes on the axis and the wall,
-        ! Z on the axis (finite xi_z), T on the axis unless |m| = 1.
+    subroutine cylinder_space_init(space, edges, degree, m, kz, status, wall)
+        ! edges(0:n): 0 = axis < ... < plasma edge. X vanishes on the axis, Z on
+        ! the axis (finite xi_z), T on the axis unless |m| = 1. Without wall,
+        ! X also vanishes at the edge (fixed boundary); with wall present the
+        ! edge is free and a vacuum fills the region up to the conducting wall
+        ! at radius wall (wall <= 0: vacuum to infinity).
         type(cylinder_space_t), intent(out) :: space
         real(dp), intent(in) :: edges(0:)
         integer, intent(in) :: degree, m
         real(dp), intent(in) :: kz
         integer, intent(out) :: status
+        real(dp), intent(in), optional :: wall
         integer :: n, k, at, next
         status = 1
         n = size(edges) - 1
@@ -54,6 +63,11 @@ contains
         if (any(edges(1:) <= edges(:n-1))) return
         space%degree = degree; space%m = m; space%kz = kz
         space%edges = edges
+        if (present(wall)) then
+            space%free = .true.; space%wall = wall
+            if (wall > 0 .and. wall <= edges(n)) return
+            if (m == 0 .and. abs(kz) <= 0) return
+        end if
         allocate(space%knots(2*(degree + 1) + (n - 1)*degree))
         space%knots(1:degree + 1) = edges(0)
         at = degree + 1
@@ -67,7 +81,7 @@ contains
             space%axial_dof(space%nr - 1))
         next = 0
         space%radial_dof = 0; space%theta_dof = 0; space%axial_dof = 0
-        do k = 2, space%nr - 1
+        do k = 2, space%nr - merge(0, 1, space%free)
             next = next + 1; space%radial_dof(k) = next
         end do
         do k = 1, space%nr - 1
@@ -132,6 +146,18 @@ contains
                 end do
             end do
         end do
+        if (space%free) then
+            ! Vacuum: 2 delta W_V/(4 pi^2 R0) = -(a/mu) F_a^2 G |xi_r(a)|^2 with
+            ! G = phi/phi' at the edge, xi_r = X/a, on the edge S_p function.
+            call equilibrium(space%edges(nspan), bt, btp, bz, bzp, p, pp, rho)
+            w = vacuum_ratio(space%m, abs(space%kz), space%edges(nspan), space%wall)
+            w = -space%edges(nspan)/mu*(space%m*bt/space%edges(nspan) &
+                + space%kz*bz)**2*w/space%edges(nspan)**2
+            at = (nspan - 1)*nb*nb + p_*nb + p_ + 1
+            i = space%radial_dof(space%nr)
+            rows(at) = i; cols(at) = i
+            kval(at) = kval(at) + w
+        end if
         if (.not. all(ieee_is_finite(real(kval)))) return
         if (.not. all(ieee_is_finite(aimag(kval)))) return
         ! Exact Hermitian symmetry for the native LDL^H contract.
@@ -225,6 +251,41 @@ contains
             if (gstat /= XI_OK) status = 1
         end subroutine density
     end subroutine span_basis
+
+    real(dp) function vacuum_ratio(m, k, a, b) result(g)
+        ! phi/phi' at r = a for the vacuum potential with phi' = 0 at r = b
+        ! (b <= 0: decaying to infinity); exp(i(m theta + k z)), k >= 0.
+        integer, intent(in) :: m
+        real(dp), intent(in) :: k, a, b
+        real(dp) :: x, xb, c, ratio
+        integer :: mm
+        mm = abs(m)
+        if (k <= 0) then
+            ratio = 0
+            if (b > 0) ratio = (a/b)**(2*mm)
+            g = -a*(1 + ratio)/(mm*(1 - ratio))
+            return
+        end if
+        x = k*a
+        c = 0
+        if (b > 0) then
+            xb = k*b
+            c = kprime(mm, xb)/iprime(mm, xb)
+        end if
+        g = (bessel_kn(mm, x) - c*bessel_in(mm, x)) &
+            /(k*(kprime(mm, x) - c*iprime(mm, x)))
+    contains
+        real(dp) function kprime(n, y)
+            integer, intent(in) :: n
+            real(dp), intent(in) :: y
+            kprime = -(bessel_kn(abs(n - 1), y) + bessel_kn(n + 1, y))/2
+        end function kprime
+        real(dp) function iprime(n, y)
+            integer, intent(in) :: n
+            real(dp), intent(in) :: y
+            iprime = (bessel_in(abs(n - 1), y) + bessel_in(n + 1, y))/2
+        end function iprime
+    end function vacuum_ratio
 
     pure complex(dp) function full_mass(rho, x, y) result(value)
         real(dp), intent(in) :: rho

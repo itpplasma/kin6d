@@ -21,12 +21,14 @@ program test_ideal_cylinder
         end subroutine zhegv
     end interface
     real(dp), parameter :: kink_reference = -0.1949752661_dp
+    real(dp) :: ext_bz = 5
     character(32) :: mode
     mode = 'all'
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (mode == 'all' .or. mode == 'uniform') call uniform_cylinder()
     if (mode == 'all' .or. mode == 'kink') call fixed_wall_kink()
     if (mode == 'all' .or. mode == 'limit') call unstable_limit()
+    if (mode == 'all' .or. mode == 'free') call external_kink()
     print '(a)', 'PASS ideal cylinder ('//trim(mode)//')'
 contains
     subroutine uniform_cylinder()
@@ -143,6 +145,129 @@ contains
         print '(a,es20.11)', 'extrapolated            ', extrapolated
         if (abs(extrapolated/(-3) - 1) > 1e-4_dp) error stop 'analytic limit -3'
     end subroutine unstable_limit
+
+    subroutine external_kink()
+        ! docs/ideal-free-boundary.md: B = (-y, x, Bz), p = 1 - r^2, a = mu = rho
+        ! = 1, m = 1, kz = -0.1, q = -kz Bz = 0.5. The rigid displacement
+        ! (X = r, T = i, Z = 0) has omega^2 = q^2 - 1 + f (q - 1)^2 with the
+        ! vacuum factor f = K_1/(K_1 + ka K_0); for ka = 0.1, -0.50601.
+        use fortnum_special_bessel, only: bessel_kn
+        type(cylinder_space_t) :: space
+        type(csc_z_t) :: stiffness, mass
+        type(fortsparse_status_t) :: status
+        complex(dp), allocatable :: v(:), kv(:), mv(:)
+        real(dp), allocatable :: lam(:), greville(:)
+        real(dp) :: f, exact, rq, previous
+        integer :: ok, k, j
+        real(dp), parameter :: walls(4) = [3.0_dp, 1.6_dp, 1.3_dp, 1.1_dp]
+        real(dp), parameter :: marginal(2) = [1.40_dp, 1.43_dp]
+        f = bessel_kn(1, 0.1_dp)/(bessel_kn(1, 0.1_dp) + 0.1_dp*bessel_kn(0, 0.1_dp))
+        exact = 0.25_dp - 1 + f*0.25_dp
+        call cylinder_space_init(space, edges(16, 1.0_dp), 3, 1, -0.1_dp, ok, &
+            wall=0.0_dp)
+        if (ok /= 0) error stop 'free-boundary space'
+        call cylinder_assemble(space, external_field, 0.0_dp, 1.0_dp, stiffness, &
+            mass, status)
+        if (status%code /= FORTSPARSE_OK) error stop 'free-boundary assembly'
+        allocate(v(space%ndof)); v = 0
+        greville = [(sum(space%knots(k + 1:k + space%degree))/space%degree, &
+            k = 1, space%nr)]
+        do k = 1, space%nr
+            if (space%radial_dof(k) > 0) v(space%radial_dof(k)) = greville(k)
+        end do
+        do k = 1, space%nr - 1
+            if (space%theta_dof(k) > 0) v(space%theta_dof(k)) = (0.0_dp, 1.0_dp)
+        end do
+        kv = matvec(stiffness, v); mv = matvec(mass, v)
+        rq = real(dot_product(v, kv))/real(dot_product(v, mv))
+        print '(a,2es18.9,es10.2)', 'rigid kink quotient, exact', rq, exact, &
+            abs(rq/exact - 1)
+        if (abs(rq/exact - 1) > 1e-10_dp) error stop 'rigid external kink energy'
+        if (abs(exact + 0.50601_dp) > 1e-5_dp) error stop 'vacuum factor'
+        call spectrum_space(space, stiffness, mass, lam)
+        print '(a,es18.9)', 'lowest eigenvalue, no wall', lam(1)
+        if (lam(1) > rq + 1e-12_dp) error stop 'Ritz bound violated'
+        ! Long-wavelength limit ka -> 0: omega^2 -> 2 q (q - 1) = -0.5 (O2).
+        ext_bz = 500
+        call cylinder_space_init(space, edges(16, 1.0_dp), 3, 1, -1e-3_dp, ok, &
+            wall=0.0_dp)
+        call cylinder_assemble(space, external_field, 0.0_dp, 1.0_dp, stiffness, &
+            mass, status)
+        ext_bz = 5
+        block
+            real(dp), allocatable :: low(:)
+            call spectrum_space(space, stiffness, mass, low)
+            print '(a,es18.9)', 'lowest eigenvalue, ka = 1e-3', low(1)
+            if (abs(low(1)/(-0.5_dp) - 1) > 1e-4_dp) error stop 'kink limit 2q(q-1)'
+        end block
+        if (count(lam < -1e-4_dp) /= 1) error stop 'external kink count (O1)'
+        previous = lam(1)
+        do j = 1, size(walls)
+            call cylinder_space_init(space, edges(16, 1.0_dp), 3, 1, -0.1_dp, ok, &
+                wall=walls(j))
+            call cylinder_assemble(space, external_field, 0.0_dp, 1.0_dp, &
+                stiffness, mass, status)
+            call spectrum_space(space, stiffness, mass, lam)
+            print '(a,f5.2,es18.9)', 'lowest eigenvalue, wall at', walls(j), lam(1)
+            if (lam(1) < previous) error stop 'a closer wall destabilized'
+            previous = lam(1)
+        end do
+        if (lam(1) < -1e-4_dp) error stop 'close wall did not stabilize'
+        ! Marginal wall at ka -> 0: q^2 - 1 + (q - 1)^2 (1 + c)/(1 - c) = 0 with
+        ! c = (a/b)^2 gives b/a = sqrt(2) for q = 0.5 (O3).
+        ext_bz = 500
+        do j = 1, 2
+            call cylinder_space_init(space, edges(16, 1.0_dp), 3, 1, -1e-3_dp, ok, &
+                wall=marginal(j))
+            call cylinder_assemble(space, external_field, 0.0_dp, 1.0_dp, &
+                stiffness, mass, status)
+            call spectrum_space(space, stiffness, mass, lam)
+            print '(a,f5.2,es18.9)', 'ka = 1e-3, wall at', marginal(j), lam(1)
+            if (j == 1 .and. lam(1) < -1e-4_dp) error stop 'wall inside marginal'
+            if (j == 2 .and. lam(1) > -1e-4_dp) error stop 'wall outside marginal'
+        end do
+        ext_bz = 5
+    end subroutine external_kink
+
+    pure subroutine external_field(r, bt, btp, bz, bzp, p, pp, rho)
+        real(dp), intent(in) :: r
+        real(dp), intent(out) :: bt, btp, bz, bzp, p, pp, rho
+        bt = r; btp = 1; bz = ext_bz; bzp = 0; p = 1 - r*r; pp = -2*r; rho = 1
+    end subroutine external_field
+
+    function matvec(a, x) result(y)
+        type(csc_z_t), intent(in) :: a
+        complex(dp), intent(in) :: x(:)
+        complex(dp) :: y(size(x))
+        integer :: j, k
+        y = 0
+        do j = 1, a%ncol
+            do k = a%col_ptr(j), a%col_ptr(j + 1) - 1
+                y(a%row_idx(k)) = y(a%row_idx(k)) + a%val(k)*x(j)
+            end do
+        end do
+    end function matvec
+
+    subroutine spectrum_space(space, stiffness, mass, lam)
+        type(cylinder_space_t), intent(in) :: space
+        type(csc_z_t), intent(in) :: stiffness, mass
+        real(dp), allocatable, intent(out) :: lam(:)
+        complex(dp), allocatable :: ka(:, :), ma(:, :), work(:)
+        real(dp), allocatable :: rwork(:)
+        integer :: j, k, info
+        allocate(ka(space%ndof, space%ndof), ma(space%ndof, space%ndof))
+        ka = 0; ma = 0
+        do j = 1, space%ndof
+            do k = stiffness%col_ptr(j), stiffness%col_ptr(j + 1) - 1
+                ka(stiffness%row_idx(k), j) = stiffness%val(k)
+                ma(mass%row_idx(k), j) = mass%val(k)
+            end do
+        end do
+        allocate(lam(space%ndof), work(4*space%ndof), rwork(3*space%ndof))
+        call zhegv(1, 'N', 'U', space%ndof, ka, space%ndof, ma, space%ndof, lam, &
+            work, size(work), rwork, info)
+        if (info /= 0) error stop 'dense generalized eigensolve'
+    end subroutine spectrum_space
 
     subroutine spectrum(field, a, m, kz, gam, n, deg, lam)
         procedure(cylinder_equilibrium) :: field
