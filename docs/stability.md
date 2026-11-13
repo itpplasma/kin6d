@@ -239,16 +239,40 @@ finite-amplitude theorem; a linear eigenvalue interval does not prove it.
 
 ## Global 3D ideal-MHD stability (P1e)
 
-Status (2026-11-12): stages P1e.1 and P1e.2 implemented, P1e.3 and P1e.5 in
-progress (see
-[implementation status](#p1e-implementation-status)); later stages planned.
-This section is the plan
+Status (2026-11-12): restructured; the energy leaves are on main, and the
+flux-coordinate stages P1e.2, P1e.3 and P1e.5 are kept as test oracles (see
+[implementation status](#p1e-implementation-status)). This section is the plan
 for roadmap item P1e: a global ideal-MHD stability capability for 3D
 equilibria, fixed and free boundary, that covers the published capabilities of
 CAS3D, CASTOR3D, TERPSICHORE and DCON and goes beyond them in certified errors,
-derivatives and cost at matched accuracy. Every source below is a publication
-or an open-source repository; the provenance rule is "Source provenance
-(strict)" in [AGENTS.md](../AGENTS.md).
+derivatives and cost at matched accuracy. Sources follow "Source provenance
+(strict)" in [AGENTS.md](../AGENTS.md); our own GLISS is an allowed source.
+
+### Structure
+
+Stability is an analysis of MILCA's one model, not a second solver
+([Principle](#principle), [equilibrium-core.md](equilibrium-core.md) D5):
+
+- **Ideal spectra** are the generalized eigenproblem of the linearization of
+  the one equilibrium residual (D3; for the map lane the Hessian of the
+  frozen-in energy, with the adiabatic term gamma p tr A tr C of
+  `gen/gen_ideal_dw.f90`) and the physical mass, at a solved state of any
+  lane. Alignment with flux surfaces, where they exist, comes from the
+  map lane's Lagrangian reference mesh (an O-grid on the reference flux
+  levels), not from constructing flux coordinates; states without nested
+  surfaces use compatible spaces of the free-B lane.
+- **Resistive and viscous spectra** are the eigenproblem of the Jacobian of
+  the visco-resistive section residual with its mass
+  ([nonlinear-resistive-mhd.md](nonlinear-resistive-mhd.md),
+  [vrmhd-section.md](vrmhd-section.md)); their ideal limit must agree with
+  the ideal spectra, and the linear phase of nonlinear runs with both.
+- **GLISS** (our nested-surface code: Fourier times compatible radial
+  splines in Boozer coordinates) is the external reference for nested
+  equilibria and runs the CAS3D, TERPSICHORE and DCON benchmarks. Generic
+  improvements go into it rather than into a second MILCA solver.
+- **The flux-coordinate code** of P1e.2 to P1e.5 (`milca_ideal_cylinder`,
+  `milca_ideal_flux`, `milca_ideal_flux_tokamak`) is kept as an independent
+  oracle with its gates; it is not extended into a production solver.
 
 ### Reference codes as published
 
@@ -378,21 +402,17 @@ not widened to absorb it.
   removed. The kinetic leaf changes from the perpendicular norm of the pinned
   package ([ideal-xi.md](ideal-xi.md)) to the full norm of M0, with the
   perpendicular norm kept as the option above.
-- **Discretization.** Radial finite elements aligned with flux surfaces,
-  Fourier harmonics in the two angles, one mode family at a time. The radial
-  pair generalizes the hybrid elements of [1,15]: the normal component of xi
-  continuous of degree p, the tangential components discontinuous of degree
-  p-1, designed so that the divergence and field-line bending terms are
-  approximated compatibly and the continua stay unpolluted, as analysed in
-  [15] for one- and two-dimensional equilibria; in 3D, O5 checks it. Degree,
-  radial mesh and harmonic set adapt, with refinement at rational surfaces.
-  Unaligned meshes are out of P1e because the published codes and the
-  pollution analysis assume alignment.
-- **Equilibria.** The native nested map equilibrium
-  ([nested-equilibrium-input.md](nested-equilibrium-input.md)) and imported
-  VMEC, GVEC and DESC states through an adapter, both transformed to
-  straight field line coordinates. The equilibrium force residual and its
-  error enter the error ledger of every stability result.
+- **Discretization.** The operator of [Structure](#structure) is assembled
+  on the equilibrium's own mesh. The flux-coordinate oracle uses radial
+  finite elements aligned with flux surfaces and Fourier harmonics in the two
+  angles: the contravariant density normal to the surfaces continuous of
+  degree p, the tangential densities discontinuous of degree p-1, which
+  generalizes the hybrid elements of [1,15] and keeps the continua
+  unpolluted (O5). Its lessons carry over: densities rather than physical
+  components, and a harmonic window wide on both sides of the resonance.
+- **Equilibria.** Solved states of MILCA's lanes; imported VMEC, GVEC, DESC
+  and G-EQDSK states are seeds or adapters. The equilibrium force residual
+  and its error enter the error ledger of every stability result.
 - **Vacuum.** The exterior energy uses the Steklov-Poincare map of the
   existing boundary-element operators
   ([ideal-free-boundary.md](ideal-free-boundary.md)): exact to infinity,
@@ -509,6 +529,20 @@ the tests. Its real symmetric embedding [[Re, -Im], [Im, Re]] factors in
 20 s with the real front-based LDL^T and twice the inertia; dense-front
 complex factorization in FortSparse is part of P1e.10.
 
+**Toroidal internal kink against Bussac.** The flux-coordinate oracle on the
+circular-torus states of [vrmhd-torus.md](vrmhd-torus.md) (R0/a = 10, Ohmic
+profile, q0 = 0.88 to 0.90, fixed wall at psi_N = 0.95, n = 1), read from
+Grad-Shafranov solutions with element size 0.0125 and with half of the
+radial cells within 0.04 of the q = 1 radius, gives one unstable mode with
+omega^2 = -3.17e-8 at beta_p = 3 and -4.47e-9 at beta_p = 2, in units of
+(v_A/a)^2. The values agree to 0.2 % between 64 and 128 cells, two band
+widths and the PEST and Hamada charts, and to 1 % with the large-aspect-ratio
+Bussac growth rate evaluated on the same q profiles with the rate as printed
+in Bussac et al., Phys. Rev. Lett. 35, 1638 (1975); a rate twice as large is
+excluded. At beta_p = 1 the mode (Bussac: -2.8e-11) is at the resolution
+limit. Uniform radial meshes give values that keep falling under refinement:
+the near-marginal internal kink needs cells concentrated at q = 1.
+
 **P1e.5 (in progress): free boundary.** In the cylinder the edge density
 X(a) is free and the vacuum adds 2 delta W_V = -(a/mu) F_a^2 G |xi_r(a)|^2 per
 unit 4 pi^2 R0, with G = phi/phi' at the edge from modified Bessel functions
@@ -545,25 +579,23 @@ not reconstructed from figures by fitting.
 
 ### Stages
 
+Done: the MILCA-owned energy and delta-W leaves (P1e.1), and the
+flux-coordinate oracles P1e.2 (cylinder), P1e.3 (toroidal charts) and P1e.5
+part 1 (cylinder free boundary), with their gates below.
+
 | Stage | Content | Exit gate | Needs |
 |---|---|---|---|
-| P1e.0 | confirm every S and ? entry above from full text; collect published inputs for R3 to R7; establish DCON3D availability | matrix holds only P and full-text entries | - |
-| P1e.1 | MILCA-owned delta W (M0, M1) in FortSym; retire the external pin | R0; potential energy agrees with the pinned leaves on the existing tests, then the pin is removed | P1e.0 |
-| P1e.2 | radial hybrid element times Fourier space, fixed boundary, one mode family, with the existing shift-invert eigen solver | R1; R2 fixed boundary (O1 as floating-point count, O2) | P1e.1 |
-| P1e.3 | axisymmetric toroidal equilibria in straight field line coordinates; stable spectrum with gap targeting | R3 fixed boundary (O1, O2, O4, O5) | P1e.2 |
-| P1e.4 | 3D equilibria, native and imported; mode-family coupling | R4, R5 fixed boundary | P1e.3 |
-| P1e.5 | free boundary: vacuum to infinity, ideal wall, coils; W_P, W_V, W_T | R2 external kink; R3 O6 against DCON; R5 free boundary and R7 | P1e.3; P1e.4 for R5 and R7 |
-| P1e.6 | thin resistive 3D wall | R6 | P1e.4, P1e.5 |
-| P1e.7 | Mercier and ballooning; global-to-local limit at high n | O7 on R2 and R3; on R4 | P1e.2; P1e.4 for R4 |
-| P1e.8 | derivatives and marginal points | O9 on R2 and R3; O3 as beta scans on R3; R5 | P1e.3; P1e.4 and P1e.5 for R5 and free-boundary derivatives |
-| P1e.9 | interval certificates for inertia and isolated eigenvalues | O1 certified on R2 and R3; on R4 and R5 | P1e.3; P1e.4 for R4 and R5 |
-| P1e.10 | performance on the clusters at 1 % on R3 to R5; CUDA optional | O10 against TERPSICHORE and DCON at matched accuracy | P1e.4, P1e.5 |
-| P1e.11 | resistive plasma, viscosity, flow, two-fluid terms (CASTOR3D rows) | published CASTOR3D cases [5] | P1e.6 and a linearization of the resistive MHD residual |
-
-Library work follows step 3 of the P1e procedure in
-[ROADMAP.md](../ROADMAP.md): interval LDL inertia and shift-invert Lanczos in
-FortSparse and FortNum, the radial hybrid element in FortFEM, the straight
-field line transform in libneo if it owns one, else in the MILCA adapter.
+| S0 | confirm every S and ? entry of the reference matrix from full text; collect published inputs | matrix holds only P and full-text entries | - |
+| S1 | global ideal spectrum of the D5 operator at solved axisymmetric and 3D map equilibria, O-grid reference mesh, adiabatic term | R1 to R3 against the oracles (cylinder kink, Solov'ev internal kink to 1e-4) and GLISS on the same states | P1e.1 |
+| S2 | free boundary on the same operator (existing boundary-element exterior); W_P, W_V, W_T | R2 external kink and marginal wall; R3 O6 against DCON | S1 |
+| S3 | stellarator map equilibria and mode families | R4, R5 against GLISS, TERPSICHORE and published CAS3D | S1 |
+| S4 | certified two-sided eigenvalue bounds (Rayleigh-Ritz above, Lehmann-Goerisch or residual enclosure below) and interval inertia | O1 certified, O2 enclosed on R2, R3 | S1 |
+| S5 | adjoint derivatives of growth rates and marginal points through the equilibrium | O9; O3 as beta scans on R3, R5 | S1, S2 |
+| S6 | error-controlled adaptivity of the mesh and the harmonic window (dual-weighted residuals) | the one-sided-window trap of the lessons page detected automatically | S1 |
+| S7 | Mercier and ballooning; global-to-local limit | O7 on R2 to R4 | S1 |
+| S8 | resistive and viscous spectra from the visco-resistive Jacobian; thin resistive wall | ideal limit equals S1; RM-B2 tearing; R6 | S1, S2 |
+| S9 | non-nested states (free-B lane): compatible spaces without global surfaces | pollution and convergence on island cases | S1 |
+| S10 | performance: supernodal complex factors in FortSparse, matrix-free and block eigensolvers | O10 against GLISS, TERPSICHORE and DCON at matched accuracy | S1 |
 
 ### Sources
 
