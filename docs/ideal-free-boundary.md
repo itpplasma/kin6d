@@ -680,8 +680,47 @@ with plasma and vacuum energies of about -97 and +97 that nearly cancel, has
 omega^2 = -0.329 at R/a = 80 and lies above 0.5 of the kink value at 160.
 It weakens as the aspect ratio grows, which points to the equilibrium
 defect of the bent cylinder; [H] it remains to be checked on an exact
-toroidal equilibrium. The adiabatic term and the parallel unknown it needs
-(gamma > 0) are not yet in this lane.
+toroidal equilibrium.
+
+## Compressibility
+
+`fb%adiabatic_index = gamma > 0` (with `mass_density > 0`) adds the adiabatic
+energy to the mode spectra. The equilibrium functional freezes the pressure p
+per reference volume (gamma = 0), and the solved map has a Jacobian J0 /= 1.
+An adiabatic displacement freezes p J^gamma instead, so its internal energy
+per reference volume is e(J) = p J0 (J/J0)^(1-gamma)/(gamma - 1). At J = J0
+its gradient in DX equals that of -p J, so the equilibrium is unchanged, and
+its Hessian exceeds that of -p J by (gamma p/J0) dJ dJ^T, which is
+gamma p J0 (div xi)^2 per reference volume. `gen/gen_ideal_dw.f90` proves
+both statements entry by entry for a general DX and ties the increment to the
+adiabatic Hessian at the identity map.
+
+The position gauge has no parallel displacement, which is harmless at
+gamma = 0 and wrong at gamma > 0, where the parallel motion sets div xi. The
+third plasma unknown is therefore a nodal scalar beta with the displacement
+e_1 dq_1 + e_2 dq_2 + beta B. At an equilibrium the frozen-in energy does not
+see beta B, so the position-gauge Hessian is kept as it is, and beta enters
+only through its compression dJ = J0 B.grad beta = b.d(beta)/ds (div B = 0)
+and through the inertia rho J |xi|^2, now the full one (generated leaves
+`dw_point_adiabatic` and `dw_point_inertia`). The added stiffness is positive
+semidefinite. A first attempt with the toroidal displacement as third unknown
+and the frozen-in Hessian on all three components gave wrong eigenvalues on
+the case below (the gamma -> 0 limit 7 % below the gamma = 0 value) and was
+dropped; [H] its indefinite parallel block is the suspected cause, which was
+not confirmed.
+
+`ideal_fb_physical_kink` repeats the embedded cylinder at gamma = 5/3. The
+cylinder minimum moves from -0.5268153501 to -0.5261629893 (same test as
+above, `ideal_cylinder_free`), a relative shift of 1.238e-3 that is smaller
+than the aspect-ratio error of either eigenvalue. The gate is therefore the
+shift between gamma = 0 and 5/3 on one torus: 1.651e-3 at R/a = 80 and
+1.342e-3 at 160 (33 % and 8.4 % off the cylinder shift). At gamma = 1e-8 the
+three-unknown problem returns the gamma = 0 eigenvalue to 5e-10. The mode is
+nearly incompressible, so this case tests the formulation but only weakly the
+size of the adiabatic term; the Solov'ev internal kink of
+[stability.md](stability.md) (-1.3033e-3 at gamma = 5/3) is the stronger
+check and needs the fixed-boundary spectrum of this lane, which does not
+exist yet.
 
 ## Registered single curved-pair diagnostic (25 October 2026)
 

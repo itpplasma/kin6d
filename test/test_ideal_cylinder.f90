@@ -187,6 +187,19 @@ contains
         call spectrum_space(space, stiffness, mass, lam)
         print '(a,es18.9)', 'lowest eigenvalue, no wall', lam(1)
         if (lam(1) > rq + 1e-12_dp) error stop 'Ritz bound violated'
+        ! Compression: the rigid displacement is divergence free, so it still
+        ! bounds the eigenvalue, which the adiabatic term can only raise.
+        block
+            real(dp), allocatable :: adiabatic(:)
+            call cylinder_assemble(space, external_field, 5.0_dp/3, 1.0_dp, &
+                stiffness, mass, status)
+            if (status%code /= FORTSPARSE_OK) error stop 'adiabatic assembly'
+            call spectrum_space(space, stiffness, mass, adiabatic)
+            print '(a,es18.9)', 'lowest eigenvalue, no wall, gamma = 5/3', &
+                adiabatic(1)
+            if (adiabatic(1) > rq + 1e-12_dp) error stop 'adiabatic Ritz bound'
+            if (adiabatic(1) < lam(1)) error stop 'compression destabilized'
+        end block
         ! Long-wavelength limit ka -> 0: omega^2 -> 2 q (q - 1) = -0.5 (O2).
         ext_bz = 500
         call cylinder_space_init(space, edges(16, 1.0_dp), 3, 1, -1e-3_dp, ok, &

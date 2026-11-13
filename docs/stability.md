@@ -558,6 +558,16 @@ unstable to stable between b/a = 1.43 and 1.40 around the analytic marginal
 wall sqrt(2) (O3). The toroidal vacuum (boundary elements) and W_P, W_V, W_T
 follow.
 
+**S1 (in progress): map-lane spectra.** The free-boundary map lane has the
+physical perpendicular inertia and, for gamma > 0, the adiabatic term about
+the solved state with a parallel displacement as third unknown
+([ideal-free-boundary.md](ideal-free-boundary.md#physical-inertia)). On the
+embedded uniform-current cylinder the n = 1 eigenvalue is 0.15 % off the
+free-boundary cylinder oracle at R/a = 160, and the shift from gamma = 0 to
+5/3 is 8.4 % off the oracle's. Still open: the fixed-boundary spectrum of the
+lane (gauge-reduced nested Hessian per toroidal mode), on which the Solov'ev
+internal-kink gate and the comparison with GLISS depend.
+
 ### Verification ladder
 
 Each rung is a frozen gate; a later rung does not start before the earlier

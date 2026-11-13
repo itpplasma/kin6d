@@ -458,9 +458,10 @@ contains
 
     subroutine physical_kink()
         ! Physical-inertia n = 1 spectrum of the embedded uniform-current
-        ! cylinder (q = 0.5, ka = 0.1, rho = 1.3, gamma = 0). The free-boundary
-        ! cylinder oracle (milca_ideal_cylinder, docs/stability.md) gives the
-        ! full-space minimum omega^2 = -0.5268153501/rho; the torus approaches
+        ! cylinder (q = 0.5, ka = 0.1, rho = 1.3), first at gamma = 0. The
+        ! free-boundary cylinder oracle (milca_ideal_cylinder,
+        ! docs/stability.md) gives the full-space minimum omega^2 =
+        ! -0.5268153501/rho; the torus approaches
         ! it as R/a grows. The two real phases of the helical mode are an exact
         ! Fourier degeneracy, so two eigenvalues lie below 0.95 of it. A
         ! further pair, whose plasma and vacuum energies nearly cancel, lies
@@ -474,10 +475,12 @@ contains
         type(ideal_fb_stability_t) :: report
         real(dp), allocatable :: chain(:, :), contour(:, :)
         real(dp), parameter :: aspects(2) = [80.0_dp, 160.0_dp], rho = 1.3_dp
-        real(dp) :: lambda, exact, err, previous
+        real(dp), parameter :: shift_exact = (0.5268153501_dp - 0.5261629893_dp) &
+            /0.5268153501_dp
+        real(dp) :: lambda, exact, err, previous, adiabatic, shift, shift_previous
         integer :: level, j, st, counts(3, 1)
         exact = -0.5268153501_dp/rho
-        previous = huge(1.0_dp)
+        previous = huge(1.0_dp); shift_previous = huge(1.0_dp)
         do level = 1, 2
             kink_major = aspects(level)
             field%major = kink_major; field%pitch = 0.5_dp
@@ -511,7 +514,33 @@ contains
             if (err > 5e-3_dp) error stop 'physical kink eigenvalue'
             if (err >= previous) error stop 'physical kink aspect convergence'
             previous = err
+            ! Compression (gamma = 5/3, parallel unknown, full inertia): the
+            ! cylinder oracle moves from -0.5268153501 to -0.5261629893. The
+            ! shift is smaller than the aspect-ratio error of either value,
+            ! which largely cancels in the difference on one torus.
+            fb%adiabatic_index = 5.0_dp/3
+            call ideal_fb_mode_lanczos(fb, 3, adiabatic, report, st, &
+                shift=1.1_dp*exact)
+            if (st /= IDEAL_FB_OK) error stop 'compressible kink eigenpair'
+            shift = (adiabatic - lambda)/abs(lambda)
+            print '(a,es16.8,a,2es12.4)', 'compressible kink omega^2', adiabatic, &
+                ' relative shift, cylinder', shift, shift_exact
+            if (abs(shift/shift_exact - 1) >= shift_previous) &
+                error stop 'compressible shift aspect convergence'
+            shift_previous = abs(shift/shift_exact - 1)
+            ! Without compression the parallel displacement carries inertia
+            ! and no energy, so the third unknown must change nothing.
+            fb%adiabatic_index = 1.0e-8_dp
+            call ideal_fb_mode_lanczos(fb, 3, adiabatic, report, st, &
+                shift=1.1_dp*exact)
+            if (st /= IDEAL_FB_OK) error stop 'incompressible limit eigenpair'
+            print '(a,es16.8,a,es9.2)', 'gamma -> 0 omega^2', adiabatic, ' rel', &
+                abs(adiabatic/lambda - 1)
+            if (abs(adiabatic/lambda - 1) > 1e-6_dp) &
+                error stop 'incompressible limit of the parallel unknown'
+            fb%adiabatic_index = 0
         end do
+        if (shift_previous > 0.1_dp) error stop 'compressible kink shift'
     end subroutine physical_kink
 
     subroutine rigid_spectrum(energy,physical_mass,lambda)
