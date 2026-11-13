@@ -9,11 +9,14 @@ drive, BDF2 evolution with supernodal direct factors, and, ahead of RM3, the
 linear and nonlinear Fourier operators about an invariant state including the
 closed helical coframe ([section contract](vrmhd-section.md)). Not yet
 implemented: the RM-B5 island rates, the RM-B8 JOREK and RM-B10 slow-manifold
-gates, the 3D boundary solves and time evolution, and the field-split
-preconditioner (RM4). This document owns the
+gates, the 3D boundary solves and time evolution, the field-split
+preconditioner (RM4), and the milestones RM9 to RM12 and gates RM-B11 to
+RM-B13 of the model ladder, which are planned only. This document owns the
 nonlinear visco-resistive part of [R12](https://github.com/itpplasma/milca/blob/94caec95e474bd23640278c5e03b50204943f369/ROADMAP.md#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
 item 12; Hall/XMHD stays with R12. Scope: tokamak and stellarator core MHD on
-resistive time scales.
+resistive time scales. The [model ladder](#model-ladder-on-the-resistive-time-scale)
+(plan of 2026-11-13) orders the models from a surface-averaged background to
+general 3D.
 
 ## Why
 
@@ -284,6 +287,325 @@ frozen-coefficient linearised operator over Weyl-algebra coefficients
 Robertz, J. Symbolic Comput. 42 1113, 2007), generated with FortSym, to derive
 block-triangular preconditioners. Admitted only through the same gates.
 
+## Model ladder on the resistive time scale
+
+Plan of 2026-11-13. This section adds no implementation; the state column
+says what runs today.
+
+Two questions drive this path: how the safety-factor profile q of a driven
+tokamak core evolves on the resistive time scale, and which stationary states
+it reaches with and without a saturated m/n = 1/1 mode. They are answered on a
+ladder of models that are restrictions or declared reductions of the one
+residual above. A cheap rung isolates a mechanism and can be converged and
+scanned; a fuller rung confirms it. Wherever it is meaningful, a rung offers
+three solves of the same discrete residual: time evolution, a direct Newton
+solve for the stationary state, and the spectrum of the linearisation about
+that state (the analysis is owned by [stability.md](stability.md)).
+
+| rung | model | dropped relative to the 3D residual | state | milestone |
+|---|---|---|---|---|
+| L0 | surface-averaged transport of q, pressure and density with a Grad-Shafranov constraint (1.5D) | inertia, viscosity, variation of density and temperature on a flux surface, all n > 0 | designed | RM10 |
+| L1 | helically symmetric straight cylinder (2D), [vrmhd-cylinder.md](vrmhd-cylinder.md) | toroidal curvature; every helicity except multiples of m/n = 1/1 | stationary solve, spectrum and BDF2 run; trajectories are candidates | RM2 |
+| L2 | axisymmetric torus (2D), [vrmhd-torus.md](vrmhd-torus.md) | all n > 0 | Grad-Shafranov initial state registered; the 2D stationary and BDF2 solves exist for the rotation symmetry but are not yet applied to this case | RM9 |
+| L3 | torus with a few (m, n) harmonics on a radial mesh (proposal) | all other harmonics | proposal, to be tested against L4 | RM11 |
+| L4 | torus with toroidal harmonics n = 0, 1, [vrmhd-torus.md](vrmhd-torus.md) | n >= 2, including the 2/2 harmonic of a saturated 1/1 mode | volume operators run; boundary solves and evolution open | RM5 |
+| L5 | more toroidal harmonics; general 3D ([Representations](#representations)) | nothing | designed | RM5, RM6, RM8 |
+| LM | L0 with a mean-field closure for the mode (hypothesis) | the mode itself | hypothesis | RM12 |
+
+Symbols: m and n poloidal and toroidal mode numbers, `<.>` flux-surface
+average, `Phi` toroidal flux inside a surface, `Vol' = dVol/dPhi` with `Vol`
+the enclosed volume, `iota = 1/q`, `phi` the toroidal angle, `F = R B_phi`,
+`V` the applied loop voltage and `V_L(Phi)` the loop voltage of one surface,
+`L_z` the axial period of the cylinder, `Gamma` particle flux, `rho` mass
+density with source `Srho`, `M = a v_A rho/nu` the viscous Lundquist number
+(`S/Pm` in Alfven units) and `H = sqrt(M S) = a B/sqrt(eta nu)` the Hartmann
+number.
+
+### Checks common to all rungs
+
+Tolerances are fixed here, before any measurement. The default is the
+observable radius of AGENTS.md, 1 % of a declared physical scale.
+
+1. Reduction against parent. In the limit both models share, named
+   observables (q at the axis and at fixed flux labels, `V_L` per surface,
+   mode energies, growth rates) agree within the larger of 1 % and the sum of
+   the two discretisation estimates, each taken from two resolutions. Where
+   the reduction has a small parameter (`a/R0`; `1/S`, `chi_perp/chi_par` and
+   `1/H^2` for the inertia, surface variation and viscosity that L0 drops),
+   the difference is also measured at three values of it at least,
+   and its order is reported; a difference that does not shrink is a model
+   defect, not a tolerance to widen.
+2. Newton state against evolution. Both solve the same discrete residual, so
+   they agree to solver tolerance, not to discretisation error: an evolution
+   started from the Newton state with a perturbation of relative size 1e-3
+   returns to it within ten times the Newton tolerance if the spectrum is
+   stable, and its slowest decay rate equals the least damped eigenvalue
+   within 1 % once the time step is halved without change at that level
+   (BDF2 is second order). A helical state is compared up to a shift of its
+   phase, and the neutral eigenvalue of that shift is excluded.
+3. Eigenvalue against growth. For an unstable state the growth rate of the
+   perturbation in the evolution equals the leading eigenvalue under the same
+   1 % rule.
+4. In the checks of this ladder, published results of closed codes are
+   context for a matched-model comparison, not a pass criterion
+   ([literature-policy.md](literature-policy.md)), and comparisons use
+   published results and published input data only (AGENTS.md).
+
+### L0: surface-averaged background
+
+Model (Jardin 2010, Ch. 6, in the single-fluid form of his Sec. 6.4, with the
+Ohm's law `E + v x B = eta (J - Js)` of this residual):
+
+```text
+V_L   = 2 pi eta <(J - Js).B> / <B.grad phi>          (Jardin 6.38, 6.52, 6.64)
+d iota/dt = d V_L/d Phi   at fixed Phi                (6.48)
+d(rho Vol')/dt + d(Vol' Gamma)/d Phi = Vol' <Srho>    (6.45)
+Gamma = 2 pi q rho [<R^2 grad phi.Rv> - <B.Rv>/<B.grad phi>],  Rv = eta (J - Js)   (6.40)
+```
+
+with the energy equation (6.46) closed by the perpendicular conduction and
+sources of this residual, density diffusion added to `Gamma` as in Jardin's
+diagonal model (Sec. 6.2.4 C), and the geometry from a Grad-Shafranov solve at
+fixed q(Phi) and entropy (6.58; Grad and Hogan 1970). On this time scale only
+the surface-averaged parallel Ohm's law moves q; the perpendicular part fixes
+the velocity relative to the toroidal-flux surfaces (6.34) and hence `Gamma`,
+which for a scalar resistivity is Pfirsch-Schlueter and classical diffusion
+plus an inward pinch (6.68, 6.69). A stationary q profile needs `V_L` uniform
+(6.48). `Js` occupies the current-drive slot (6.52). Force balance replaces
+the momentum equation with an error of second order in `1/S` (6.10, 6.11).
+The two conditions per surface that close the magnetostatic equations for a
+slowly diffusing plasma go back to Kruskal and Kulsrud (1958); Hinton and
+Hazeltine (1976, Sec. II.D) give the two-fluid form of the fluxes, which this
+single-fluid residual does not contain.
+
+- Derivation: FortSym forms the integrands of `V_L` and `Gamma` from the Ohm
+  and continuity leaves of the rotation instance and proves the pointwise
+  identity behind (6.34); surface averages use the existing equilibrium
+  geometry ([equilibrium-core.md](equilibrium-core.md)), the constraint the
+  prescribed-q solve ([gs-inverse.md](gs-inverse.md)). L0 is the first 1.5D
+  instance of [transport-multiscale.md](transport-multiscale.md) and follows
+  its closure contract.
+- Internal checks (RM-B12): q(Phi, t) over one resistive time against L2 from
+  the same initial state and closures; the stationary states of L0 and L2
+  (profiles and the flow field of 6.34).
+- External: in a cylinder with uniform resistivity and a fixed wall electric
+  field, (6.66) gives an axial-current perturbation `J0(j01 r/a)` that decays
+  at the rate `(eta/mu0) (j01/a)^2`, `j01 = 2.405` the first zero of the
+  Bessel function J0 (our evaluation of 6.66); the ordering of the skin,
+  particle and heating times of Jardin Sec. 6.4.
+- Acceptance: the decay rate to 1e-4 and at design order, since the mode is
+  exact and the problem one-dimensional; rule 1 against L2.
+- Open: the prescribed-q solve takes q against poloidal flux and a pressure
+  law, not the adiabatic variables of (6.58); the free-boundary circuit
+  equations (6.56) are not planned here.
+
+### L1: helically symmetric cylinder
+
+The full residual on fields that depend on `r` and `theta - z/R0`. It is the
+cheap mechanism model: saturation of the 1/1 mode, its electromotive force,
+`eta(T)` and anisotropic conduction, at the cost of a 2D problem. It cannot
+contain the Shafranov shift, Pfirsch-Schlueter flows, the coupling of m = 1
+to m = 0 and 2 or the pressure drive of the internal kink, which are toroidal
+([vrmhd-torus.md](vrmhd-torus.md)).
+
+- Derivation: screw-symmetric ansatz substituted into the same leaves (RM1).
+- Internal checks: RM-B7 against the Fourier representation; rules 2 and 3 on
+  the stationary helical state (today a probe, not a gate); the loop-voltage
+  ledger RM-B13: at every radius of a stationary helical state the average
+  over the helical angle obeys
+  `V/L_z = <eta> <J_z> + <eta~ J_z~> - <(v x B)_z>`, `~` marking the deviation
+  from the average and `J` standing for `J - Js` when a source is present.
+  The last term holds the electromotive force of the mode and the part
+  `<v_r> <B_theta>` of the mean radial flow, the second the correlation of
+  resistivity and current. The ledger is exact, because the electrostatic
+  part of `E_z` averages to zero.
+- External: linear rates of RM-B2 (Coppi et al. 1976; Ara et al. 1978) and
+  island rates of RM-B5.
+- Acceptance: ledger residual below 1e-3 of `V/L_z` and falling at design
+  order, because a residual `dV` changes q at the relative rate `dV/V` per
+  resistive time (6.48); rules 2 and 3.
+- Open: no published single-helicity stationary state with matched inputs is
+  recorded here as an external reference. The case holds its poloidal current
+  with a source `Js = J_theta e_theta`, the cylinder form of the switch
+  discussed for L2; without it the stationary cylinder has the classical
+  diffusion and pinch flow of (6.69) in its cylinder limit and needs the same
+  particle closure. Whether L1 moves to the source-free state is an open
+  decision, and until then a comparison of L4 with L1 has to state which
+  convention each side uses.
+
+### L2: axisymmetric torus
+
+The rotation instance of the section residual. Target: the stationary state
+driven by the loop voltage alone, with uniform `V_L`, Pfirsch-Schlueter and
+pinch flows and a stated particle closure. With a resistivity that is
+constant on flux surfaces it has no static counterpart: the argument is on
+the torus page and is consistent with Montgomery, Bates and Lewis (1997) and
+Bates and Montgomery (1998). The case and the current-source switch are in
+[vrmhd-torus.md](vrmhd-torus.md#steady-ohmic-state).
+
+- Derivation: rotation ansatz substituted into the same leaves (RM1); the
+  lift of the Grad-Shafranov state into the section.
+- Internal checks (RM-B11): `V_L` per surface against the applied voltage;
+  stationary profiles and flow against L0; rules 2 and 3.
+- External: the Shafranov shift (registered, `vrmhd_torus_shafranov`); the
+  large-aspect-ratio flux of Wesson Eq. 4.5.5, which is Jardin's (6.69) in
+  that limit; the explicit low-Hartmann-number flow of Bates and Montgomery
+  (1998) in a circular torus with no-slip wall and uniform coefficients.
+  Context: low-Reynolds-number flows in a rectangular section with
+  stress-free wall (Montgomery, Bates and Li 1997; Kamp, Montgomery and Bates
+  1998), numerical steady states at Hartmann numbers from far below to far
+  above one in the same geometry (Kamp and Montgomery 2003) and
+  two-fluid M3D-C1 steady states whose radial flows follow the
+  Pfirsch-Schlueter form (Ferraro and Jardin 2009, Eq. 39).
+- Acceptance: `V_L` uniform within 1e-3 of the applied voltage and improving
+  at design order (the identity is exact, the reason for 1e-3 as in L1);
+  flow against L0 by rule 1, outside a wall layer of a few `a/H`; the
+  Bates-Montgomery flow within 1 % at `H^2 <= 1e-3` and a squared viscous
+  Lundquist number `<= 1e-3`, their expansion parameters, with the difference
+  shown to fall linearly in both.
+- Open: the stress-free wall of the three rectangular-section papers is not
+  in the weak form; the compressible residual reaches the incompressible
+  limit of these papers only at high background pressure, which the check has
+  to demonstrate. The Bates-Montgomery check tests the operator at `H << 1`,
+  while the case has `H` near `3e5` (`S = 1e6`, `Pm = 10`); in the target
+  regime the flow is checked only against L0.
+
+### L3: few harmonics on a radial mesh (proposal)
+
+Proposal, not a result: a radial mesh times a small set of (m, n) harmonics,
+for example 0/0, 1/0, 1/1 and 2/1, with the exact toroidal metric,
+products evaluated at sampled angles as in the nonlinear Fourier operator, and
+the same implicit solvers. It would give toroidal coupling at the cost of a
+few 1D problems. The metric is not expanded in `a/R0`: Bussac's energy is of
+fourth order in `r1/R0`, two orders beyond the order at which the cylinder
+mode is marginal
+([vrmhd-torus.md](vrmhd-torus.md#bussac-limit-of-the-ideal-internal-kink)),
+so second-order terms of the metric are of the size sought.
+
+The harmonics of the symmetry-breaking coordinate about a helical state,
+foreseen under [Symmetry-reduced 2D](#symmetry-reduced-2d), are a different
+truncation: a mode (m, n) has harmonic number m - n there, so numbers 0 and
++-1 hold all m = n and m = n +- 1. On the section mesh this costs three
+blocks, as L4 does, so it is no cheaper than L4; it differs in what it keeps.
+
+- Derivation: FortSym substitutes the double-Fourier ansatz into the same
+  leaves; axis regularity of each m is part of the derivation.
+- Checks: rule 1 against L4 on the internal-kink growth rate across the
+  Bussac threshold, the saturated mode energy and the stationary q profile,
+  at `R0/a = 3` and 10, with the harmonic set enlarged until the difference
+  stops changing.
+- Acceptance: admitted only if it meets rule 1 against L4 and costs at most a
+  tenth of L4 at that accuracy; otherwise it is recorded as failed and
+  dropped. The factor is a choice: below it the extra model does not pay for
+  its verification.
+- Open: everything. A radial-Fourier discretisation of the nonlinear residual
+  needs admission under [numerical-methods.md](numerical-methods.md).
+
+### L4: torus with n = 0, 1
+
+The case of [vrmhd-torus.md](vrmhd-torus.md): toroidal coupling of m = 1 to
+m = 0 and 2, the pressure drive of the internal kink (Bussac et al. 1975) and
+a stationary helical core in a torus.
+
+- Derivation: Fourier factor in the rotation angle about the L2 state, orbit
+  leaves from `gen_vrmhd_section` (RM3).
+- Internal checks: n = 0 block against L2; rules 2 and 3 on the stationary
+  helical state; the ledger RM-B13 for the n = 0 toroidal Ohm's law, the
+  toroidal analogue of the cylinder form (Krebs et al. 2017, Eq. 4); L1 with
+  axial period `2 pi R0`, as `R0/a` grows at fixed q profile, `S` and
+  closures, with the order of the difference measured
+  and not assumed: the ideal energy of the cylinder mode vanishes at second
+  order in `r1/R0` and Bussac's toroidal energy is of fourth order, so the two
+  models may differ at leading order.
+- External: the Bussac threshold and ideal rate through MILCA's ideal
+  stability, and the geodesic acoustic frequency, as on the torus page.
+  Context: M3D-C1 single-fluid runs with published equations and input
+  tables,
+  where sawteeth give way to a stationary 1/1 state above a threshold in
+  beta (Krebs et al. 2017, appendix Tables 1 and 2; Jardin, Ferraro and Krebs
+  2015, not read for this plan), and JOREK runs of ASDEX Upgrade with states
+  ordered by Hartmann number (Zhang et al. 2025, 2026), whose device inputs
+  are not public.
+- Acceptance: rule 1 for the reductions; the proposed checks of the torus
+  page; the model defect of n <= 1 is the change of the observables when
+  n = 2 is added (L5), reported with every result.
+- Open: boundary solves and evolution of the Fourier representation (RM5);
+  whether the Krebs case can be matched from the published tables alone.
+
+### L5: more harmonics and general 3D
+
+RM5, RM6 and RM8 as planned. On this ladder its task is the convergence of
+L4: observables under added toroidal harmonics, by rule 1.
+
+### LM: mean-field closure (hypothesis)
+
+Hypothesis: on the resistive time scale a saturated 1/1 mode acts on the
+background only through an extra loop voltage in L0,
+
+```text
+V_L = 2 pi eta <(J - Js).B>/<B.grad phi> + V_mode(Phi; profiles),
+```
+
+where `V_mode` collects the electromotive and resistivity-correlation terms
+of the ledger RM-B13 and is a function of the axisymmetric profiles. The
+split of the n = 0 Ohm's law into these terms is published (Krebs et al.
+2017, Eqs. 4 to 6); that they are determined by the profiles alone is not
+established. The distinct states found at different dissipation, and the
+transition from marginal flux pumping to sawteeth in long runs (Zhang et al.
+2026, abstract), indicate that a closure for stationary states cannot cover
+every regime. The closure is a provider under the
+[closure contract](transport-multiscale.md#closure-provider-contract) and
+enters only after an independent check: calibrated on stationary states of
+L1 and L4, it must predict q on states not used for calibration (other `S`,
+`beta_p` and heat-source widths) and reproduce the slow-manifold sequence of
+RM-B10 within rule 1, and it reports where it is outside its calibrated
+range. Until then no result is quoted from it.
+
+### Sources of the ladder
+
+- S. C. Jardin, *Computational Methods in Plasma Physics*, CRC Press (2010),
+  Ch. 6, [doi:10.1201/EBK1439810958](https://doi.org/10.1201/EBK1439810958).
+- H. Grad and J. Hogan, Phys. Rev. Lett. 24, 1337 (1970),
+  [doi:10.1103/PhysRevLett.24.1337](https://doi.org/10.1103/PhysRevLett.24.1337).
+- M. D. Kruskal and R. M. Kulsrud, Phys. Fluids 1, 265 (1958),
+  [doi:10.1063/1.1705884](https://doi.org/10.1063/1.1705884): conditions for
+  a plasma diffusing slowly across toroidal surfaces (Secs. J to L).
+- F. L. Hinton and R. D. Hazeltine, Rev. Mod. Phys. 48, 239 (1976),
+  [doi:10.1103/RevModPhys.48.239](https://doi.org/10.1103/RevModPhys.48.239),
+  Sec. II.D: Pfirsch-Schlueter flux in the two-fluid description.
+- D. Montgomery, J. W. Bates and H. R. Lewis, Phys. Plasmas 4, 1080 (1997),
+  [doi:10.1063/1.872195](https://doi.org/10.1063/1.872195).
+- D. Montgomery, J. W. Bates and S. Li, Phys. Fluids 9, 1188 (1997),
+  [doi:10.1063/1.869206](https://doi.org/10.1063/1.869206).
+- J. W. Bates and D. C. Montgomery, Phys. Plasmas 5, 2649 (1998),
+  [doi:10.1063/1.872952](https://doi.org/10.1063/1.872952).
+- L. P. Kamp, D. C. Montgomery and J. W. Bates, Phys. Fluids 10, 1757 (1998),
+  [doi:10.1063/1.869692](https://doi.org/10.1063/1.869692).
+- L. P. Kamp and D. C. Montgomery, Phys. Plasmas 10, 157 (2003),
+  [doi:10.1063/1.1524629](https://doi.org/10.1063/1.1524629).
+- N. M. Ferraro and S. C. Jardin, J. Comput. Phys. 228, 7742 (2009),
+  [doi:10.1016/j.jcp.2009.07.015](https://doi.org/10.1016/j.jcp.2009.07.015).
+- M. N. Bussac, R. Pellat, D. Edery and J. L. Soule, Phys. Rev. Lett. 35,
+  1638 (1975),
+  [doi:10.1103/PhysRevLett.35.1638](https://doi.org/10.1103/PhysRevLett.35.1638).
+- A. A. Ware, Phys. Rev. Lett. 25, 15 (1970),
+  [doi:10.1103/PhysRevLett.25.15](https://doi.org/10.1103/PhysRevLett.25.15):
+  the pinch of trapped particles. It is kinetic and outside this ladder; the
+  residual contains only the fluid pinch `E_phi B_theta/B^2` (his Eq. 1).
+- I. Krebs et al., Phys. Plasmas 24, 102511 (2017),
+  [doi:10.1063/1.4990704](https://doi.org/10.1063/1.4990704).
+- S. C. Jardin, N. Ferraro and I. Krebs, Phys. Rev. Lett. 115, 215001 (2015),
+  [doi:10.1103/PhysRevLett.115.215001](https://doi.org/10.1103/PhysRevLett.115.215001)
+  (not read for this plan).
+- H. Zhang et al., Nucl. Fusion 65, 066001 (2025),
+  [doi:10.1088/1741-4326/adcfb4](https://doi.org/10.1088/1741-4326/adcfb4);
+  Nucl. Fusion 66, 076027 (2026),
+  [doi:10.1088/1741-4326/ae7613](https://doi.org/10.1088/1741-4326/ae7613).
+- J. Wesson, *Tokamaks*, Secs. 4.4 and 4.5, as cited on the torus page.
+
+No open-source repository was used for this plan. The Hinton-Hazeltine and
+Wesson entries are secondary; the formulas above were checked in Jardin.
+
 ## Benchmarks and gates
 
 Each gate is a registered CTest with an analytic or manufactured oracle first
@@ -305,6 +627,9 @@ RM-B2 and RM-B5. They are independent references, not completed solver gates.
 | RM-B8 | JOREK | public JOREK regression cases (tearing and kink in circular geometry), a straight-cylinder flux-pumping case and a circular-torus flux-pumping case with its toroidal limits ([vrmhd-torus.md](vrmhd-torus.md)), matched model and resolution; 2D part in RM2, 3D part in RM5 |
 | RM-B9 | performance | time to matched observable accuracy against JOREK on the same node, strong scaling, memory, CPU and GPU |
 | RM-B10 | slow manifold | quasi-stationary sequence of driven stationary states against full BDF2 evolution on the straight periodic cylinder: q profile and island width to the stated tolerance, defect estimate bounds the observed difference, switch to time evolution at mode onset |
+| RM-B11 | stationary Ohmic torus without current source ([ladder](#l2-axisymmetric-torus)) | loop voltage uniform over the flux surfaces; profiles and flow of the surface-averaged model L0; large-aspect-ratio particle flux (Wesson Eq. 4.5.5; Jardin 2010, Eq. 6.69); low-Hartmann-number flow of Bates and Montgomery, Phys. Plasmas 5 2649, 1998 |
+| RM-B12 | surface-averaged background L0 ([ladder](#l0-surface-averaged-background)) | decay of an axial-current eigenmode in a uniform cylinder (Jardin 2010, Eq. 6.66); q(Phi, t) and stationary state of the axisymmetric torus L2 |
+| RM-B13 | loop-voltage ledger | averaged Ohm's law of a stationary helical state, at each radius of the cylinder and for the n = 0 toroidal component in the torus: applied voltage = resistive + resistivity-correlation + electromotive part |
 
 Admission (AGENTS.md):
 
@@ -357,6 +682,10 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
 | RM6 | GLL matrix-free path, CPU and generated CUDA; exponential integrators; RM-B1, RM-B2, RM-B4, RM-B7 rerun on it; RM-B9 | RM5, U1, U2, U4 |
 | RM7 | physics: straight-cylinder flux pumping, sawtoothing versus flux-pumping states, then published tokamak cases | RM2, RM6 |
 | RM8 | Figure-8 stellarator on the curve-following chart: RM-B1, RM-B6 and a resistive island case, equilibrium checked against GVEC | RM6, `g_frame_figure8_equilibrium` |
+| RM9 | ladder rung L2: axisymmetric torus evolution and stationary state without current source; RM-B11 | RM2 |
+| RM10 | ladder rung L0: surface-averaged background; RM-B12 | RM9, [transport-multiscale.md](transport-multiscale.md) |
+| RM11 | ladder rung L3 (proposal): few harmonics on a radial mesh, admitted or dropped by its defect and cost against L4 | RM5 |
+| RM12 | ladder rung LM (hypothesis): RM-B13 ledger on stationary states of L1 and L4; mean-field closure of L0 from it, checked on states not used for calibration and against RM-B10 | RM10, RM2, RM5 |
 
 ## Later: extended MHD and edge (not scheduled)
 
