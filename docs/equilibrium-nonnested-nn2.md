@@ -418,7 +418,11 @@ toroidal derivatives enter through the phi components of grad p and
 grad Phi. These are the existing generated leaves and JVPs: no new
 symbolic terms were needed. The A-A, A-p, A-Phi and A-V Jacobian blocks
 are contractions of those JVPs with the block trial and test operators,
-so a phi-dependent b couples all mode pairs. The Coulomb multiplier is
+so a phi-dependent b couples all mode pairs. The point loop forms these
+contractions per phi plane with the local basis only; the block of a mode
+pair is the sum over planes of the plane block times the two toroidal basis
+values. The cost per cell is O(nq nphi nl^2 + nphi (2N+1)^2 nl^2) instead of
+O(nq nphi (nl (2N+1))^2) for mode-space operators at every point. The Coulomb multiplier is
 used in every block, and lambda again vanishes by solvability (gate:
 lambda mu0/|A| < 1e-10; observed 1e-14). The backward error now includes
 the source load |<v, S>|, and the line search is scaled by |J|(|x| + |dx|)

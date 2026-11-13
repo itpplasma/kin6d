@@ -950,8 +950,23 @@ contains
         real(dp) :: dj(3, 10), dq(3, 6), e(12), two_pi
         real(dp) :: source_flux(3), drive, jdrive(3), ddrive(3)
         real(dp) :: pb(3, 3), pq(3, 3), jw, xp(2), cjt(3), fqt(3)
-        real(dp), allocatable :: bop(:, :), dop(:, :), w1(:, :), jc(:, :), qc(:, :)
+        ! Physical operators at one point, without the toroidal basis.
+        real(dp) :: bp(3, field%fs%sp(2)%nloc), wt(3, field%fs%sp(1)%nloc)
+        real(dp) :: gt(3, field%fs%nl0, 2), dt(3, field%fs%nl0, 2), jv(3)
+        real(dp) :: jb1(3, field%fs%sp(2)%nloc), qb1(3, field%fs%sp(2)%nloc)
+        real(dp) :: jp(3, field%fs%nl0, 2), jf(3, field%fs%nl0, 2)
+        real(dp) :: qp(3, field%fs%nl0, 2)
+        ! Local Jacobian blocks per phi plane, summed over the meridional
+        ! points; the kind index is 1 for the basis and 2 for its phi
+        ! derivative (rows before columns).
+        real(dp), allocatable :: ab(:, :, :), ap(:, :, :, :), af(:, :, :, :), av(:, :)
+        real(dp), allocatable :: pbm(:, :, :, :), ppm(:, :, :, :, :)
+        real(dp), allocatable :: fbm(:, :, :, :), fpm(:, :, :, :, :)
+        real(dp), allocatable :: ffm(:, :, :, :, :), fvm(:, :, :)
+        real(dp), allocatable :: vb(:, :), vp(:, :, :), vf(:, :, :), vv(:)
+        real(dp), allocatable :: trt(:, :), dtrt(:, :)
         integer :: q, j, k, bk, n1, n0, n2, nb, ra, rp, rf, rv, cb, cp, cf
+        integer :: kr, kc
         status = 1
         rl = 0
         n1 = field%fs%sp(1)%nloc; n0 = field%fs%nl0; n2 = field%fs%sp(2)%nloc
@@ -962,9 +977,21 @@ contains
         if (want) then
             jb = 0; jd = 0
         end if
-        allocate (bop(3, cb), dop(3, n0*nb), w1(3, n1*nb), &
-            jc(3, cb + 2*n0*nb + 1), qc(3, cb + 2*n0*nb + 1))
         two_pi = 2*acos(-1.0_dp)
+        if (want) then
+            allocate (ab(n1, n2, nphi), ap(n1, n0, 2, nphi), af(n1, n0, 2, nphi), &
+                av(n1, nphi), pbm(n0, n2, 2, nphi), ppm(n0, n0, 2, 2, nphi), &
+                fbm(n0, n2, 2, nphi), fpm(n0, n0, 2, 2, nphi), &
+                ffm(n0, n0, 2, 2, nphi), fvm(n0, 2, nphi), vb(n2, nphi), &
+                vp(n0, 2, nphi), vf(n0, 2, nphi), vv(nphi), trt(nb, nphi), &
+                dtrt(nb, nphi))
+            ab = 0; ap = 0; af = 0; av = 0; pbm = 0; ppm = 0; fbm = 0; fpm = 0
+            ffm = 0; fvm = 0; vb = 0; vp = 0; vf = 0; vv = 0
+            do j = 1, nphi
+                call trig(lay%modes, two_pi*(j - 1)/(nphi*lay%period), trt(:, j), &
+                    dtrt(:, j), lay%period)
+            end do
+        end if
         do bk = 1, nb
             bl(:, bk) = b((bk - 1)*lay%nb2 + field%fs%sp(2)%dof(:, t)) &
                 *field%fs%sp(2)%sgn(:, t)
@@ -1056,39 +1083,116 @@ contains
                         e(3), e(4), e(5), e(6), 0.0_dp, 0.0_dp, dq(1, k), &
                         dq(2, k), dq(3, k))
                 end do
-                ! Trial and test operators: B per V2 basis, the 3D gradient
-                ! of a V0 basis, and the V1 test field, each times its trig.
-                do bk = 1, nb
-                    bop(:, (bk - 1)*n2 + 1:bk*n2) = tr(bk)*v2
-                    w1(:, (bk - 1)*n1 + 1:bk*n1) = tr(bk)*v1
-                    dop(1, (bk - 1)*n0 + 1:bk*n0) = tr(bk)*grad(1, :)
-                    dop(2, (bk - 1)*n0 + 1:bk*n0) = dtr(bk)*val/rr
-                    dop(3, (bk - 1)*n0 + 1:bk*n0) = tr(bk)*grad(2, :)
+                ! Trial and test operators without the toroidal basis: B per
+                ! V2 basis, the 3D gradient of a V0 basis split into its part
+                ! with the basis (1) and with its phi derivative (2), and
+                ! the V1 test field. The mode blocks follow after the loops.
+                bp = matmul(pb, v2)
+                gt = 0
+                gt(1, :, 1) = grad(1, :); gt(3, :, 1) = grad(2, :)
+                gt(2, :, 2) = val/rr
+                gt(:, :, 1) = matmul(pq, gt(:, :, 1))
+                gt(:, :, 2) = matmul(pq, gt(:, :, 2))
+                wt = jw*matmul(pq, v1)
+                dt = jw*gt
+                jb1 = matmul(dj(:, 1:3), bp)
+                qb1 = matmul(dq(:, 1:3), bp)
+                jv = dj(:, 10)/(two_pi*xp(1))
+                do kc = 1, 2
+                    jp(:, :, kc) = matmul(dj(:, 4:6), gt(:, :, kc))
+                    jf(:, :, kc) = matmul(dj(:, 7:9), gt(:, :, kc))
+                    qp(:, :, kc) = matmul(dq(:, 4:6), gt(:, :, kc))
                 end do
-                bop = matmul(pb, bop)
-                jc(:, :cb) = matmul(dj(:, 1:3), bop)
-                jc(:, cb + 1:cb + n0*nb) = matmul(dj(:, 4:6), matmul(pq, dop))
-                jc(:, cb + n0*nb + 1:cb + 2*n0*nb) = matmul(dj(:, 7:9), matmul(pq, dop))
-                jc(:, cb + 2*n0*nb + 1) = dj(:, 10)/(two_pi*xp(1))
-                qc = 0
-                qc(:, :cb) = matmul(dq(:, 1:3), bop)
-                qc(:, cb + 1:cb + n0*nb) = matmul(dq(:, 4:6), matmul(pq, dop))
-                w1 = jw*matmul(pq, w1)
-                dop = jw*matmul(pq, dop)
-                call add_block(ra + 1, ra + n1*nb, -w*transpose(w1), jc)
-                call add_block(rp + 1, rp + n0*nb, w*transpose(dop), qc)
-                call add_block(rf + 1, rf + n0*nb, w*transpose(dop), jc)
-                jb(rv, :) = jb(rv, :) + w*jw*jc(2, :cb)/xp(1)
-                jd(rv, :) = jd(rv, :) + w*jw*jc(2, cb + 1:)/xp(1)
+                ab(:, :, j) = ab(:, :, j) - w*matmul(transpose(wt), jb1)
+                av(:, j) = av(:, j) - w*matmul(transpose(wt), jv)
+                do kc = 1, 2
+                    ap(:, :, kc, j) = ap(:, :, kc, j) &
+                        - w*matmul(transpose(wt), jp(:, :, kc))
+                    af(:, :, kc, j) = af(:, :, kc, j) &
+                        - w*matmul(transpose(wt), jf(:, :, kc))
+                end do
+                do kr = 1, 2
+                    pbm(:, :, kr, j) = pbm(:, :, kr, j) &
+                        + w*matmul(transpose(dt(:, :, kr)), qb1)
+                    fbm(:, :, kr, j) = fbm(:, :, kr, j) &
+                        + w*matmul(transpose(dt(:, :, kr)), jb1)
+                    fvm(:, kr, j) = fvm(:, kr, j) + w*matmul(transpose(dt(:, :, kr)), jv)
+                    do kc = 1, 2
+                        ppm(:, :, kr, kc, j) = ppm(:, :, kr, kc, j) &
+                            + w*matmul(transpose(dt(:, :, kr)), qp(:, :, kc))
+                        fpm(:, :, kr, kc, j) = fpm(:, :, kr, kc, j) &
+                            + w*matmul(transpose(dt(:, :, kr)), jp(:, :, kc))
+                        ffm(:, :, kr, kc, j) = ffm(:, :, kr, kc, j) &
+                            + w*matmul(transpose(dt(:, :, kr)), jf(:, :, kc))
+                    end do
+                end do
+                vb(:, j) = vb(:, j) + w*jw*jb1(2, :)/xp(1)
+                vp(:, :, j) = vp(:, :, j) + w*jw*jp(2, :, :)/xp(1)
+                vf(:, :, j) = vf(:, :, j) + w*jw*jf(2, :, :)/xp(1)
+                vv(j) = vv(j) + w*jw*jv(2)/xp(1)
             end do
         end do
+        if (want) call mode_blocks()
         status = 0
     contains
-        subroutine add_block(r0, r1, test, cols)
-            integer, intent(in) :: r0, r1
-            real(dp), intent(in) :: test(:, :), cols(:, :)
-            jb(r0:r1, :) = jb(r0:r1, :) + matmul(test, cols(:, :cb))
-            jd(r0:r1, :) = jd(r0:r1, :) + matmul(test, cols(:, cb + 1:))
+        subroutine mode_blocks()
+            ! Jacobian block of test mode br and trial mode bc: the sum over
+            ! phi planes of the plane blocks times the two basis values.
+            ! The point loop above is free of the mode index, which saves a
+            ! factor of three times the number of meridional points.
+            integer :: br, bc, a0, p0, f0, cb0, cp0, cf0, cv
+            real(dp) :: tr_r, dr_r, tr_c, dr_c
+            cv = 2*n0*nb + 1
+            do j = 1, nphi
+                do bc = 1, nb
+                    tr_c = trt(bc, j); dr_c = dtrt(bc, j)
+                    cb0 = (bc - 1)*n2; cp0 = cp + (bc - 1)*n0; cf0 = cf + (bc - 1)*n0
+                    do br = 1, nb
+                        tr_r = trt(br, j); dr_r = dtrt(br, j)
+                        a0 = ra + (br - 1)*n1; p0 = rp + (br - 1)*n0
+                        f0 = rf + (br - 1)*n0
+                        jb(a0 + 1:a0 + n1, cb0 + 1:cb0 + n2) = &
+                            jb(a0 + 1:a0 + n1, cb0 + 1:cb0 + n2) + tr_r*tr_c*ab(:, :, j)
+                        jd(a0 + 1:a0 + n1, cp0 + 1:cp0 + n0) = &
+                            jd(a0 + 1:a0 + n1, cp0 + 1:cp0 + n0) &
+                            + tr_r*(tr_c*ap(:, :, 1, j) + dr_c*ap(:, :, 2, j))
+                        jd(a0 + 1:a0 + n1, cf0 + 1:cf0 + n0) = &
+                            jd(a0 + 1:a0 + n1, cf0 + 1:cf0 + n0) &
+                            + tr_r*(tr_c*af(:, :, 1, j) + dr_c*af(:, :, 2, j))
+                        jb(p0 + 1:p0 + n0, cb0 + 1:cb0 + n2) = &
+                            jb(p0 + 1:p0 + n0, cb0 + 1:cb0 + n2) &
+                            + tr_c*(tr_r*pbm(:, :, 1, j) + dr_r*pbm(:, :, 2, j))
+                        jd(p0 + 1:p0 + n0, cp0 + 1:cp0 + n0) = &
+                            jd(p0 + 1:p0 + n0, cp0 + 1:cp0 + n0) &
+                            + tr_r*(tr_c*ppm(:, :, 1, 1, j) + dr_c*ppm(:, :, 1, 2, j)) &
+                            + dr_r*(tr_c*ppm(:, :, 2, 1, j) + dr_c*ppm(:, :, 2, 2, j))
+                        jb(f0 + 1:f0 + n0, cb0 + 1:cb0 + n2) = &
+                            jb(f0 + 1:f0 + n0, cb0 + 1:cb0 + n2) &
+                            + tr_c*(tr_r*fbm(:, :, 1, j) + dr_r*fbm(:, :, 2, j))
+                        jd(f0 + 1:f0 + n0, cp0 + 1:cp0 + n0) = &
+                            jd(f0 + 1:f0 + n0, cp0 + 1:cp0 + n0) &
+                            + tr_r*(tr_c*fpm(:, :, 1, 1, j) + dr_c*fpm(:, :, 1, 2, j)) &
+                            + dr_r*(tr_c*fpm(:, :, 2, 1, j) + dr_c*fpm(:, :, 2, 2, j))
+                        jd(f0 + 1:f0 + n0, cf0 + 1:cf0 + n0) = &
+                            jd(f0 + 1:f0 + n0, cf0 + 1:cf0 + n0) &
+                            + tr_r*(tr_c*ffm(:, :, 1, 1, j) + dr_c*ffm(:, :, 1, 2, j)) &
+                            + dr_r*(tr_c*ffm(:, :, 2, 1, j) + dr_c*ffm(:, :, 2, 2, j))
+                    end do
+                    jb(rv, cb0 + 1:cb0 + n2) = jb(rv, cb0 + 1:cb0 + n2) + tr_c*vb(:, j)
+                    jd(rv, cp0 + 1:cp0 + n0) = jd(rv, cp0 + 1:cp0 + n0) &
+                        + tr_c*vp(:, 1, j) + dr_c*vp(:, 2, j)
+                    jd(rv, cf0 + 1:cf0 + n0) = jd(rv, cf0 + 1:cf0 + n0) &
+                        + tr_c*vf(:, 1, j) + dr_c*vf(:, 2, j)
+                end do
+                do br = 1, nb
+                    tr_r = trt(br, j); dr_r = dtrt(br, j)
+                    a0 = ra + (br - 1)*n1; f0 = rf + (br - 1)*n0
+                    jd(a0 + 1:a0 + n1, cv) = jd(a0 + 1:a0 + n1, cv) + tr_r*av(:, j)
+                    jd(f0 + 1:f0 + n0, cv) = jd(f0 + 1:f0 + n0, cv) &
+                        + tr_r*fvm(:, 1, j) + dr_r*fvm(:, 2, j)
+                end do
+                jd(rv, cv) = jd(rv, cv) + vv(j)
+            end do
         end subroutine
     end subroutine
 
