@@ -230,8 +230,8 @@ assembly keeps Weyl gauge and its vector-potential mass row.
 
 ## Driven-state conventions
 
-A current source uses `eta (J - Js)` at zero loop voltage; this is the
-JOREK comparison convention. A loop-voltage drive instead uses a harmonic
+A current source uses `eta (J - Js)` at zero loop voltage.
+A loop-voltage drive instead uses a harmonic
 one-form `h`, normalized by `integral_loop h = 1`, and voltage `V` in volts.
 Rotation uses `h = grad(phi)/(2 pi)`. Translation and screw symmetry use
 `h = grad(z)/L_z` on a domain with axial period `L_z`. The latter is
@@ -254,8 +254,8 @@ projection with a small nonzero curl does not meet this contract.
 `VRMHD_LOOP_VOLTAGE_SOURCE`: the first retains the prescribed `Js` and requires
 zero voltage; the second sets `Js=0` and returns the positive voltage load
 subtracted by the stationary wrapper; the third returns the same load and
-retains `Js`, a non-inductive current at fixed loop voltage (JOREK's
-`loop_voltage` with a current source). Other source channels are retained.
+retains `Js`, a non-inductive current at fixed loop voltage.
+Other source channels are retained.
 
 The returned harmonic cochain stores zero increments on section edges and a
 unit integral on every periodic orbit edge. It uses the full coordinate

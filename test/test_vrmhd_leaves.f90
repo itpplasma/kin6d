@@ -216,7 +216,7 @@ contains
         call vrmhd_chi_parallel(theta%chi_parallel0(1), temperature, theta%t0, &
             theta%chi_parallel_exponent, value)
         call close (value, 32*theta%chi_parallel0(1), 'parallel chi closure')
-        ! Prescribed constant coefficients, as in the JOREK comparisons.
+        ! Prescribed constant coefficients.
         call vrmhd_chi_parallel(theta%chi_parallel0(1), temperature, theta%t0, &
             0.0_dp, value)
         call close (value, theta%chi_parallel0(1), 'temperature-independent chi')

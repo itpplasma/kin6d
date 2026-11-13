@@ -74,8 +74,8 @@ contains
     end subroutine
 
     subroutine profiles_gate()
-        !! Independent implementation of the JOREK cylinder case generator; the
-        !! reference numbers are its output for the same case and grid.
+        !! The reference numbers come from a separate implementation of the
+        !! case recipe for the same case and grid.
         type(vrmhd_cylinder_case_t) :: c
         type(vrmhd_cylinder_profile_t) :: prof
         real(dp) :: v(CYL_NVALUE), balance, worst

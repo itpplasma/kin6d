@@ -117,7 +117,7 @@ physical solution has `lambda=0`. The time-dependent problem retains Weyl
 gauge; its A mass row removes the stationary gradient kernel.
 
 Two driven-state conventions are specified. The current-source convention
-prescribes `Js` and zero loop voltage, as in JOREK comparisons. The
+prescribes `Js` and zero loop voltage. The
 loop-voltage convention prescribes voltage `V` and an invariant, closed,
 non-exact one-form `h` with loop integral one. Rotation uses
 `h=grad(phi)/(2 pi)`; translation and screw symmetry use `h=grad(z)/L_z`,
@@ -157,8 +157,8 @@ chi_parallel(Ts) = chi_parallel0_s (Ts/T0)^a_chi.
 `I` is the Cartesian identity. Each perpendicular coefficient is constant.
 The exponents default to the Spitzer and Braginskii scalings
 `a_eta = a_nu = -3/2` and `a_chi = 5/2`. Benchmarks that prescribe a
-temperature-independent viscosity or parallel conductivity, as the JOREK
-cylinder runs do, set `a_nu = 0` or `a_chi = 0`; a run states its exponents
+temperature-independent viscosity or parallel conductivity, as the
+[cylinder case](vrmhd-cylinder.md) does, set `a_nu = 0` or `a_chi = 0`; a run states its exponents
 with its closure.
 For the viscous stress, define the symmetric traceless velocity strain `S`
 and a regularized traceless magnetic tensor `P`:

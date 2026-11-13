@@ -241,7 +241,7 @@ contains
         p%d_parallel = 0.01_dp; p%d_perpendicular = 0.005_dp
         p%equilibration_rate = 0.02_dp
         if (convention == VRMHD_LOOP_VOLTAGE_SOURCE) then
-            ! Non-classical closures and a partial Ohmic deposit, as in JOREK runs.
+            ! Non-classical closures and a partial Ohmic deposit.
             p%eta_exponent = -1; p%nu_exponent = 0.5_dp
             p%chi_parallel_exponent = 1.5_dp; p%ohmic_fraction = 0.25_dp
         end if

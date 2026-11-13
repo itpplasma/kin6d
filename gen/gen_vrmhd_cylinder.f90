@@ -37,7 +37,7 @@ program gen_vrmhd_cylinder
     call w%emit('vrmhd_cylinder_section', &
         [character(16) :: 'x', 'y', 'k', 'polar_over_r', 'axial'], &
         [character(16) :: 'u1', 'u2', 'a'], [u1, u2, a])
-    ! JOREK model-600 heat-source shape and the Gaussian central current source.
+    ! Tanh heat-source shape and the Gaussian central current source.
     call w%emit('vrmhd_cylinder_heat_shape', &
         [character(16) :: 'psin', 'centre', 'width'], [character(16) :: 'shape'], &
         [half - half*tanh((psin - centre)/width)])
