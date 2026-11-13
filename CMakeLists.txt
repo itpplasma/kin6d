@@ -2884,7 +2884,7 @@ target_link_libraries(test_nonnested_relax PRIVATE milca_nn_vacuum_test)
 foreach(case taylor ideal)
     add_test(NAME nonnested_relax_${case} COMMAND test_nonnested_relax ${case})
     set_tests_properties(nonnested_relax_${case} PROPERTIES
-        TIMEOUT 300 LABELS "mhd;fast" PROCESSORS 4
+        TIMEOUT 300 PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
 # Harmonic deflation, potential-velocity and Leray force, residual floor:
@@ -2900,7 +2900,7 @@ foreach(case hodge solovev beltrami shell sheet)
 endforeach()
 add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
 set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
-    TIMEOUT 1800 LABELS "mhd;slow" PROCESSORS 4
+    TIMEOUT 1800 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 # Energy-criterion island seeding (docs/island-seed.md).

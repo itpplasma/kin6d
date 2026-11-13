@@ -627,6 +627,12 @@ foreach(case hodge solovev beltrami shell sheet)
     milca_test_labels(nonnested_force_${case} fast CLASSES mhd
         TARGETS test_nonnested_force)
 endforeach()
+foreach(case taylor ideal)
+    milca_test_labels(nonnested_relax_${case} fast CLASSES mhd
+        TARGETS test_nonnested_relax)
+endforeach()
+milca_test_labels(nonnested_relax_vacuum_island slow CLASSES mhd
+    TARGETS test_nonnested_relax)
 # Non-nested Beltrami equilibria (docs/nn1-mapped-3d.md). The SPEC sample tests
 # are configured only when MILCA_BELTRAMI_SPEC_SAMPLES is set, so that executable
 # is recorded for milca_check_mhd directly instead of through a test.
