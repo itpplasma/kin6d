@@ -161,10 +161,29 @@ one-turn return maps are compared using FortNum Cash-Karp. O/X points are
 roots of the complete two-dimensional return map, with elliptic/hyperbolic
 classification from its finite-difference Jacobian; exact reflection of the
 triangulation is not assumed. Island width is measured on Z=0, R<R0: the
-width of initial radii whose unwrapped theta+phi range is below 2 pi over
-the stated trace duration. The O-point is bracketed inside this region.
+width of initial radii whose accumulated poloidal angle on the return section
+spans at most one full winding over the stated trace duration. The O-point is
+bracketed inside this region. The selected return must bring that lobe back to
+itself. A lobe need not occupy equal fractions of the geometric poloidal angle,
+so multiplying the angle by m also multiplies the winding threshold by |m|.
+
+`island_libration_edge` and `island_width` accept an optional `map_turns` in
+full toroidal turns. Its default is |m|/gcd(|m|,|n|) for an m/n chain in a
+2 pi-periodic field; the same period is used at every refinement level. Only
+complete returns within the positive trace duration are sampled, and less
+than one return remains unresolved. Principal angle increments require an
+unaliased lift of the return map, and the librating lobe must remain in an
+angular interval narrower than 2 pi about the chosen axis. The optional
+`island_trace` span remains the continuous geometric helical-phase excursion,
+not this classification; requesting it does not shorten the trace.
+
 This is a finite-time libration diagnostic with a scan resolution and a
 32/64-turn consistency check, not a certified infinite-time separatrix width.
+Tolerance and duration changes are sensitivity estimates. The section-range
+criterion follows the independent repair in
+[TIAGO](https://github.com/itpplasma/tiago/blob/c42cfe2/src/islands/island_measure.f90#L142-L180),
+our MIT-licensed field-line diagnostic; the native pendulum oracle retains
+its independent analytic separatrix.
 Direct tracing uses the full polygon field, without Fourier truncation.
 
 The field and map ladders combine spatial and fixed Fourier/input projection
