@@ -37,6 +37,7 @@ program gen_ideal_dw
     call writer%emit('dw_bernstein', bnames, ['value'], [bern], ad=.true.)
     call writer%emit('dw_lagrange', lnames, ['value'], [lag], ad=.true.)
     call emit_boundary()
+    call emit_point_mass()
     call emit_screw_pinch()
     call writer%line('end module milca_ideal_dw_leaves')
     call writer%close()
@@ -299,6 +300,59 @@ contains
         call writer%emit('dw_cylinder_density_jets', [character(8) :: 'r', un], &
             on, out)
     end subroutine emit_density_jets
+
+    subroutine emit_point_mass()
+        ! Physical perpendicular inertia of a map-lane displacement delta X =
+        ! e_1 dq_1 + e_2 dq_2 (chart tangents e_a, toroidal component fixed):
+        ! m_ac = rho J (P e_a).(P e_c), J = sigma det DX, B = DX b / J and
+        ! P = I - B B^T/|B|^2. At gamma = 0 the parallel component carries no
+        ! energy, and the minimal kinetic energy is this perpendicular norm.
+        type(expr_t) :: rho, sigma, bb(3), dx(3, 3), e(3, 2), jac, fb(3), bsq, &
+            pe(3, 2), out(3)
+        character(8) :: names(23)
+        integer :: i, k, c
+        rho = sym('rho'); sigma = sym('sigma')
+        names(1:2) = [character(8) :: 'rho', 'sigma']
+        do i = 1, 3
+            write(names(2 + i), '(a,i1)') 'r', i
+            bb(i) = sym(trim(names(2 + i)))
+        end do
+        do k = 1, 3
+            do i = 1, 3
+                write(names(5 + i + 3*(k - 1)), '(a,i1,i1)') 'f', i, k
+                dx(i, k) = sym(trim(names(5 + i + 3*(k - 1))))
+            end do
+        end do
+        do k = 1, 2
+            do i = 1, 3
+                write(names(14 + i + 3*(k - 1)), '(a,i1,i1)') 'e', i, k
+                e(i, k) = sym(trim(names(14 + i + 3*(k - 1))))
+            end do
+        end do
+        jac = sigma*(dx(1, 1)*(dx(2, 2)*dx(3, 3) - dx(2, 3)*dx(3, 2)) &
+            - dx(1, 2)*(dx(2, 1)*dx(3, 3) - dx(2, 3)*dx(3, 1)) &
+            + dx(1, 3)*(dx(2, 1)*dx(3, 2) - dx(2, 2)*dx(3, 1)))
+        do i = 1, 3
+            fb(i) = dx(i, 1)*bb(1) + dx(i, 2)*bb(2) + dx(i, 3)*bb(3)
+        end do
+        bsq = fb(1)**2 + fb(2)**2 + fb(3)**2
+        do k = 1, 2
+            do i = 1, 3
+                pe(i, k) = e(i, k) - fb(i)*(fb(1)*e(1, k) + fb(2)*e(2, k) &
+                    + fb(3)*e(3, k))/bsq
+            end do
+        end do
+        c = 0
+        do k = 1, 2
+            do i = 1, k
+                c = c + 1
+                out(c) = rho*jac*(pe(1, i)*pe(1, k) + pe(2, i)*pe(2, k) &
+                    + pe(3, i)*pe(3, k))
+            end do
+        end do
+        call writer%emit('dw_point_mass', names(1:20), &
+            [character(8) :: 'm11', 'm12', 'm22'], out)
+    end subroutine emit_point_mass
 
     subroutine prove(expression)
         type(expr_t), intent(in) :: expression

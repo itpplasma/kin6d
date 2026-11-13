@@ -657,6 +657,32 @@ three shifts, checks the Lanczos pair against its residual allowance, and
 rejects a nonaxisymmetric input. The existing generated cylinder identities,
 helical sign oracle and unconverged inverse-iteration rejection remain active.
 
+## Physical inertia
+
+`fb%mass_density > 0` replaces the |diag H| metric of `ideal_fb_mode_inertia`,
+`ideal_fb_mode_lanczos` and `ideal_fb_mode_stability` by the physical
+perpendicular inertia of a uniform mass density: per point
+rho J (P e_a).(P e_c) for the chart tangents of the two position
+coefficients, with B = DX b / J and P = I - B B^T/|B|^2 (generated leaf
+`dw_point_mass` of `gen/gen_ideal_dw.f90`), assembled on the element blocks
+of the plasma Hessian. At gamma = 0 the parallel displacement carries no
+energy, so this perpendicular norm is the minimal kinetic energy and the
+eigenvalues are omega^2 of the full ideal model. The default 0 keeps every
+existing diagnostic unchanged.
+
+`ideal_fb_physical_kink` (label `slow`) embeds the uniform-current cylinder of
+the [external-kink check](#independent-cylindrical-external-kink)
+(q = 0.5, ka = 0.1, rho = 1.3). The lowest n = 1 eigenvalue approaches the
+free-boundary cylinder minimum -0.5268153501/rho of `milca_ideal_cylinder`:
+-0.406917 at R/a = 80 (0.41 % off) and -0.405855 at 160 (0.15 %), with
+two eigenvalues (the two real phases) below 0.95 of it. A further pair,
+with plasma and vacuum energies of about -97 and +97 that nearly cancel, has
+omega^2 = -0.329 at R/a = 80 and lies above 0.5 of the kink value at 160.
+It weakens as the aspect ratio grows, which points to the equilibrium
+defect of the bent cylinder; [H] it remains to be checked on an exact
+toroidal equilibrium. The adiabatic term and the parallel unknown it needs
+(gamma > 0) are not yet in this lane.
+
 ## Registered single curved-pair diagnostic (25 October 2026)
 
 The next B1 check isolates the original logical panel pair (1,2) on the
