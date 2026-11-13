@@ -529,6 +529,20 @@ the tests. Its real symmetric embedding [[Re, -Im], [Im, Re]] factors in
 20 s with the real front-based LDL^T and twice the inertia; dense-front
 complex factorization in FortSparse is part of P1e.10.
 
+**Toroidal internal kink against Bussac.** The flux-coordinate oracle on the
+circular-torus states of [vrmhd-torus.md](vrmhd-torus.md) (R0/a = 10, Ohmic
+profile, q0 = 0.88 to 0.90, fixed wall at psi_N = 0.95, n = 1), read from
+Grad-Shafranov solutions with element size 0.0125 and with half of the
+radial cells within 0.04 of the q = 1 radius, gives one unstable mode with
+omega^2 = -3.17e-8 at beta_p = 3 and -4.47e-9 at beta_p = 2, in units of
+(v_A/a)^2. The values agree to 0.2 % between 64 and 128 cells, two band
+widths and the PEST and Hamada charts, and to 1 % with the large-aspect-ratio
+Bussac growth rate evaluated on the same q profiles with the rate as printed
+in Bussac et al., Phys. Rev. Lett. 35, 1638 (1975); a rate twice as large is
+excluded. At beta_p = 1 the mode (Bussac: -2.8e-11) is at the resolution
+limit. Uniform radial meshes give values that keep falling under refinement:
+the near-marginal internal kink needs cells concentrated at q = 1.
+
 **P1e.5 (in progress): free boundary.** In the cylinder the edge density
 X(a) is free and the vacuum adds 2 delta W_V = -(a/mu) F_a^2 G |xi_r(a)|^2 per
 unit 4 pi^2 R0, with G = phi/phi' at the edge from modified Bessel functions
