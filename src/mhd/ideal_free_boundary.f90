@@ -58,7 +58,8 @@ module milca_ideal_free_boundary
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
     use milca_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
-    use milca_ideal_dw_leaves, only: dw_point_mass
+    use milca_ideal_dw_leaves, only: dw_point_mass, dw_point_adiabatic, &
+        dw_point_inertia
     use milca_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
     use milca_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
@@ -166,6 +167,10 @@ module milca_ideal_free_boundary
         ! Mode spectra: > 0 uses the physical perpendicular inertia of this
         ! uniform mass density (dw_point_mass); 0 keeps the |diag H| metric.
         real(dp) :: mass_density = 0
+        ! Mode spectra: > 0 (with mass_density > 0) adds the adiabatic term
+        ! gam p (div xi)^2 about the solved state, the parallel displacement
+        ! beta B it needs as a third plasma unknown, and the full inertia.
+        real(dp) :: adiabatic_index = 0
         ! Shell: ns nodes, ncell cells, local connectivity, reference nodes,
         ! node role (1 Gamma_p, 2 interior, 3 Gamma_c), Gamma_p node -> plasma
         ! node, and the global mesh numbering of both parts.
@@ -3362,6 +3367,8 @@ contains
         ! B_pol.grad and B_phi.d/dphi couple cosine and sine coefficients.
         ! mvals holds the plasma mass matrix on the pattern of v: the diagonal
         ! metric mass(i), or the physical inertia when fb%mass_density > 0.
+        ! With fb%adiabatic_index > 0 the parallel displacement beta of every
+        ! plasma node follows the position unknowns inside the first np_m.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m
         integer, allocatable, intent(out) :: rp(:), ci(:), map(:)
@@ -3372,10 +3379,15 @@ contains
         real(dp), allocatable :: val(:)
         real(dp) :: correction
         type(fortsparse_status_t) :: sst
-        type(csr_matrix_t) :: mm
+        type(csr_matrix_t) :: mm, kk
+        integer, allocatable :: full(:), cr(:), cc(:)
+        real(dp), allocatable :: cv(:)
         integer :: first, last, a, c, phase, i, p, n, nnz, s
+        logical :: compressible
         status = IDEAL_FB_BAD_INPUT
         np_m = 0
+        compressible = fb%adiabatic_index > 0
+        if (compressible .and. fb%mass_density <= 0) return
         if (allocated(fb%exterior_3d)) return
         if (.not. allocated(fb%s_trace)) return
         if (m < 1 .or. m > fb%nmode) return
@@ -3406,6 +3418,21 @@ contains
                 end do
             end do
         end do
+        if (compressible) then
+            ! full: three-component plasma unknown -> mode unknown.
+            allocate (full(3*fb%nmode*fb%plasma%nodes))
+            full = 0
+            do a = 1, fb%plasma%nodes
+                do phase = first, last
+                    do c = 1, 2
+                        full(c + 3*(phase - 1) + 3*fb%nmode*(a - 1)) = &
+                            map(pidx(fb, c, phase, a))
+                    end do
+                    n = n + 1
+                    full(3*phase + 3*fb%nmode*(a - 1)) = n
+                end do
+            end do
+        end if
         np_m = n
         do s = 1, fb%ns
             do phase = first, last
@@ -3416,35 +3443,98 @@ contains
                 n = n + 1; map(iphi(fb, phase, s)) = n
             end do
         end do
-        allocate (rp(n + 1), ci(size(val)), v(size(val)), mass(np_m), inverse(n))
+        allocate (mass(np_m), inverse(n))
+        inverse = 0
         do i = 1, fb%n
             if (map(i) > 0) inverse(map(i)) = i
         end do
-        nnz = 0; rp(1) = 1; mass = 0
-        do i = 1, n
-            do p = rowptr(inverse(i)), rowptr(inverse(i) + 1) - 1
-                if (map(colidx(p)) == 0) cycle
-                nnz = nnz + 1
-                ci(nnz) = map(colidx(p)); v(nnz) = val(p)
-                if (ci(nnz) == i .and. i <= np_m) mass(i) = abs(val(p))
+        mass = 0
+        if (compressible) then
+            call plasma_compressible(fb, kk, mm)
+            nnz = size(val) + size(kk%val)
+            allocate (cr(nnz), cc(nnz), cv(nnz))
+            nnz = 0
+            do i = 1, fb%n
+                if (map(i) == 0) cycle
+                do p = rowptr(i), rowptr(i + 1) - 1
+                    if (map(colidx(p)) == 0) cycle
+                    nnz = nnz + 1
+                    cr(nnz) = map(i); cc(nnz) = map(colidx(p)); cv(nnz) = val(p)
+                end do
             end do
-            rp(i + 1) = nnz + 1
-            call sort_mode_row(ci(rp(i):nnz), v(rp(i):nnz))
-        end do
+            do i = 1, size(full)
+                if (full(i) == 0) cycle
+                do p = kk%rowptr(i), kk%rowptr(i + 1) - 1
+                    if (full(kk%colidx(p)) == 0) cycle
+                    nnz = nnz + 1
+                    cr(nnz) = full(i); cc(nnz) = full(kk%colidx(p))
+                    cv(nnz) = kk%val(p)
+                end do
+            end do
+            call coo_to_csr(n, cr(:nnz), cc(:nnz), cv(:nnz), rp, ci, v)
+            nnz = size(v)
+            ! |diag K| is no metric here: beta has no stiffness where p = 0.
+            do a = 1, size(full)
+                if (full(a) == 0) cycle
+                do p = mm%rowptr(a), mm%rowptr(a + 1) - 1
+                    if (mm%colidx(p) == a) mass(full(a)) = mm%val(p)
+                end do
+            end do
+            ! The added blocks carry assembly rounding asymmetry.
+            do i = 1, np_m
+                do p = rp(i), rp(i + 1) - 1
+                    c = ci(p)
+                    if (c <= i .or. c > np_m) cycle
+                    s = locate(ci(rp(c):rp(c + 1) - 1), i)
+                    if (s == 0) return
+                    v(p) = (v(p) + v(rp(c) + s - 1))/2
+                    v(rp(c) + s - 1) = v(p)
+                end do
+            end do
+        else
+            allocate (rp(n + 1), ci(size(val)), v(size(val)))
+            nnz = 0; rp(1) = 1
+            do i = 1, n
+                do p = rowptr(inverse(i)), rowptr(inverse(i) + 1) - 1
+                    if (map(colidx(p)) == 0) cycle
+                    nnz = nnz + 1
+                    ci(nnz) = map(colidx(p)); v(nnz) = val(p)
+                    if (ci(nnz) == i .and. i <= np_m) mass(i) = abs(val(p))
+                end do
+                rp(i + 1) = nnz + 1
+                call sort_mode_row(ci(rp(i):nnz), v(rp(i):nnz))
+            end do
+        end if
         if (any(mass <= 0)) return
         if (present(mvals)) then
             allocate (mvals(nnz)); mvals = 0
             if (fb%mass_density > 0) then
-                call plasma_mass(fb, mm)
-                do i = 1, np_m
-                    a = inverse(i)
-                    do p = mm%rowptr(a), mm%rowptr(a + 1) - 1
-                        c = map(mm%colidx(p))
-                        if (c == 0 .or. c > np_m) cycle
-                        s = locate(ci(rp(i):rp(i + 1) - 1), c)
-                        if (s == 0) return
-                        mvals(rp(i) + s - 1) = mm%val(p)
+                if (compressible) then
+                    do a = 1, size(full)
+                        i = full(a)
+                        if (i == 0) cycle
+                        do p = mm%rowptr(a), mm%rowptr(a + 1) - 1
+                            c = full(mm%colidx(p))
+                            if (c == 0) cycle
+                            s = locate(ci(rp(i):rp(i + 1) - 1), c)
+                            if (s == 0) return
+                            mvals(rp(i) + s - 1) = mm%val(p)
+                        end do
                     end do
+                else
+                    call plasma_mass(fb, mm)
+                    do i = 1, np_m
+                        a = inverse(i)
+                        do p = mm%rowptr(a), mm%rowptr(a + 1) - 1
+                            c = map(mm%colidx(p))
+                            if (c == 0 .or. c > np_m) cycle
+                            s = locate(ci(rp(i):rp(i + 1) - 1), c)
+                            if (s == 0) return
+                            mvals(rp(i) + s - 1) = mm%val(p)
+                        end do
+                    end do
+                end if
+                do i = 1, np_m
                     s = locate(ci(rp(i):rp(i + 1) - 1), i)
                     if (s == 0) return
                     mass(i) = mvals(rp(i) + s - 1)
@@ -3470,7 +3560,9 @@ contains
                 end do
             end if
         end if
-        ci = ci(:nnz); v = v(:nnz)
+        if (.not. compressible) then
+            ci = ci(:nnz); v = v(:nnz)
+        end if
         status = IDEAL_FB_OK
     end subroutine
 
@@ -3599,6 +3691,129 @@ contains
         hv(1, 1) = m11; hv(1, 2) = m12; hv(2, 1) = m12; hv(2, 2) = m22
     end subroutine plasma_point_mass
 
+    subroutine plasma_compressible(fb, stiffness, mass)
+        ! Three-component plasma blocks of the compressible spectrum, with
+        ! unknown c + 3 (m - 1) + 3 nmode (a - 1) for component c (q1, q2,
+        ! beta), mode m, node a; the displacement is e_1 dq_1 + e_2 dq_2 +
+        ! beta B. The frozen-in energy does not see beta B at an equilibrium,
+        ! so stiffness is only the adiabatic term that the position-gauge
+        ! Hessian lacks. mass is the full inertia.
+        type(ideal_fb_t), intent(in) :: fb
+        type(csr_matrix_t), intent(out) :: stiffness, mass
+        real(dp), allocatable :: kb(:, :, :), mb(:, :, :), basis(:, :)
+        integer, allocatable :: conn(:, :)
+        real(dp) :: ha(16, 16), hm(16, 16), weight, dphi
+        integer :: e, g, j, a, m, c, nl, t, var(4, 3)
+        nl = 3*fb%nmode*fb%nloc
+        allocate (kb(nl, nl, fb%plasma%cells), mb(nl, nl, fb%plasma%cells), &
+            conn(nl, fb%plasma%cells))
+        dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
+        do c = 1, 2
+            var(:, c) = [(c + 3*t, t = 0, 3)]
+        end do
+        var(:, 3) = [13, 14, 15, 16]
+        !$omp parallel default(shared) private(e, g, j, ha, hm, weight, basis)
+        allocate (basis(4, nl/3))
+        !$omp do schedule(static)
+        do e = 1, fb%plasma%cells
+            kb(:, :, e) = 0; mb(:, :, e) = 0
+            do j = 1, fb%plasma%nphi
+                do g = 1, fb%plasma%nq
+                    call plasma_point_compressible(fb%plasma, e, g, j, &
+                        fb%adiabatic_index, fb%mass_density, ha, hm)
+                    weight = fb%plasma%weight(g)*dphi
+                    call point_basis(fb, g, j, basis)
+                    call add_point_hessian(ha, var, basis, weight, kb(:, :, e))
+                    call add_point_hessian(hm, var, basis, weight, mb(:, :, e))
+                end do
+            end do
+        end do
+        !$omp end do
+        deallocate (basis)
+        !$omp end parallel
+        do e = 1, fb%plasma%cells
+            do a = 1, fb%nloc
+                do m = 1, fb%nmode
+                    do c = 1, 3
+                        conn(c + 3*(m - 1) + 3*fb%nmode*(a - 1), e) = c + 3*(m - 1) &
+                            + 3*fb%nmode*(fb%plasma%conn(a, e) - 1)
+                    end do
+                end do
+            end do
+        end do
+        call csr_build_pattern(3*fb%nmode*fb%plasma%nodes, conn, .false., stiffness)
+        call csr_assemble_blocks(stiffness, conn, kb)
+        call csr_build_pattern(3*fb%nmode*fb%plasma%nodes, conn, .false., mass)
+        call csr_assemble_blocks(mass, conn, mb)
+    end subroutine plasma_compressible
+
+    subroutine plasma_point_compressible(map, e, g, j, gam, density, ha, hm)
+        ! Adiabatic energy and full inertia at a point in the variables of
+        ! plasma_point_hessian (1:12) followed by beta and its reference
+        ! derivatives (13:16).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(in) :: gam, density
+        real(dp), intent(out) :: ha(16, 16), hm(16, 16)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), row(12, 16), hd(12, 12), t(78), tt, dt
+        integer :: a, i, k, m, n, r, c, node
+        q = 0; qd = 0
+        do a = 1, map%nloc
+            node = map%conn(a, e)
+            do m = 1, map%nmode
+                tt = map%trig(m, j); dt = map%dtrig(m, j)
+                q = q + map%x(:, m, node)*map%shape(a, g)*tt
+                qd(:, 1) = qd(:, 1) + map%x(:, m, node)*map%dshape(1, a, g)*tt
+                qd(:, 2) = qd(:, 2) + map%x(:, m, node)*map%dshape(2, a, g)*tt
+                qd(:, 3) = qd(:, 3) + map%x(:, m, node)*map%shape(a, g)*dt
+            end do
+        end do
+        q(3) = q(3) + map%phi(j); qd(3, 3) = qd(3, 3) + 1
+        call map%chart%jet(q, pos, d1, d2, d3)
+        dx = matmul(d1, qd)
+        call dw_point_adiabatic(gam, map%p(g, e), map%sigma, dx(1, 1), dx(2, 1), &
+            dx(3, 1), dx(1, 2), dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), &
+            map%b(1, g, e), map%b(2, g, e), map%b(3, g, e), t(1), t(2), t(3), &
+            t(4), t(5), t(6), t(7), t(8), t(9), t(10), t(11), t(12), t(13), t(14), &
+            t(15), t(16), t(17), t(18), t(19), t(20), t(21), t(22), t(23), t(24), &
+            t(25), t(26), t(27), t(28), t(29), t(30), t(31), t(32), t(33), t(34), &
+            t(35), t(36), t(37), t(38), t(39), t(40), t(41), t(42), t(43), t(44), &
+            t(45), t(46), t(47), t(48), t(49), t(50), t(51), t(52), t(53), t(54), &
+            t(55), t(56), t(57), t(58), t(59), t(60), t(61), t(62), t(63), t(64), &
+            t(65), t(66), t(67), t(68), t(69), t(70), t(71), t(72), t(73), t(74), &
+            t(75), t(76), t(77), t(78))
+        n = 0
+        do c = 1, 12
+            do r = 1, c
+                n = n + 1
+                hd(r, c) = t(n); hd(c, r) = t(n)
+            end do
+        end do
+        ! Rows: DX (chart chain rule), then the reference gradient of beta.
+        row = 0
+        do i = 1, 3
+            do a = 1, 3
+                r = a + 3*(i - 1)
+                do m = 1, 3
+                    row(r, m) = dot_product(d2(a, :, m), qd(:, i))
+                end do
+                do k = 1, 3
+                    row(r, 3 + k + 3*(i - 1)) = d1(a, k)
+                end do
+            end do
+            row(9 + i, 13 + i) = 1
+        end do
+        ha = matmul(transpose(row), matmul(hd, row))
+        hm = 0
+        call dw_point_inertia(density, map%sigma, map%b(1, g, e), map%b(2, g, e), &
+            map%b(3, g, e), dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), dx(2, 2), &
+            dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), d1(1, 1), d1(2, 1), d1(3, 1), &
+            d1(1, 2), d1(2, 2), d1(3, 2), hm(1, 1), hm(1, 2), hm(2, 2), hm(1, 13), &
+            hm(2, 13), hm(13, 13))
+        hm(2, 1) = hm(1, 2); hm(13, 1) = hm(1, 13); hm(13, 2) = hm(2, 13)
+    end subroutine plasma_point_compressible
+
     subroutine sort_mode_row(col, value)
         integer, intent(inout) :: col(:)
         real(dp), intent(inout) :: value(:)
@@ -3656,8 +3871,10 @@ contains
     subroutine ideal_fb_mode_energies(fb, m, displacements, reports, status)
         ! Schur energy of prescribed plasma displacements (one per column). For
         ! n>0 the layout is (Rcos,Zcos,Rsin,Zsin) per node; n=0 is (R,Z) per
-        ! node. Shell map, potential and multipliers are solved at fixed
-        ! plasma; one mode matrix and one factor serve all columns.
+        ! node; with fb%adiabatic_index > 0 the parallel displacements beta
+        ! (per phase and node) follow all positions. Shell map, potential and
+        ! multipliers are solved at fixed plasma; one mode matrix and one
+        ! factor serve all columns.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m
         real(dp), intent(in) :: displacements(:, :)

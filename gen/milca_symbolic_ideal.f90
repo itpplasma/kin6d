@@ -6,7 +6,7 @@ module milca_symbolic_ideal
         operator(/), operator(**)
     implicit none
     private
-    public :: frozen_energy
+    public :: frozen_energy, adiabatic_internal_energy
 contains
     function frozen_energy(d, b, p, mu, sigma, jac) result(density)
         type(expr_t), intent(in) :: d(3, 3), b(3), p, mu, sigma
@@ -22,4 +22,15 @@ contains
         fb2 = fb(1)**2 + fb(2)**2 + fb(3)**2
         density = fb2/(2*mu*jac) - p*jac
     end function frozen_energy
+
+    function adiabatic_internal_energy(p, gam, jac0, jac) result(density)
+        ! Internal energy per reference volume of an adiabatic displacement:
+        ! mass conservation and p/rho^gam = const freeze p J^gam along the
+        ! map, so the physical pressure is p (jac0/J)^gam when it is p at the
+        ! state with Jacobian jac0, and the energy is that pressure times
+        ! J/(gam - 1): p jac0 (J/jac0)^(1-gam)/(gam-1).
+        type(expr_t), intent(in) :: p, gam, jac0, jac
+        type(expr_t) :: density
+        density = p*jac0*(jac/jac0)**(1 - gam)/(gam - 1)
+    end function adiabatic_internal_energy
 end module milca_symbolic_ideal

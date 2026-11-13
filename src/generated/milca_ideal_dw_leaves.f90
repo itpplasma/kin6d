@@ -695,6 +695,147 @@ end subroutine dw_point_mass
 ! Generator revision: 2d6f7d15d3d0fce1738b68d0f5d9a9ffdd1418f7
 ! Regenerate with: gen_ideal_dw from pinned FortSym build
 
+pure elemental subroutine dw_point_adiabatic(gam, p, sigma, f11, f21, f31, f12, f22, f32, f13, f23, &
+        f33, b1, b2, b3, h0101, h0102, h0202, h0103, h0203, h0303, h0104, h0204, h0304, h0404, h0105, h0205, &
+        h0305, h0405, h0505, h0106, h0206, h0306, h0406, h0506, h0606, h0107, h0207, h0307, h0407, h0507, &
+        h0607, h0707, h0108, h0208, h0308, h0408, h0508, h0608, h0708, h0808, h0109, h0209, h0309, h0409, &
+        h0509, h0609, h0709, h0809, h0909, h0110, h0210, h0310, h0410, h0510, h0610, h0710, h0810, h0910, &
+        h1010, h0111, h0211, h0311, h0411, h0511, h0611, h0711, h0811, h0911, h1011, h1111, h0112, h0212, &
+        h0312, h0412, h0512, h0612, h0712, h0812, h0912, h1012, h1112, h1212)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: gam, p, sigma, f11, f21, f31, f12, f22, f32, f13, f23, f33, b1, b2, b3
+    real(dp), intent(out) :: h0101, h0102, h0202, h0103, h0203, h0303, h0104, h0204, h0304, h0404, &
+        h0105, h0205, h0305, h0405, h0505, h0106, h0206, h0306, h0406, h0506, h0606, h0107, h0207, h0307, &
+        h0407, h0507, h0607, h0707, h0108, h0208, h0308, h0408, h0508, h0608, h0708, h0808, h0109, h0209, &
+        h0309, h0409, h0509, h0609, h0709, h0809, h0909, h0110, h0210, h0310, h0410, h0510, h0610, h0710, &
+        h0810, h0910, h1010, h0111, h0211, h0311, h0411, h0511, h0611, h0711, h0811, h0911, h1011, h1111, &
+        h0112, h0212, h0312, h0412, h0512, h0612, h0712, h0812, h0912, h1012, h1112, h1212
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10
+
+    t1 = f22*f33 - f23*f32
+    t2 = f21*f33 - f23*f31
+    t3 = f21*f32 - f22*f31
+    t4 = f11*t1 - f12*t2 + f13*t3
+    t5 = -f12*f33*1 + f13*f32*1
+    t6 = f12*f23*1 - f13*f22*1
+    t7 = f11*f33*1 - f13*f31*1
+    t8 = -f11*f23*1 + f13*f21*1
+    t9 = -f11*f32*1 + f12*f31*1
+    t10 = f11*f22*1 - f12*f21*1
+    h0101 = gam*p*sigma*sigma*sigma*t1*t1*1*1/t4
+    h0102 = gam*p*sigma*sigma*sigma*t5*t1*1/t4
+    h0202 = gam*p*sigma*sigma*sigma*t5*t5/t4
+    h0103 = gam*p*sigma*sigma*sigma*t6*t1*1/t4
+    h0203 = gam*p*sigma*sigma*sigma*t6*t5/t4
+    h0303 = gam*p*sigma*sigma*sigma*t6*t6/t4
+    h0104 = -gam*p*sigma*sigma*sigma*t2*t1*1*1/t4
+    h0204 = -gam*p*sigma*sigma*sigma*t5*t2*1/t4
+    h0304 = -gam*p*sigma*sigma*sigma*t6*t2*1/t4
+    h0404 = gam*p*sigma*sigma*sigma*t2*t2*1*1/t4
+    h0105 = gam*p*sigma*sigma*sigma*t7*t1*1/t4
+    h0205 = gam*p*sigma*sigma*sigma*t7*t5/t4
+    h0305 = gam*p*sigma*sigma*sigma*t7*t6/t4
+    h0405 = -gam*p*sigma*sigma*sigma*t7*t2*1/t4
+    h0505 = gam*p*sigma*sigma*sigma*t7*t7/t4
+    h0106 = gam*p*sigma*sigma*sigma*t8*t1*1/t4
+    h0206 = gam*p*sigma*sigma*sigma*t8*t5/t4
+    h0306 = gam*p*sigma*sigma*sigma*t8*t6/t4
+    h0406 = -gam*p*sigma*sigma*sigma*t8*t2*1/t4
+    h0506 = gam*p*sigma*sigma*sigma*t8*t7/t4
+    h0606 = gam*p*sigma*sigma*sigma*t8*t8/t4
+    h0107 = gam*p*sigma*sigma*sigma*t3*t1*1*1/t4
+    h0207 = gam*p*sigma*sigma*sigma*t5*t3*1/t4
+    h0307 = gam*p*sigma*sigma*sigma*t6*t3*1/t4
+    h0407 = -gam*p*sigma*sigma*sigma*t3*t2*1*1/t4
+    h0507 = gam*p*sigma*sigma*sigma*t7*t3*1/t4
+    h0607 = gam*p*sigma*sigma*sigma*t8*t3*1/t4
+    h0707 = gam*p*sigma*sigma*sigma*t3*t3*1*1/t4
+    h0108 = gam*p*sigma*sigma*sigma*t9*t1*1/t4
+    h0208 = gam*p*sigma*sigma*sigma*t9*t5/t4
+    h0308 = gam*p*sigma*sigma*sigma*t9*t6/t4
+    h0408 = -gam*p*sigma*sigma*sigma*t9*t2*1/t4
+    h0508 = gam*p*sigma*sigma*sigma*t9*t7/t4
+    h0608 = gam*p*sigma*sigma*sigma*t8*t9/t4
+    h0708 = gam*p*sigma*sigma*sigma*t9*t3*1/t4
+    h0808 = gam*p*sigma*sigma*sigma*t9*t9/t4
+    h0109 = gam*p*sigma*sigma*sigma*t10*t1*1/t4
+    h0209 = gam*p*sigma*sigma*sigma*t10*t5/t4
+    h0309 = gam*p*sigma*sigma*sigma*t10*t6/t4
+    h0409 = -gam*p*sigma*sigma*sigma*t10*t2*1/t4
+    h0509 = gam*p*sigma*sigma*sigma*t10*t7/t4
+    h0609 = gam*p*sigma*sigma*sigma*t10*t8/t4
+    h0709 = gam*p*sigma*sigma*sigma*t10*t3*1/t4
+    h0809 = gam*p*sigma*sigma*sigma*t10*t9/t4
+    h0909 = gam*p*sigma*sigma*sigma*t10*t10/t4
+    h0110 = b1*gam*p*sigma*sigma*t1*1/t4
+    h0210 = b1*gam*p*sigma*sigma*t5/t4
+    h0310 = b1*gam*p*sigma*sigma*t6/t4
+    h0410 = -b1*gam*p*sigma*sigma*t2*1/t4
+    h0510 = b1*gam*p*sigma*sigma*t7/t4
+    h0610 = b1*gam*p*sigma*sigma*t8/t4
+    h0710 = b1*gam*p*sigma*sigma*t3*1/t4
+    h0810 = b1*gam*p*sigma*sigma*t9/t4
+    h0910 = b1*gam*p*sigma*sigma*t10/t4
+    h1010 = b1*b1*gam*p*sigma/t4
+    h0111 = b2*gam*p*sigma*sigma*t1*1/t4
+    h0211 = b2*gam*p*sigma*sigma*t5/t4
+    h0311 = b2*gam*p*sigma*sigma*t6/t4
+    h0411 = -b2*gam*p*sigma*sigma*t2*1/t4
+    h0511 = b2*gam*p*sigma*sigma*t7/t4
+    h0611 = b2*gam*p*sigma*sigma*t8/t4
+    h0711 = b2*gam*p*sigma*sigma*t3*1/t4
+    h0811 = b2*gam*p*sigma*sigma*t9/t4
+    h0911 = b2*gam*p*sigma*sigma*t10/t4
+    h1011 = b1*b2*gam*p*sigma/t4
+    h1111 = b2*b2*gam*p*sigma/t4
+    h0112 = b3*gam*p*sigma*sigma*t1*1/t4
+    h0212 = b3*gam*p*sigma*sigma*t5/t4
+    h0312 = b3*gam*p*sigma*sigma*t6/t4
+    h0412 = -b3*gam*p*sigma*sigma*t2*1/t4
+    h0512 = b3*gam*p*sigma*sigma*t7/t4
+    h0612 = b3*gam*p*sigma*sigma*t8/t4
+    h0712 = b3*gam*p*sigma*sigma*t3*1/t4
+    h0812 = b3*gam*p*sigma*sigma*t9/t4
+    h0912 = b3*gam*p*sigma*sigma*t10/t4
+    h1012 = b1*b3*gam*p*sigma/t4
+    h1112 = b2*b3*gam*p*sigma/t4
+    h1212 = b3*b3*gam*p*sigma/t4
+
+end subroutine dw_point_adiabatic
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_ideal_dw
+! Generator revision: 2d6f7d15d3d0fce1738b68d0f5d9a9ffdd1418f7
+! Regenerate with: gen_ideal_dw from pinned FortSym build
+
+pure elemental subroutine dw_point_inertia(rho, sigma, b1, b2, b3, f11, f21, f31, f12, f22, f32, &
+        f13, f23, f33, e11, e21, e31, e12, e22, e32, m11, m12, m22, m13, m23, m33)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: rho, sigma, b1, b2, b3, f11, f21, f31, f12, f22, f32, f13, f23, f33, &
+        e11, e21, e31, e12, e22, e32
+    real(dp), intent(out) :: m11, m12, m22, m13, m23, m33
+    real(dp) :: t1, t2, t3, t4
+
+    t1 = f11*(f22*f33 - f23*f32) - f12*(f21*f33 - f23*f31) + f13*(f21*f32 - f22*f31)
+    t2 = b1*f11 + b2*f12 + b3*f13
+    t3 = b1*f21 + b2*f22 + b3*f23
+    t4 = b1*f31 + b2*f32 + b3*f33
+    m11 = rho*sigma*(e11*e11 + e21*e21 + e31*e31)*t1
+    m12 = rho*sigma*(e11*e12 + e21*e22 + e31*e32)*t1
+    m22 = rho*sigma*(e12*e12 + e22*e22 + e32*e32)*t1
+    m13 = rho*sigma*(e11*sigma*t2/t1 + e21*sigma*t3/t1 + e31*sigma*t4/t1)*t1
+    m23 = rho*sigma*(e12*sigma*t2/t1 + e22*sigma*t3/t1 + e32*sigma*t4/t1)*t1
+    m33 = rho*sigma*t1*(sigma*sigma*t2*t2/t1/t1 + sigma*sigma*t3*t3/t1/t1 + sigma*sigma*t4*t4/t1/t1)
+
+end subroutine dw_point_inertia
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_ideal_dw
+! Generator revision: 2d6f7d15d3d0fce1738b68d0f5d9a9ffdd1418f7
+! Regenerate with: gen_ideal_dw from pinned FortSym build
+
 pure elemental subroutine dw_screw_pinch_field(r, bt, btp, bz, bzp, b1, b2, b3, g11, g21, g31, g12, &
         g22, g32, g13, g23, g33)
     use, intrinsic :: iso_fortran_env, only: dp => real64
