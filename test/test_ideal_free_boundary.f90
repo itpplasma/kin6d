@@ -601,39 +601,69 @@ contains
         type(screw_field_t) :: field
         type(ideal_fb_stability_t) :: report
         real(dp), allocatable :: chain(:, :), contour(:, :)
-        real(dp), parameter :: walls(3) = [3.0_dp, 1.6_dp, 1.3_dp], rho = 1.3_dp
-        real(dp) :: lambda
-        integer :: iw, j, st, counts(3, 2), nc
-        kink_major = 160
-        do iw = 1, 3
-            kink_wall = walls(iw)
-            field%major = kink_major; field%pitch = 0.5_dp
-            nc = 16*degree
-            if (allocated(contour)) deallocate (contour, chain)
-            allocate (contour(2, nc), chain(2, nc))
-            do j = 1, nc
-                call kink_curve(real(j - 1, dp)/nc, contour(:, j))
-                chain(:, j) = [kink_major + cos(2*pi*(j - 1)/nc), &
-                    sin(2*pi*(j - 1)/nc)]
-            end do
-            call initialize_gs(mesh, contour, 0.12_dp/degree**2, st, 3, &
-                curve=kink_curve, interior_chain=chain)
-            if (st /= 0) error stop 'wall mesh'
-            call ideal_fb_init(fb, mesh, chain, chart, field, nint(kink_major/10), &
-                1, 5*kink_major, 2*pi, st, mu0=1.0_dp)
-            if (st /= IDEAL_FB_OK) error stop 'wall init'
-            call ideal_fb_set_drive(fb, kink_sampler, st)
-            if (st /= IDEAL_FB_OK) error stop 'wall drive'
-            call ideal_fb_solve_vacuum(fb, st)
-            if (st /= IDEAL_FB_OK) error stop 'wall vacuum'
-            fb%mass_density = rho
-            fb%s_trace(:, :, 1) = 0
-            call ideal_fb_mode_inertia(fb, 3, [-0.01_dp, -1.0e-4_dp], counts, st)
-            print *, 'wall', kink_wall, ' inertia st', st, ' below -0.01, -1e-4:', counts(1, :)
-            call ideal_fb_mode_lanczos(fb, 3, lambda, report, st, shift=-0.3_dp)
-            print '(a,f5.2,a,es16.8,a,es16.8,i3)', 'wall at', kink_wall, ' omega^2', &
-                lambda, ' times rho', lambda*rho, st
+        real(dp), parameter :: rho = 1.3_dp
+        real(dp) :: lambda, hmesh, sh, t0, t1
+        integer :: j, st, counts(3, 2), nc, nchain
+        character(32) :: env
+        kink_wall = 1.3_dp; kink_major = 160; nc = 16; nchain = 16; hmesh = 0.12_dp
+        sh = -0.3_dp
+        call get_environment_variable('DW_WALL', env); if (len_trim(env) > 0) read (env, *) kink_wall
+        call get_environment_variable('DW_MAJOR', env); if (len_trim(env) > 0) read (env, *) kink_major
+        call get_environment_variable('DW_NC', env); if (len_trim(env) > 0) read (env, *) nc
+        call get_environment_variable('DW_NCHAIN', env); if (len_trim(env) > 0) read (env, *) nchain
+        call get_environment_variable('DW_H', env); if (len_trim(env) > 0) read (env, *) hmesh
+        call get_environment_variable('DW_SHIFT', env); if (len_trim(env) > 0) read (env, *) sh
+        call cpu_time(t0)
+        field%major = kink_major; field%pitch = 0.5_dp
+        allocate (contour(2, nc), chain(2, nchain))
+        do j = 1, nc
+            call kink_curve(real(j - 1, dp)/nc, contour(:, j))
         end do
+        do j = 1, nchain
+            chain(:, j) = [kink_major + cos(2*pi*(j - 1)/nchain), &
+                sin(2*pi*(j - 1)/nchain)]
+        end do
+        call initialize_gs(mesh, contour, hmesh, st, degree, &
+            curve=kink_curve, interior_chain=chain)
+        if (st /= 0) error stop 'wall mesh'
+        call ideal_fb_init(fb, mesh, chain, chart, field, nint(kink_major/10), &
+            1, 5*kink_major, 2*pi, st, mu0=1.0_dp)
+        if (st /= IDEAL_FB_OK) error stop 'wall init'
+        call ideal_fb_set_drive(fb, kink_sampler, st)
+        if (st /= IDEAL_FB_OK) error stop 'wall drive'
+        call ideal_fb_solve_vacuum(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'wall vacuum'
+        print *, 'plasma nodes', fb%plasma%nodes, ' shell nodes', fb%ns, ' n', fb%n
+        block
+            real(dp), allocatable :: g(:)
+            type(ideal_fb_report_t) :: nrep
+            integer :: newton
+            allocate (g(fb%n))
+            call ideal_fb_gradient(fb, g, st)
+            print '(a,es12.4,a,es12.4)', 'drive state max|g| plasma', &
+                maxval(abs(g(:fb%np))), ' all', maxval(abs(g))
+            newton = 0
+            call get_environment_variable('DW_NEWTON', env)
+            if (len_trim(env) > 0) read (env, *) newton
+            if (newton > 0) then
+                call ideal_fb_solve(fb, 1.0e-10_dp, newton, nrep, st, &
+                    residual_tolerance=1.0e-10_dp)
+                call ideal_fb_gradient(fb, g, j)
+                print '(a,i3,a,i3,a,es12.4,a,es12.4)', 'newton st', st, ' it', &
+                    nrep%iterations, ' residual', nrep%residual, ' max|g|', &
+                    maxval(abs(g(:fb%np)))
+            end if
+        end block
+        fb%mass_density = rho
+        fb%s_trace(:, :, 1) = 0
+        call ideal_fb_mode_inertia(fb, 3, [-0.01_dp, -1.0e-4_dp], counts, st)
+        print *, 'inertia st', st, ' below -0.01, -1e-4:', counts(1, :)
+        call ideal_fb_mode_lanczos(fb, 3, lambda, report, st, shift=sh)
+        call cpu_time(t1)
+        print '(a,f5.2,a,f6.0,a,es16.8,a,es16.8,i3)', 'wall', kink_wall, ' R0', &
+            kink_major, ' omega^2', lambda, ' times rho', lambda*rho, st
+        print '(a,4es12.4)', 'ledger plasma vacuum exterior total', report%plasma, &
+            report%vacuum, report%exterior, report%total
         kink_wall = 2
     end subroutine wall_kink
 

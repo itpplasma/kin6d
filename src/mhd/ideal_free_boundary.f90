@@ -1562,6 +1562,9 @@ contains
                 end do
             end do
         end do
+        ! Exactly symmetric: the products with chart derivatives of size R0
+        ! leave a rounding asymmetry that grows with R0.
+        hv = 0.5_dp*(hv + transpose(hv))
     contains
         subroutine hessian_leaf(t)
             real(dp), intent(out) :: t(78)
@@ -3405,10 +3408,37 @@ contains
             first = 2*(m/2); last = first + 1
         end if
         call ideal_fb_hessian(fb, rowptr, colidx, val)
+        block
+            integer :: ii, pp, qq, kr, kc, kinds(fb%n)
+            real(dp) :: worst(4, 4), big(4, 4), d
+            kinds(1:fb%np) = 1; kinds(fb%np+1:fb%np+fb%nx) = 2
+            kinds(fb%np+fb%nx+1:fb%np+2*fb%nx) = 3; kinds(fb%np+2*fb%nx+1:) = 4
+            worst = 0; big = 0
+            do ii = 1, fb%n
+                do pp = rowptr(ii), rowptr(ii + 1) - 1
+                    kr = kinds(ii); kc = kinds(colidx(pp))
+                    big(kr, kc) = max(big(kr, kc), abs(val(pp)))
+                    do qq = rowptr(colidx(pp)), rowptr(colidx(pp) + 1) - 1
+                        if (colidx(qq) == ii) then
+                            d = abs(val(pp) - val(qq))
+                            worst(kr, kc) = max(worst(kr, kc), d)
+                        end if
+                    end do
+                end do
+            end do
+            print *, 'DBG kinds P X L F'
+            do kr = 1, 4
+                print '(a,4es10.2)', ' DBG big ', big(kr, :)
+            end do
+            do kr = 1, 4
+                print '(a,4es10.2)', ' DBG asym', worst(kr, :)
+            end do
+        end block
         ! Apply the same checked symmetry completion as the Newton solve,
         ! before sub-block extraction changes the matrix's scale.
         call csc_normalize_symmetric_raw(fb%n, rowptr, colidx, val, &
             1.0e-12_dp, correction, sst)
+        print *, 'DBG symmetry correction', correction, status_ok(sst)
         if (.not. status_ok(sst)) then
             status = IDEAL_FB_SOLVE_FAILED
             return
@@ -3974,6 +4004,7 @@ contains
         n = size(rp) - 1
         call mode_rest_block(rp, ci, v, np, ar, ac, av)
         call count_factor(ar, ac, av, base, st)
+        print *, 'DBG rest inertia', base, st
         status = IDEAL_FB_SOLVE_FAILED
         if (st /= IDEAL_FB_OK .or. base(2) /= 0) return
         allocate (shifted(size(v)))
@@ -4601,6 +4632,33 @@ contains
                     z(:np)))/((observed_scale + abs(lambda)*options%mass_scale) &
                     *norm2(z(:np)))
                 call mode_ledger(fb, rp, ci, v, map, np, z, mass, report, images)
+                block
+                    integer :: a, b, k
+                    real(dp) :: r, c0(2), bins(12), xn(2), tn(2), nrm, tg, tot
+                    logical :: onp(fb%plasma%nodes)
+                    onp = .false.
+                    do k = 1, fb%ns
+                        if (fb%role(k) == 1) onp(fb%plasma_node(k)) = .true.
+                    end do
+                    c0 = [sum(fb%plasma%x(1, 1, :)), sum(fb%plasma%x(2, 1, :))]/fb%plasma%nodes
+                    bins = 0; nrm = 0; tg = 0; tot = 0
+                    do a = 1, fb%plasma%nodes
+                        r = norm2(fb%plasma%x(1:2, 1, a) - c0)
+                        b = min(12, 1 + int(r*10))
+                        do k = 1, 2
+                            xn = [z(map(pidx(fb, 1, k + 1, a))), z(map(pidx(fb, 2, k + 1, a)))]
+                            bins(b) = bins(b) + sum(xn**2)
+                            tot = tot + sum(xn**2)
+                            if (onp(a)) then
+                                tn = (fb%plasma%x(1:2, 1, a) - c0)/r
+                                nrm = nrm + dot_product(xn, tn)**2
+                                tg = tg + (xn(1)*tn(2) - xn(2)*tn(1))**2
+                            end if
+                        end do
+                    end do
+                    print '(a,12f6.3)', ' DBG |xi|^2 by r/0.1', bins/tot
+                    print '(a,2f8.4)', ' DBG interface normal, tangential share', nrm/tot, tg/tot
+                end block
                 report%relative_residual = relative_residual
                 report%residual_radius = radius
                 report%backward_error = backward
