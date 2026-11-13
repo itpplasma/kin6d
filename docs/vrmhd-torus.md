@@ -174,10 +174,10 @@ for `q = 1 - Delta q (1 - (r/r1)^nu)` to `1e-4` at `nu = 2`,
 
 Above the critical `beta_p1` the mode is ideally unstable. Minimising the
 Lagrangian of the layer at `r1`, where `k_par = -q' x/R0`, against `delta W`
-gives
+gives, as printed by Bussac et al.,
 
 ```text
-gamma tau_A = -2 pi eps1^2 delta W_T / (R0 s1 sqrt(f_in)).
+gamma tau_A = -pi eps1^2 delta W_T / (R0 s1 sqrt(f_in)).
 ```
 
 The inertia factor `f_in = 1 + 2 q^2 = 3` at `q = 1` (Bussac, p. 1641, writes
@@ -185,10 +185,12 @@ The inertia factor `f_in = 1 + 2 q^2 = 3` at `q = 1` (Bussac, p. 1641, writes
 makes the shift divergence-free. Because the shift is divergence-free, the
 compressional energy `Gamma p (div xi)^2` (`Gamma = 5/3` the adiabatic index)
 does not enter `delta W_T`, and compressible MHD with parallel flow has
-`f_in = 3`. This rate agrees with Porcelli, Boucher and Rosenbluth, Plasma
-Phys. Control. Fusion 38, 2163 (1996), Eqs. (1) and (8). Bussac's printed rate
-is half of it (open question below), so only the threshold and the scaling are
-used as checks.
+`f_in = 3`. MILCA's global ideal stability (docs/stability.md) confirms this
+rate on the Grad-Shafranov states of this case at `R0/a = 10`: with the radial
+mesh clustered at `q = 1`, the `n = 1` eigenvalue `omega^2` is `-3.17e-8` at
+`beta_p = 3` and `-4.47e-9` at `beta_p = 2` (PEST and Hamada charts within
+0.2 %), against `-3.2e-8` and `-4.5e-9` from the formula on the same `q`
+profiles. A layer derivation used earlier on this page gave twice the rate.
 
 Ohmic profile of this case (`s_B = 0.0188`, `b = 0.0378`, `c = 0.324`):
 `beta_p1,crit = 0.206`, a global `beta_p` of 0.88.
@@ -197,17 +199,17 @@ Ohmic profile of this case (`s_B = 0.0188`, `b = 0.0378`, `c = 0.324`):
 |---|---|---|---|---|---|
 | 0.02 | 0.005 | +0.0287 | stable | stable | stable |
 | 0.3 | 0.070 | +0.0235 | stable | stable | stable |
-| 1 | 0.234 | -0.0071 | 3.1e-4 | 6.6e-5 | 8.3e-6 |
-| 3 | 0.702 | -0.234 | 1.0e-2 | 2.2e-3 | 2.7e-4 |
+| 1 | 0.234 | -0.0071 | 1.5e-4 | 3.3e-5 | 4.1e-6 |
+| 3 | 0.702 | -0.234 | 5.0e-3 | 1.1e-3 | 1.4e-4 |
 
 Parabolic family `q = 0.9 + 0.1 (r/r1)^2` (`s1 = 0.200`, `s_B = 0.0180`,
 `b = 0.0363`), conducting wall at `a`:
 
 | r1 | q(a) | c | beta_p1,crit | delta W_T at beta_p1 = 0 / 0.3 / 0.6 | gamma tau_A at 0.6, R0/a = 3 / 10 |
 |---|---|---|---|---|---|
-| 0.30 | 2.01 | 0.276 | 0.232 | +0.0280 / -0.0158 / -0.127 | 7.7e-3 / 2.1e-4 |
-| 0.35 | 1.72 | 0.234 | 0.264 | +0.0281 / -0.0072 / -0.097 | 8.0e-3 / 2.2e-4 |
-| 0.40 | 1.53 | 0.202 | 0.294 | +0.0282 / -0.0010 / -0.076 | 8.1e-3 / 2.2e-4 |
+| 0.30 | 2.01 | 0.276 | 0.232 | +0.0280 / -0.0158 / -0.127 | 3.8e-3 / 1.0e-4 |
+| 0.35 | 1.72 | 0.234 | 0.264 | +0.0281 / -0.0072 / -0.097 | 4.0e-3 / 1.1e-4 |
+| 0.40 | 1.53 | 0.202 | 0.294 | +0.0282 / -0.0010 / -0.076 | 4.1e-3 / 1.1e-4 |
 
 The ideal rate exceeds the resistive m = 1 rate
 `(s1/(r1 R0))^(2/3) eta(r1)^(1/3)` (Ara et al., Ann. Phys. 112, 443, 1978) in
@@ -215,14 +217,13 @@ the target range only at high `beta_p` and small `R0/a`. Elsewhere the sign of
 `delta W_T` shows in the resistive growth: tearing-like scaling `S^(-3/5)` below
 the threshold and resistive-kink scaling `S^(-1/3)` above it.
 
-The ideal threshold, rate and scaling of this case belong to the ideal
-stability stages of [stability.md](stability.md#global-3d-ideal-mhd-stability-p1e):
-the internal-kink spectrum on the Grad-Shafranov states of this case (stage
-P1e.3, rung R3) and the marginal `beta_p` from a pressure scan (P1e.8), compared
-with the large-aspect-ratio values above. Linear resistive runs are not used
+The ideal threshold, rate and scaling of this case belong to MILCA's global
+ideal stability ([stability.md](stability.md)): the internal-kink spectrum on
+the Grad-Shafranov states of this case and the marginal `beta_p` from a
+pressure scan, compared with the large-aspect-ratio values above. Linear resistive runs are not used
 to locate the threshold. Proposed check on the evolution: in linear runs at
 `R0/a = 3` and `beta_p = 3`, the growth rate of the `n = 1` harmonic approaches
-the ideal rate of P1e.3 as `S` rises from `1e6` to `1e8`, and below the
+the ideal rate as `S` rises from `1e6` to `1e8`, and below the
 threshold it follows the resistive scaling.
 
 ## Geodesic acoustic mode
@@ -277,11 +278,5 @@ about 22 per `tau_A`.
 
 ## Open questions
 
-- The factor 2 in the Bussac growth rate. If Bussac's `2 pi^2 R0` prefactor
-  belongs to the complex-amplitude convention, the rates above are twice too
-  large. The layer analysis of Rosenbluth, Dagazian and Rutherford, Phys.
-  Fluids 16, 1894 (1973) should settle it, and the ideal eigenvalue of P1e.3 at
-  `R0/a = 10` checks it independently. Until then the absolute rates are not a
-  check.
 - The geodesic-acoustic frequency is taken in the form in which Winsor et al.
   are commonly quoted, not from the paper itself.
