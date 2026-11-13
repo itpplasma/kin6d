@@ -2459,6 +2459,9 @@ target_link_libraries(test_vrmhd_torus PRIVATE milca_rm_oracles milca_mhd)
 add_test(NAME vrmhd_torus_shafranov COMMAND test_vrmhd_torus shafranov)
 set_tests_properties(vrmhd_torus_shafranov PROPERTIES LABELS rm-b8 PROCESSORS 8
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_torus_lift COMMAND test_vrmhd_torus lift degree=2)
+set_tests_properties(vrmhd_torus_lift PROPERTIES LABELS rm-b11 PROCESSORS 8
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(response_strip_cylinder_layer PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(response_strip_ladder app/response_strip_ladder.f90)

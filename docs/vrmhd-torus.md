@@ -74,6 +74,16 @@ not rescaled to 0.9: on cubic elements of edge 0.05 it is 0.900 at
 and 0.895 at `R0/a = 10`, `beta_p = 1`, within 0.2 % of the values at edge 0.1.
 The pressure lowers `q0` at fixed `p(psi_N)` and `FF'(psi_N)`.
 
+The solve moves the axis flux away from the cylinder's, which scales
+`p - p_edge` at fixed `dp/dpsi` (by about 2 % at `R0/a = 3`). The edge
+pressure is scaled alike, so that `p(psi_N)` stays proportional to the
+cylinder profile, and `eta(axis) = 1/S` is taken at the temperature on the
+magnetic axis of the torus state (`vrmhd_torus_parameters`). Then
+`eta/eta(axis)` is the cylinder's on every surface, and at `p' -> 0` the
+loop voltage of the cylinder case drives `R J_phi = FF'` on every surface.
+Without the scaling, `eta` is 3 % above that value and the state is not
+Ohmic.
+
 ## Closures and sources
 
 As in [the cylinder case](vrmhd-cylinder.md#closures-and-sources), with
@@ -191,6 +201,25 @@ and `p'`.
   on the main branch. It may serve as a regression of the lift of the
   Grad-Shafranov state into the section until RM-B11 passes; it is not the
   target, and whether it is kept afterwards is an open decision.
+
+Lift and surface diagnostics. `vrmhd_torus_state` interpolates the
+Grad-Shafranov state into the rotation section (`rho = 1`, `v = 0`,
+`Te = Ti = p/2`). `vrmhd_torus_surfaces` measures a section state on its
+flux surfaces: the flux `psi = R A_phi`, `R J_phi` and `Te` are carried into
+the cubic space of the Grad-Shafranov mesh; the magnetic axis and `q` on it
+come from the Hessian of that flux; on a surface, `q` and the loop voltage
+`V_L = 2 pi <eta J.B>/<B.grad phi>` (Jardin Eq. 6.38) are contour integrals
+over rays out of the axis, with `B_phi` and `J_pol` evaluated in the
+section's own spaces. `V_L` is split into the part of `eta J_pol.B_pol` and
+the toroidal remainder. The test `vrmhd_torus_lift` (`R0/a = 3`,
+`beta_p = 1e-6`, edge 0.1, section degree 2) checks the lifted state against
+its source: `q` on the axis and at `psi_N = 0.1, 0.3, 0.5, 0.8` against the
+Grad-Shafranov `q` of a separate contour integration (`gs_level_coarea`)
+within `1e-3` (measured: `5e-6`), and the toroidal part of `V_L` against the
+applied voltage within `1e-3` (measured: `8e-5`). The poloidal part is 0.6 %
+to 1.5 % of the applied voltage on these surfaces: without a current source,
+the poloidal current of this state raises `V_L` above the applied voltage, so
+the state is not stationary, as argued above.
 
 Proposed checks (RM-B11, tolerances and their reasons in the ladder):
 
