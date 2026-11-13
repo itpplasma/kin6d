@@ -8,13 +8,11 @@ The helically symmetric cylinder of [vrmhd-cylinder.md](vrmhd-cylinder.md)
 cannot answer this, because the pressure effects that matter near `q0 = 1` are
 toroidal: Bussac stabilisation of the ideal internal kink and the
 quasi-interchange come from the coupling of m = 1 to m = 2 through the
-toroidal metric and the Shafranov shift. In single-helicity reduced MHD of the
-cylinder case, flux pumping ends near `S = 1.3e6` at magnetic Prandtl number
-10. JOREK runs of this torus at `R0/a = 10`, branched from pumped states at
-`S = 1e6` to `S = 3.2e6` and `1e7`, show repeated relaxations of `q0` (to 0.95-0.98)
-instead of flux pumping at `beta_p1 = 0.005` and 0.23, up to `1e5 tau_A` after the
-branch; they are not finished. The setup below is that of these JOREK runs,
-so that their numbers can be compared.
+toroidal metric and the Shafranov shift. Published context: 3D JOREK
+simulations of ASDEX Upgrade with flux pumping (Zhang et al., Nucl. Fusion 65,
+066001, 2025) and M3D-C1 single-fluid runs in which sawteeth give way to a
+stationary 1/1 state above a threshold in beta (Krebs et al., Phys. Plasmas
+24, 102511, 2017).
 
 The page also collects the analytic limits that a toroidal evolution has to
 meet before its pressure scans are trusted. The Bussac, Shafranov,
@@ -326,18 +324,9 @@ faster than `1e-5 per tau_A` over `1e4 tau_A` (a growth there is first checked
 against Newcomb's criterion), and at `D_S = 1` the harmonics grow. These values
 give `|p'| = 0.01 D_S` at `r_s`, a beta near 1 %.
 
-## JOREK baseline
+## Explicit step limit
 
-The matching JOREK run at `R0/a = 3`, `S = 3e6`, `beta_p = 1`, with toroidal
-harmonics `n = 0, 1`, 60 radial and 48 poloidal elements and a step of
-`5 tau_A`, takes about 3 s per step on 24 cores of one cluster node, or about
-`1.4e4` core-seconds per `1000 tau_A`. At `R0/a = 10` with `n = 0..2` and a step
-of `40 tau_A` it takes about `3.5e3` core-seconds per `1000 tau_A` on the same
-24 cores. Steps of 20 and `40 tau_A` keep the saturated `R0/a = 10` state of
-JOREK unchanged to four digits in `q0` over `5e4 tau_A`. RM-B9 compares with
-JOREK on the same node as the MILCA run.
-
-The step matters here. On a polar grid about the geometric centre, an explicit
+On a polar grid about the geometric centre, an explicit
 step for the ideal terms at `R0/a = 3`, `beta_p = 1` was measured at
 `0.021 tau_A`: the Shafranov shift puts the magnetic axis about `0.15 a` off the
 grid origin, where the poloidal field is about 0.05 and the poloidal spacing of

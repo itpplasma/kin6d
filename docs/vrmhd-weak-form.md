@@ -264,9 +264,8 @@ periodic or compatible ideal-wall tests just specified.
 `ohmic_fraction = f`, default one, multiplies the Ohmic term of `He`. With
 `f < 1` the power `(1 - f) integral eta J.(J - Js) dx` leaves the system: it is
 an explicit sink of the energy ledger, not a change of the induction or
-Lorentz terms. Reduced models without Ohmic heating of the temperature, such
-as the JOREK cylinder runs (`eta_ohmic = 0`) and the single-helicity toy model
-of the flux-pumping study, correspond to `f = 0`.
+Lorentz terms. Models without Ohmic heating of the temperature correspond to
+`f = 0`.
 
 The viscous force contribution is `-tau:grad w`, so with `w = v` it cancels
 the ion heating `tau:grad v`. Both use the same stress, and its dissipation
