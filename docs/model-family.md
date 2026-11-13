@@ -84,6 +84,11 @@ Ideal/resistive/MHD field equations are low-frequency/quasineutral reductions
 and must not be presented as full Maxwell merely because they use the same
 field infrastructure.
 
+The visco-resistive models for the resistive time scale, from a
+surface-averaged background through helical and axisymmetric 2D to toroidal
+harmonics and general 3D, are ordered in
+[the resistive model ladder](nonlinear-resistive-mhd.md#model-ladder-on-the-resistive-time-scale).
+
 Kinetic feedback uses one derived current- or pressure-coupling formulation.
 A kinetic population must not be counted both inside the MHD pressure and
 again as an explicit kinetic stress.

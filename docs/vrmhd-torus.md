@@ -131,23 +131,91 @@ finite-difference column and within 2e-5 of the values at edge 0.1.
 
 ## Steady Ohmic state
 
-The flux-surface average of the parallel Ohm's law in steady state
-(Wesson Eqs. 4.4.6-4.4.9) is `eta <J.B> = V_psi F <R^-2>`, with `V_psi` the
-uniform rate of the poloidal flux and `<.>` here the flux-surface average. Its
-cylinder limit `eta J_z = E_z` is the condition of the cylinder case.
+Target: the stationary axisymmetric state driven by the loop voltage alone
+(`VRMHD_LOOP_VOLTAGE`, `Js = 0`), rung L2 and gate RM-B11 of
+[the model ladder](nonlinear-resistive-mhd.md#model-ladder-on-the-resistive-time-scale).
+It is not verified yet; the statements below are sourced or marked as our
+calculation.
 
-- At `p = 0` a static state exists exactly, with `FF'(psi) = V_psi/eta(psi)`
-  and `R J_phi = V_psi/eta` uniform on each surface. A prescribed current
-  source `S_j e_phi` keeps this only if `R S_j` is a flux function. With the
-  heat source built on the surfaces, this state has to stay static to roundoff.
-- At `p != 0` no static Ohmic state exists: `R^2 p' + FF'` cannot equal the
-  `R`-independent `V_psi/eta(psi)` on a surface. Pfirsch-Schlueter currents
-  and a flow appear. With isotropic `eta`, the surface-averaged radial flow is
+The flux-surface average of the parallel Ohm's law in steady state
+(Wesson Eqs. 4.4.6-4.4.9; Jardin, *Computational Methods in Plasma Physics*,
+2010, Eqs. 6.38, 6.44 and 6.64) is `eta <J.B> = V_psi F <R^-2>`, with
+`V_psi = V/(2 pi)` the uniform rate of the poloidal flux, `V` the loop voltage
+and `<.>` here the flux-surface average. Its cylinder limit `eta J_z = E_z` is
+the condition of the cylinder case. The q profile is stationary exactly when
+this holds on every surface with the same `V_psi` (Jardin Eq. 6.48). The
+poloidal current is then not a free profile: `F'` follows from this condition
+and `p'`.
+
+- No static state for `eta` constant on flux surfaces (our calculation, to be
+  retained as a FortSym identity; `mu0 = 1`). With `v = 0` and `Js = 0`,
+  Ohm's law reads `eta J = V_psi grad(phi) - grad(Phi_e)` with a
+  single-valued electrostatic potential `Phi_e`. Its toroidal part gives
+  `R J_phi = V_psi/eta`, a flux function, which at `p' != 0` contradicts the
+  Grad-Shafranov current `R J_phi = R^2 p' + FF'`. At `p' = 0` its poloidal
+  part, `eta F' B_pol = -grad(Phi_e)`, integrated once around a flux surface
+  in the poloidal direction gives `eta F'` times the toroidal current inside
+  the surface, which must vanish; then `F' = 0` and `R J_phi = FF' = 0`
+  against `V_psi/eta`. This agrees with Montgomery, Bates and Lewis
+  (Phys. Plasmas 4, 1080, 1997), who find static toroidal states only for
+  conductivities that are not constant on a magnetic surface, and with Bates
+  and Montgomery (Phys. Plasmas 5, 2649, 1998), whose stationary states
+  contain poloidal flows. The same loop integral applies to the straight
+  cylinder, which is why the cylinder case holds its poloidal current with a
+  source.
+- Flow. In the stationary state the toroidal part of Ohm's law gives the
+  velocity across the surfaces pointwise, `|v.grad psi| = |eta R J_phi -
+  V_psi|` (Jardin Eq. 6.34 for surfaces at rest; Ferraro and Jardin,
+  J. Comput. Phys. 228, 7742, 2009, Eq. 39). Its surface average is the
+  particle flux of Pfirsch-Schlueter and classical diffusion plus the inward
+  pinch (Jardin Eqs. 6.68 and 6.69). With isotropic `eta` and at large aspect
+  ratio the surface-averaged radial flow is
   `<v R>/R0 = -(1 + 2 q^2) eta p'/B0^2 - E_phi B_theta/B0^2` (Wesson Eq. 4.5.5,
   `E_phi` the toroidal electric field), of order `1e-7 a/tau_A` at
-  `beta_p = 1`, `R0/a = 3`, `S = 1e6`. Proposed check: over `1e4 tau_A` the
-  axisymmetric state drifts by less than `1e-3` in `q0` and `1e-3 a` in
-  `Delta(0)`, and its flow is at most ten times this estimate.
+  `beta_p = 1`, `R0/a = 3`, `S = 1e6`.
+- Particle closure. Without a particle source or density diffusion the flux
+  vanishes only for the pressure profile at which diffusion balances the
+  pinch (Jardin Eq. 6.69; the limiting profile of Grad and Hogan, Phys. Rev.
+  Lett. 24, 1337, 1970), which is reached on the particle time, longer than
+  the skin time by about `1/beta` (Jardin Eq. 6.70). The case therefore
+  states its closure: `density_diffusion` as in the cylinder case, or a
+  source `Srho`. The stationary state is found by the Newton solve; an
+  evolution over a resistive time does not reach it.
+- Current-source switch. A prescribed source `Js = F' B_pol` that carries
+  the poloidal current, with `FF'(psi) = V_psi/eta(psi)`, keeps the
+  Grad-Shafranov state static at `p = 0` (convention
+  `VRMHD_LOOP_VOLTAGE_SOURCE` of [the section contract](vrmhd-section.md#driven-state-conventions));
+  with the heat source built on the surfaces that state has to stay static
+  to roundoff. The source has no counterpart in the surface-averaged theory
+  above, where the loop voltage alone drives the parallel current. It is not
+  on the main branch. It may serve as a regression of the lift of the
+  Grad-Shafranov state into the section until RM-B11 passes; it is not the
+  target, and whether it is kept afterwards is an open decision.
+
+Proposed checks (RM-B11, tolerances and their reasons in the ladder):
+
+- the loop voltage `2 pi eta <J.B>/(F <R^-2>)` of the stationary state equals
+  the applied voltage on every surface within `1e-3`;
+- profiles and flow agree with the surface-averaged model L0 and, at
+  `R0/a = 10`, with the large-aspect-ratio flow above;
+- started from the Grad-Shafranov state without the source, the axisymmetric
+  state drifts over `1e4 tau_A` by less than `1e-3` in `q0` and `1e-3 a` in
+  `Delta(0)`, and its flow is at most ten times the estimate above (carried
+  over from the earlier version of this page; the bounds are a choice
+  without a supporting estimate);
+- with uniform resistivity, viscosity and density, and squares of the
+  Hartmann number `H` and of the viscous Lundquist number `M` (both defined
+  in the ladder) of at most `1e-3`, the flow agrees within 1 % with the
+  explicit solution of Bates and Montgomery (1998) for a circular torus with
+  no-slip wall. There the current is `J = E0 R0 grad(phi)/eta`, with `E0` the
+  toroidal electric field at `R0`, the poloidal flux obeys a Grad-Shafranov
+  equation with constant right-hand side (their Eqs. 7 to 10), and the flow
+  follows from the Stokes balance `nu lap v = grad p - J x B` (their Eq. 11).
+  This tests the operator at `H << 1`, far from the `H` near `3e5` of the
+  case. The reference is evaluated by test-side code that is
+  independent of the residual. Their fluid is incompressible; the check has to
+  show that a high uniform background pressure brings the compressible
+  residual to that limit.
 
 ## Bussac limit of the ideal internal kink
 

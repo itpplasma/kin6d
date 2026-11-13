@@ -8,6 +8,12 @@ cylinder runs and of an independent single-helicity reduced-MHD model, both
 kept outside this repository; this page states the setup so that their
 numbers can be compared.
 
+On [the model ladder](nonlinear-resistive-mhd.md#model-ladder-on-the-resistive-time-scale)
+this case is rung L1, the cheap mechanism model: it isolates the saturation
+of the 1/1 mode, its electromotive force, `eta(T)` and anisotropic conduction
+at the cost of a 2D problem, and it contains no toroidal effect. Its planned
+diagnostic is the loop-voltage ledger RM-B13 of the ladder.
+
 ## Geometry, units and symmetry
 
 Minor radius `a = 1`, axial period `2 pi R0` with `R0 = 10`, axial field

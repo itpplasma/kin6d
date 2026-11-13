@@ -149,6 +149,14 @@ should not be delayed until global GK/FK exists.
 ASTRA-like 1D/1.5D transport is therefore a valid MILCA configuration, not an
 external workflow concept.
 
+The first planned 1.5D instance is the resistive background of a tokamak
+core: surface-averaged evolution of q, pressure and density under the
+visco-resistive Ohm's law with a Grad-Shafranov constraint, rung L0 of
+[the resistive model ladder](nonlinear-resistive-mhd.md#l0-surface-averaged-background),
+which states its equations, sources and gates. Its mean-field extension
+(rung LM there) is a closure provider under the contract above and is a
+hypothesis until checked.
+
 ## KAMEL/QL-Balance heritage
 
 The current KAMEL repository already provides a concrete internal example:
