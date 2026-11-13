@@ -8,7 +8,7 @@ stationary Newton wrapper with Coulomb gauge and current or loop-voltage
 drive, BDF2 evolution with supernodal direct factors, and, ahead of RM3, the
 linear and nonlinear Fourier operators about an invariant state including the
 closed helical coframe ([section contract](vrmhd-section.md)). Not yet
-implemented: the RM-B5 island rates, the RM-B8 JOREK and RM-B10 slow-manifold
+implemented: the RM-B5 island rates, the RM-B8 published-code and RM-B10 slow-manifold
 gates, the 3D boundary solves and time evolution, the field-split
 preconditioner (RM4), and the milestones RM9 to RM12 and gates RM-B11 to
 RM-B13 of the model ladder, which are planned only. This document owns the
@@ -24,19 +24,9 @@ Nonlinear resistive MHD of the tokamak core on the resistive time scale is
 expensive in established codes. The published 3D JOREK simulation of flux
 pumping in ASDEX Upgrade (Zhang et al., Nucl. Fusion 65 066001, 2025) used
 about 0.5 M core-hours on Marconi for 700 ms, about 6000 core-seconds per time
-step. One reproduction on a 48-core node (in a private project, not in this
-repository) observed:
+step.
 
-- with chi_par/chi_perp ~ 1e10, GMRES with a preconditioner that factorises
-  each toroidal harmonic separately rose from ~8 to its 300-iteration limit
-  within 35 steps, when the n = 1 magnetic energy was ~4e-7 of the n = 0
-  energy;
-- splitting the harmonics into two blocks, a looser tolerance or a smaller
-  time step did not restore convergence at acceptable cost;
-- factorising all harmonics together converged, but the factorisation went
-  stale within ~10 steps while the mode grew.
-
-Hypothesis, from that one reproduction: the cost is dominated by
+Hypothesis: the cost is dominated by
 preconditioning. The inter-harmonic coupling through parallel heat conduction
 along the perturbed field grows with the perturbation amplitude and is
 discarded by per-harmonic preconditioners. The design aims at preconditioners
@@ -197,7 +187,7 @@ computed directly instead of over 1e5-1e6 tau_A of evolution. Their stability
 is checked by the [S0 consumer](https://github.com/itpplasma/milca/blob/94caec95e474bd23640278c5e03b50204943f369/ROADMAP.md#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3).
 Oscillating states need shooting or harmonic balance; that is a later step.
 
-Time evolution: BDF2 first (the scheme of the JOREK comparisons), then IMEX and
+Time evolution: BDF2 first, then IMEX and
 exponential integrators with Krylov phi-functions (Einkemmer, Tokman and
 Loffeld, J. Comput. Phys. 330 550, 2017, studied them for resistive MHD), with
 error-controlled steps. Transient adjoints follow
@@ -239,8 +229,9 @@ Closures are separate FortSym leaves with one interface each, so a closure can
 be replaced without touching the residual: eta(T), nu(T), chi_par(T) in
 collisional (Spitzer) form, a flux-limited chi_par (parallel heat flux bounded
 by a multiple of n T v_te) for the nearly collisionless core, and the
-non-inductive current J_s as a prescribed source. Benchmarks against JOREK use
-JOREK's prescribed coefficients; physics runs state the closure they use.
+non-inductive current J_s as a prescribed source. Comparisons with published
+results of other codes use the coefficients stated in those publications;
+physics runs state the closure they use.
 
 Closure requirements, from the first closure on:
 
@@ -624,8 +615,8 @@ RM-B2 and RM-B5. They are independent references, not completed solver gates.
 | RM-B5 | nonlinear islands | Rutherford growth dW/dt = 1.22 (eta/mu0) Delta'(W) (Rutherford, Phys. Fluids 16 1903, 1973; coefficient from White et al., Phys. Fluids 20 800, 1977); saturated width (Escande and Ottaviani, Phys. Lett. A 323 278, 2004; Militello and Porcelli, Phys. Plasmas 11 L13, 2004); plasmoid onset of a Sweet-Parker sheet above S ~ 1e4 and the S-independent reconnection rate ~ 0.01 beyond it (Loureiro, Schekochihin and Cowley, Phys. Plasmas 14 100703, 2007; Bhattacharjee, Huang, Yang and Rogers, Phys. Plasmas 16 112102, 2009), which also fixes the resolution needed in crashes |
 | RM-B6 | ledgers | energy and mass; helicity in the ideal limit |
 | RM-B7 | 2D against 3D | identical equations on a straight periodic cylinder agree to discretisation error; the 3D solver preserves helical symmetry |
-| RM-B8 | JOREK | public JOREK regression cases (tearing and kink in circular geometry), a straight-cylinder flux-pumping case and a circular-torus flux-pumping case with its toroidal limits ([vrmhd-torus.md](vrmhd-torus.md)), matched model and resolution; 2D part in RM2, 3D part in RM5 |
-| RM-B9 | performance | time to matched observable accuracy against JOREK on the same node, strong scaling, memory, CPU and GPU |
+| RM-B8 | published codes | published nonlinear results of other codes for tearing and internal kink in circular geometry and for the flux-pumping states of the straight cylinder and the circular torus with its toroidal limits ([vrmhd-torus.md](vrmhd-torus.md)), with the model, inputs and resolution stated in the publication; 2D part in RM2, 3D part in RM5 |
+| RM-B9 | performance | time to matched observable accuracy against published costs of comparable simulations (Zhang et al. 2025), strong scaling, memory, CPU and GPU |
 | RM-B10 | slow manifold | quasi-stationary sequence of driven stationary states against full BDF2 evolution on the straight periodic cylinder: q profile and island width to the stated tolerance, defect estimate bounds the observed difference, switch to time evolution at mode onset |
 | RM-B11 | stationary Ohmic torus without current source ([ladder](#l2-axisymmetric-torus)) | loop voltage uniform over the flux surfaces; profiles and flow of the surface-averaged model L0; large-aspect-ratio particle flux (Wesson Eq. 4.5.5; Jardin 2010, Eq. 6.69); low-Hartmann-number flow of Bates and Montgomery, Phys. Plasmas 5 2649, 1998 |
 | RM-B12 | surface-averaged background L0 ([ladder](#l0-surface-averaged-background)) | decay of an axial-current eigenmode in a uniform cylinder (Jardin 2010, Eq. 6.66); q(Phi, t) and stationary state of the axisymmetric torus L2 |
@@ -644,7 +635,8 @@ Admission (AGENTS.md):
 
 Speed targets (to be measured, not claims): a 2D steady state within a minute
 on one core; a 3D steady state within an hour on one GPU node; 3D time
-evolution at least 10x faster than JOREK at matched accuracy. Physics
+evolution at least 10x faster than the published cost of comparable JOREK
+simulations (Zhang et al. 2025) at matched accuracy. Physics
 applications start only after RM-B1 to RM-B9 pass on the representation used.
 
 Non-public device data (experimental profiles, partner restart files) never
@@ -675,7 +667,7 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
 |---|---|---|
 | RM0 | symmetry-reduced chart; GS generalised (axisymmetric regression, helical GS oracle) | - |
 | RM1 | FortSym leaves of the full residual; symmetry-reduced 2D residual; RM-B1, RM-B2 in 2D | RM0 |
-| RM2 | 2D stationary and BDF2 solves; RM-B3, RM-B5, RM-B6, RM-B8 in 2D; helically symmetric straight-cylinder flux-pumping state by Newton and RM-B10 in 2D, against the JOREK cylinder runs | RM1 |
+| RM2 | 2D stationary and BDF2 solves; RM-B3, RM-B5, RM-B6, RM-B8 in 2D; helically symmetric straight-cylinder flux-pumping state by Newton and RM-B10 in 2D | RM1 |
 | RM3 | 3D residual on the meridional complex x Fourier; RM-B1, RM-B2, RM-B7 | RM1 |
 | RM4 | field-split preconditioner; RM-B4 at linear amplitude | RM3, U3, U5 |
 | RM5 | 3D nonlinear stationary and evolution; RM-B3 (FCI decision), RM-B4 saturated, RM-B5, RM-B6, RM-B8 in 3D; slow-manifold path, RM-B10 | RM4 |

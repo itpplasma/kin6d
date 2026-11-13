@@ -3,10 +3,8 @@
 This case is the 2D part of RM-B8 and RM-B10 in
 [the MHD design](nonlinear-resistive-mhd.md) (milestone RM2): a periodic
 straight cylinder driven by a fixed loop voltage, restricted to the helicity
-of the m/n = 1/1 mode. It is the same physical setup as a set of JOREK
-cylinder runs and of an independent single-helicity reduced-MHD model, both
-kept outside this repository; this page states the setup so that their
-numbers can be compared.
+of the m/n = 1/1 mode. This page states the setup completely, so that other
+codes can run the same case.
 
 On [the model ladder](nonlinear-resistive-mhd.md#model-ladder-on-the-resistive-time-scale)
 this case is rung L1, the cheap mechanism model: it isolates the saturation
@@ -26,7 +24,7 @@ no-slip conductor with fixed temperature.
 
 ## Profiles
 
-`vrmhd_cylinder_profiles` reimplements the recipe of the JOREK case generator
+`vrmhd_cylinder_profiles` builds the profiles by this recipe
 (uniform perpendicular conductivity `K`, heat source
 `S0 (1 - tanh((psi_N - 0.3)/0.1))/2`, Ohmic current `j ~ T^(3/2)`, `psi_N`
 of the same current, iterated to a fixed point on a uniform radial grid with
@@ -40,9 +38,9 @@ With `p = T`, the axial field follows from
 `d(p + Bz^2/2)/dr = -B_theta J_z` and `Bz(a) = 1`; the resulting poloidal
 current `J_theta = -dBz/dr` is kept by the prescribed source
 `Js = J_theta e_theta`. An optional central current source
-`S_j(psi_N) e_z` adds to `Js`, at fixed total current, as in the JOREK
-current-source scan. The loop voltage drives `E_z = eta (J_z - S_j)`, which
-is uniform for `eta = eta0 (Te/T0)^(-3/2)` with `eta0 = 1/S` at the axis.
+`S_j(psi_N) e_z` adds to `Js` at fixed total current. The loop voltage
+drives `E_z = eta (J_z - S_j)`, which is uniform for
+`eta = eta0 (Te/T0)^(-3/2)` with `eta0 = 1/S` at the axis.
 
 Here `q = r Bz/(R0 B_theta)`; the reduced models use `Bz = 1`. The two differ
 by `|Bz - 1|`, about `1e-3` at `beta_p = 1`.
@@ -55,7 +53,7 @@ by `|Bz - 1|`, about `1e-3` at `beta_p = 1`.
 | viscosity | constant, `Pm/S` with `Pm = 10` |
 | perpendicular conduction | `chi = 2.4e-5` in `d_t T = chi lap T`, hence `1.5 chi` in the internal-energy form |
 | parallel conduction | constant, `chi_par/chi_perp = 1e6` |
-| Ohmic heating | `ohmic_fraction = 0` by default, as in the JOREK runs |
+| Ohmic heating | `ohmic_fraction = 0` by default |
 | heat sources | `Qe = Qi = -div(n chi grad Ts)` of the initial profiles |
 
 The heat sources make the initial temperature stationary under perpendicular
@@ -91,7 +89,7 @@ discretisation error of `J x B`, whose scale is `beta` times smaller than the
 magnetic pressure. Pure Newton steps then change the density by tens of
 percent on coarse meshes and leave the region of the linear model; the
 pseudo-transient path does not. A small particle diffusivity
-(`density_diffusion = 1e-6`, JOREK's `D_perp`) is part of the case.
+(`density_diffusion = 1e-6`) is part of the case.
 
 `vrmhd_steady_spectrum` returns eigenvalues of `M x_t = -R_U x` about a
 stationary state nearest a real shift `sigma` by Krylov-Schur iteration on
@@ -128,7 +126,7 @@ on an unaligned mesh.
 
 | test | check |
 |---|---|
-| `vrmhd_cylinder_profiles` | `dT`, `q_a`, `q(0.3)` against the reference generator on the same 2001-point grid to `1e-12`; force balance of the interpolated profiles |
+| `vrmhd_cylinder_profiles` | `dT`, `q_a`, `q(0.3)` against a separate implementation of the recipe on the same 2001-point grid to `1e-12`; force balance of the interpolated profiles |
 | `vrmhd_cylinder_stationary` | stationary solve from the interpolated profiles with isotropic conduction; temperature change below `1e-3` of T(0), velocity below `1e-5` (Alfven units), `beta_p = 0.01` (slow) |
 | `vrmhd_cylinder_linear` | m = 1 growth rate with frozen temperatures within 5 % of the reduced-MHD eigenvalue `7.218665e-4` of the same profiles (slow) |
 
@@ -149,8 +147,7 @@ exists), then solves the stationary helical state from it by the same
 pseudo-transient Newton iteration and prints the six eigenvalues of its
 linearisation nearest zero: a stable pumped state has all of them in
 `Re < 0`.
-These trajectories are candidates; the comparison with the reduced model and
-with JOREK is not a registered gate.
+These trajectories are candidates; no comparison of them is a registered gate.
 
 ### Cost of the evolution
 
