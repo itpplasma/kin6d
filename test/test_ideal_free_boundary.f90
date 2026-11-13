@@ -158,6 +158,8 @@ program test_ideal_free_boundary
         call spectrum_checks()
     case ('kink_growth')
         call kink_checks(.true.)
+    case ('kink_mass')
+        call physical_kink()
     case ('hypotheses')
         call hypothesis_checks()
     case ('curvature')
@@ -453,6 +455,64 @@ contains
                 error stop 'rigid kink error does not decrease with aspect ratio'
         end if
     end subroutine
+
+    subroutine physical_kink()
+        ! Physical-inertia n = 1 spectrum of the embedded uniform-current
+        ! cylinder (q = 0.5, ka = 0.1, rho = 1.3, gamma = 0). The free-boundary
+        ! cylinder oracle (milca_ideal_cylinder, docs/stability.md) gives the
+        ! full-space minimum omega^2 = -0.5268153501/rho; the torus approaches
+        ! it as R/a grows. The two real phases of the helical mode are an exact
+        ! Fourier degeneracy, so two eigenvalues lie below 0.95 of it. A
+        ! further pair, whose plasma and vacuum energies nearly cancel, lies
+        ! between 0.95 and 0.5 of it at R/a = 80 and above 0.5 of it at 160;
+        ! it is attributed to the equilibrium defect of the bent cylinder and
+        ! not gated (docs/stability.md).
+        type(ideal_fb_t) :: fb
+        type(gs_state_t) :: mesh
+        type(cylindrical_chart_t) :: chart
+        type(screw_field_t) :: field
+        type(ideal_fb_stability_t) :: report
+        real(dp), allocatable :: chain(:, :), contour(:, :)
+        real(dp), parameter :: aspects(2) = [80.0_dp, 160.0_dp], rho = 1.3_dp
+        real(dp) :: lambda, exact, err, previous
+        integer :: level, j, st, counts(3, 1)
+        exact = -0.5268153501_dp/rho
+        previous = huge(1.0_dp)
+        do level = 1, 2
+            kink_major = aspects(level)
+            field%major = kink_major; field%pitch = 0.5_dp
+            if (allocated(contour)) deallocate (contour, chain)
+            allocate (contour(2, 16), chain(2, 16))
+            do j = 1, 16
+                call kink_curve(real(j - 1, dp)/16, contour(:, j))
+                chain(:, j) = [kink_major + cos(2*pi*(j - 1)/16), &
+                    sin(2*pi*(j - 1)/16)]
+            end do
+            call initialize_gs(mesh, contour, 0.12_dp, st, 3, curve=kink_curve, &
+                interior_chain=chain)
+            if (st /= 0) error stop 'kink mesh'
+            call ideal_fb_init(fb, mesh, chain, chart, field, nint(kink_major/10), &
+                1, 5*kink_major, 2*pi, st, mu0=1.0_dp)
+            if (st /= IDEAL_FB_OK) error stop 'kink init'
+            call ideal_fb_set_drive(fb, kink_sampler, st)
+            if (st /= IDEAL_FB_OK) error stop 'kink drive'
+            call ideal_fb_solve_vacuum(fb, st)
+            if (st /= IDEAL_FB_OK) error stop 'kink vacuum'
+            fb%mass_density = rho
+            call ideal_fb_mode_lanczos(fb, 3, lambda, report, st, shift=1.1_dp*exact)
+            if (st /= IDEAL_FB_OK) error stop 'physical kink eigenpair'
+            call ideal_fb_mode_inertia(fb, 3, [0.95_dp*exact], counts, st)
+            if (st /= IDEAL_FB_OK) error stop 'physical kink inertia'
+            err = abs(lambda/exact - 1)
+            print '(a,f6.1,a,2es16.8,a,es9.2,a,i3)', 'physical kink R/a=', &
+                kink_major, ' omega^2, cylinder', lambda, exact, ' rel', err, &
+                ' below 0.95 exact:', counts(1, 1)
+            if (counts(1, 1) /= 2) error stop 'physical kink count'
+            if (err > 5e-3_dp) error stop 'physical kink eigenvalue'
+            if (err >= previous) error stop 'physical kink aspect convergence'
+            previous = err
+        end do
+    end subroutine physical_kink
 
     subroutine rigid_spectrum(energy,physical_mass,lambda)
         real(dp), intent(in) :: energy,physical_mass

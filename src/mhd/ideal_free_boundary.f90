@@ -58,6 +58,7 @@ module milca_ideal_free_boundary
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
     use milca_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
+    use milca_ideal_dw_leaves, only: dw_point_mass
     use milca_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
     use milca_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
@@ -162,6 +163,9 @@ module milca_ideal_free_boundary
         type(ideal_map_t) :: plasma
         integer :: nfp = 1, ntor = 0, nmode = 1, nloc = 0, order = 0
         real(dp) :: mu0 = 1, f_vac = 0, circulation = 0, theta_centre(2) = 0
+        ! Mode spectra: > 0 uses the physical perpendicular inertia of this
+        ! uniform mass density (dw_point_mass); 0 keeps the |diag H| metric.
+        real(dp) :: mass_density = 0
         ! Shell: ns nodes, ncell cells, local connectivity, reference nodes,
         ! node role (1 Gamma_p, 2 interior, 3 Gamma_c), Gamma_p node -> plasma
         ! node, and the global mesh numbering of both parts.
@@ -3353,18 +3357,22 @@ contains
         mean = mean/fb%np
     end function
 
-    subroutine mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
+    subroutine mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status, mvals)
         ! An axisymmetric state decouples by harmonic, NOT by real phase:
         ! B_pol.grad and B_phi.d/dphi couple cosine and sine coefficients.
+        ! mvals holds the plasma mass matrix on the pattern of v: the diagonal
+        ! metric mass(i), or the physical inertia when fb%mass_density > 0.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m
         integer, allocatable, intent(out) :: rp(:), ci(:), map(:)
         real(dp), allocatable, intent(out) :: v(:), mass(:)
+        real(dp), allocatable, intent(out), optional :: mvals(:)
         integer, intent(out) :: np_m, status
         integer, allocatable :: rowptr(:), colidx(:), inverse(:)
         real(dp), allocatable :: val(:)
         real(dp) :: correction
         type(fortsparse_status_t) :: sst
+        type(csr_matrix_t) :: mm
         integer :: first, last, a, c, phase, i, p, n, nnz, s
         status = IDEAL_FB_BAD_INPUT
         np_m = 0
@@ -3424,9 +3432,172 @@ contains
             call sort_mode_row(ci(rp(i):nnz), v(rp(i):nnz))
         end do
         if (any(mass <= 0)) return
+        if (present(mvals)) then
+            allocate (mvals(nnz)); mvals = 0
+            if (fb%mass_density > 0) then
+                call plasma_mass(fb, mm)
+                do i = 1, np_m
+                    a = inverse(i)
+                    do p = mm%rowptr(a), mm%rowptr(a + 1) - 1
+                        c = map(mm%colidx(p))
+                        if (c == 0 .or. c > np_m) cycle
+                        s = locate(ci(rp(i):rp(i + 1) - 1), c)
+                        if (s == 0) return
+                        mvals(rp(i) + s - 1) = mm%val(p)
+                    end do
+                    s = locate(ci(rp(i):rp(i + 1) - 1), i)
+                    if (s == 0) return
+                    mass(i) = mvals(rp(i) + s - 1)
+                end do
+                if (any(mass <= 0)) return
+                ! Assembly order leaves rounding asymmetry; the LDL^T inertia
+                ! needs an exactly symmetric shifted matrix.
+                do i = 1, np_m
+                    do p = rp(i), rp(i + 1) - 1
+                        c = ci(p)
+                        if (c <= i .or. c > np_m) cycle
+                        s = locate(ci(rp(c):rp(c + 1) - 1), i)
+                        if (s == 0) return
+                        mvals(p) = (mvals(p) + mvals(rp(c) + s - 1))/2
+                        mvals(rp(c) + s - 1) = mvals(p)
+                    end do
+                end do
+            else
+                do i = 1, np_m
+                    s = locate(ci(rp(i):rp(i + 1) - 1), i)
+                    if (s == 0) return
+                    mvals(rp(i) + s - 1) = mass(i)
+                end do
+            end if
+        end if
         ci = ci(:nnz); v = v(:nnz)
         status = IDEAL_FB_OK
     end subroutine
+
+    pure integer function locate(sorted, key) result(at)
+        ! Position of key in an ascending integer list, 0 if absent.
+        integer, intent(in) :: sorted(:), key
+        integer :: lo, hi, mid
+        at = 0; lo = 1; hi = size(sorted)
+        do while (lo <= hi)
+            mid = (lo + hi)/2
+            if (sorted(mid) == key) then
+                at = mid; return
+            else if (sorted(mid) < key) then
+                lo = mid + 1
+            else
+                hi = mid - 1
+            end if
+        end do
+    end function locate
+
+    pure function mass_apply(rp, ci, mvals, np_m, x) result(y)
+        ! y = M x on the plasma block of a mode matrix (mvals from mode_matrix).
+        integer, intent(in) :: rp(:), ci(:), np_m
+        real(dp), intent(in) :: mvals(:), x(:)
+        real(dp) :: y(np_m)
+        integer :: i, p
+        y = 0
+        do i = 1, np_m
+            do p = rp(i), rp(i + 1) - 1
+                if (ci(p) <= np_m) y(i) = y(i) + mvals(p)*x(ci(p))
+            end do
+        end do
+    end function mass_apply
+
+    pure real(dp) function mass_norm1(rp, ci, mvals, np_m) result(scale)
+        ! ||M||_1 = ||M||_inf of the symmetric plasma mass block.
+        integer, intent(in) :: rp(:), ci(:), np_m
+        real(dp), intent(in) :: mvals(:)
+        integer :: i, p
+        real(dp) :: row
+        scale = 0
+        do i = 1, np_m
+            row = 0
+            do p = rp(i), rp(i + 1) - 1
+                if (ci(p) <= np_m) row = row + abs(mvals(p))
+            end do
+            scale = max(scale, row)
+        end do
+    end function mass_norm1
+
+    subroutine plasma_mass(fb, matrix)
+        ! Physical perpendicular inertia of the position-gauge displacement,
+        ! assembled like plasma_hessian on the same element blocks.
+        type(ideal_fb_t), intent(in) :: fb
+        type(csr_matrix_t), intent(out) :: matrix
+        real(dp), allocatable :: blocks(:, :, :), basis(:, :)
+        integer, allocatable :: conn(:, :)
+        real(dp) :: hv(12, 12), weight, dphi
+        integer :: e, g, j, a, m, c, nl, t, var(4, 2)
+        nl = 2*fb%nmode*fb%nloc
+        allocate (blocks(nl, nl, fb%plasma%cells), conn(nl, fb%plasma%cells))
+        dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
+        do c = 1, 2
+            var(:, c) = [(c + 3*t, t = 0, 3)]
+        end do
+        !$omp parallel default(shared) private(e, g, j, hv, weight, basis)
+        allocate (basis(4, nl/2))
+        !$omp do schedule(static)
+        do e = 1, fb%plasma%cells
+            blocks(:, :, e) = 0
+            do j = 1, fb%plasma%nphi
+                do g = 1, fb%plasma%nq
+                    call plasma_point_mass(fb%plasma, e, g, j, fb%mass_density, hv)
+                    weight = fb%plasma%weight(g)*dphi
+                    call point_basis(fb, g, j, basis)
+                    call add_point_hessian(hv, var, basis, weight, blocks(:, :, e))
+                end do
+            end do
+        end do
+        !$omp end do
+        deallocate (basis)
+        !$omp end parallel
+        do e = 1, fb%plasma%cells
+            do a = 1, fb%nloc
+                do m = 1, fb%nmode
+                    do c = 1, 2
+                        conn(c + 2*(m - 1) + 2*fb%nmode*(a - 1), e) = &
+                            pidx(fb, c, m, fb%plasma%conn(a, e))
+                    end do
+                end do
+            end do
+        end do
+        call csr_build_pattern(fb%np, conn, .false., matrix)
+        call csr_assemble_blocks(matrix, conn, blocks)
+    end subroutine plasma_mass
+
+    subroutine plasma_point_mass(map, e, g, j, density, hv)
+        ! Point inertia in the variables of plasma_point_hessian: only the
+        ! position values q(1:2) enter (the toroidal coordinate is fixed).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(in) :: density
+        real(dp), intent(out) :: hv(12, 12)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), tt, dt, m11, m12, m22
+        integer :: a, m, node
+        q = 0; qd = 0
+        do a = 1, map%nloc
+            node = map%conn(a, e)
+            do m = 1, map%nmode
+                tt = map%trig(m, j); dt = map%dtrig(m, j)
+                q = q + map%x(:, m, node)*map%shape(a, g)*tt
+                qd(:, 1) = qd(:, 1) + map%x(:, m, node)*map%dshape(1, a, g)*tt
+                qd(:, 2) = qd(:, 2) + map%x(:, m, node)*map%dshape(2, a, g)*tt
+                qd(:, 3) = qd(:, 3) + map%x(:, m, node)*map%shape(a, g)*dt
+            end do
+        end do
+        q(3) = q(3) + map%phi(j); qd(3, 3) = qd(3, 3) + 1
+        call map%chart%jet(q, pos, d1, d2, d3)
+        dx = matmul(d1, qd)
+        call dw_point_mass(density, map%sigma, map%b(1, g, e), map%b(2, g, e), &
+            map%b(3, g, e), dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), dx(2, 2), &
+            dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), d1(1, 1), d1(2, 1), d1(3, 1), &
+            d1(1, 2), d1(2, 2), d1(3, 2), m11, m12, m22)
+        hv = 0
+        hv(1, 1) = m11; hv(1, 2) = m12; hv(2, 1) = m12; hv(2, 2) = m22
+    end subroutine plasma_point_mass
 
     subroutine sort_mode_row(col, value)
         integer, intent(inout) :: col(:)
@@ -3570,10 +3741,10 @@ contains
         real(dp), intent(in) :: shifts(:)
         integer, intent(out) :: counts(3, size(shifts)), status
         integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
-        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:)
+        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:), mvals(:)
         integer :: np, n, j, i, p, base(3), full(3), st
         counts = -1
-        call mode_matrix(fb, m, rp, ci, v, mass, map, np, status)
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np, status, mvals)
         if (status /= IDEAL_FB_OK) return
         status = IDEAL_FB_BAD_INPUT
         if (.not. all(ieee_is_finite(shifts))) return
@@ -3584,12 +3755,7 @@ contains
         if (st /= IDEAL_FB_OK .or. base(2) /= 0) return
         allocate (shifted(size(v)))
         do j = 1, size(shifts)
-            shifted = v
-            do i = 1, np
-                do p = rp(i), rp(i + 1) - 1
-                    if (ci(p) == i) shifted(p) = v(p) - shifts(j)*mass(i)
-                end do
-            end do
+            shifted = v - shifts(j)*mvals
             call count_factor(rp, ci, shifted, full, st)
             if (st /= IDEAL_FB_OK) return
             full = full - base
@@ -3656,7 +3822,7 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: shift
         integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
-        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:), start(:)
+        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:), start(:), mvals(:)
         real(dp), allocatable :: rhs(:), z(:), crhs(:), cz(:), images(:)
         real(dp), allocatable :: vectors(:, :)
         real(dp) :: values(1), residuals(1), sigma, relative_residual, observed_scale
@@ -3669,7 +3835,7 @@ contains
         logical :: action_failed
         lambda = ieee_value(0.0_dp, ieee_quiet_nan)
         report = ideal_fb_stability_t()
-        call mode_matrix(fb, m, rp, ci, v, mass, map, np, status)
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np, status, mvals)
         if (status /= IDEAL_FB_OK) return
         sigma = 0
         if (present(shift)) sigma = shift
@@ -3677,12 +3843,7 @@ contains
         if (.not. ieee_is_finite(sigma)) return
         n = size(rp) - 1
         call mode_rest_block(rp, ci, v, np, ar, ac, av)
-        shifted = v
-        do i = 1, np
-            do p = rp(i), rp(i + 1) - 1
-                if (ci(p) == i) shifted(p) = v(p) - sigma*mass(i)
-            end do
-        end do
+        shifted = v - sigma*mvals
         status = IDEAL_FB_SOLVE_FAILED
         if (.not. configure(full_solver)) return
         if (.not. configure(rest_solver)) return
@@ -3706,7 +3867,7 @@ contains
         options%retain = min(16, np - 1)
         options%max_restarts = 25
         options%which = EIGEN_NEAREST
-        options%mass_scale = maxval(mass)
+        options%mass_scale = mass_norm1(rp, ci, mvals, np)
         action_failed = .false.; observed_scale = 0
         call lanczos(apply_schur, start, values, vectors, residuals, &
             1.0e-10_dp, options, info, stats, mass=apply_mass, &
@@ -3718,10 +3879,13 @@ contains
             if (.not. action_failed) then
                 z(:np) = vectors(:, 1); z(np + 1:) = -cz
                 lambda = values(1)
-                radius = norm2((start - lambda*mass*z(:np))/sqrt(mass))
+                ! The diagonal of M weights the residual radius.
+                radius = norm2((start - lambda*mass_apply(rp, ci, mvals, np, &
+                    z(:np)))/sqrt(mass))
                 relative_residual = radius/max(abs(lambda), 1.0e-12_dp)
-                backward = norm2(start - lambda*mass*z(:np)) &
-                    /((observed_scale + abs(lambda)*maxval(mass))*norm2(z(:np)))
+                backward = norm2(start - lambda*mass_apply(rp, ci, mvals, np, &
+                    z(:np)))/((observed_scale + abs(lambda)*options%mass_scale) &
+                    *norm2(z(:np)))
                 call mode_ledger(fb, rp, ci, v, map, np, z, mass, report, images)
                 report%relative_residual = relative_residual
                 report%residual_radius = radius
@@ -3736,7 +3900,7 @@ contains
         subroutine apply_mass(x, y)
             real(dp), intent(in) :: x(:)
             real(dp), intent(out) :: y(:)
-            y = mass*x
+            y = mass_apply(rp, ci, mvals, np, x)
         end subroutine
         subroutine solve_shift(x, y, info)
             real(dp), intent(in) :: x(:)
@@ -3798,6 +3962,7 @@ contains
         type(ideal_fb_stability_t), intent(out), optional :: report
         integer, allocatable :: rp(:), ci(:), map(:)
         real(dp), allocatable :: v(:), original(:), mass(:), x(:), z(:), rhs(:), hz(:)
+        real(dp), allocatable :: mvals(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
         type(ideal_fb_stability_t) :: ledger
@@ -3805,7 +3970,7 @@ contains
         real(dp) :: sigma, norm
         lambda = ieee_value(0.0_dp, ieee_quiet_nan)
         if (present(report)) report = ideal_fb_stability_t()
-        call mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status, mvals)
         if (status /= IDEAL_FB_OK) return
         sigma = 0
         if (present(shift)) sigma = shift
@@ -3817,11 +3982,7 @@ contains
         if (nit < 1 .or. .not. ieee_is_finite(sigma)) return
         n = size(rp) - 1; nnz = rp(n + 1) - 1
         original = v
-        do i = 1, np_m
-            do p = rp(i), rp(i + 1) - 1
-                if (ci(p) == i) v(p) = v(p) - sigma*mass(i)
-            end do
-        end do
+        v = v - sigma*mvals
         status = IDEAL_FB_SOLVE_FAILED
         if (.not. configure(solver)) return
         call factor_kkt_raw(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
@@ -3830,16 +3991,17 @@ contains
         do i = 1, np_m
             x(i) = 1 + 0.1_dp*sin(1.7_dp*i)
         end do
-        x = x/sqrt(sum(mass*x**2))
+        x = x/sqrt(dot_product(x, mass_apply(rp, ci, mvals, np_m, x)))
         status = IDEAL_FB_NOT_CONVERGED
         do it = 1, nit
-            rhs = 0; rhs(1:np_m) = mass*x
+            rhs = 0; rhs(1:np_m) = mass_apply(rp, ci, mvals, np_m, x)
             call sparse_solve(solver, rhs, z, sst)
             if (.not. status_ok(sst)) then
                 status = IDEAL_FB_SOLVE_FAILED
                 exit
             end if
-            norm = sqrt(sum(mass*z(:np_m)**2))
+            norm = sqrt(dot_product(z(:np_m), mass_apply(rp, ci, mvals, np_m, &
+                z(:np_m))))
             if (.not. ieee_is_finite(norm) .or. norm <= 0) exit
             z = z/norm
             ! The unshifted action gives an actual Rayleigh quotient and a
@@ -3853,8 +4015,8 @@ contains
             end do
             !$omp end parallel do
             lambda = dot_product(z, hz)
-            ledger%relative_residual = norm2((hz(:np_m) - lambda*mass*z(:np_m)) &
-                /sqrt(mass))/max(abs(lambda), 1.0e-12_dp)
+            ledger%relative_residual = norm2((hz(:np_m) - lambda*mass_apply(rp, &
+                ci, mvals, np_m, z(:np_m)))/sqrt(mass))/max(abs(lambda), 1.0e-12_dp)
             x = z(:np_m)
             if (ledger%relative_residual < 1.0e-6_dp) then
                 status = IDEAL_FB_OK

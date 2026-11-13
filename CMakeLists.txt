@@ -563,6 +563,10 @@ target_link_libraries(test_ideal_free_boundary PRIVATE milca)
 add_test(NAME ideal_fb_schur_spectrum COMMAND test_ideal_free_boundary spectrum)
 set_tests_properties(ideal_fb_schur_spectrum PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
+add_test(NAME ideal_fb_physical_kink COMMAND test_ideal_free_boundary kink_mass)
+set_tests_properties(ideal_fb_physical_kink PROPERTIES ENVIRONMENT
+    "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1" PROCESSORS 8 TIMEOUT 300
+    LABELS "mhd;stability;slow")
 add_test(NAME ideal_fb_external_kink COMMAND test_ideal_free_boundary kink)
 set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
