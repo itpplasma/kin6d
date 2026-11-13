@@ -149,6 +149,8 @@ module milca_nonnested_coupled
         module procedure trig
     end interface
 
+    ! Smallest assembly batch; jacobian_ops takes two elements per thread
+    ! if that is more, so that no thread idles.
     integer, parameter :: chunk = 64
 contains
     subroutine nc_validate(problem, status, message)
@@ -443,6 +445,7 @@ contains
     end subroutine
 
     subroutine jacobian_ops(field, problem, ops, x, jac, status)
+        !$      use omp_lib, only: omp_get_max_threads
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
         type(nc_ops_t), intent(in) :: ops
@@ -455,7 +458,8 @@ contains
         real(dp), allocatable :: b(:), rl(:, :), jb(:, :, :), jd(:, :, :)
         real(dp), allocatable :: vals(:), bvals(:)
         integer, allocatable :: rows(:), cols(:), brows(:), bcols(:)
-        integer :: t, t0, t1, nt, nr, n2, nd, ierr, failure, count, bcount
+        integer, allocatable :: ob(:), od(:)
+        integer :: t, t0, t1, nt, nr, n2, nd, ierr, failure, count, bcount, nc, k
         status = 1
         lay = nc_layout(field)
         if (size(x) /= lay%n) return
@@ -464,30 +468,48 @@ contains
         nt = field%fs%mm%topology%n_triangles
         nr = local_rows(field, lay); n2 = field%fs%sp(2)%nloc*lay%nb
         nd = 2*field%fs%nl0*lay%nb + 1
-        allocate (rl(nr, chunk), jb(nr, n2, chunk), jd(nr, nd, chunk))
+        nc = chunk
+        !$      nc = max(chunk, 2*omp_get_max_threads())
+        allocate (rl(nr, nc), jb(nr, n2, nc), jd(nr, nd, nc))
+        allocate (ob(nc + 1), od(nc + 1))
         allocate (rows(16), cols(16), vals(16), brows(16), bcols(16), bvals(16))
         count = 0; bcount = 0
-        do t0 = 1, nt, chunk
-            t1 = min(nt, t0 + chunk - 1)
+        do t0 = 1, nt, nc
+            t1 = min(nt, t0 + nc - 1)
             failure = 0
-            !$omp parallel do default(shared) private(t, ierr) schedule(static) &
+            ob = 0; od = 0
+            !$omp parallel do default(shared) private(t, k, ierr) schedule(static) &
             !$omp& reduction(max:failure)
             do t = t0, t1
+                k = t - t0 + 1
                 call element(field, problem, lay, ops%nphi, b, x, t, .true., &
-                    rl(:, t - t0 + 1), jb(:, :, t - t0 + 1), jd(:, :, t - t0 + 1), &
-                    ierr)
+                    rl(:, k), jb(:, :, k), jd(:, :, k), ierr)
                 failure = max(failure, ierr)
+                ob(k + 1) = count_nonzero(jb(:, :, k))
+                od(k + 1) = count_nonzero(jd(:, :, k))
             end do
             !$omp end parallel do
             if (failure /= 0) then
                 status = failure
                 return
             end if
-            do t = t0, t1
-                call scatter_jacobian(field, lay, t, jb(:, :, t - t0 + 1), &
-                    jd(:, :, t - t0 + 1), rows, cols, vals, count, brows, bcols, &
-                    bvals, bcount)
+            ! Offsets in element order: the triplets are those of a serial
+            ! scatter, so the assembled matrix does not depend on threads.
+            ob(1) = bcount; od(1) = count
+            do k = 1, t1 - t0 + 1
+                ob(k + 1) = ob(k) + ob(k + 1)
+                od(k + 1) = od(k) + od(k + 1)
             end do
+            call reserve(brows, bcols, bvals, ob(t1 - t0 + 2))
+            call reserve(rows, cols, vals, od(t1 - t0 + 2))
+            !$omp parallel do default(shared) private(t, k) schedule(static)
+            do t = t0, t1
+                k = t - t0 + 1
+                call scatter_jacobian(field, lay, t, jb(:, :, k), jd(:, :, k), &
+                    rows, cols, vals, od(k), brows, bcols, bvals, ob(k))
+            end do
+            !$omp end parallel do
+            bcount = ob(t1 - t0 + 2); count = od(t1 - t0 + 2)
         end do
         call csc_from_triplet(lay%n, lay%nb2*lay%nb, brows(:bcount), &
             bcols(:bcount), bvals(:bcount), xb, st)
@@ -573,7 +595,8 @@ contains
         w = huge(1.0_dp)
         why = ''
         do it = 0, steps
-            call residual_ops(field, problem, ops, x, r, st)
+            ! After a step, r is already the residual of the accepted trial.
+            if (it == 0) call residual_ops(field, problem, ops, x, r, st)
             if (st /= 0) exit
             call jacobian_ops(field, problem, ops, x, jac, st)
             if (st /= 0) exit
@@ -613,6 +636,7 @@ contains
                 exit
             end if
             x = trial
+            call move_alloc(rt, r)
         end do
         if (factored) call sparse_destroy(solver)
         if (st /= 0) then
@@ -1133,41 +1157,49 @@ contains
 
     subroutine scatter_jacobian(field, lay, t, jb, jd, rows, cols, vals, count, &
                                 brows, bcols, bvals, bcount)
+        ! Nonzero local entries of triangle t, written after positions count
+        ! and bcount, which the caller has reserved (count_nonzero).
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t), intent(in) :: lay
         integer, intent(in) :: t
         real(dp), intent(in) :: jb(:, :), jd(:, :)
-        integer, allocatable, intent(inout) :: rows(:), cols(:), brows(:), bcols(:)
-        real(dp), allocatable, intent(inout) :: vals(:), bvals(:)
-        integer, intent(inout) :: count, bcount
+        integer, intent(inout) :: rows(:), cols(:), brows(:), bcols(:)
+        real(dp), intent(inout) :: vals(:), bvals(:)
+        integer, intent(in) :: count, bcount
         integer :: grow(size(jb, 1)), gcol(size(jd, 2)), bcol(size(jb, 2))
         real(dp) :: srow(size(jb, 1)), scol(size(jb, 2))
-        integer :: i, j, n2, bk
+        integer :: i, j, n2, bk, c
         call local_maps(field, lay, t, grow, srow, gcol)
         n2 = field%fs%sp(2)%nloc
         do bk = 0, lay%nb - 1
             bcol(bk*n2 + 1:(bk + 1)*n2) = bk*lay%nb2 + field%fs%sp(2)%dof(:, t)
             scol(bk*n2 + 1:(bk + 1)*n2) = field%fs%sp(2)%sgn(:, t)
         end do
-        call reserve(brows, bcols, bvals, bcount + size(jb))
+        c = bcount
         do j = 1, size(jb, 2)
             do i = 1, size(jb, 1)
                 if (.not. abs(jb(i, j)) > 0) cycle
-                bcount = bcount + 1
-                brows(bcount) = grow(i); bcols(bcount) = bcol(j)
-                bvals(bcount) = srow(i)*scol(j)*jb(i, j)
+                c = c + 1
+                brows(c) = grow(i); bcols(c) = bcol(j)
+                bvals(c) = srow(i)*scol(j)*jb(i, j)
             end do
         end do
-        call reserve(rows, cols, vals, count + size(jd))
+        c = count
         do j = 1, size(jd, 2)
             do i = 1, size(jd, 1)
                 if (.not. abs(jd(i, j)) > 0) cycle
-                count = count + 1
-                rows(count) = grow(i); cols(count) = gcol(j)
-                vals(count) = srow(i)*jd(i, j)
+                c = c + 1
+                rows(c) = grow(i); cols(c) = gcol(j)
+                vals(c) = srow(i)*jd(i, j)
             end do
         end do
     end subroutine
+
+    pure integer function count_nonzero(a) result(n)
+        ! The entries scatter_jacobian keeps (NaN is dropped there too).
+        real(dp), intent(in) :: a(:, :)
+        n = count(abs(a) > 0)
+    end function
 
     subroutine append(a, row0, col0, factor, rows, cols, vals, count)
         type(csc_t), intent(in) :: a

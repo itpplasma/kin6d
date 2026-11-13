@@ -75,38 +75,54 @@ contains
         character(len=*), intent(in) :: trace_file
         type(coil_quadrature_field_t) :: cq
         type(island_trace_options_t) :: opt
-        real(dp) :: x(2), y(2), xb(2), u, fin(2)
-        integer :: unit, i, k, st, sb
+        ! Section points of each line in the box (kind 1) and in the direct
+        ! field (kind 2), -1 after a failed trace, and the period of failure.
+        real(dp), allocatable :: path(:, :, :, :)
+        integer, allocatable :: last(:, :)
+        real(dp) :: x(2), y(2), u, fin(2)
+        integer :: unit, i, k, st, task, kind
         call coil_quadrature_init(cq, coils, weights, 4, 0.0_dp, st)
         if (st /= 0) error stop 'coil quadrature field'
-        open (newunit=unit, file=trim(trace_file), status='replace', action='write')
-        write (unit, '(a)') '# line period R_box Z_box R_biot_savart Z_biot_savart (m), phi = 0'
-        !$omp parallel do default(shared) private(i, k, u, x, y, xb, fin, st, sb) &
+        allocate (path(2, 0:trace_periods, 2, trace_lines), last(2, trace_lines))
+        path = -1
+        last = trace_periods
+        ! The box line and the direct line are separate tasks, so that twice
+        ! as many threads find work as there are lines.
+        !$omp parallel do default(shared) private(task, i, kind, k, u, x, y, fin, st) &
         !$omp schedule(dynamic, 1)
-        do i = 1, trace_lines
+        do task = 1, 2*trace_lines
+            i = (task + 1)/2; kind = 2 - mod(task, 2)
             u = trace_u0 + (trace_u1 - trace_u0)*(i - 1)/max(1, trace_lines - 1)
             call ref_polar(u, 0.0_dp, x)
-            call box_map(x, 0.0_dp, xb)
-            st = 0; sb = 0
+            if (kind == 2) then
+                call box_map(x, 0.0_dp, y)
+                x = y
+            end if
             do k = 0, trace_periods
-                y = -1
-                if (st == 0) call box_map(x, 0.0_dp, y)
-                !$omp critical
-                write (unit, '(2i7,4es20.11)') i, k, merge(y, [-1.0_dp, -1.0_dp], st == 0), &
-                    merge(xb, [-1.0_dp, -1.0_dp], sb == 0)
-                !$omp end critical
-                if (st == 0) then
+                if (kind == 1) then
+                    call box_map(x, 0.0_dp, y)
+                    path(:, k, kind, i) = y
                     call island_trace(field, x, 0.0_dp, 1.0_dp/period, opt, fin, st)
-                    x = fin
+                else
+                    path(:, k, kind, i) = x
+                    call island_trace(cq, x, 0.0_dp, 1.0_dp/period, opt, fin, st)
                 end if
-                if (sb == 0) then
-                    call island_trace(cq, xb, 0.0_dp, 1.0_dp/period, opt, fin, sb)
-                    xb = fin
+                if (st /= 0) then
+                    last(kind, i) = k
+                    exit
                 end if
-                if (st /= 0 .and. sb /= 0) exit
+                x = fin
             end do
         end do
         !$omp end parallel do
+        open (newunit=unit, file=trim(trace_file), status='replace', action='write')
+        write (unit, '(a)') '# line period R_box Z_box R_biot_savart Z_biot_savart (m), phi = 0'
+        do i = 1, trace_lines
+            ! A period is written while either line is still alive.
+            do k = 0, maxval(last(:, i))
+                write (unit, '(2i7,4es20.11)') i, k, path(:, k, 1, i), path(:, k, 2, i)
+            end do
+        end do
         close (unit)
     end subroutine
 

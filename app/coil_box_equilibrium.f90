@@ -124,8 +124,15 @@ contains
         real(dp), intent(out) :: pmax, pmean, b2mean, volume
         real(dp) :: xq(2), wq, val(field%fs%nl0), grad(2, field%fs%nl0), pos(3)
         real(dp) :: p1(3, 3), p2(3, 3), jw, ph, p, values(EQ_VALUES, 1), pts(3, 1), bref(3)
+        ! Per-triangle sums (p_max, p, |B|^2, volume), added in triangle
+        ! order, so the result does not depend on the number of threads.
+        real(dp), allocatable :: part(:, :)
         integer :: t, q, j, st, sts(1)
-        pmax = 0; pmean = 0; b2mean = 0; volume = 0
+        allocate (part(4, field%fs%mm%topology%n_triangles))
+        part = 0
+        !$omp parallel do default(shared) schedule(dynamic, 4) &
+        !$omp private(t, q, j, st, sts, xq, wq, val, grad, pos, p1, p2, jw, ph, p, &
+        !$omp values, pts, bref)
         do t = 1, field%fs%mm%topology%n_triangles
             do q = 1, field%fs%nq
                 call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, st)
@@ -138,12 +145,20 @@ contains
                     pts(:, 1) = [xq, ph]
                     call field%sample(pts, values, sts)
                     bref = [values(EQ_BR, 1), values(EQ_BPHI, 1), values(EQ_BZ, 1)]
-                    pmax = max(pmax, p)
-                    pmean = pmean + wq*jw*p/nphi
-                    b2mean = b2mean + wq*jw*sum(matmul(p2, bref)**2)/nphi
-                    volume = volume + wq*jw/nphi
+                    part(1, t) = max(part(1, t), p)
+                    part(2, t) = part(2, t) + wq*jw*p/nphi
+                    part(3, t) = part(3, t) + wq*jw*sum(matmul(p2, bref)**2)/nphi
+                    part(4, t) = part(4, t) + wq*jw/nphi
                 end do
             end do
+        end do
+        !$omp end parallel do
+        pmax = 0; pmean = 0; b2mean = 0; volume = 0
+        do t = 1, size(part, 2)
+            pmax = max(pmax, part(1, t))
+            pmean = pmean + part(2, t)
+            b2mean = b2mean + part(3, t)
+            volume = volume + part(4, t)
         end do
         pmean = pmean/volume; b2mean = b2mean/volume
         volume = 2*acos(-1.0_dp)*volume
