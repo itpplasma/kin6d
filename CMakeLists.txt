@@ -60,7 +60,7 @@ target_compile_options(milca_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # MAKEGRID coils reader with circuit groups (itpplasma/libneo#469) and the ten-column
 # Boozer .bc reader (itpplasma/libneo#509) from libneo main.
 # Only its two dependency-free modules are compiled; libneo itself is not configured.
-set(MILCA_LIBNEO_REVISION "d7c0cc08d3ae85467d81ee7d5c84f3ec42e4f745")
+set(MILCA_LIBNEO_REVISION "94f59c176714c8598ca1b43607a353b29a2ca2a7")
 # SOURCE_SUBDIR names a directory without CMakeLists.txt, so MakeAvailable only
 # populates; unlike a direct FetchContent_Populate it honours dependency
 # providers and FETCHCONTENT_SOURCE_DIR_LIBNEO in disconnected builds.
