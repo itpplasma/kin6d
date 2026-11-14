@@ -577,7 +577,7 @@ contains
         real(dp) :: ip_now, w21, w32, x21, x32, rd21, rd32, wseed, chi_mult, taua
         real(dp) :: xi, gam, z, gamv, gap, xnow, ip0, t0prev, ipprev, wprev, rel
         real(dp) :: w, pohm, paux, prad, vloop, tau, wsat, rate, dw, g, gmax, br
-        real(dp) :: t_last_saw, dtcap, wtq
+        real(dp) :: t_last_saw, dtcap, wtq, trec
         integer :: phase, cause, m, rc, rc21, rc32, step, mgrow, k
         logical :: feedback
         nrec = 0
@@ -617,6 +617,7 @@ contains
         xnow = 1
         ip0 = p%ip
         t_last_saw = -1
+        trec = -1
         wtq = 1
         do step = 1, 10*maxrec
             ip_now = ramp_value(t, settle, dur, ip_i, ip_f)
@@ -723,7 +724,13 @@ contains
             xnow = 1
             if (abs(z) > gap) xnow = max(0.0_dp, 1 - (abs(z) - gap)/(p%a*p%kappa))
             t = t + dt
-            call record()
+            ! The slow flat-top is thinned to about 1500 records; every step
+            ! from the first instability on is kept.
+            if (phase >= TD_TEARING .or. t - trec >= (settle + dur)/1500 .or. &
+                t >= tend) then
+                call record()
+                trec = t
+            end if
             if (nrec >= maxrec) exit
             if (phase >= TD_THERMAL_QUENCH .and. (xnow < 0.25_dp .or. &
                 p%cur(TD_NX) < 0.01_dp*ip0)) then
