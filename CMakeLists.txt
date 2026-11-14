@@ -22,8 +22,8 @@ endif()
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
-set(MILCA_FORTPLOT_REVISION "35a9cd26ab20cf50ba6f7347d7daf13566e0dc91")
-set(MILCA_FORTNUM_REVISION "62c0c8706aa7cbd1a4f939f54ef3b94fa3acc543")
+set(MILCA_FORTPLOT_REVISION "1645fa41c11b5786c71bc27e5b41dae7c7bbba23")
+set(MILCA_FORTNUM_REVISION "b5302c0b0a037947247ad9b817b63b204d844187")
 set(MILCA_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -338,7 +338,7 @@ option(MILCA_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experim
 # second-kind Nedelec edges #148, exact moment gradients #149 and the
 # boundary trace projection #152, the toroidal period #154 and its tensor
 # forms #160, factored anisotropic apply).
-set(MILCA_FORTFEM_REVISION "33587d7306c785f16d836e35bef589f0a2354533")
+set(MILCA_FORTFEM_REVISION "108a5263bee231a66592c4f89906306a2f4a4c56")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${MILCA_FORTFEM_REVISION})
@@ -453,7 +453,7 @@ if(MILCA_ENABLE_CUDA_GS_SOLVE)
     enable_language(CUDA)
     set(FORTSPARSE_ENABLE_NATIVE_CUDA ON CACHE BOOL "" FORCE)
 endif()
-set(MILCA_FORTSPARSE_REVISION "28670bce874902eb6087dbbdea0a58debbfc5ab7")
+set(MILCA_FORTSPARSE_REVISION "a71660aead2fe8c7074bff9c5c1ba0e16df4f3c2")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -1300,7 +1300,7 @@ if(MILCA_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(MILCA_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(MILCA_FORTSYM_REVISION "2d6f7d15d3d0fce1738b68d0f5d9a9ffdd1418f7")
+set(MILCA_FORTSYM_REVISION "f7d51909b9311a796aa3572f7e98820a8d577ff6")
 if(MILCA_FORTSYM_BUILD)
     file(STRINGS "${MILCA_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")

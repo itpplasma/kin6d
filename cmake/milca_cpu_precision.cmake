@@ -55,10 +55,10 @@ target_include_directories(benchmark_equilibrium_cpu PRIVATE
 include(FetchContent)
 FetchContent_Declare(milca_precision_fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 0b5fc420deb283308f07d4e1eab48c295c81a932)
+    GIT_TAG 9dd415ef9366967e6af89098941edf92b0df19c9)
 FetchContent_Declare(milca_precision_fortsparse
     GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-    GIT_TAG 8f4250105fe6e9c02effcd94ea94c52fe87234a8)
+    GIT_TAG 84f8ead1a18fde4ab9df7145ad86bba2f59e4b62)
 foreach(dependency milca_precision_fortnum milca_precision_fortsparse)
     FetchContent_GetProperties(${dependency})
     if(NOT ${dependency}_POPULATED)
