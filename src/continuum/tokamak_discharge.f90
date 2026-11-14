@@ -724,9 +724,9 @@ contains
             xnow = 1
             if (abs(z) > gap) xnow = max(0.0_dp, 1 - (abs(z) - gap)/(p%a*p%kappa))
             t = t + dt
-            ! The slow flat-top is thinned to about 1500 records; every step
-            ! from the first instability on is kept.
-            if (phase >= TD_TEARING .or. t - trec >= (settle + dur)/1500 .or. &
+            ! Flat-top and slow island growth are thinned to about 1500 records;
+            ! every step from an ideal mode or quench on is kept.
+            if (phase >= TD_IDEAL .or. t - trec >= (settle + dur)/1500 .or. &
                 t >= tend) then
                 call record()
                 trec = t
