@@ -641,7 +641,7 @@ contains
             do k = 2, TD_NX-1
                 ! The local high-n model is pessimistic at low shear (finite
                 ! Larmor radius, diamagnetic and sawtooth effects): s >= 0.4 only.
-                if (p%x(k) > 0.8_dp .or. shear(k) < 0.4_dp) cycle
+                if (p%x(k) > 0.7_dp .or. shear(k) < 0.4_dp) cycle
                 g = (ratio(k-1) + ratio(k) + ratio(k+1))/3
                 if (g > 1) then
                     call ballooning_first_zero(max(shear(k), 1e-3_dp), drive(k), &
