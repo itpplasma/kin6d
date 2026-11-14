@@ -1,0 +1,30 @@
+#!/bin/sh
+# Landing check on fortyard: build everything, then run the tests the landed
+# change affects (fo test --only-changed against the candidate's base). A
+# change to the build description widens that to the whole suite, which runs
+# nightly instead; then the tests the change registers or relabels run. Tests
+# labelled slow stay on the Slurm tier (ci/run.sh).
+set -eu
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}" MPLBACKEND=Agg
+candidate=$(git rev-parse HEAD)
+base=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1)
+if [ "$base" = "$candidate" ]; then
+    base=$(git rev-parse HEAD~1)
+fi
+fo build
+# A soft reset keeps the candidate's tree and makes its diff the change set.
+git reset -q --soft "$base"
+trap 'git reset -q --soft "$candidate"' EXIT
+if fo test --only-changed --list | grep -q 'widened'; then
+    names=$(git diff --cached -U0 "$base" -- CMakeLists.txt 'cmake/*.cmake' |
+        sed -n 's/^+.*\(add_test(NAME\|milca_test_labels(\) *\([A-Za-z0-9_]*\).*/\2/p' |
+        sort -u)
+    if [ -n "$names" ]; then
+        # shellcheck disable=SC2086
+        fo test $names
+    else
+        echo "build description changed without new tests; the suite runs nightly"
+    fi
+else
+    fo test --only-changed
+fi
