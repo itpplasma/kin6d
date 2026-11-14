@@ -41,8 +41,11 @@ watch which limit the plasma reaches first and how it disrupts in time.
   low-n external-kink limit is q95 = 2, so they are reported, not acted on.
 - Ballooning: local s-alpha first boundary (`src/mhd/ballooning_s_alpha.f90`)
   tabulated for s = 0.1..3. Shaping enters through the surrogate factor
-  `(1 + kappa^2)/2` on alpha. Only the core, `x <= 0.8`, triggers a disruption;
-  the edge ratio is reported (ELM-relevant, not disruptive here).
+  `(1 + kappa^2)/2` on alpha. A disruption needs the core (`x <= 0.8`) with
+  shear `s >= 0.4` beyond the first boundary, confirmed by the direct Newcomb
+  test at the local `(s, alpha)` (second stability). The edge and the
+  low-shear core are reported only: the local high-n model is pessimistic
+  there (finite Larmor radius, diamagnetic and sawtooth effects).
 - Triggers of the thermal quench: island overlap (Chirikov) or an island
   reaching the edge; an ideal mode growing to 0.1 a; the radiating front
   reaching x = 0.8 (radiative collapse, the density limit of this model).

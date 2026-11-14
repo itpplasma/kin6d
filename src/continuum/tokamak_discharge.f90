@@ -23,7 +23,8 @@ module milca_tokamak_discharge
     use, intrinsic :: iso_c_binding, only: c_double, c_int
     use milca_cylinder_stability, only: cyl_current_from_q, cyl_kink_energy, &
         cyl_tearing_delta_prime, CYL_OK, CYL_RESONANT_INSIDE
-    use milca_ballooning_s_alpha, only: ballooning_critical_alpha, BALLOON_OK
+    use milca_ballooning_s_alpha, only: ballooning_critical_alpha, &
+        ballooning_first_zero, BALLOON_OK
     implicit none
     private
 
@@ -303,14 +304,17 @@ contains
 
     !> alpha/alpha_c on 0.2 <= x <= 0.95 (zero elsewhere); alpha = -2 mu0 R0 q^2 p'/B0^2.
     !> The axis is left out: there s -> 0 and the local s-alpha model does not apply.
-    subroutine ballooning_ratio(p, q, ratio)
+    subroutine ballooning_ratio(p, q, ratio, shear, drive)
         type(plasma_t), intent(in) :: p
         real(dp), intent(in) :: q(TD_NX)
         real(dp), intent(out) :: ratio(TD_NX)
+        real(dp), intent(out), optional :: shear(TD_NX), drive(TD_NX)
         real(dp) :: h, dp_dr, s, alpha
         integer :: i
         h = 1.0_dp/real(TD_NX-1, dp)
         ratio = 0
+        if (present(shear)) shear = 0
+        if (present(drive)) drive = 0
         do i = 2, TD_NX-1
             if (p%x(i) < 0.2_dp .or. p%x(i) > 0.95_dp) cycle
             dp_dr = 2*kev*(p%n(i+1)*p%t(i+1) - p%n(i-1)*p%t(i-1))/(2*h*p%ae)
@@ -319,6 +323,8 @@ contains
             alpha = -2*mu0*p%r0*q(i)**2*dp_dr/p%b0**2/((1 + p%kappa**2)/2)
             s = p%x(i)*(q(i+1) - q(i-1))/(2*h*q(i))
             if (alpha > 0) ratio(i) = alpha/max(alpha_crit(s), 1e-3_dp)
+            if (present(shear)) shear(i) = s
+            if (present(drive)) drive(i) = alpha
         end do
     end subroutine
 
@@ -565,7 +571,8 @@ contains
             profiles(TD_NX, TD_NPROF, maxrec)
         type(plasma_t) :: p
         real(dp) :: q(TD_NX), cur(TD_NX), dcur(TD_NX), chi(TD_NX), ratio(TD_NX)
-        real(dp) :: j(TD_NX)
+        real(dp) :: j(TD_NX), shear(TD_NX), drive(TD_NX)
+        logical :: crossed
         real(dp) :: t, dt, dt0, tend, settle, dur, n_i, n_f, pa_i, pa_f, ip_i, ip_f
         real(dp) :: ip_now, w21, w32, x21, x32, rd21, rd32, wseed, chi_mult, taua
         real(dp) :: xi, gam, z, gamv, gap, xnow, ip0, t0prev, ipprev, wprev, rel
@@ -626,10 +633,22 @@ contains
                 x21, rd21, rc21)
             call cyl_tearing_delta_prime(TD_NX, q, dcur, 3, 2, p%wall, 2e-3_dp, &
                 x32, rd32, rc32)
-            call ballooning_ratio(p, q, ratio)
+            call ballooning_ratio(p, q, ratio, shear, drive)
+            ! Beyond the first boundary the point may lie past the unstable
+            ! tongue (second stability at low shear): confirm by the direct
+            ! Newcomb test at the local (s, alpha).
             br = 0
             do k = 2, TD_NX-1
-                if (p%x(k) <= 0.8_dp) br = max(br, (ratio(k-1) + ratio(k) + ratio(k+1))/3)
+                ! The local high-n model is pessimistic at low shear (finite
+                ! Larmor radius, diamagnetic and sawtooth effects): s >= 0.4 only.
+                if (p%x(k) > 0.8_dp .or. shear(k) < 0.4_dp) cycle
+                g = (ratio(k-1) + ratio(k) + ratio(k+1))/3
+                if (g > 1) then
+                    call ballooning_first_zero(max(shear(k), 1e-3_dp), drive(k), &
+                        12*pi, 768, crossed, rc)
+                    if (rc /= BALLOON_OK .or. .not. crossed) g = min(g, 0.99_dp)
+                end if
+                br = max(br, g)
             end do
             taua = alfven_time(p)
             ! Radiative collapse: the cold radiating front has reached x = 0.8.

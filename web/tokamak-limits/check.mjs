@@ -29,7 +29,7 @@ for (const [name, r] of Object.entries(scenarios)) {
   mod._milca_td_run(par, ramp, maxrec, nrec, ser, pro, st);
   const n = mod.HEAP32[nrec / 4], s = (k, i) => mod.HEAPF64[ser / 8 + i * nser + k - 1];
   let kq = -1;
-  for (let i = 0; i < n; i++) if (s(21, i) >= 3) { kq = i; break; }
+  for (let i = 0; i < n; i++) if (s(21, i) >= 3 && s(21, i) <= 5) { kq = i; break; }
   console.log(`${name}: records ${n} t_end ${s(1, n - 1).toFixed(5)} phase ${s(21, n - 1)} cause ${s(22, n - 1)} (${(performance.now() - t).toFixed(0)} ms)`);
   if (kq >= 0) console.log(`  TQ at t= ${s(1, kq).toFixed(5)} fGW ${s(6, kq).toFixed(3)} betaN ${s(7, kq).toFixed(3)} q95 ${s(9, kq).toFixed(2)}`);
 }
