@@ -73,3 +73,16 @@ target_link_libraries(test_ballooning_s_alpha PRIVATE milca_mhd)
 add_test(NAME ballooning_s_alpha_first_boundary COMMAND test_ballooning_s_alpha)
 set_tests_properties(ballooning_s_alpha_first_boundary PROPERTIES
     LABELS "mhd;stability;fast" TIMEOUT 30)
+
+# Cylindrical kink/tearing stability and the 1D teaching discharge with its
+# disruption sequence; both build for WebAssembly (web/tokamak-limits).
+target_sources(milca_mhd PRIVATE src/mhd/cylinder_stability.f90
+    src/continuum/tokamak_discharge.f90)
+add_executable(test_cylinder_stability test/test_cylinder_stability.f90)
+target_link_libraries(test_cylinder_stability PRIVATE milca_mhd)
+add_test(NAME cylinder_kink_tearing COMMAND test_cylinder_stability)
+add_executable(test_tokamak_discharge test/test_tokamak_discharge.f90)
+target_link_libraries(test_tokamak_discharge PRIVATE milca_mhd)
+add_test(NAME tokamak_discharge_disruption COMMAND test_tokamak_discharge)
+set_tests_properties(cylinder_kink_tearing tokamak_discharge_disruption
+    PROPERTIES LABELS "mhd;stability;fast" TIMEOUT 60)
