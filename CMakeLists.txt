@@ -86,6 +86,15 @@ set_source_files_properties(src/generated/milca_leaves.f90
 # umbrella. Each source names its layer; the milca_layering test checks the use
 # graph against this partition.
 include(cmake/milca_layers.cmake)
+
+# Reduced edge-shell energy-balance density limit; keep in the continuum layer.
+target_sources(milca_continuum PRIVATE src/continuum/edge_radiative_limit.f90)
+add_executable(test_edge_radiative_limit test/test_edge_radiative_limit.f90)
+target_link_libraries(test_edge_radiative_limit PRIVATE milca_continuum)
+add_test(NAME edge_radiative_thermal_fold COMMAND test_edge_radiative_limit)
+set_tests_properties(edge_radiative_thermal_fold PROPERTIES
+    LABELS "continuum;fast" TIMEOUT 30)
+
 target_sources(milca_mhd PRIVATE src/generated/milca_vrmhd_leaves.f90
     src/mhd/vrmhd_parameters.f90
     src/generated/milca_vrmhd_leaf_ids.f90
