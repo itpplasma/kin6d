@@ -64,3 +64,12 @@ endforeach()
 set_tests_properties(ideal_flux_tokamak_field ideal_flux_tokamak_invariance
     PROPERTIES TIMEOUT 120 PROCESSORS 4 LABELS "mhd;stability"
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
+
+# Fast, reduced local ideal-MHD ballooning limit (not a global beta_N model).
+target_sources(milca_mhd PRIVATE src/mhd/ballooning_s_alpha.f90)
+add_executable(test_ballooning_s_alpha test/test_ballooning_s_alpha.f90)
+target_link_libraries(test_ballooning_s_alpha PRIVATE milca_mhd)
+add_test(NAME ballooning_s_alpha_first_boundary COMMAND test_ballooning_s_alpha)
+set_tests_properties(ballooning_s_alpha_first_boundary PROPERTIES
+    LABELS "mhd;stability;fast" TIMEOUT 30)
