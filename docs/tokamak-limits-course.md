@@ -34,7 +34,11 @@ watch which limit the plasma reaches first and how it disrupts in time.
   `dw/dt = 1.22 eta/mu0 Delta'` with a saturation surrogate
   `w_sat = r_s rDelta'/(rDelta' + 12)`; islands flatten T across their width.
 - Ideal kink: cylindrical low-beta energy with a wall (Newcomb shooting),
-  m = 2..4, n = 1; growth estimate `gamma tau_A = sqrt(-dW/2K)`.
+  m = 1..4, n = 1; growth estimate `gamma tau_A = sqrt(-dW/2K)`. Only m = 2
+  with `dW < -2e-3` (a tenth of the depth of its window) disrupts. The
+  cylinder also opens windows m - 1 < q95 < m for m >= 3 once the current
+  profile broadens; toroidal coupling closes them in real tokamaks, whose
+  low-n external-kink limit is q95 = 2, so they are reported, not acted on.
 - Ballooning: local s-alpha first boundary (`src/mhd/ballooning_s_alpha.f90`)
   tabulated for s = 0.1..3. Shaping enters through the surrogate factor
   `(1 + kappa^2)/2` on alpha. Only the core, `x <= 0.8`, triggers a disruption;

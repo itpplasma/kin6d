@@ -637,9 +637,12 @@ contains
                 call start_quench(TD_CAUSE_RADIATIVE)
             if (phase <= TD_TEARING) then
                 gmax = 0
-                do m = 2, 4
+                ! Only m = 2 disrupts: toroidal coupling closes the cylindrical
+                ! m >= 3 windows, so the low-n limit is q95 = 2. Marginal kinks
+                ! (|dW| below a tenth of the m = 2 window depth) saturate.
+                do m = 2, 2
                     call cyl_kink_energy(TD_NX, q, m, 1, p%wall, dw, g, rc)
-                    if (rc == CYL_OK .and. dw < 0 .and. g > gmax) then
+                    if (rc == CYL_OK .and. dw < -2e-3_dp .and. g > gmax) then
                         gmax = g
                         mgrow = m
                     end if

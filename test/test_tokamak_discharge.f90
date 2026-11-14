@@ -30,28 +30,45 @@ program test_tokamak_discharge
     ! density ramp to twice the Greenwald density
     ramp = 0
     ramp(1:6) = [4.0_dp, 2.4_dp, -1.0_dp, 15.0_dp, 8.0_dp, 1.0_dp]
-    call run('density ramp')
+    call run('density ramp', [3, 4], 'n', 0.9_dp)
     ! heating ramp: beta limit
     ramp(1:6) = [3.0_dp, 1.0_dp, 400.0_dp, 15.0_dp, 6.0_dp, 1.0_dp]
-    call run('power ramp')
+    call run('power ramp', [-1, -1], ' ', 0.0_dp)
     ! current ramp: q95 -> below 2
     ramp(1:6) = [3.0_dp, 1.0_dp, -1.0_dp, 24.0_dp, 6.0_dp, 1.0_dp]
-    call run('current ramp')
+    call run('current ramp', [1, 2], 'q', 2.4_dp)
     ! small density step inside the limits
     ramp(1:6) = [2.0_dp, 1.05_dp, -1.0_dp, 15.0_dp, 4.0_dp, 0.5_dp]
-    call run('safe ramp')
+    call run('safe ramp', [-1, -1], ' ', 0.0_dp)
     print '(a)', 'PASS tokamak discharge'
 contains
-    subroutine run(name)
-        character(*), intent(in) :: name
+    !> causes: allowed quench causes, [-1,-1] when the discharge must survive;
+    !> which = 'n': n/n_G before the quench above bound, 'q': q95 below bound.
+    subroutine run(name, causes, which, bound)
+        character(*), intent(in) :: name, which
+        integer, intent(in) :: causes(2)
+        real(dp), intent(in) :: bound
         integer :: k, kq, last
         call td_run(par, ramp, maxrec, nrec, ser, pro, rc)
         if (rc /= 0) error stop 'run status'
         kq = 0
         do k = 1, nrec
-            if (ser(21,k) >= 3 .and. kq == 0) kq = k
+            if (ser(21,k) >= 3 .and. ser(21,k) <= 5 .and. kq == 0) kq = k
         end do
         last = nrec
+        if (causes(1) < 0) then
+            if (kq /= 0 .or. nint(ser(21,last)) /= TD_SURVIVED) error stop 'must survive'
+        else
+            if (kq < 2) error stop 'must disrupt'
+            if (.not. any(nint(ser(22,last)) == causes)) error stop 'unexpected cause'
+            if (which == 'n' .and. ser(6,kq-1) < bound) error stop 'density limit too low'
+            if (which == 'q' .and. ser(9,kq-1) > bound) error stop 'q95 limit too high'
+            ! Flux conservation raises I_p as li drops; a flat profile (low li)
+            ! gives a small spike.
+            if (maxval(ser(2,kq:last)) < 1.005_dp*ser(2,kq-1) .or. &
+                maxval(ser(2,kq:last)) > 1.2_dp*ser(2,kq-1)) error stop 'current spike'
+            if (nint(ser(21,last)) /= TD_TERMINATED) error stop 'must terminate'
+        end if
         print '(a,a,i6,a,f9.5,a,i2,a,i2)', name, ': records', nrec, '  t_end', &
             ser(1,last), '  phase', nint(ser(21,last)), '  cause', nint(ser(22,last))
         if (kq > 0) then
