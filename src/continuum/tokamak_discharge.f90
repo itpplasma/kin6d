@@ -559,7 +559,7 @@ contains
 
     !> Runs a discharge: after `settle` seconds the line density, auxiliary
     !> power and plasma current ramp linearly over `duration` to their final
-    !> values; the run ends at t_end or when the current is gone.
+    !> values; the run ends at t_end, or after a quench when the current is gone.
     !> ramp = [duration, nbar_final(1e20), Paux_final(MW, <0 keeps), Ip_final(MA),
     !>         t_end, settle, -, -]. series(:,k) holds TD_NSER quantities per
     !> record; profiles(:,:,k) T, n, q, j, alpha/alpha_c.
@@ -731,7 +731,8 @@ contains
                 series(21, nrec) = phase
                 exit
             end if
-            if (t >= tend) then
+            ! A quench in progress runs to its end.
+            if (t >= tend .and. (phase < TD_THERMAL_QUENCH .or. t >= tend + 10)) then
                 if (phase < TD_THERMAL_QUENCH) series(21, nrec) = TD_SURVIVED
                 exit
             end if
@@ -816,7 +817,7 @@ contains
             series(20, nrec) = vloop
             series(21, nrec) = phase
             series(22, nrec) = cause
-            series(23, nrec) = maxval(ratio)
+            series(23, nrec) = br
             series(24, nrec) = xi
             series(25, nrec) = mgrow
             series(26, nrec) = merge(rd21, 0.0_dp, rc21 == CYL_OK)

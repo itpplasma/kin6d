@@ -81,7 +81,7 @@ wall time [s], H98, ion mass, T_edge [keV]. `ramp` (8): duration, final nbar,
 final P_aux [MW] (negative keeps it), final I_p, end time, settling time.
 `series` (28 per record): t, I_p, T0, W, nbar, n/n_G, beta_N, q0, q95, li, Z,
 remaining minor radius, w_21, w_32, x_21, x_32, P_rad, P_ohm, P_aux, V_loop,
-phase, cause, alpha/alpha_c, ideal amplitude, its m, r_s Delta' (2/1, 3/2), dt.
+phase, cause, core ballooning alpha/alpha_c (the trigger quantity), ideal amplitude, its m, r_s Delta' (2/1, 3/2), dt.
 `profiles` per record: T, n, q, j, alpha/alpha_c on the 65 nodes.
 
 ## Sources
