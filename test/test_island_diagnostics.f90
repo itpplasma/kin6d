@@ -8,7 +8,7 @@ module island_diagnostic_fixture
     implicit none
     real(dp), parameter :: centre(2) = [10.0_dp, 0.0_dp], is = 0.25_dp, shear = 2
     type, extends(equilibrium_field_t) :: pendulum_t
-        real(dp) :: eps = 1.0e-3_dp, alpha = 0.6_dp
+        real(dp) :: eps = 1.0e-3_dp, alpha = 0.6_dp, angular_warp = 0.0_dp
         logical :: zero_toroidal = .false.
     contains
         procedure :: sample
@@ -19,8 +19,8 @@ contains
         real(dp), intent(in) :: points(:, :)
         real(dp), intent(out) :: values(:, :)
         integer, intent(out) :: statuses(:)
-        real(dp) :: x, z, r, theta, phi, vr, vt
-        integer :: j
+        real(dp) :: x, z, r, theta, phi, vr, vt, angle, metric, toroidal
+        integer :: j, k
         values = 0; statuses = 0
         do j = 1, size(points, 2)
             x = points(1, j) - centre(1); z = points(2, j)
@@ -30,11 +30,20 @@ contains
                 cycle
             end if
             theta = atan2(z, x); phi = points(3, j)
-            vr = -2*field%eps*sin(2*theta - phi - field%alpha)/r
-            vt = 0.5_dp + shear*(r*r/2 - is)
-            values(EQ_BR, j) = (vr*cos(theta) - r*vt*sin(theta))/points(1, j)
-            values(EQ_BZ, j) = (vr*sin(theta) + r*vt*cos(theta))/points(1, j)
-            if (.not. field%zero_toroidal) values(EQ_BPHI, j) = 1
+            angle = theta
+            if (field%angular_warp /= 0) then
+                do k = 1, 12
+                    angle = angle - (angle + field%angular_warp*cos(angle) - theta) &
+                                    /(1 - field%angular_warp*sin(angle))
+                end do
+            end if
+            metric = 1 - field%angular_warp*sin(angle)
+            vr = -2*field%eps*sin(2*angle - phi - field%alpha)/r
+            vt = metric*(0.5_dp + shear*(r*r/2 - is))
+            toroidal = 1/metric
+            values(EQ_BR, j) = toroidal*(vr*cos(theta) - r*vt*sin(theta))/points(1, j)
+            values(EQ_BZ, j) = toroidal*(vr*sin(theta) + r*vt*cos(theta))/points(1, j)
+            if (.not. field%zero_toroidal) values(EQ_BPHI, j) = toroidal
         end do
     end subroutine
 end module
@@ -51,7 +60,8 @@ program test_island_diagnostics
     type(island_width_t) :: width
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp) :: r, theta, start(2), finish(2), expected, exact_edges(2), delta
-    real(dp) :: widths(3), eps(3), exponent, qseed(2)
+    real(dp) :: widths(3), eps(3), exponent, qseed(2), span, frequency
+    logical :: warp_ok, span_ok
     integer :: st, j
     r = sqrt(2*is); theta = field%alpha/2
     start = centre + r*[cos(theta), sin(theta)]
@@ -76,13 +86,14 @@ program test_island_diagnostics
     if (xp%status /= 0 .or. xp%residue >= 0) error stop 'X root'
     expected = (1 - cosh(4*pi*2*sqrt(shear*field%eps)))/2
     if (abs(xp%residue - expected) > 1.0e-4_dp) error stop 'hyperbolic residue'
+    ! Close brackets keep successive return angles within the unaliased range.
     eps = [1.0e-3_dp, 2.5e-4_dp, 6.25e-5_dp]
     do j = 1, 3
         field%eps = eps(j)
         delta = 2*sqrt(field%eps/shear)
         exact_edges = sqrt(2*[is - delta, is + delta])
         theta = field%alpha/2
-        call island_width(field, [r - 0.18_dp, r + 0.18_dp], r, centre, &
+        call island_width(field, [r - 0.10_dp, r + 0.10_dp], r, centre, &
                           [cos(theta), sin(theta)], 0.0_dp, &
                           64.0_dp*sqrt(eps(1)/eps(j)), 2, 1, opt, &
                           action_label, 'I = r^2/2 [m^2]', width, scans=16)
@@ -99,6 +110,46 @@ program test_island_diagnostics
     exponent = log(widths(1)/widths(3))/log(eps(1)/eps(3))
     print '(a,f10.6)', 'pendulum width exponent ', exponent
     if (abs(exponent - 0.5_dp) > 0.05_dp) error stop 'pendulum scaling'
+    ! theta = angle - cos(angle)/2 fixes the O-point chord at angle = pi/2.
+    field%eps = eps(1); field%alpha = pi; field%angular_warp = -0.5_dp
+    delta = 2*sqrt(field%eps/shear)
+    exact_edges = sqrt(2*[is - delta, is + delta])
+    call island_width(field, [r - 0.10_dp, r + 0.10_dp], r, centre, &
+                      [0.0_dp, 1.0_dp], 0.0_dp, 256.0_dp, 2, 1, opt, &
+                      action_label, 'I = r^2/2 [m^2]', width, scans=16, map_turns=2.0_dp)
+    warp_ok = width%status == 0
+    print '(a,3es13.5)', 'warped width/exact/error ', width%metres, &
+        exact_edges(2) - exact_edges(1), abs(width%metres - (exact_edges(2) - exact_edges(1)))
+    if (warp_ok) warp_ok = maxval(abs(width%edge - exact_edges)) <= 2*width%scan_error
+    field%angular_warp = 0
+    field%eps = 0
+    opt%fixed_steps = 128
+    delta = r + 0.10_dp
+    start = centre + [delta, 0.0_dp]
+    frequency = 0.5_dp + shear*(delta*delta/2 - is)
+    call island_trace(field, start, 0.0_dp, 8.0_dp, opt, finish, st, &
+                      centre, 2, 1, span)
+    span_ok = st == 0
+    if (span_ok) span_ok = norm2(finish - centre - &
+        delta*[cos(16*pi*frequency), sin(16*pi*frequency)]) < 1.0e-6_dp
+    if (span_ok) span_ok = abs(span - abs(2*frequency - 1)*16*pi) < 1.0e-6_dp
+    print '(a,3es13.5)', 'span trace endpoint/error/full span ', &
+        norm2(finish - centre - delta*[cos(16*pi*frequency), sin(16*pi*frequency)]), &
+        abs(span - abs(2*frequency - 1)*16*pi), span
+    if (.not. warp_ok) print '(a)', 'FAIL: warped-angle separatrix width'
+    if (.not. span_ok) print '(a)', 'FAIL: optional span shortened the trace'
+    if (.not. warp_ok .or. .not. span_ok) error stop 'warped width or trace duration'
+    opt%fixed_steps = 0
+    field%eps = eps(1)
+    call island_width(field, [r - 0.10_dp, r + 0.10_dp], r, centre, &
+                      [0.0_dp, 1.0_dp], 0.0_dp, 1.0_dp, 2, 1, opt, &
+                      action_label, 'I = r^2/2 [m^2]', width, map_turns=2.0_dp)
+    if (width%status /= 3) error stop 'incomplete return accepted'
+    call island_width(field, [r - 0.10_dp, r + 0.10_dp], r, centre, &
+                      [0.0_dp, 1.0_dp], 0.0_dp, 64.0_dp, 2, 1, opt, &
+                      action_label, 'I = r^2/2 [m^2]', width, map_turns=0.0_dp)
+    if (width%status /= 1) error stop 'invalid return period accepted'
+    field%eps = eps(3)
     ! A symmetry seed is not a full-map root unless the field is reversible
     ! at this section. A failed fallback must retain unresolved status.
     field%alpha = 0.6_dp; qseed = centre + [r, 0.0_dp]
