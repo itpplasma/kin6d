@@ -97,7 +97,6 @@ contains
                 finish = next
                 if (present(span)) then
                     call accumulate(phi + h, finish)
-                    if (abs(turns) > 1 .and. hi - lo > 2*pi) exit
                 end if
             end do
         else
@@ -317,8 +316,50 @@ contains
         end subroutine
     end subroutine
 
+    subroutine libration_span(field, start, phi0, turns, map_turns, centre, m, &
+                              opt, span, status)
+        class(equilibrium_field_t), intent(in) :: field
+        real(dp), intent(in) :: start(2), phi0, turns, map_turns, centre(2)
+        integer, intent(in) :: m
+        type(island_trace_options_t), intent(in) :: opt
+        real(dp), intent(out) :: span
+        integer, intent(out) :: status
+        real(dp) :: x(2), next(2), old, theta, angle, lo, hi
+        integer :: k, maps
+        span = 0; status = 1
+        if (.not. ieee_is_finite(turns) .or. .not. ieee_is_finite(map_turns)) return
+        if (turns <= 0 .or. map_turns <= 0 .or. m == 0) return
+        if (.not. ieee_is_finite(phi0)) return
+        if (.not. all(ieee_is_finite(start)) .or. &
+            .not. all(ieee_is_finite(centre))) return
+        if (norm2(start - centre) <= tiny(1.0_dp)) return
+        if (turns < map_turns) then
+            status = 3
+            return
+        end if
+        if (map_turns < turns/real(huge(maps), dp)) return
+        maps = int(turns/map_turns)
+        x = start
+        old = atan2(x(2) - centre(2), x(1) - centre(1))
+        angle = 0; lo = 0; hi = 0
+        status = 0
+        do k = 1, maps
+            call island_trace(field, x, phi0 + 2*pi*(k - 1)*map_turns, &
+                              map_turns, opt, next, status)
+            if (status /= 0) return
+            x = next
+            theta = atan2(x(2) - centre(2), x(1) - centre(1))
+            angle = angle + atan2(sin(theta - old), cos(theta - old))
+            old = theta
+            lo = min(lo, m*angle); hi = max(hi, m*angle)
+            if (hi - lo > 2*pi*abs(real(m, dp))) exit
+        end do
+        span = hi - lo
+    end subroutine
+
     subroutine island_libration_edge(field, outside, inside, origin, direction, &
-                                     phi0, turns, m, n, opt, edge, status, scans)
+                                     phi0, turns, m, n, opt, edge, status, scans, &
+                                     map_turns)
         ! Coordinate along a straight section chord, direction a unit vector.
         class(equilibrium_field_t), intent(in) :: field
         real(dp), intent(in) :: outside, inside, origin(2), direction(2)
@@ -328,28 +369,37 @@ contains
         real(dp), intent(out) :: edge
         integer, intent(out) :: status
         integer, intent(in), optional :: scans
-        real(dp) :: a, b, finish(2), span
-        integer :: j, count
+        real(dp), intent(in), optional :: map_turns
+        real(dp) :: a, b, span, period
+        integer :: j, count, divisor, remainder, numerator
         a = outside; b = inside; count = 12
         if (present(scans)) count = scans
         edge = a; status = 1
-        if (abs(norm2(direction) - 1) > 1.0e-12_dp .or. count < 1) return
-        call island_trace(field, origin + a*direction, phi0, turns, opt, &
-                          finish, status, origin, m, n, span)
+        if (abs(norm2(direction) - 1) > 1.0e-12_dp .or. count < 1 .or. m == 0) return
+        ! Return to the same lobe of the full-torus m/n chain.
+        divisor = abs(m); numerator = abs(n)
+        do while (numerator /= 0)
+            remainder = mod(divisor, numerator)
+            divisor = numerator; numerator = remainder
+        end do
+        period = real(abs(m)/divisor, dp)
+        if (present(map_turns)) period = map_turns
+        call libration_span(field, origin + a*direction, phi0, turns, period, &
+                            origin, m, opt, span, status)
         if (status /= 0) return
         status = 3
-        if (span <= 2*pi) return
-        call island_trace(field, origin + b*direction, phi0, turns, opt, &
-                          finish, status, origin, m, n, span)
+        if (span <= 2*pi*abs(real(m, dp))) return
+        call libration_span(field, origin + b*direction, phi0, turns, period, &
+                            origin, m, opt, span, status)
         if (status /= 0) return
         status = 3
-        if (span > 2*pi) return
+        if (span > 2*pi*abs(real(m, dp))) return
         do j = 1, count
             edge = (a + b)/2
-            call island_trace(field, origin + edge*direction, phi0, turns, opt, &
-                              finish, status, origin, m, n, span)
+            call libration_span(field, origin + edge*direction, phi0, turns, &
+                                period, origin, m, opt, span, status)
             if (status /= 0) return
-            if (span > 2*pi) then
+            if (span > 2*pi*abs(real(m, dp))) then
                 a = edge
             else
                 b = edge
@@ -359,7 +409,8 @@ contains
     end subroutine
 
     subroutine island_width(field, outside, inside, origin, direction, phi0, &
-                            turns, m, n, opt, label, label_name, report, scans)
+                            turns, m, n, opt, label, label_name, report, scans, &
+                            map_turns)
         class(equilibrium_field_t), intent(in) :: field
         real(dp), intent(in) :: outside(2), inside, origin(2), direction(2)
         real(dp), intent(in) :: phi0, turns
@@ -369,6 +420,7 @@ contains
         character(*), intent(in) :: label_name
         type(island_width_t), intent(out) :: report
         integer, intent(in), optional :: scans
+        real(dp), intent(in), optional :: map_turns
         type(island_trace_options_t) :: tights(3)
         real(dp) :: edges(2, 3), widths(3)
         integer :: lev, i, j, statuses(2, 3), count
@@ -393,7 +445,8 @@ contains
             j = 1 + mod(i - 1, 2)
             call island_libration_edge(field, outside(j), inside, origin, &
                         direction, phi0, turns*merge(2, 1, lev == 3), m, n, &
-                        tights(lev), edges(j, lev), statuses(j, lev), scans=count)
+                        tights(lev), edges(j, lev), statuses(j, lev), scans=count, &
+                        map_turns=map_turns)
         end do
         !$omp end parallel do
         do lev = 1, 3
